@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { emptyRateDocument } from '../src/rates'
 
 const session = (roles: string[] = ['admin']) => ({
   authenticated: true,
@@ -19,6 +20,8 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
   let customVersionStatus = 'draft'
   let candidateStatus = 'pending_review'
   let jobPolls = 0
+  let rateConfiguration = { enabled: true, schedule_cron: '15 3 * * 0', timezone: 'America/Los_Angeles', jitter_minutes: 20, approval_mode: 'manual_review', auto_activate_verified: false, next_scheduled_run: '2026-07-26T10:15:00Z' }
+  let rateSources: Array<{ id: string; name: string; url: string; parser_id: string; effective_from?: string; enabled: boolean; last_success_at?: string; consecutive_failures: number }> = [{ id: 'source-1', name: 'SCE public TOU page', url: 'https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans', parser_id: 'sce_public_tou_html_v1', effective_from: '2026-06-01', enabled: true, last_success_at: '2026-07-19T10:15:00Z', consecutive_failures: 0 }]
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -50,18 +53,41 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
       customDocument = JSON.parse(request.postData() ?? '{}') as Record<string, unknown>
       body = { plan: { id: 'custom-plan-1', versions: [{ ...officialVersion, id: 'custom-version-1', status: 'draft', is_active: false, immutable: false }] }, document: customDocument }
     }
+    else if (path === '/api/v1/rates/versions/rate-version-official' && request.method() === 'GET') body = {
+      version: officialVersion,
+      document: {
+        ...emptyRateDocument(),
+        plan_name: officialPlan.name,
+        plan_code: officialPlan.code,
+        description: officialPlan.description,
+        source_label: officialVersion.source_label,
+        provider_mode: 'sce_delivery_generation',
+      },
+    }
     else if (path === '/api/v1/rates/versions/custom-version-1' && request.method() === 'GET') body = { version: { ...officialVersion, id: 'custom-version-1', status: customVersionStatus, is_active: customVersionStatus === 'active', immutable: customVersionStatus === 'active' }, document: customDocument }
     else if (path === '/api/v1/rates/versions/custom-version-1' && request.method() === 'PATCH') { customDocument = JSON.parse(request.postData() ?? '{}') as Record<string, unknown>; body = { version: { id: 'custom-version-1', status: 'draft' }, validation: { valid: true, errors: [], warnings: [], integrity_sha256: 'b'.repeat(64), coverage: { 'all-year/all-days': true } } } }
     else if (path === '/api/v1/rates/validate-document') body = { valid: true, errors: [], warnings: [], integrity_sha256: 'b'.repeat(64), coverage: { 'all-year/all-days': true } }
     else if (path === '/api/v1/rates/versions/custom-version-1/activate') { customVersionStatus = 'active'; body = { status: 'active', version: { id: 'custom-version-1', status: 'active' }, validation: { valid: true, errors: [], warnings: [], integrity_sha256: 'b'.repeat(64), coverage: { 'all-year/all-days': true } } } }
     else if (path === '/api/v1/rates/assignments' && request.method() === 'POST') body = { id: 'assignment-1', effective_from: '2026-07-20T00:00:00Z' }
     else if (path === '/api/v1/rates/preview-cost') body = { display_total: '0.25' }
-    else if (path === '/api/v1/admin/rate-sources' && request.method() === 'GET') body = { configuration: { enabled: true, schedule_cron: '15 3 * * 0', timezone: 'America/Los_Angeles', jitter_minutes: 20, approval_mode: 'manual_review', auto_activate_verified: false, next_scheduled_run: '2026-07-26T10:15:00Z' }, last_successful_check: '2026-07-19T10:15:00Z', sources: [{ id: 'source-1', name: 'SCE public TOU page', url: 'https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans', parser_id: 'sce_public_tou_html_v1', enabled: true, last_success_at: '2026-07-19T10:15:00Z', consecutive_failures: 0 }] }
+    else if (path === '/api/v1/admin/rate-sources' && request.method() === 'GET') body = { configuration: rateConfiguration, last_successful_check: '2026-07-19T10:15:00Z', sources: rateSources }
+    else if (path === '/api/v1/admin/rate-sources' && request.method() === 'POST') {
+      const created = JSON.parse(request.postData() ?? '{}') as Record<string, unknown>
+      const source = { ...created, id: 'source-2', enabled: true, last_success_at: undefined, consecutive_failures: 0 }
+      rateSources = [...rateSources, source as typeof rateSources[number]]
+      body = source
+    }
+    else if (path === '/api/v1/admin/rate-source-settings' && request.method() === 'PATCH') {
+      const update = JSON.parse(request.postData() ?? '{}') as Partial<typeof rateConfiguration>
+      rateConfiguration = { ...rateConfiguration, ...update, next_scheduled_run: '2026-07-26T10:15:00Z' }
+      body = { updated: true, configuration: rateConfiguration }
+    }
     else if (path === '/api/v1/admin/rate-candidates' && request.method() === 'GET') body = [{ id: 'candidate-1', status: candidateStatus, risk_level: 'manual_review', summary: { plan_code: 'TOU-D-4-9PM', material_differences: 1 }, created_at: '2026-07-20T10:20:00Z' }]
     else if (path === '/api/v1/admin/rate-candidates/candidate-1' && request.method() === 'GET') body = { id: 'candidate-1', status: candidateStatus, risk_level: 'manual_review', summary: { plan_code: 'TOU-D-4-9PM', material_differences: 1 }, created_at: '2026-07-20T10:20:00Z', source_evidence: { artifact_id: 'artifact-1', sha256: 'c'.repeat(64), captured_at: '2026-07-20T10:19:00Z', parser_id: 'sce_public_tou_html_v1', parser_version: '1.0.0', warnings: [] }, differences: [{ path: 'seasons.0.schedules.0.periods.0.price_per_kwh', change_type: 'changed', before: '0.34', after: '0.35', material: true }] }
     else if (path === '/api/v1/admin/rate-candidates/candidate-1/approve') { candidateStatus = 'approved'; body = { status: 'approved' } }
     else if (path === '/api/v1/admin/rate-candidates/candidate-1/activate') { candidateStatus = 'activated'; body = { status: 'active' } }
     else if (path === '/api/v1/admin/rate-sources/check-now') { body = { job_id: 'rate-job-1', status: 'queued' } }
+    else if (path.match(/^\/api\/v1\/admin\/rate-sources\/[^/]+\/check$/) && request.method() === 'POST') { body = { job_id: 'rate-job-1', status: 'queued' } }
     else if (path === '/api/v1/jobs/rate-job-1') { jobPolls += 1; body = { id: 'rate-job-1', status: jobPolls > 1 ? 'succeeded' : 'running', progress: { completed: jobPolls > 1 ? 1 : 0, source_ids: ['source-1'] }, result: { candidate_count: 1 } } }
     else if (path === '/api/v1/admin/rate-checks') body = [{ id: 'check-1', rate_source_id: 'source-1', checked_at: '2026-07-20T10:20:00Z', outcome: 'succeeded', http_status: 200 }]
     else if (path === '/api/v1/alert-rules' && request.method() === 'GET') body = [
@@ -73,6 +99,7 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     else if (path === '/api/v1/notification-channels' && request.method() === 'POST') body = { id: 'smtp-1', name: 'Power Monitor email', channel_type: 'smtp', enabled: true, target: { host: 'smtp.example.com', port: 587, from: 'monitor@example.com', recipient_count: 1, starttls: true, implicit_tls: false, authentication_configured: true, event_types: ['heartbeat_stale', 'power_surge'] }, secrets_redacted: true }
     else if (path === '/api/v1/notification-attempts') body = []
     else if (path === '/api/v1/backups') body = []
+    else if (path === '/api/v1/system/info') body = { product: 'Power Monitor Server', version: '1.0.0', protocol: 'pm-protocol/1.0.0', python_runtime: '3.13 production image', worker: { status: 'healthy', last_loop_at: '2026-07-20T19:05:00Z', last_success_at: '2026-07-20T19:05:00Z' }, defaults: { site: 'Upland Site', timezone: 'America/Los_Angeles', currency: 'USD', heartbeat_seconds: 15 } }
     else if (path === '/api/v1/admin/logs/availability') body = { earliest_date: '2026-06-01', latest_date: '2026-07-20', retention_days: 90, stored_size_bytes: 15360, last_rotation_at: '2026-07-20T02:00:00Z', services: [{ id: 'api', available: true, stored_size_bytes: 8192 }, { id: 'worker', available: true, stored_size_bytes: 4096 }, { id: 'enrollment', available: true, stored_size_bytes: 1024 }, { id: 'device_sync', available: true, stored_size_bytes: 1024 }, { id: 'rate_sync', available: false, stored_size_bytes: 0 }, { id: 'backup', available: true, stored_size_bytes: 1024 }] }
     else if (path === '/api/v1/admin/logs/exports' && request.method() === 'POST') {
       await new Promise((resolve) => setTimeout(resolve, 120))
@@ -288,6 +315,86 @@ test('administrator monitors an SCE job and reviews candidate evidence', async (
   await expect(page.getByRole('button', { name: /Activate approved version/ })).toBeVisible()
   await page.getByRole('button', { name: /Activate approved version/ }).click()
   await expect(page.getByText('activated').last()).toBeVisible()
+})
+
+test('rate source settings save, confirm, and survive a fresh reload', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/rates/sources')
+  await page.getByLabel('Activation policy').selectOption('auto_activate_verified')
+  await page.getByLabel('Enable strict automatic activation').check()
+  const updateRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/admin/rate-source-settings') && request.method() === 'PATCH')
+  await page.getByRole('button', { name: 'Save settings' }).click()
+  const payload = JSON.parse((await updateRequest).postData() ?? '{}') as Record<string, unknown>
+  expect(payload).toMatchObject({ approval_mode: 'auto_activate_verified', auto_activate_verified: true })
+  expect(payload).not.toHaveProperty('next_scheduled_run')
+  await expect(page.getByText('Rate source settings saved.')).toBeVisible()
+  await page.reload()
+  await expect(page.getByLabel('Activation policy')).toHaveValue('auto_activate_verified')
+  await expect(page.getByLabel('Enable strict automatic activation')).toBeChecked()
+})
+
+test('administrator adds an approved SCE source and can queue its first scrape', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/rates/sources')
+  await page.getByRole('button', { name: 'Add source' }).click()
+  await page.getByLabel('Source name').fill('SCE comparison page')
+  await page.getByLabel('Official SCE HTTPS URL').fill('https://www.sce.com/save-money/rates-financing/rate-plan-comparison')
+  await page.getByLabel(/Effective date/).fill('2026-06-01')
+  const createRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/admin/rate-sources') && request.method() === 'POST')
+  await page.getByRole('button', { name: 'Add approved source' }).click()
+  const payload = JSON.parse((await createRequest).postData() ?? '{}') as Record<string, unknown>
+  expect(payload).toMatchObject({ parser_id: 'sce_public_tou_html_v1', effective_from: '2026-06-01' })
+  await expect(page.getByText('Source added. Run its check to create review candidates.')).toBeVisible()
+  const sourceRow = page.locator('.source-list article').filter({ hasText: 'SCE comparison page' })
+  await expect(sourceRow).toBeVisible()
+  await sourceRow.getByRole('button', { name: 'Check' }).click()
+  await expect(page.getByText('SCE check succeeded')).toBeVisible({ timeout: 8_000 })
+  await page.reload()
+  await expect(page.getByText('SCE comparison page')).toBeVisible()
+})
+
+test('administration cards and status pills stay inside settings panels', async ({ page }) => {
+  await page.setViewportSize({ width: 1512, height: 768 })
+  await mockApplication(page)
+  await page.goto('/admin')
+  await page.getByRole('tab', { name: 'Sites & accounts' }).click()
+  const siteCard = page.locator('.admin-card').first()
+  const sitePanel = siteCard.locator('xpath=ancestor::section[1]')
+  const [siteCardBox, sitePanelBox, siteStatusBox] = await Promise.all([
+    siteCard.boundingBox(),
+    sitePanel.boundingBox(),
+    siteCard.locator('.status').boundingBox(),
+  ])
+  expect(siteCardBox).not.toBeNull()
+  expect(sitePanelBox).not.toBeNull()
+  expect(siteStatusBox).not.toBeNull()
+  expect((siteCardBox?.x ?? 0) + (siteCardBox?.width ?? 0)).toBeLessThanOrEqual((sitePanelBox?.x ?? 0) + (sitePanelBox?.width ?? 0))
+  expect((siteStatusBox?.x ?? 0) + (siteStatusBox?.width ?? 0)).toBeLessThanOrEqual((siteCardBox?.x ?? 0) + (siteCardBox?.width ?? 0))
+
+  await page.getByRole('tab', { name: 'Diagnostics' }).click()
+  const diagnostic = page.locator('.diagnostic-hero')
+  const [diagnosticBox, diagnosticPanelBox, diagnosticStatusBox] = await Promise.all([
+    diagnostic.boundingBox(),
+    diagnostic.locator('xpath=ancestor::section[1]').boundingBox(),
+    diagnostic.locator('.status').boundingBox(),
+  ])
+  expect((diagnosticBox?.x ?? 0) + (diagnosticBox?.width ?? 0)).toBeLessThanOrEqual((diagnosticPanelBox?.x ?? 0) + (diagnosticPanelBox?.width ?? 0))
+  expect((diagnosticStatusBox?.x ?? 0) + (diagnosticStatusBox?.width ?? 0)).toBeLessThanOrEqual((diagnosticBox?.x ?? 0) + (diagnosticBox?.width ?? 0))
+  const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
+  expect(horizontalOverflow).toBe(false)
+})
+
+test('disabled controls in rate details use a disabled cursor, not a busy spinner', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/rates')
+  await page.getByRole('button', { name: 'View details' }).click()
+  const previous = page.getByRole('button', { name: 'Previous' })
+  await expect(previous).toBeDisabled()
+  await expect(previous).toHaveCSS('cursor', 'not-allowed')
+  const disabledCursors = await page.locator('.button:disabled').evaluateAll((buttons) =>
+    buttons.map((button) => getComputedStyle(button).cursor),
+  )
+  expect(disabledCursors).not.toContain('wait')
 })
 
 test('administrator downloads a seven-day application-log export from Backups', async ({ page }) => {

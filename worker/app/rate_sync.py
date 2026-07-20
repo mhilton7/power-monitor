@@ -214,7 +214,10 @@ async def process_rate_sync_jobs(
                 await session.flush()
                 adapter = ADAPTERS[source.parser_id]
                 parsed = adapter.parse(
-                    fetched.content, fetched.final_url, fetched.content_type
+                    fetched.content,
+                    fetched.final_url,
+                    fetched.content_type,
+                    effective_from=source.effective_from_hint,
                 )
                 extraction = RateExtractionResult(
                     artifact_id=artifact.id,

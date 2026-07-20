@@ -10,7 +10,8 @@ RUN apt-get update \
     && chmod 0770 /data/logs
 COPY scripts/backup-container.sh scripts/verify-backup-container.sh scripts/restore-container.sh \
     scripts/backup-scheduler.sh scripts/container-secrets.sh scripts/container-log.sh /srv/scripts/
-RUN chmod 0555 /srv/scripts/*.sh
+RUN sed -i 's/\r$//' /srv/scripts/*.sh \
+    && chmod 0555 /srv/scripts/*.sh
 USER 10003:10003
 ENTRYPOINT []
 CMD ["/srv/scripts/backup-container.sh"]

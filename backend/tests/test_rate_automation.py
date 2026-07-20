@@ -8,8 +8,13 @@ from typing import Any
 
 import httpx
 import pytest
+import worker.app.rate_sync as rate_sync_worker
 from sqlalchemy import select
-from worker.app.rate_sync import document_differences, latest_scheduled_time
+from worker.app.rate_sync import (
+    document_differences,
+    latest_scheduled_time,
+    process_rate_sync_jobs,
+)
 
 from app.db.models import (
     AuditEvent,
@@ -20,6 +25,7 @@ from app.db.models import (
     RateSource,
     RateSourceArtifact,
     RateSourceCheckRun,
+    RateSyncConfiguration,
     RateVersion,
 )
 from app.problem import ProblemError
@@ -36,11 +42,13 @@ from app.rates.service import (
 from app.rates.sources import (
     ADAPTERS,
     APPROVED_SOURCE_URLS,
+    FetchResult,
     SourceFetchError,
     SourceSecurityError,
     fetch_source,
     validate_source_url,
 )
+from app.services.bootstrap import ensure_default_reference_data
 
 FIXTURES = Path(__file__).parent / "fixtures" / "sce"
 
@@ -136,9 +144,11 @@ def test_missing_period_and_overlap_are_blocking() -> None:
     assert "period_overlap" in {item.code for item in report.errors}
 
 
-def test_sce_source_allowlist_is_exact_and_ssrf_safe() -> None:
+def test_sce_source_allowlist_accepts_managed_paths_and_remains_ssrf_safe() -> None:
     for url in APPROVED_SOURCE_URLS:
         assert validate_source_url(url) == url
+    managed_page = "https://www.sce.com/save-money/rates-financing/rate-plan-comparison"
+    assert validate_source_url(managed_page) == managed_page
     tariff_pdf = "https://www.sce.com/regulatory/tariff-books/current-residential.pdf"
     assert validate_source_url(tariff_pdf, document_link=True) == tariff_pdf
     for unsafe in (
@@ -147,6 +157,7 @@ def test_sce_source_allowlist_is_exact_and_ssrf_safe() -> None:
         "https://127.0.0.1/regulatory/tariff-books/current-residential.pdf",
         "https://user:password@www.sce.com/save-money/rates-financing/sce-rate-advisory",
         "https://www.sce.com:8443/save-money/rates-financing/sce-rate-advisory",
+        "https://www.sce.com/save-money/rates-financing/../private",
         "https://www.sce.com/unapproved",
     ):
         with pytest.raises(SourceSecurityError):
@@ -286,6 +297,90 @@ def test_html_pdf_and_tariff_index_adapters_are_deterministic() -> None:
         "application/json",
     )
     assert missing_date.status == "failed"
+
+
+def test_public_sce_tou_page_parser_creates_valid_candidate_documents() -> None:
+    source_url = (
+        "https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans"
+    )
+    content = (FIXTURES / "public-tou-page.html").read_bytes()
+    missing_hint = ADAPTERS["sce_public_tou_html_v1"].parse(content, source_url, "text/html")
+    assert missing_hint.status == "manual_review"
+    assert missing_hint.warnings[0]["code"] == "effective_date_required"
+
+    parsed = ADAPTERS["sce_public_tou_html_v1"].parse(
+        content,
+        source_url,
+        "text/html",
+        effective_from=date(2026, 6, 1),
+    )
+    assert parsed.status == "succeeded"
+    assert len(parsed.documents) == 1
+    document = parsed.documents[0]
+    assert document.plan_code == "TOU-D-4-9PM"
+    assert document.effective_from == date(2026, 6, 1)
+    assert validate_document(document).valid
+    assert document.seasons[0].schedules[0].periods[1].price_per_kwh == "0.58"
+    assert [(item.component, item.value) for item in document.adjustments] == [
+        ("daily_fixed_charge", "0.79"),
+        ("baseline_credit", "0.10"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_worker_scrapes_public_page_and_creates_review_candidate(
+    session, test_settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await ensure_default_reference_data(session, "Rate sync fixture", test_settings)
+    configuration = await session.get(RateSyncConfiguration, "default")
+    assert configuration is not None
+    configuration.enabled = False
+    source = await session.scalar(
+        select(RateSource).where(
+            RateSource.url
+            == "https://www.sce.com/save-money/rates-financing/residential-rate-plans/"
+            "time-of-use-plans"
+        )
+    )
+    assert source is not None
+    job = BackgroundJob(
+        job_type="rate_source_sync",
+        status="queued",
+        requested_at=datetime.now(UTC),
+        correlation_id="managed-source-fixture",
+        progress={"source_ids": [source.id], "completed": 0},
+        result={},
+    )
+    session.add(job)
+    await session.flush()
+    content = (FIXTURES / "public-tou-page.html").read_bytes()
+
+    async def fixture_fetch(*_args: Any, **_kwargs: Any) -> FetchResult:
+        return FetchResult(
+            status_code=200,
+            final_url=source.url,
+            content=content,
+            content_type="text/html",
+            etag='"managed-source-v1"',
+            last_modified="Mon, 20 Jul 2026 12:00:00 GMT",
+            duration_ms=12,
+        )
+
+    monkeypatch.setattr(rate_sync_worker, "fetch_source", fixture_fetch)
+    settings = test_settings.model_copy(
+        update={"rate_sync_artifact_path": tmp_path / "rate-source-artifacts"}
+    )
+    result = await process_rate_sync_jobs(session, settings)
+    await session.flush()
+    assert result == {"jobs_completed": 1, "source_failures": 0, "candidates": 1}
+    assert job.status == "succeeded"
+    assert job.result["candidate_count"] == 1
+    candidate = await session.scalar(select(RateChangeCandidate))
+    assert candidate is not None
+    assert candidate.status == "pending_review"
+    extraction = await session.scalar(select(RateExtractionResult))
+    assert extraction is not None and extraction.status == "succeeded"
+    assert len(extraction.normalized_payload["documents"]) == 1
 
 
 def test_candidate_diff_marks_rate_and_effective_changes_material() -> None:
@@ -562,12 +657,82 @@ async def test_rate_management_api_lifecycle_and_async_check(api_client: Any) ->
     assert sources.status_code == 200
     assert len(sources.json()["sources"]) == 4
     source_id = sources.json()["sources"][0]["id"]
+    added_source = await client.post(
+        "/api/v1/admin/rate-sources",
+        headers=csrf(client),
+        json={
+            "name": "SCE residential comparison page",
+            "url": "https://www.sce.com/save-money/rates-financing/rate-plan-comparison",
+            "parser_id": "sce_public_tou_html_v1",
+            "effective_from": "2026-06-01",
+        },
+    )
+    assert added_source.status_code == 201, added_source.text
+    assert added_source.json()["effective_from"] == "2026-06-01"
+    assert added_source.json()["enabled"] is True
+    duplicate_source = await client.post(
+        "/api/v1/admin/rate-sources",
+        headers=csrf(client),
+        json={
+            "name": "Duplicate SCE page",
+            "url": "https://www.sce.com/save-money/rates-financing/rate-plan-comparison",
+            "parser_id": "sce_public_tou_html_v1",
+            "effective_from": "2026-06-01",
+        },
+    )
+    assert duplicate_source.status_code == 409
+    unsafe_source = await client.post(
+        "/api/v1/admin/rate-sources",
+        headers=csrf(client),
+        json={
+            "name": "Unsafe source",
+            "url": "https://example.com/rates",
+            "parser_id": "sce_public_tou_html_v1",
+            "effective_from": "2026-06-01",
+        },
+    )
+    assert unsafe_source.status_code == 422
+    invalid_source_types = await client.post(
+        "/api/v1/admin/rate-sources",
+        headers=csrf(client),
+        json={
+            "name": None,
+            "url": "https://www.sce.com/save-money/rates-financing/rate-plan-comparison",
+            "parser_id": "sce_public_tou_html_v1",
+            "effective_from": "2026-06-01",
+        },
+    )
+    assert invalid_source_types.status_code == 422
+    refreshed_sources = await client.get("/api/v1/admin/rate-sources")
+    assert len(refreshed_sources.json()["sources"]) == 5
     unrestricted = await client.patch(
         f"/api/v1/admin/rate-sources/{source_id}",
         headers=csrf(client),
         json={"url": "https://example.com/rates"},
     )
     assert unrestricted.status_code == 422
+    settings_payload = {
+        "enabled": True,
+        "schedule_cron": "15 3 * * 0",
+        "timezone": "America/Los_Angeles",
+        "jitter_minutes": 12,
+        "approval_mode": "auto_activate_verified",
+        "auto_activate_verified": True,
+    }
+    settings_update = await client.patch(
+        "/api/v1/admin/rate-source-settings",
+        headers=csrf(client),
+        json=settings_payload,
+    )
+    assert settings_update.status_code == 200, settings_update.text
+    saved_configuration = settings_update.json()["configuration"]
+    for key, value in settings_payload.items():
+        assert saved_configuration[key] == value
+    assert saved_configuration["next_scheduled_run"]
+    reloaded_sources = await client.get("/api/v1/admin/rate-sources")
+    assert reloaded_sources.status_code == 200
+    assert reloaded_sources.json()["configuration"]["approval_mode"] == ("auto_activate_verified")
+    assert reloaded_sources.json()["configuration"]["auto_activate_verified"] is True
     queued = await client.post("/api/v1/admin/rate-sources/check-now", headers=csrf(client))
     assert queued.status_code == 202
     job = await client.get(f"/api/v1/jobs/{queued.json()['job_id']}")

@@ -55,3 +55,14 @@ def test_weekly_rate_migration_is_append_only() -> None:
     assert '"rate_assignments"' in revision
     assert "DROP SCHEMA" not in revision
     assert "def downgrade()" in revision
+
+
+def test_managed_rate_source_migration_is_append_only() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (root / "alembic" / "versions" / "20260720_0004_managed_rate_sources.py").read_text()
+    assert 'down_revision: str | None = "20260720_0003"' in revision
+    assert 'op.add_column("rate_sources"' in revision
+    assert '"effective_from_hint"' in revision
+    assert '"created_by"' in revision
+    assert "DROP SCHEMA" not in revision
+    assert "def downgrade()" in revision

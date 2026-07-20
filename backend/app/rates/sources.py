@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import html
 import ipaddress
 import json
+import re
 import socket
 import time
 from dataclasses import dataclass, field
+from datetime import date
+from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import PurePosixPath
-from typing import Any, Protocol
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from typing import Any, ClassVar, Protocol
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -31,7 +35,20 @@ APPROVED_SOURCE_URLS = {
 APPROVED_DOCUMENT_PREFIXES = (
     "/regulatory/regulatory-information/tariff-books/",
     "/regulatory/tariff-books/",
+    "/sites/default/files/inline-files/",
+    "/sites/default/files/custom-files/",
 )
+APPROVED_MANAGED_SOURCE_PREFIXES = (
+    "/save-money/rates-financing/",
+    "/regulatory/regulatory-information/tariff-books/",
+    "/regulatory/tariff-books/",
+)
+REMOTE_SOURCE_PARSER_IDS = {
+    "sce_public_tou_html_v1",
+    "sce_rate_advisory_html_v1",
+    "sce_tariff_index_html_v1",
+    "sce_tariff_pdf_v1",
+}
 PARSER_VERSION = "1.0.0"
 PERMITTED_CONTENT_TYPES = {
     "text/html",
@@ -70,8 +87,13 @@ def validate_source_url(url: str, *, document_link: bool = False) -> str:
         raise SourceSecurityError("Credentials and non-standard ports are not allowed")
     if parsed.hostname not in {"sce.com", "www.sce.com"}:
         raise SourceSecurityError("Source host is not approved")
+    decoded_path = unquote(parsed.path)
+    if any(part in {".", ".."} for part in decoded_path.split("/")):
+        raise SourceSecurityError("Source path contains traversal segments")
     without_query = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
     if without_query in APPROVED_SOURCE_URLS:
+        return normalized
+    if any(parsed.path.startswith(prefix) for prefix in APPROVED_MANAGED_SOURCE_PREFIXES):
         return normalized
     if (
         document_link
@@ -247,6 +269,261 @@ class _EvidenceHTMLParser(HTMLParser):
 
 
 @dataclass
+class _HTMLNode:
+    tag: str
+    attributes: dict[str, str]
+    children: list[_HTMLNode] = field(default_factory=list)
+    text_parts: list[str] = field(default_factory=list)
+
+    @property
+    def classes(self) -> set[str]:
+        return set(self.attributes.get("class", "").split())
+
+    @property
+    def text(self) -> str:
+        return " ".join(html.unescape(" ".join(self.text_parts)).split())
+
+
+class _HTMLTreeParser(HTMLParser):
+    void_elements: ClassVar[set[str]] = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.roots: list[_HTMLNode] = []
+        self.stack: list[_HTMLNode] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        node = _HTMLNode(tag, {key: value or "" for key, value in attrs})
+        if self.stack:
+            self.stack[-1].children.append(node)
+        else:
+            self.roots.append(node)
+        if tag not in self.void_elements:
+            self.stack.append(node)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        if self.stack and self.stack[-1].tag == tag:
+            self.stack.pop()
+
+    def handle_endtag(self, tag: str) -> None:
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index].tag == tag:
+                del self.stack[index:]
+                return
+
+    def handle_data(self, data: str) -> None:
+        if not data.strip():
+            return
+        for node in self.stack:
+            node.text_parts.append(data)
+
+
+def _nodes(
+    roots: list[_HTMLNode] | _HTMLNode,
+    *,
+    class_name: str | None = None,
+    tag: str | None = None,
+) -> list[_HTMLNode]:
+    pending = list(roots if isinstance(roots, list) else roots.children)
+    found: list[_HTMLNode] = []
+    while pending:
+        node = pending.pop(0)
+        if (class_name is None or class_name in node.classes) and (tag is None or node.tag == tag):
+            found.append(node)
+        pending[0:0] = node.children
+    return found
+
+
+def _first_text(root: _HTMLNode, class_name: str) -> str:
+    matches = _nodes(root, class_name=class_name)
+    return matches[0].text if matches else ""
+
+
+def _parse_dollars(value: str) -> str | None:
+    match = re.search(r"\$\s*(\d+(?:\.\d+)?)", value)
+    return format(Decimal(match.group(1)), "f") if match else None
+
+
+def _parse_cents(value: str) -> str:
+    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:¢|cents?)", value, re.IGNORECASE)
+    if not match:
+        raise ValueError(f"Published price is not a cent value: {value}")
+    return format(Decimal(match.group(1)) / Decimal("100"), "f")
+
+
+def _minute_of_day(value: str) -> int:
+    match = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?\b", value, re.IGNORECASE)
+    if not match:
+        raise ValueError(f"Published period boundary is not recognized: {value}")
+    hour = int(match.group(1)) % 12
+    minute = int(match.group(2) or 0)
+    if match.group(3).lower() == "p":
+        hour += 12
+    return hour * 60 + minute
+
+
+def _plan_code(heading: str) -> str | None:
+    normalized = " ".join(heading.upper().replace(chr(0x2013), "-").split())
+    known = {
+        "TOU-D 4 PM TO 9 PM": "TOU-D-4-9PM",
+        "TOU-D 5 PM TO 8 PM": "TOU-D-5-8PM",
+        "TOU-D-PRIME": "TOU-D-PRIME",
+    }
+    return known.get(normalized)
+
+
+def _schedule_from_section(section: _HTMLNode) -> DayScheduleDocument | None:
+    header_nodes = _nodes(section, class_name="header-block")
+    header = _first_text(header_nodes[0], "rate-header-text") if header_nodes else ""
+    if header == "After Baseline Credit":
+        return None
+    day_type = {
+        "Weekdays": "weekday",
+        "Weekend": "weekend",
+        "Weekdays & Weekend": "all-days",
+    }.get(header)
+    if day_type is None:
+        return None
+    blocks = _nodes(section, class_name="rate-block-wrapper")
+    parsed: list[tuple[str, str, int]] = []
+    for block in blocks:
+        label = _first_text(block, "rate-block-sub-heading")
+        price = _parse_cents(_first_text(block, "rate-block-text-1"))
+        boundaries = _nodes(block, class_name="rate-block-text-2")
+        if not label or not boundaries:
+            raise ValueError(f"Published {header} rate block is incomplete")
+        parsed.append((label.lower().replace(" ", "-"), price, _minute_of_day(boundaries[0].text)))
+    periods: list[RatePeriodDocument] = []
+    for index, (label, price, start_minute) in enumerate(parsed):
+        end_minute = parsed[index + 1][2] if index + 1 < len(parsed) else 1440
+        periods.append(
+            RatePeriodDocument(
+                label=label,
+                start_minute=start_minute,
+                end_minute=end_minute,
+                price_per_kwh=price,
+                delivery_per_kwh=price,
+                display_order=index,
+            )
+        )
+    return DayScheduleDocument(day_type=day_type, periods=periods)
+
+
+def _documents_from_sce_tou_page(
+    content: str, source_url: str, effective_from: date
+) -> list[RatePlanDocument]:
+    documents: list[RatePlanDocument] = []
+    heading_pattern = re.compile(
+        r'<h2[^>]*class=["\'][^"\']*accordion-container-header-button-headline'
+        r'[^"\']*["\'][^>]*>(.*?)</h2>',
+        re.IGNORECASE | re.DOTALL,
+    )
+    headings = list(heading_pattern.finditer(content))
+    for index, match in enumerate(headings):
+        heading = " ".join(html.unescape(re.sub(r"<[^>]+>", " ", match.group(1))).split())
+        plan_code = _plan_code(heading)
+        if plan_code is None:
+            continue
+        fragment_end = headings[index + 1].start() if index + 1 < len(headings) else len(content)
+        tree = _HTMLTreeParser()
+        tree.feed(content[match.end() : fragment_end])
+        container = _HTMLNode("section", {}, children=tree.roots)
+        header_values: dict[str, str] = {}
+        for row in _nodes(container, tag="tr"):
+            key = _first_text(row, "rate-header-text").rstrip(":")
+            value = _first_text(row, "data-text")
+            if key and value:
+                header_values[key] = value
+        seasons: list[RateSeasonDocument] = []
+        for tab in _nodes(container, class_name="tab-panel"):
+            tab_text = tab.text
+            if "June - September" in tab_text:
+                season_name, start, end = "summer", "06-01", "09-30"
+            elif "October - May" in tab_text:
+                season_name, start, end = "winter", "10-01", "05-31"
+            else:
+                continue
+            schedules = [
+                schedule
+                for section in _nodes(tab, class_name="rcb-variation-1-content")
+                if (schedule := _schedule_from_section(section)) is not None
+            ]
+            if schedules:
+                seasons.append(
+                    RateSeasonDocument(
+                        name=season_name,
+                        start=start,
+                        end=end,
+                        schedules=schedules,
+                    )
+                )
+        if not seasons:
+            raise ValueError(f"No published seasonal schedule was found for {plan_code}")
+        adjustments: list[RateAdjustmentDocument] = []
+        service_charge = _parse_dollars(header_values.get("Base Services Charge", ""))
+        if service_charge is not None:
+            adjustments.append(
+                RateAdjustmentDocument(
+                    name="Base service charge",
+                    component="daily_fixed_charge",
+                    value=service_charge,
+                    unit="per_day",
+                    scope="full_account_estimate",
+                )
+            )
+        baseline_credit = _parse_dollars(header_values.get("Baseline Credit", ""))
+        if baseline_credit is not None:
+            adjustments.append(
+                RateAdjustmentDocument(
+                    name="Baseline credit",
+                    component="baseline_credit",
+                    operation="subtract",
+                    value=baseline_credit,
+                    unit="per_kwh",
+                    scope="full_account_estimate",
+                )
+            )
+        documents.append(
+            RatePlanDocument(
+                plan_name=heading,
+                plan_code=plan_code,
+                utility="Southern California Edison",
+                description="Official SCE residential time-of-use rate page",
+                currency="USD",
+                timezone="America/Los_Angeles",
+                effective_from=effective_from,
+                cost_scope_default="energy_only",
+                source_label="SCE public residential TOU page",
+                source_note=(
+                    "Published summary rates extracted from the official SCE page; "
+                    "the administrator supplied the effective date and must verify it "
+                    f"against filed tariff evidence before approval. Source: {source_url}"
+                ),
+                provider_mode="sce_delivery_generation",
+                seasons=seasons,
+                adjustments=adjustments,
+            )
+        )
+    return documents
+
+
+@dataclass
 class ParseResult:
     status: str
     documents: list[RatePlanDocument] = field(default_factory=list)
@@ -259,7 +536,14 @@ class ParseResult:
 class RateSourceAdapter(Protocol):
     parser_id: str
 
-    def parse(self, content: bytes, source_url: str, content_type: str) -> ParseResult: ...
+    def parse(
+        self,
+        content: bytes,
+        source_url: str,
+        content_type: str,
+        *,
+        effective_from: date | None = None,
+    ) -> ParseResult: ...
 
 
 def _seed_plan_to_document(plan: dict[str, Any], metadata: dict[str, Any]) -> RatePlanDocument:
@@ -342,7 +626,14 @@ def _documents_from_payload(payload: Any) -> list[RatePlanDocument]:
 class EmbeddedRateHTMLAdapter:
     parser_id = "sce_public_tou_html_v1"
 
-    def parse(self, content: bytes, source_url: str, content_type: str) -> ParseResult:
+    def parse(
+        self,
+        content: bytes,
+        source_url: str,
+        content_type: str,
+        *,
+        effective_from: date | None = None,
+    ) -> ParseResult:
         if content_type not in {"text/html", "application/xhtml+xml"}:
             return ParseResult(
                 status="failed",
@@ -350,8 +641,41 @@ class EmbeddedRateHTMLAdapter:
             )
         parser = _EvidenceHTMLParser()
         try:
-            parser.feed(content.decode("utf-8"))
-            if not parser.script_parts:
+            decoded = content.decode("utf-8")
+            parser.feed(decoded)
+            if parser.script_parts:
+                documents = _documents_from_payload(json.loads("".join(parser.script_parts)))
+            else:
+                if effective_from is None:
+                    probe = _HTMLTreeParser()
+                    probe.feed(decoded)
+                    if _nodes(probe.roots, class_name="accordion-container-bg-layout"):
+                        return ParseResult(
+                            status="manual_review",
+                            warnings=[
+                                {
+                                    "code": "effective_date_required",
+                                    "message": (
+                                        "The SCE page contains rate blocks, but the source "
+                                        "needs a verified effective date before candidates "
+                                        "can be created"
+                                    ),
+                                }
+                            ],
+                            citations=[
+                                {"url": source_url, "sha256": hashlib.sha256(content).hexdigest()}
+                            ],
+                        )
+                else:
+                    documents = _documents_from_sce_tou_page(decoded, source_url, effective_from)
+                    if documents:
+                        return ParseResult(
+                            status="succeeded",
+                            documents=documents,
+                            citations=[
+                                {"url": source_url, "sha256": hashlib.sha256(content).hexdigest()}
+                            ],
+                        )
                 return ParseResult(
                     status="manual_review",
                     warnings=[
@@ -365,7 +689,6 @@ class EmbeddedRateHTMLAdapter:
                     ],
                     citations=[{"url": source_url, "sha256": hashlib.sha256(content).hexdigest()}],
                 )
-            documents = _documents_from_payload(json.loads("".join(parser.script_parts)))
             return ParseResult(
                 status="succeeded",
                 documents=documents,
@@ -384,8 +707,15 @@ class AdvisoryHTMLAdapter(EmbeddedRateHTMLAdapter):
 class TariffIndexHTMLAdapter(EmbeddedRateHTMLAdapter):
     parser_id = "sce_tariff_index_html_v1"
 
-    def parse(self, content: bytes, source_url: str, content_type: str) -> ParseResult:
-        result = super().parse(content, source_url, content_type)
+    def parse(
+        self,
+        content: bytes,
+        source_url: str,
+        content_type: str,
+        *,
+        effective_from: date | None = None,
+    ) -> ParseResult:
+        result = super().parse(content, source_url, content_type, effective_from=effective_from)
         parser = _EvidenceHTMLParser()
         try:
             parser.feed(content.decode("utf-8"))
@@ -406,7 +736,14 @@ class TariffPDFAdapter:
     begin = b"POWER_MONITOR_RATE_JSON_BEGIN\n"
     end = b"\nPOWER_MONITOR_RATE_JSON_END"
 
-    def parse(self, content: bytes, source_url: str, content_type: str) -> ParseResult:
+    def parse(
+        self,
+        content: bytes,
+        source_url: str,
+        content_type: str,
+        *,
+        effective_from: date | None = None,
+    ) -> ParseResult:
         if not (content.startswith(b"%PDF") or content_type == "application/pdf"):
             return ParseResult(
                 status="failed", errors=[{"code": "content_type", "message": "Expected PDF source"}]
@@ -443,7 +780,14 @@ class TariffPDFAdapter:
 class AdminStructuredAdapter:
     parser_id = "admin_uploaded_structured_v1"
 
-    def parse(self, content: bytes, source_url: str, content_type: str) -> ParseResult:
+    def parse(
+        self,
+        content: bytes,
+        source_url: str,
+        content_type: str,
+        *,
+        effective_from: date | None = None,
+    ) -> ParseResult:
         if content_type not in {"application/json", "text/json"}:
             return ParseResult(
                 status="failed",

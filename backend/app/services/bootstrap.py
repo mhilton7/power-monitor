@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -36,6 +36,11 @@ SOURCE_PARSERS = {
         "https://www.sce.com/regulatory/regulatory-information/tariff-books/rates-pricing-choices"
     ): "sce_tariff_index_html_v1",
     "https://www.sce.com/regulatory/tariff-books/historical-rates": "sce_tariff_index_html_v1",
+}
+SOURCE_EFFECTIVE_HINTS = {
+    "https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans": date(
+        2026, 6, 1
+    )
 }
 
 DEFAULT_ALERTS: tuple[tuple[str, str, str, int], ...] = (
@@ -132,6 +137,7 @@ async def ensure_default_reference_data(
                     name=("SCE " + url.rsplit("/", 1)[-1].replace("-", " ").title()),
                     url=url,
                     parser_id=SOURCE_PARSERS[url],
+                    effective_from_hint=SOURCE_EFFECTIVE_HINTS.get(url),
                     enabled=True,
                     consecutive_failures=0,
                     created_at=now,

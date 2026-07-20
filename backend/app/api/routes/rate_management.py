@@ -45,7 +45,13 @@ from app.rates.service import (
     version_document,
     version_usage_count,
 )
-from app.rates.sources import ADAPTERS, PARSER_VERSION
+from app.rates.sources import (
+    ADAPTERS,
+    PARSER_VERSION,
+    REMOTE_SOURCE_PARSER_IDS,
+    SourceSecurityError,
+    validate_source_url,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["rate management"])
 
@@ -752,6 +758,39 @@ async def delete_rate_assignment(
         await session.commit()
 
 
+def _rate_sync_configuration(config: RateSyncConfiguration) -> dict[str, Any]:
+    return {
+        "enabled": config.enabled,
+        "schedule_cron": config.schedule_cron,
+        "timezone": config.timezone,
+        "jitter_minutes": config.jitter_minutes,
+        "approval_mode": config.approval_mode,
+        "auto_activate_verified": config.auto_activate_verified,
+        "next_scheduled_run": config.next_scheduled_run,
+        "last_attempted_run": config.last_attempted_run,
+        "last_successful_run": config.last_successful_run,
+        "last_source_change": config.last_source_change,
+        "last_candidate_created": config.last_candidate_created,
+        "last_approved_version": config.last_approved_version,
+        "last_error": config.last_error,
+    }
+
+
+def _rate_source_payload(source: RateSource) -> dict[str, Any]:
+    return {
+        "id": source.id,
+        "name": source.name,
+        "url": source.url,
+        "parser_id": source.parser_id,
+        "effective_from": source.effective_from_hint,
+        "enabled": source.enabled,
+        "last_checked_at": source.last_checked_at,
+        "last_success_at": source.last_success_at,
+        "consecutive_failures": source.consecutive_failures,
+        "created_at": source.created_at,
+    }
+
+
 @router.get("/admin/rate-sources")
 async def list_rate_sources(principal: Principal, session: DbSession) -> dict[str, Any]:
     _rate_manager(principal)
@@ -764,40 +803,128 @@ async def list_rate_sources(principal: Principal, session: DbSession) -> dict[st
         .limit(1)
     )
     return {
-        "configuration": (
-            {
-                "enabled": config.enabled,
-                "schedule_cron": config.schedule_cron,
-                "timezone": config.timezone,
-                "jitter_minutes": config.jitter_minutes,
-                "approval_mode": config.approval_mode,
-                "auto_activate_verified": config.auto_activate_verified,
-                "next_scheduled_run": config.next_scheduled_run,
-                "last_attempted_run": config.last_attempted_run,
-                "last_successful_run": config.last_successful_run,
-                "last_source_change": config.last_source_change,
-                "last_candidate_created": config.last_candidate_created,
-                "last_approved_version": config.last_approved_version,
-                "last_error": config.last_error,
-            }
-            if config
-            else None
-        ),
+        "configuration": _rate_sync_configuration(config) if config else None,
         "last_successful_check": last_success,
-        "sources": [
-            {
-                "id": item.id,
-                "name": item.name,
-                "url": item.url,
-                "parser_id": item.parser_id,
-                "enabled": item.enabled,
-                "last_checked_at": item.last_checked_at,
-                "last_success_at": item.last_success_at,
-                "consecutive_failures": item.consecutive_failures,
-            }
-            for item in sources
-        ],
+        "sources": [_rate_source_payload(item) for item in sources],
     }
+
+
+@router.post("/admin/rate-sources", status_code=201)
+async def create_rate_source(
+    payload: dict[str, Any],
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _rate_manager(principal)
+    allowed = {"name", "url", "parser_id", "effective_from"}
+    if set(payload) - allowed or not {"name", "url", "parser_id"}.issubset(payload):
+        raise ProblemError(
+            422,
+            "Invalid rate source",
+            "Name, URL, and parser type are required; unsupported fields are not accepted",
+            "rate_source_invalid",
+        )
+    if not all(isinstance(payload.get(field), str) for field in ("name", "url", "parser_id")):
+        raise ProblemError(
+            422,
+            "Invalid rate source",
+            "Name, URL, and parser type must be text values",
+            "rate_source_invalid",
+        )
+    name = str(payload["name"]).strip()
+    parser_id = str(payload["parser_id"]).strip()
+    if not 3 <= len(name) <= 160:
+        raise ProblemError(
+            422,
+            "Invalid rate source",
+            "Source name must contain between 3 and 160 characters",
+            "rate_source_invalid",
+        )
+    if parser_id not in REMOTE_SOURCE_PARSER_IDS:
+        raise ProblemError(
+            422,
+            "Invalid rate source",
+            "Select a supported remote SCE source type",
+            "rate_source_parser_invalid",
+        )
+    try:
+        normalized_url = validate_source_url(
+            str(payload["url"]).strip(),
+            document_link=parser_id == "sce_tariff_pdf_v1",
+        )
+    except (SourceSecurityError, ValueError) as exc:
+        raise ProblemError(
+            422,
+            "Rate source is not permitted",
+            str(exc),
+            "rate_source_url_invalid",
+        ) from exc
+    path_is_pdf = normalized_url.split("?", 1)[0].lower().endswith(".pdf")
+    if path_is_pdf != (parser_id == "sce_tariff_pdf_v1"):
+        raise ProblemError(
+            422,
+            "Source type does not match URL",
+            "PDF URLs require the tariff PDF parser; page parsers require an HTML URL",
+            "rate_source_parser_mismatch",
+        )
+    effective_from_hint: date | None = None
+    if payload.get("effective_from"):
+        try:
+            effective_from_hint = date.fromisoformat(str(payload["effective_from"]))
+        except ValueError as exc:
+            raise ProblemError(
+                422,
+                "Invalid effective date",
+                "Effective date must use YYYY-MM-DD",
+                "rate_source_effective_date_invalid",
+            ) from exc
+    if parser_id == "sce_public_tou_html_v1" and effective_from_hint is None:
+        raise ProblemError(
+            422,
+            "Effective date required",
+            "Rate pages need the effective date shown by the supporting SCE advisory or tariff",
+            "rate_source_effective_date_required",
+        )
+    if await session.scalar(select(RateSource.id).where(RateSource.url == normalized_url)):
+        raise ProblemError(
+            409,
+            "Rate source already exists",
+            "Enable or check the existing source instead of adding a duplicate",
+            "rate_source_exists",
+        )
+    source = RateSource(
+        name=name,
+        url=normalized_url,
+        parser_id=parser_id,
+        effective_from_hint=effective_from_hint,
+        enabled=True,
+        consecutive_failures=0,
+        created_by=principal.user.id,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    session.add(source)
+    await session.flush()
+    session.add(
+        audit_event(
+            action="rate_source.created",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="rate_source",
+            object_id=source.id,
+            details={
+                "url": source.url,
+                "parser_id": source.parser_id,
+                "effective_from": (
+                    source.effective_from_hint.isoformat() if source.effective_from_hint else None
+                ),
+            },
+        )
+    )
+    await session.commit()
+    return _rate_source_payload(source)
 
 
 @router.get("/admin/rate-sources/{source_id}")
@@ -823,6 +950,7 @@ async def get_rate_source(
         "name": source.name,
         "url": source.url,
         "parser_id": source.parser_id,
+        "effective_from": source.effective_from_hint,
         "enabled": source.enabled,
         "checks": [
             {
@@ -938,7 +1066,7 @@ async def patch_rate_settings(
         )
     )
     await session.commit()
-    return {"updated": True}
+    return {"updated": True, "configuration": _rate_sync_configuration(config)}
 
 
 async def _queue_check(session: DbSession, user_id: str, source_ids: list[str]) -> BackgroundJob:
@@ -1456,7 +1584,12 @@ async def upload_rate_artifact(
         if upload.content_type == "application/pdf"
         else source.parser_id
     )
-    parsed = ADAPTERS[parser_id].parse(content, source.url, upload.content_type or "")
+    parsed = ADAPTERS[parser_id].parse(
+        content,
+        source.url,
+        upload.content_type or "",
+        effective_from=source.effective_from_hint,
+    )
     extraction = RateExtractionResult(
         artifact_id=artifact.id,
         parser_id=parser_id,

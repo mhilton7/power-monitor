@@ -21,7 +21,7 @@ checklist for this feature.
 | Requirement | Implementation |
 | --- | --- |
 | Weekly scheduling, lock, job history | `worker/app/rate_sync.py`, `background_jobs`, `rate_sync_configuration` |
-| Approved-source SSRF controls | `backend/app/rates/sources.py` exact HTTPS host/path allowlist |
+| Approved-source SSRF controls | `backend/app/rates/sources.py` HTTPS SCE host/path allowlist plus audited managed-source API |
 | Conditional retrieval and evidence | `rate_source_checks`, `rate_source_artifacts`, artifact filesystem |
 | Parser registry and normalized schema | `backend/app/rates/sources.py`, `backend/app/rates/documents.py` |
 | Candidate diff, review, approval | `rate_change_candidates`, `rate_candidate_differences`, `rate_approval_decisions` and admin API |

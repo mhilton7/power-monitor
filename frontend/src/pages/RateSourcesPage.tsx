@@ -5,6 +5,7 @@ import {
   Clock3,
   ExternalLink,
   FileUp,
+  Plus,
   RefreshCw,
   Settings2,
   ShieldCheck,
@@ -33,6 +34,21 @@ interface Configuration {
   next_scheduled_run?: string
 }
 
+type EditableConfiguration = Pick<
+  Configuration,
+  | 'enabled'
+  | 'schedule_cron'
+  | 'timezone'
+  | 'jitter_minutes'
+  | 'approval_mode'
+  | 'auto_activate_verified'
+>
+
+interface SettingsUpdateResponse {
+  updated: boolean
+  configuration: Configuration
+}
+
 interface SourceSettings {
   configuration: Configuration
   last_successful_check?: string
@@ -41,11 +57,49 @@ interface SourceSettings {
     name: string
     url: string
     parser_id: string
+    effective_from?: string
     enabled: boolean
     last_success_at?: string
     consecutive_failures: number
   }>
 }
+
+interface SourceDraft {
+  name: string
+  url: string
+  parser_id: string
+  effective_from: string
+}
+
+const parserOptions = [
+  {
+    value: 'sce_public_tou_html_v1',
+    label: 'SCE TOU rate page',
+    help: 'Extracts published TOU schedules and prices into review candidates.',
+  },
+  {
+    value: 'sce_rate_advisory_html_v1',
+    label: 'SCE rate advisory',
+    help: 'Archives official change notices and structured advisory data.',
+  },
+  {
+    value: 'sce_tariff_index_html_v1',
+    label: 'SCE tariff index',
+    help: 'Archives an index page and records approved tariff PDF links.',
+  },
+  {
+    value: 'sce_tariff_pdf_v1',
+    label: 'SCE tariff PDF',
+    help: 'Archives a direct official PDF for evidence and supported extraction.',
+  },
+] as const
+
+const emptySourceDraft = (): SourceDraft => ({
+  name: '',
+  url: '',
+  parser_id: 'sce_public_tou_html_v1',
+  effective_from: '',
+})
 
 interface Candidate {
   id: string
@@ -95,6 +149,8 @@ export function RateSourcesPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [draftSettings, setDraftSettings] = useState<Configuration>()
   const [jobId, setJobId] = useState<string>()
+  const [showSourceForm, setShowSourceForm] = useState(false)
+  const [sourceDraft, setSourceDraft] = useState<SourceDraft>(emptySourceDraft)
   const sourceQuery = useQuery({
     queryKey: ['rate-sources'],
     queryFn: () => api<SourceSettings>('/api/v1/admin/rate-sources'),
@@ -124,7 +180,24 @@ export function RateSourcesPage() {
   })
   const checkOne = useMutation({
     mutationFn: (id: string) =>
-      api(`/api/v1/admin/rate-sources/${id}/check`, { method: 'POST' }),
+      api<{ job_id: string }>(`/api/v1/admin/rate-sources/${id}/check`, { method: 'POST' }),
+    onSuccess: (job) => { setJobId(job.job_id) },
+  })
+  const createSource = useMutation({
+    mutationFn: (draft: SourceDraft) => api('/api/v1/admin/rate-sources', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: draft.name.trim(),
+        url: draft.url.trim(),
+        parser_id: draft.parser_id,
+        effective_from: draft.effective_from || undefined,
+      }),
+    }),
+    onSuccess: async () => {
+      setShowSourceForm(false)
+      setSourceDraft(emptySourceDraft())
+      await sourceQuery.refetch()
+    },
   })
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
@@ -137,13 +210,23 @@ export function RateSourcesPage() {
     },
   })
   const saveSettings = useMutation({
-    mutationFn: (payload: Configuration) =>
-      api('/api/v1/admin/rate-source-settings', {
+    mutationFn: (configuration: Configuration) => {
+      const payload: EditableConfiguration = {
+        enabled: configuration.enabled,
+        schedule_cron: configuration.schedule_cron,
+        timezone: configuration.timezone,
+        jitter_minutes: configuration.jitter_minutes,
+        approval_mode: configuration.approval_mode,
+        auto_activate_verified: configuration.auto_activate_verified,
+      }
+      return api<SettingsUpdateResponse>('/api/v1/admin/rate-source-settings', {
         method: 'PATCH',
         body: JSON.stringify(payload),
-      }),
-    onSuccess: () => {
-      void sourceQuery.refetch()
+      })
+    },
+    onSuccess: async (result) => {
+      setDraftSettings({ ...result.configuration })
+      await sourceQuery.refetch()
     },
   })
   const decide = useMutation({
@@ -220,6 +303,7 @@ export function RateSourcesPage() {
         <Panel title="Synchronization settings" eyebrow="Database overrides deployment defaults">
           <form
             className="source-settings-form"
+            onChange={() => { saveSettings.reset() }}
             onSubmit={(event) => {
               event.preventDefault()
               saveSettings.mutate(draftSettings)
@@ -290,24 +374,67 @@ export function RateSourcesPage() {
               </label>
             </div>
             <footer>
-              <p><ShieldCheck size={15} /> Source URLs are server-controlled and cannot be entered here.</p>
+              <p><ShieldCheck size={15} /> Managed sources remain restricted to approved HTTPS SCE paths.</p>
               <button className="button primary" type="submit" disabled={saveSettings.isPending}>
-                <Settings2 size={15} /> Save settings
+                <Settings2 size={15} className={saveSettings.isPending ? 'spin' : undefined} /> {saveSettings.isPending ? 'Saving settings…' : 'Save settings'}
               </button>
             </footer>
+            {saveSettings.isSuccess && <p className="form-success" role="status"><CheckCircle2 size={16} /> Rate source settings saved.</p>}
+            {saveSettings.error && <p className="field-error" role="alert">{saveSettings.error.message}</p>}
           </form>
         </Panel>
       )}
 
-      <Panel title="Approved source status" eyebrow="HTTPS allowlist">
-        <div className="source-list">
-          {sourceQuery.data?.sources.map((source) => (
+      <Panel
+        title="Approved source status"
+        eyebrow="HTTPS SCE allowlist"
+        actions={<button className="button secondary" type="button" aria-expanded={showSourceForm} onClick={() => { setShowSourceForm((value) => !value); createSource.reset(); }}><Plus size={15} /> Add source</button>}
+      >
+        {showSourceForm && (
+          <form
+            className="source-create-form"
+            onChange={() => { createSource.reset() }}
+            onSubmit={(event) => { event.preventDefault(); createSource.mutate(sourceDraft) }}
+          >
+            <div className="form-columns">
+              <label>
+                Source name
+                <input value={sourceDraft.name} minLength={3} maxLength={160} required placeholder="SCE residential TOU page" onChange={(event) => { setSourceDraft({ ...sourceDraft, name: event.target.value }) }} />
+              </label>
+              <label>
+                Source type
+                <select value={sourceDraft.parser_id} onChange={(event) => { setSourceDraft({ ...sourceDraft, parser_id: event.target.value }) }}>
+                  {parserOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}
+                </select>
+                <small>{parserOptions.find((option) => option.value === sourceDraft.parser_id)?.help}</small>
+              </label>
+            </div>
+            <label>
+              Official SCE HTTPS URL
+              <input type="url" value={sourceDraft.url} required placeholder="https://www.sce.com/save-money/rates-financing/..." onChange={(event) => { setSourceDraft({ ...sourceDraft, url: event.target.value }) }} />
+              <small>Only approved sce.com rate and tariff paths are accepted. Private hosts, credentials, redirects to other domains, and nonstandard ports are blocked.</small>
+            </label>
+            <label>
+              Effective date {sourceDraft.parser_id === 'sce_public_tou_html_v1' ? '(required)' : '(optional)'}
+              <input type="date" value={sourceDraft.effective_from} required={sourceDraft.parser_id === 'sce_public_tou_html_v1'} onChange={(event) => { setSourceDraft({ ...sourceDraft, effective_from: event.target.value }) }} />
+              <small>Use the date stated by the supporting SCE advisory or filed tariff. It is never inferred from the page retrieval date.</small>
+            </label>
+            {createSource.error && <p className="field-error" role="alert">{createSource.error.message}</p>}
+            <footer>
+              <button className="button ghost" type="button" onClick={() => { setShowSourceForm(false); createSource.reset() }}>Cancel</button>
+              <button className="button primary" type="submit" disabled={createSource.isPending}><Plus size={15} /> {createSource.isPending ? 'Adding source…' : 'Add approved source'}</button>
+            </footer>
+          </form>
+        )}
+        {createSource.isSuccess && <p className="form-success" role="status"><CheckCircle2 size={16} /> Source added. Run its check to create review candidates.</p>}
+        {sourceQuery.data?.sources.length ? <div className="source-list">
+          {sourceQuery.data.sources.map((source) => (
             <article key={source.id}>
               <span className="source-icon"><ExternalLink size={17} /></span>
               <div>
                 <strong>{source.name}</strong>
                 <a href={source.url} target="_blank" rel="noreferrer">{source.url}</a>
-                <small>{source.parser_id} · Last success {formatTime(source.last_success_at)}</small>
+                <small>{source.parser_id}{source.effective_from ? ` · Effective ${source.effective_from}` : ''} · Last success {formatTime(source.last_success_at)}</small>
               </div>
               <StatusPill
                 status={source.consecutive_failures ? 'failed' : source.last_success_at ? 'healthy' : 'pending'}
@@ -321,8 +448,8 @@ export function RateSourcesPage() {
                 />
                 <span />
               </label>
-              <button className="button ghost" onClick={() => { checkOne.mutate(source.id); }}>
-                <RefreshCw size={14} /> Check
+              <button className="button ghost" disabled={checkOne.isPending} onClick={() => { checkOne.mutate(source.id); }}>
+                <RefreshCw size={14} className={checkOne.isPending && checkOne.variables === source.id ? 'spin' : undefined} /> {checkOne.isPending && checkOne.variables === source.id ? 'Checking…' : 'Check'}
               </button>
               <label className="button ghost file-button">
                 <FileUp size={14} /> Upload
@@ -334,7 +461,7 @@ export function RateSourcesPage() {
               </label>
             </article>
           ))}
-        </div>
+        </div> : <EmptyState title="No approved sources" message="Add an official SCE rate page or tariff source, then run a check to create review candidates." action={<button className="button primary" onClick={() => { setShowSourceForm(true) }}><Plus size={15} /> Add source</button>} />}
       </Panel>
 
       <div className="candidate-layout">

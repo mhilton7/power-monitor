@@ -41,12 +41,15 @@ used a five-connection pool, and peaked at 9.23 MiB of traced Python memory.
 
 The checked host had Node 26, so npm emitted the expected engine warning; the build image and supported runtime are pinned to Node 24.4.0. No test failure or source change resulted from the warning.
 
-The weekly-rate/custom-plan gate passed 58 Python tests with the 100-device
-gate enabled, 5 frontend unit tests, and all 17 Chromium E2E tests. It covers
+The weekly-rate/custom-plan and managed-source gate passed 60 Python tests with
+the 100-device gate enabled, 5 frontend unit tests, and all 21 Chromium E2E
+tests. It covers
 source retrieval and retry classification, parsing fixtures, evidence and
 candidate deduplication, conflict handling, strict automatic-activation
 guards, custom-plan validation and calculation, the four-step editor, source
-review, accessible activation, and account assignment. The production frontend
+review, accessible activation, account assignment, persisted automatic rate-source
+settings, administrator-added approved sources, live-page TOU extraction,
+settings-panel containment, and non-busy disabled detail controls. The production frontend
 build's largest JavaScript chunk was 281.91 kB (90.76 kB gzip).
 
 ## PostgreSQL, Compose, and restore gates
@@ -84,8 +87,8 @@ documented supplementary log-volume group. The backup image created
 `power-monitor-20260720T132746Z`; verification passed all four artifact hashes
 and restored a clean database with revision `20260720_0002` and 56 tables.
 
-The weekly-rate/custom-plan gate then upgraded and clean-installed PostgreSQL
-17 at `20260720_0003`, including a downgrade to `20260720_0002` followed by a
+The managed-source gate then upgraded and clean-installed PostgreSQL 17 at
+`20260720_0004`, including a downgrade to `20260720_0002` followed by a
 successful re-upgrade. The schema has 67 public tables. Fresh backend,
 frontend, and backup OCI images built successfully; the standard five-service
 stack reported healthy; and all normal, template, rendered, and optional-ICMP
