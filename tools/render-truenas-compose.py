@@ -14,6 +14,7 @@ from typing import Any
 import yaml
 
 POOL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+DATASET_RELATIVE_ROOT = "Power/power-monitor"
 
 
 def _load_validator(root: Path) -> ModuleType:
@@ -47,13 +48,15 @@ def render(
         services[service_name]["image"] = images["api"]
     for service_name in ("frontend", "backup", "postgres", "gateway"):
         services[service_name]["image"] = images[service_name]
+    template_root = f"/mnt/POOL/{DATASET_RELATIVE_ROOT}/"
+    deployment_root = f"/mnt/{pool}/{DATASET_RELATIVE_ROOT}/"
     for service in services.values():
         service["volumes"] = [
-            volume.replace("/mnt/POOL/", f"/mnt/{pool}/")
+            volume.replace(template_root, deployment_root)
             for volume in service.get("volumes", [])
         ]
     for definition in template["secrets"].values():
-        definition["file"] = definition["file"].replace("/mnt/POOL/", f"/mnt/{pool}/")
+        definition["file"] = definition["file"].replace(template_root, deployment_root)
     services["gateway"]["ports"] = [f"{gateway_port}:443/tcp"]
     services["gateway"]["environment"]["POWER_MONITOR_SITE_ADDRESS"] = site_address
     services["api"]["environment"]["PUBLIC_ORIGIN"] = public_origin

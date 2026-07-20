@@ -40,7 +40,7 @@ def docker_desktop_runtime_compose(compose: Path, host_root: Path) -> Path:
     prefix: str | None = None
     for definition in document["secrets"].values():
         source = str(definition["file"])
-        marker = "/apps/power-monitor/"
+        marker = "/Power/power-monitor/"
         if marker in source:
             prefix = source.split(marker, 1)[0] + marker.rstrip("/")
             break

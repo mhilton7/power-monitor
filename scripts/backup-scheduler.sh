@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
+source /srv/scripts/container-log.sh
+maintain_application_logs
+write_application_log backup.scheduler_started info
 
 schedule=${BACKUP_SCHEDULE_UTC:-02:17}
 [[ "$schedule" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || {

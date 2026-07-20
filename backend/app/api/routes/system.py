@@ -129,7 +129,7 @@ async def _sse_stream(site_id: str | None) -> Any:
     last_payload = ""
     while True:
         async with session_factory()() as session:
-            query = select(Device)
+            query = select(Device).where(Device.lifecycle_status == "active")
             if site_id:
                 query = query.where(Device.site_id == site_id)
             devices = list(await session.scalars(query))

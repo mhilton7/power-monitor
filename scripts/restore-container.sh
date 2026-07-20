@@ -2,8 +2,11 @@
 set -Eeuo pipefail
 umask 077
 source /srv/scripts/container-secrets.sh
+source /srv/scripts/container-log.sh
 load_file_backed_variable PGPASSWORD
 prepare_backup_key
+maintain_application_logs
+write_application_log restore.started info
 
 if [[ $# -ne 3 || $3 != "--yes" ]]; then
   echo "usage: restore-container.sh BACKUP_DIR TARGET_DATABASE --yes" >&2
@@ -30,3 +33,4 @@ createdb "$target_database"
 pg_restore --exit-on-error --no-owner --no-privileges --dbname="$target_database" "$database_dump"
 psql --dbname="$target_database" -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version"
 printf 'restored %s into %s\n' "$backup_dir" "$target_database"
+write_application_log restore.completed info

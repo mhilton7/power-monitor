@@ -392,6 +392,146 @@ paths:
                 type: object
                 title: Response Firmware Manifest Api V1 Device Firmware Manifest
                   Get
+  /api/v1/admin/logs/availability:
+    get:
+      tags:
+      - administration logs
+      summary: Availability
+      operationId: availability_api_v1_admin_logs_availability_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Availability Api V1 Admin Logs Availability Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/logs/exports:
+    post:
+      tags:
+      - administration logs
+      summary: Create Export
+      operationId: create_export_api_v1_admin_logs_exports_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogExportCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Export Api V1 Admin Logs Exports Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/logs/exports/{job_id}:
+    get:
+      tags:
+      - administration logs
+      summary: Export Status
+      operationId: export_status_api_v1_admin_logs_exports__job_id__get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Export Status Api V1 Admin Logs Exports  Job Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/logs/exports/{job_id}/download:
+    get:
+      tags:
+      - administration logs
+      summary: Download Export
+      operationId: download_export_api_v1_admin_logs_exports__job_id__download_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sites:
     get:
       tags:
@@ -1178,6 +1318,13 @@ paths:
           - type: string
           - type: 'null'
           title: Status
+      - name: lifecycle
+        in: query
+        required: false
+        schema:
+          type: string
+          default: active
+          title: Lifecycle
       - name: pm_session
         in: cookie
         required: false
@@ -1329,6 +1476,57 @@ paths:
                 additionalProperties:
                   type: boolean
                 title: Response Revoke Device Api V1 Devices  Device Id  Revoke Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/devices/{device_id}/unclaim:
+    post:
+      tags:
+      - management
+      summary: Unclaim Device
+      operationId: unclaim_device_api_v1_admin_devices__device_id__unclaim_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceUnclaimRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Unclaim Device Api V1 Admin Devices  Device Id  Unclaim
+                  Post
         '422':
           description: Validation Error
           content:
@@ -3895,6 +4093,30 @@ components:
       - category
       - severity
       title: DeviceEventInput
+    DeviceUnclaimRequest:
+      properties:
+        confirmation:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Confirmation
+        reason:
+          anyOf:
+          - type: string
+            enum:
+            - replaced
+            - moved
+            - failed_hardware
+            - duplicate_enrollment
+            - testing_device
+            - other
+          - type: 'null'
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - confirmation
+      title: DeviceUnclaimRequest
     EnrollmentClaim:
       properties:
         token:
@@ -4430,6 +4652,32 @@ components:
       - frequency_hz
       - energy_wh
       title: LiveMeasurement
+    LogExportCreate:
+      properties:
+        start_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
+        end_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: End Date
+        services:
+          anyOf:
+          - items:
+              type: string
+            type: array
+            maxItems: 6
+            minItems: 1
+          - type: 'null'
+          title: Services
+      additionalProperties: false
+      type: object
+      title: LogExportCreate
     LoginRequest:
       properties:
         email:

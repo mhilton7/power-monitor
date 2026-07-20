@@ -12,8 +12,9 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/srv/backend:/srv
 RUN groupadd --system --gid 10001 power-monitor \
     && useradd --system --uid 10001 --gid power-monitor --home-dir /nonexistent power-monitor \
-    && mkdir -p /data/firmware /data/reports /data/backups /data/config /srv/scripts \
-    && chown -R power-monitor:power-monitor /data /srv
+    && mkdir -p /data/firmware /data/reports /data/backups /data/config /data/logs /srv/scripts \
+    && chown -R power-monitor:power-monitor /data /srv \
+    && chmod 0770 /data/logs
 COPY --from=builder /wheels /wheels
 COPY --from=builder /build/backend/requirements.lock /requirements.lock
 RUN python -m pip install --no-cache-dir --require-hashes --requirement /requirements.lock \

@@ -8,10 +8,11 @@ const session = (roles: string[] = ['admin']) => ({
 
 const site = { id: 'site-1', name: 'Upland Site', timezone: 'America/Los_Angeles', allowed_cidrs: [], allowed_domains: [], allow_public_polling: false }
 const fleet = { current_load_w: '960', energy_today_kwh: '12.5', estimated_cost_today: '4.25', billing_cycle_energy_kwh: '244', estimated_billing_cycle_cost: '83.11', online_devices: 1, synchronized_devices: 1, total_devices: 1, active_alerts: 1, current_tou_bucket: 'on-peak', recent_peak_w: '1800', disclosure: 'Estimate, not utility bill.' }
-const device = { id: 'device-1', name: 'Garage HVAC', site_id: 'site-1', circuit_id: 'branch-1', connection_mode: 'hybrid', measurement_role: 'submeter', cost_scope: 'energy_only', included_in_default: true, ct_rating_amps: '100', status: 'online_synchronized', current_watts: '960', last_seen_at: '2026-07-20T06:00:00Z', firmware_version: '1.0.0', rssi_dbm: -52, pzem_ok: true, sd_ok: true, time_trusted: true, backlog: 0 }
+const device = { id: 'device-1', name: 'Garage HVAC', site_id: 'site-1', site_name: 'Upland Site', circuit_id: 'branch-1', circuit_name: 'Garage branch', connection_mode: 'hybrid', measurement_role: 'submeter', cost_scope: 'energy_only', included_in_default: true, ct_rating_amps: '100', status: 'online_synchronized', lifecycle_status: 'active', current_watts: '960', last_seen_at: '2026-07-20T06:00:00Z', firmware_version: '1.0.0', rssi_dbm: -52, pzem_ok: true, sd_ok: true, time_trusted: true, backlog: 0 }
 
 async function mockApplication(page: Page, roles: string[] = ['admin']) {
   let enrollmentCounter = 0
+  let sensorRemoved = false
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -20,7 +21,13 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     if (path === '/api/v1/auth/session') body = session(roles)
     else if (path === '/api/v1/sites') body = [site]
     else if (path === '/api/v1/fleet/summary') body = fleet
-    else if (path === '/api/v1/devices') body = [device]
+    else if (path === '/api/v1/devices') {
+      const lifecycle = url.searchParams.get('lifecycle')
+      if (lifecycle === 'decommissioned') body = sensorRemoved ? [{ ...device, status: 'decommissioned', lifecycle_status: 'decommissioned', circuit_id: undefined, circuit_name: undefined, decommissioned_at: '2026-07-20T07:00:00Z', decommissioned_by_name: 'Fleet Owner', decommission_reason: 'replaced', retained_history: true, re_enrollment_allowed: true }] : []
+      else body = sensorRemoved && lifecycle === 'active' ? [] : [device]
+    }
+    else if (path === '/api/v1/devices/device-1') body = { device: { ...device, hardware_id: 'esp32-garage-001' }, history: { reading_count: 1440, earliest_reading_at: '2026-06-20T06:00:00Z', latest_reading_at: '2026-07-20T06:00:00Z', retained: true }, lifecycle_events: [] }
+    else if (path === '/api/v1/admin/devices/device-1/unclaim' && request.method() === 'POST') { sensorRemoved = true; body = { device_id: 'device-1', status: 'decommissioned', already_decommissioned: false, historical_data_retained: true } }
     else if (path === '/api/v1/events/stream') {
       await route.fulfill({ contentType: 'text/event-stream', body: 'event: fleet\ndata: {"type":"fleet","devices":[]}\n\n' })
       return
@@ -36,6 +43,16 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     else if (path === '/api/v1/notification-channels' && request.method() === 'GET') body = []
     else if (path === '/api/v1/notification-channels' && request.method() === 'POST') body = { id: 'smtp-1', name: 'Power Monitor email', channel_type: 'smtp', enabled: true, target: { host: 'smtp.example.com', port: 587, from: 'monitor@example.com', recipient_count: 1, starttls: true, implicit_tls: false, authentication_configured: true, event_types: ['heartbeat_stale', 'power_surge'] }, secrets_redacted: true }
     else if (path === '/api/v1/notification-attempts') body = []
+    else if (path === '/api/v1/backups') body = []
+    else if (path === '/api/v1/admin/logs/availability') body = { earliest_date: '2026-06-01', latest_date: '2026-07-20', retention_days: 90, stored_size_bytes: 15360, last_rotation_at: '2026-07-20T02:00:00Z', services: [{ id: 'api', available: true, stored_size_bytes: 8192 }, { id: 'worker', available: true, stored_size_bytes: 4096 }, { id: 'enrollment', available: true, stored_size_bytes: 1024 }, { id: 'device_sync', available: true, stored_size_bytes: 1024 }, { id: 'rate_sync', available: false, stored_size_bytes: 0 }, { id: 'backup', available: true, stored_size_bytes: 1024 }] }
+    else if (path === '/api/v1/admin/logs/exports' && request.method() === 'POST') {
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      body = { id: 'log-export-1', status: 'ready', start_date: '2026-07-14', end_date: '2026-07-20', services: ['api', 'worker', 'enrollment', 'device_sync', 'rate_sync', 'backup'], size_bytes: 9000, download_url: '/api/v1/admin/logs/exports/log-export-1/download' }
+    }
+    else if (path === '/api/v1/admin/logs/exports/log-export-1/download') {
+      await route.fulfill({ contentType: 'application/zip', body: 'mock-zip-content' })
+      return
+    }
     else if (path === '/api/v1/users') body = [
       { ...session(roles).user, is_active: true },
       { id: 'user-2', email: 'viewer@example.test', display_name: 'Dashboard Viewer', roles: ['viewer'], is_active: true },
@@ -47,6 +64,14 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     }
     else if (path === '/api/v1/alerts/alert-1/acknowledge') body = { acknowledged: true }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
+  })
+}
+
+async function captureDashboardCorrection(page: Page, filename: string) {
+  if (process.env.CAPTURE_DASHBOARD_SCREENSHOTS !== '1') return
+  await page.screenshot({
+    path: `../docs/screenshots/dashboard-corrections/${filename}`,
+    fullPage: false,
   })
 }
 
@@ -135,6 +160,36 @@ test('administrator can create and remove local users', async ({ page }) => {
   await removeRequest
 })
 
+test('administrator removes a claimed sensor with exact confirmation and can view it archived', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/enrollment')
+  const claimedRow = page.getByRole('row').filter({ hasText: 'Garage HVAC' })
+  await claimedRow.getByRole('button', { name: 'Remove sensor' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Remove sensor' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('device-1')).toBeVisible()
+  await expect(dialog.getByText('Upland Site · Garage branch')).toBeVisible()
+  await expect(dialog.getByText('1,440')).toBeVisible()
+  await captureDashboardCorrection(page, 'sensor-removal-confirmation.png')
+  const confirmation = dialog.getByLabel(/Type Garage HVAC or the immutable ID to confirm/)
+  const removeButton = dialog.getByRole('button', { name: 'Remove sensor', exact: true })
+  await expect(removeButton).toBeDisabled()
+  await confirmation.fill('wrong value')
+  await expect(dialog.getByText('The confirmation does not match')).toBeVisible()
+  await confirmation.fill('Garage HVAC')
+  await dialog.getByLabel(/Removal reason/).selectOption('replaced')
+  const removalRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/admin/devices/device-1/unclaim') && request.method() === 'POST')
+  await removeButton.click()
+  const payload = JSON.parse((await removalRequest).postData() ?? '{}') as { confirmation: string; reason: string }
+  expect(payload).toEqual({ confirmation: 'Garage HVAC', reason: 'replaced' })
+  await expect(page.getByText('Sensor removed successfully.')).toBeVisible()
+  await expect(page.getByText('No claimed sensors')).toBeVisible()
+  await page.getByRole('tab', { name: /Archived sensors/ }).click()
+  await expect(page.getByRole('row').filter({ hasText: 'Garage HVAC' })).toContainText('Preserved')
+  await expect(page.getByText('Re-enrollment allowed')).toBeVisible()
+  await captureDashboardCorrection(page, 'archived-sensors.png')
+})
+
 test('administrator can configure SMTP and notification timing', async ({ page }) => {
   await mockApplication(page)
   await page.goto('/admin')
@@ -157,6 +212,72 @@ test('administrator can configure SMTP and notification timing', async ({ page }
   await page.getByRole('button', { name: 'Save notification triggers' }).click()
   const surgePayload = JSON.parse((await surgeRequest).postData() ?? '{}') as { enabled: boolean; debounce_seconds: number; configuration: { threshold_watts: number } }
   expect(surgePayload).toMatchObject({ enabled: true, debounce_seconds: 15, configuration: { threshold_watts: 7200 } })
+})
+
+test('administrator downloads a seven-day application-log export from Backups', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/admin')
+  await page.getByRole('tab', { name: 'Backups' }).click()
+  await expect(page.getByRole('heading', { name: 'Application logs' })).toBeVisible()
+  await expect(page.getByText('90 days', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('Start date')).toHaveValue('2026-07-14')
+  await expect(page.getByLabel('End date')).toHaveValue('2026-07-20')
+  await expect(page.getByLabel('Service or category')).toHaveValue('all')
+  await captureDashboardCorrection(page, 'application-logs.png')
+  const exportRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/admin/logs/exports') && request.method() === 'POST')
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download logs' }).click()
+  await expect(page.getByText('Preparing and securely redacting the export…')).toBeVisible()
+  const exportPayload = JSON.parse((await exportRequest).postData() ?? '{}') as { services: string[] }
+  expect(exportPayload.services).toHaveLength(6)
+  await download
+  await expect(page.getByText('Log export is ready.')).toBeVisible()
+})
+
+test('dashboard copy is corrected without exposing protocol or footer status text', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/devices')
+  await expect(page.getByRole('heading', { name: 'Device Management' })).toBeVisible()
+  await expect(page.getByText('Sensor health and general data')).toBeVisible()
+  await captureDashboardCorrection(page, 'device-management.png')
+  await expect(page.getByText(/pm-protocol\/1\.0\.0/i)).toHaveCount(0)
+  await expect(page.getByText(/server protected/i)).toHaveCount(0)
+  await expect(page.getByText(/multi-sensor fleet/i)).toHaveCount(0)
+  await expect(page.getByText(/signed heartbeats.*local custody/i)).toHaveCount(0)
+  await page.goto('/alerts')
+  await expect(page.getByRole('heading', { name: 'Alerts & Notifications' })).toBeVisible()
+  await expect(page).toHaveTitle('Alerts & Notifications · Power Monitor')
+  await expect(page.getByText(/Evidence, debounce, resolution, acknowledgement/)).toHaveCount(0)
+  await captureDashboardCorrection(page, 'alerts-and-notifications.png')
+})
+
+test('search and dropdown controls keep compact pointer focus and visible keyboard focus', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/devices')
+  const search = page.getByPlaceholder('Search devices')
+  const initialBox = await search.boundingBox()
+  await search.click()
+  expect(await search.evaluate((element) => getComputedStyle(element).outlineWidth)).toBe('0px')
+  expect(await search.evaluate((element) => getComputedStyle(element).boxShadow)).toBe('none')
+  expect(await search.evaluate((element) => element.parentElement ? getComputedStyle(element.parentElement).boxShadow : '')).not.toContain('3px')
+  expect(await search.boundingBox()).toEqual(initialBox)
+
+  await page.locator('body').click({ position: { x: 2, y: 2 } })
+  for (let index = 0; index < 30; index += 1) {
+    await page.keyboard.press('Tab')
+    if (await search.evaluate((element) => element === document.activeElement)) break
+  }
+  expect(await search.evaluate((element) => element.matches(':focus-visible'))).toBe(true)
+  expect(await search.evaluate((element) => element.parentElement ? getComputedStyle(element.parentElement).outlineWidth : '')).toBe('2px')
+  await page.keyboard.type('Garage')
+  await expect(search).toHaveValue('Garage')
+
+  const status = page.getByLabel('Status')
+  await status.focus()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(status).not.toHaveValue('all')
+  expect(await status.evaluate((element) => element.parentElement ? getComputedStyle(element.parentElement).outlineWidth : '')).toBe('2px')
 })
 
 test('alert acknowledgement calls the audited server action', async ({ page }) => {

@@ -39,7 +39,7 @@ def test_deployment_validation_rejects_fail_closed_placeholders() -> None:
     )
 
     errors = validator.validate_compose(
-        compose, deployment=True, expected_pool="tank", gateway_port=8443
+        compose, deployment=True, expected_pool="Apps", gateway_port=8443
     )
 
     assert any("placeholder digest" in error for error in errors)
@@ -70,7 +70,7 @@ def test_renderer_creates_a_deployment_valid_document() -> None:
     digest = "1" * 64
     rendered = renderer.render(
         template,
-        pool="tank",
+        pool="Apps",
         gateway_port=9443,
         site_address="https://127.0.0.1",
         public_origin="https://127.0.0.1:9443",
@@ -83,9 +83,18 @@ def test_renderer_creates_a_deployment_valid_document() -> None:
         },
     )
 
+    expected_root = "/mnt/Apps/Power/power-monitor/"
+    host_paths = [
+        volume.split(":", 1)[0]
+        for service in rendered["services"].values()
+        for volume in service.get("volumes", [])
+    ] + [secret["file"] for secret in rendered["secrets"].values()]
+    assert host_paths
+    assert all(path.startswith(expected_root) for path in host_paths)
+
     assert (
         validator.validate_compose(
-            rendered, deployment=True, expected_pool="tank", gateway_port=9443
+            rendered, deployment=True, expected_pool="Apps", gateway_port=9443
         )
         == []
     )

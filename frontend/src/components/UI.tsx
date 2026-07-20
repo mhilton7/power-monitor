@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { AlertTriangle, CheckCircle2, LoaderCircle, RefreshCw } from 'lucide-react'
 
 export function Panel({
@@ -59,13 +59,16 @@ export function StatusPill({ status, label }: { status: string; label?: string }
   )
 }
 
-export function PageTitle({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description: string; actions?: ReactNode }) {
+export function PageTitle({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description?: string; actions?: ReactNode }) {
+  useEffect(() => {
+    document.title = `${title} · Power Monitor`
+  }, [title])
   return (
     <header className="page-title">
       <div>
         <span className="eyebrow">{eyebrow}</span>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description && <p>{description}</p>}
       </div>
       {actions && <div className="page-actions">{actions}</div>}
     </header>
@@ -132,4 +135,3 @@ export const formatMoney = (value: string | number | undefined) =>
 
 export const formatTime = (value: string | undefined) =>
   value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Never'
-

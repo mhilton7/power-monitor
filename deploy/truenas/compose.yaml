@@ -20,6 +20,8 @@ x-app-environment: &app-environment
   FIRMWARE_PATH: /data/firmware
   REPORT_PATH: /data/reports
   BACKUP_PATH: /data/backups
+  LOG_PATH: /data/logs
+  LOG_RETENTION_DAYS: "90"
   POLL_PUBLIC_ADDRESSES: "false"
   DEFAULT_TIMEZONE: America/Los_Angeles
   LOG_LEVEL: INFO
@@ -38,7 +40,7 @@ services:
       POSTGRES_INITDB_ARGS: --data-checksums
     secrets: [postgres_password]
     volumes:
-      - /mnt/POOL/apps/power-monitor/postgres:/var/lib/postgresql/data
+      - /mnt/POOL/Power/power-monitor/postgres:/var/lib/postgresql/data
     tmpfs:
       - /tmp:size=64m,uid=999,gid=999,mode=1777
       - /var/run/postgresql:size=16m,uid=999,gid=999,mode=0775
@@ -86,10 +88,11 @@ services:
       BOOTSTRAP_SECRET_FILE: /run/secrets/admin_setup_token
     secrets: [database_url, app_master_key, session_pepper, admin_setup_token]
     volumes:
-      - /mnt/POOL/apps/power-monitor/firmware:/data/firmware
-      - /mnt/POOL/apps/power-monitor/config:/data/config
-      - /mnt/POOL/apps/power-monitor/config/reports:/data/reports
-      - /mnt/POOL/apps/power-monitor/backups:/data/backups:ro
+      - /mnt/POOL/Power/power-monitor/firmware:/data/firmware
+      - /mnt/POOL/Power/power-monitor/config:/data/config
+      - /mnt/POOL/Power/power-monitor/config/reports:/data/reports
+      - /mnt/POOL/Power/power-monitor/backups:/data/backups:ro
+      - /mnt/POOL/Power/power-monitor/logs:/data/logs
     tmpfs: ["/tmp:size=128m,uid=10001,gid=10001,mode=1777"]
     depends_on:
       migrate: {condition: service_completed_successfully}
@@ -117,10 +120,11 @@ services:
       <<: *app-environment
     secrets: [database_url, app_master_key]
     volumes:
-      - /mnt/POOL/apps/power-monitor/firmware:/data/firmware:ro
-      - /mnt/POOL/apps/power-monitor/config:/data/config
-      - /mnt/POOL/apps/power-monitor/config/reports:/data/reports
-      - /mnt/POOL/apps/power-monitor/backups:/data/backups:ro
+      - /mnt/POOL/Power/power-monitor/firmware:/data/firmware:ro
+      - /mnt/POOL/Power/power-monitor/config:/data/config
+      - /mnt/POOL/Power/power-monitor/config/reports:/data/reports
+      - /mnt/POOL/Power/power-monitor/backups:/data/backups:ro
+      - /mnt/POOL/Power/power-monitor/logs:/data/logs
     tmpfs: ["/tmp:size=128m,uid=10001,gid=10001,mode=1777"]
     depends_on:
       migrate: {condition: service_completed_successfully}
@@ -173,9 +177,9 @@ services:
       - "8443:443/tcp"
     secrets: [tls_certificate, tls_private_key]
     volumes:
-      - /mnt/POOL/apps/power-monitor/config/Caddyfile:/etc/caddy/Caddyfile:ro
-      - /mnt/POOL/apps/power-monitor/caddy-data:/data
-      - /mnt/POOL/apps/power-monitor/caddy-config:/config
+      - /mnt/POOL/Power/power-monitor/config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /mnt/POOL/Power/power-monitor/caddy-data:/data
+      - /mnt/POOL/Power/power-monitor/caddy-config:/config
     tmpfs: ["/tmp:size=32m,uid=10002,gid=10002,mode=1777"]
     depends_on:
       api: {condition: service_healthy}
@@ -209,12 +213,15 @@ services:
       BACKUP_RETENTION_DAYS: "30"
       BACKUP_SCHEDULE_UTC: "02:17"
       BACKUP_RUN_ON_STARTUP: "false"
+      LOG_PATH: /data/logs
+      LOG_RETENTION_DAYS: "90"
     secrets: [postgres_password, backup_encryption_key]
     volumes:
-      - /mnt/POOL/apps/power-monitor/backups:/data/backups
-      - /mnt/POOL/apps/power-monitor/firmware:/data/firmware:ro
-      - /mnt/POOL/apps/power-monitor/config:/data/config:ro
-      - /mnt/POOL/apps/power-monitor/config/reports:/data/reports:ro
+      - /mnt/POOL/Power/power-monitor/backups:/data/backups
+      - /mnt/POOL/Power/power-monitor/firmware:/data/firmware:ro
+      - /mnt/POOL/Power/power-monitor/config:/data/config:ro
+      - /mnt/POOL/Power/power-monitor/config/reports:/data/reports:ro
+      - /mnt/POOL/Power/power-monitor/logs:/data/logs
     tmpfs: ["/tmp:size=1g,uid=10003,gid=10003,mode=1777"]
     depends_on:
       migrate: {condition: service_completed_successfully}
@@ -233,21 +240,21 @@ services:
 
 secrets:
   postgres_password:
-    file: /mnt/POOL/apps/power-monitor/secrets/postgres_password
+    file: /mnt/POOL/Power/power-monitor/secrets/postgres_password
   database_url:
-    file: /mnt/POOL/apps/power-monitor/secrets/database_url
+    file: /mnt/POOL/Power/power-monitor/secrets/database_url
   app_master_key:
-    file: /mnt/POOL/apps/power-monitor/secrets/app_master_key
+    file: /mnt/POOL/Power/power-monitor/secrets/app_master_key
   session_pepper:
-    file: /mnt/POOL/apps/power-monitor/secrets/session_pepper
+    file: /mnt/POOL/Power/power-monitor/secrets/session_pepper
   admin_setup_token:
-    file: /mnt/POOL/apps/power-monitor/secrets/admin_setup_token
+    file: /mnt/POOL/Power/power-monitor/secrets/admin_setup_token
   backup_encryption_key:
-    file: /mnt/POOL/apps/power-monitor/secrets/backup_encryption_key
+    file: /mnt/POOL/Power/power-monitor/secrets/backup_encryption_key
   tls_certificate:
-    file: /mnt/POOL/apps/power-monitor/secrets/tls.crt
+    file: /mnt/POOL/Power/power-monitor/secrets/tls.crt
   tls_private_key:
-    file: /mnt/POOL/apps/power-monitor/secrets/tls.key
+    file: /mnt/POOL/Power/power-monitor/secrets/tls.key
 
 networks:
   public:

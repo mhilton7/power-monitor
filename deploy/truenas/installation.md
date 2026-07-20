@@ -13,7 +13,9 @@ this stack with direct `docker` commands in the TrueNAS shell.
    `https://github.com/mhilton7/power-monitor` under
    `ghcr.io/mhilton7/power-monitor-{api,frontend,backup}`.
 2. Follow [dataset-layout.md](dataset-layout.md) and
-   [permissions.md](permissions.md) in the TrueNAS UI.
+   [permissions.md](permissions.md) in the TrueNAS UI. This includes creating
+   `/mnt/Apps/Power/power-monitor/logs` and granting inherited Modify access to
+   numeric UIDs 10001 and 10003 before the first deployment.
 3. Generate secrets outside the source checkout and outside any synced folder:
 
    ```text
@@ -22,13 +24,13 @@ this stack with direct `docker` commands in the TrueNAS shell.
 
    The tool never prints values and refuses a non-empty directory or a directory
    inside a Git worktree. Transfer the eight files to
-   `/mnt/POOL/apps/power-monitor/secrets` through a temporary, encrypted,
+   `/mnt/Apps/Power/power-monitor/secrets` through a temporary, encrypted,
    administrator-only share, then remove that share. Do not paste a secret into
    YAML, an image build argument, logs, or browser-delivered assets.
 4. Select one Caddy mode:
 
    - LAN/internal CA: upload `deploy/truenas/Caddyfile` as
-     `/mnt/POOL/apps/power-monitor/config/Caddyfile`.
+     `/mnt/Apps/Power/power-monitor/config/Caddyfile`.
    - User certificate: upload `Caddyfile.user-certificate` under that destination
      name and replace `tls.crt`/`tls.key` with the PEM chain and matching key.
    - Public DNS/ACME: upload `Caddyfile.public-acme` under that destination name,
@@ -39,8 +41,8 @@ this stack with direct `docker` commands in the TrueNAS shell.
    argument must be the exact release reference and digest you approved:
 
    ```text
-   python tools/render-truenas-compose.py --pool MYPOOL --gateway-port 8443 --site-address https://power-monitor.local --public-origin https://power-monitor.local:8443 --api-image ghcr.io/mhilton7/power-monitor-api:1.0.0@sha256:DIGEST --frontend-image ghcr.io/mhilton7/power-monitor-frontend:1.0.0@sha256:DIGEST --backup-image ghcr.io/mhilton7/power-monitor-backup:1.0.0@sha256:DIGEST --postgres-image docker.io/library/postgres:17.5-bookworm@sha256:DIGEST --gateway-image docker.io/library/caddy:2.10.0-alpine@sha256:DIGEST --output rendered-compose.yaml
-   python tools/validate-truenas-compose.py --deployment --pool MYPOOL --gateway-port 8443 rendered-compose.yaml
+   python tools/render-truenas-compose.py --pool Apps --gateway-port 8443 --site-address https://power-monitor.local --public-origin https://power-monitor.local:8443 --api-image ghcr.io/mhilton7/power-monitor-api:1.0.0@sha256:DIGEST --frontend-image ghcr.io/mhilton7/power-monitor-frontend:1.0.0@sha256:DIGEST --backup-image ghcr.io/mhilton7/power-monitor-backup:1.0.0@sha256:DIGEST --postgres-image docker.io/library/postgres:17.5-bookworm@sha256:DIGEST --gateway-image docker.io/library/caddy:2.10.0-alpine@sha256:DIGEST --output rendered-compose.yaml
+   python tools/validate-truenas-compose.py --deployment --pool Apps --gateway-port 8443 rendered-compose.yaml
    ```
 
    `PUBLIC_ORIGIN` must exactly equal the browser origin, including a non-default
@@ -61,6 +63,9 @@ this stack with direct `docker` commands in the TrueNAS shell.
 5. Review each workload's logs from the App details page. Secret values must not
    appear. Confirm no host ports are listed except gateway TCP 8443 (or the one
    intentionally configured gateway port).
+6. Sign in as an administrator, open **Administration > Backups > Application
+   logs**, and confirm the durable log range and stored size appear. A first start
+   may show only the current day; completed days rotate and compress automatically.
 
 ## 3. Establish TLS trust and create the administrator
 
@@ -78,7 +83,7 @@ it is not reused as an operational credential.
 
 Caddy writes the LAN root certificate to:
 
-`/mnt/POOL/apps/power-monitor/caddy-data/caddy/pki/authorities/local/root.crt`
+`/mnt/Apps/Power/power-monitor/caddy-data/caddy/pki/authorities/local/root.crt`
 
 Export that public certificate through an administrator-only share. Do not export
 `root.key` or any other private key.

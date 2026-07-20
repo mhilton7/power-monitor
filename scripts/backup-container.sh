@@ -2,8 +2,11 @@
 set -Eeuo pipefail
 umask 077
 source /srv/scripts/container-secrets.sh
+source /srv/scripts/container-log.sh
 load_file_backed_variable PGPASSWORD
 prepare_backup_key
+maintain_application_logs
+write_application_log backup.started info
 
 backup_root=/data/backups
 retention_days=${BACKUP_RETENTION_DAYS:-30}
@@ -14,6 +17,7 @@ final="${backup_root}/${backup_id}"
 run_id=$(cat /proc/sys/kernel/random/uuid)
 
 cleanup() {
+  write_application_log backup.failed error || true
   rm -rf -- "$partial"
   remove_temporary_backup_key
 }
@@ -53,3 +57,4 @@ psql -v ON_ERROR_STOP=1 -c "UPDATE backup_runs SET completed_at=now(), status='c
 
 find "$backup_root" -mindepth 1 -maxdepth 1 -type d -name 'power-monitor-*' -mtime "+${retention_days}" -exec rm -rf -- {} +
 printf '%s\n' "$final"
+write_application_log backup.completed info

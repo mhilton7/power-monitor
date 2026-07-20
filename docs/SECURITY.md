@@ -8,6 +8,13 @@ Passwords use Argon2id. Browser sessions are random, server-stored, expiring, re
 
 Each device gets a unique high-entropy secret encrypted by Fernet under `APP_MASTER_KEY`. HKDF separates request directions. Exact body hashing, canonical HMAC, timestamp bounds, nonce persistence, constant-time comparison, per-device failure handling, revocation, and audit defend the device API. Logs redact secret-like fields and never print full signatures.
 
+Daily application logs are persisted for 90 days. Redaction runs both before a
+record is written and again while an administrator export is built. Log exports
+are authorization- and CSRF-protected, bounded by a configured size limit,
+assembled in a server-generated temporary path, audited, checksum-manifested,
+and deleted after delivery. The persistent log directory is not exposed by the
+gateway or a static file server.
+
 SMTP credentials and webhook secrets are also encrypted under `APP_MASTER_KEY`.
 The API returns only redacted delivery targets and configuration state; it never
 returns a saved SMTP password. Authenticated SMTP is rejected unless STARTTLS or
@@ -22,3 +29,15 @@ Back up the master key offline and separately. To rotate it, stop API/worker, ta
 For a compromised device, revoke it, preserve audit/events, rotate related tokens, inspect nonce/auth failures, and reenroll only after factory reset. For a server compromise, isolate it, preserve logs, rotate TLS/session/master/device credentials as applicable, restore a verified backup, and let microSD history backfill from the restored cursor.
 
 Report vulnerabilities privately to the deployment owner; this standalone source distribution does not configure a public disclosure inbox.
+
+## Presentation and accessibility
+
+Removing protocol or security-status wording from the dashboard shell is a
+presentation change only. The `pm-protocol/1.0.0` compatibility checks, signed
+heartbeats, credential isolation, authentication, authorization, CSRF, security
+headers, and local storage behavior remain enforced by the server.
+
+Pointer focus uses a compact border/shadow treatment without changing element
+geometry. Keyboard focus uses a clearly visible two-pixel `:focus-visible`
+outline with offset. Native controls, search inputs, dialogs, and menu controls
+retain their labels, focus order, dialog semantics, and keyboard operation.

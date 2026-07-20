@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { api } from '../api'
 import { UserManagement } from '../components/UserManagement'
 import { NotificationSettings } from '../components/NotificationSettings'
+import { ApplicationLogs } from '../components/ApplicationLogs'
 import type { Site } from '../types'
 import { EmptyState, ErrorState, formatTime, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
 
@@ -68,11 +69,11 @@ export function AdminPage({ currentUserId }: { currentUserId?: string }) {
           )}
 
           {tab === 'Backups' && (
-            <Panel title="Verified backup history" eyebrow="Logical backup and restore evidence">
+            <><ApplicationLogs /><Panel title="Verified backup history" eyebrow="Logical backup and restore evidence">
               {backups.isLoading ? <LoadingState /> : backups.error ? <ErrorState error={backups.error} /> : backups.data?.length ? (
                 <div className="responsive-table"><table><thead><tr><th>Started</th><th>Status</th><th>Manifest</th><th>Restore verification</th></tr></thead><tbody>{backups.data.map((backup) => <tr key={backup.id}><td>{formatTime(backup.started_at)}</td><td><StatusPill status={backup.status} /></td><td><code>{backup.manifest_hash?.slice(0, 14) ?? '—'}{backup.manifest_hash ? '…' : ''}</code></td><td>{backup.verified_at ? `Verified ${formatTime(backup.verified_at)}` : 'Not verified'}</td></tr>)}</tbody></table></div>
               ) : <EmptyState title="No backup evidence" message="The scheduled production backup records its manifest and clean-database restore verification here." />}
-            </Panel>
+            </Panel></>
           )}
 
           {tab === 'Server & network' && (
@@ -99,7 +100,7 @@ export function AdminPage({ currentUserId }: { currentUserId?: string }) {
           {tab === 'Diagnostics' && (
             <Panel title="Runtime & worker" eyebrow="Version evidence">
               {system.isLoading ? <LoadingState /> : system.error ? <ErrorState error={system.error} /> : system.data && (
-                <><div className="diagnostic-hero"><span><ServerCog /></span><div><strong>{system.data.product} {system.data.version}</strong><small>{system.data.protocol} · {system.data.python_runtime}</small></div><StatusPill status={system.data.worker.status === 'healthy' ? 'healthy' : 'pending'} label={`Worker ${system.data.worker.status}`} /></div><dl className="detail-list"><div><dt>Worker last loop</dt><dd>{formatTime(system.data.worker.last_loop_at)}</dd></div><div><dt>Worker last success</dt><dd>{formatTime(system.data.worker.last_success_at)}</dd></div>{Object.entries(system.data.defaults).map(([key, value]) => <div key={key}><dt>{key.replaceAll('_', ' ')}</dt><dd>{String(value)}</dd></div>)}</dl></>
+                <><div className="diagnostic-hero"><span><ServerCog /></span><div><strong>{system.data.product} {system.data.version}</strong><small>{system.data.python_runtime}</small></div><StatusPill status={system.data.worker.status === 'healthy' ? 'healthy' : 'pending'} label={`Worker ${system.data.worker.status}`} /></div><dl className="detail-list"><div><dt>Worker last loop</dt><dd>{formatTime(system.data.worker.last_loop_at)}</dd></div><div><dt>Worker last success</dt><dd>{formatTime(system.data.worker.last_success_at)}</dd></div>{Object.entries(system.data.defaults).map(([key, value]) => <div key={key}><dt>{key.replaceAll('_', ' ')}</dt><dd>{String(value)}</dd></div>)}</dl></>
               )}
             </Panel>
           )}

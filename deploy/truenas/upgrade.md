@@ -5,19 +5,23 @@ the registry, use `latest`, or deploy a tag without its content digest.
 
 ## Pre-upgrade checkpoint
 
-1. In **Apps > Installed > power-monitor**, record the current complete image
+1. If the installed release predates durable application logs, use **Datasets**
+   to create `/mnt/Apps/Power/power-monitor/logs` before editing the App. In **Permissions >
+   Edit ACL**, add inherited numeric user ACEs for UID 10001 and UID 10003 with
+   Modify, traverse, and inherit access. Do not grant `Everyone@` write access.
+2. In **Apps > Installed > power-monitor**, record the current complete image
    references and save a protected copy of the current YAML.
-2. Trigger and verify a fresh logical backup without using the TrueNAS shell:
+3. Trigger and verify a fresh logical backup without using the TrueNAS shell:
    edit the App YAML in the UI, set `BACKUP_RUN_ON_STARTUP: "true"`, save, and
    wait for the backup workload log to report a verified backup. Return the value
    to `"false"` and save again. Confirm the new verified run in the application
    Backups view.
-3. In **Datasets**, create recursive ZFS snapshots of the seven application
+4. In **Datasets**, create recursive ZFS snapshots of the eight application
    datasets. Name them with the release and UTC time, for example
    `pre-upgrade-1.1.0-20260720T220000Z`.
-4. Replicate or copy the verified logical backup and checksum manifest off the
+5. Replicate or copy the verified logical backup and checksum manifest off the
    TrueNAS system. Keep the backup encryption key in a separate protected store.
-5. Render and validate the new YAML with the new semver tags and digests. Review
+6. Render and validate the new YAML with the new semver tags and digests. Review
    release notes and migration compatibility before saving it.
 
 ## Upgrade
@@ -54,4 +58,3 @@ a partly migrated database. Preserve logs and follow the rollback path.
 Do not attempt an undocumented Alembic downgrade. The supported rollback anchors
 are the prior immutable images, the verified pre-upgrade logical backup, and the
 coordinated ZFS snapshots.
-

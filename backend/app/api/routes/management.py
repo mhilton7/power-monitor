@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import FileResponse
-from sqlalchemy import false, func, select
+from sqlalchemy import false, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import AppSettings, CsrfPrincipal, DbSession, Principal, Viewer, audit_event
@@ -33,6 +33,7 @@ from app.db.models import (
     DeviceCredential,
     DeviceEvent,
     DeviceHeartbeat,
+    DeviceLifecycleEvent,
     EnrollmentToken,
     GeneratedReport,
     NormalizedInterval,
@@ -58,6 +59,7 @@ from app.schemas import (
     CircuitView,
     CredentialRotationRequest,
     DeviceConfigCreate,
+    DeviceUnclaimRequest,
     EnrollmentTokenCreate,
     EnrollmentTokenView,
     FleetSummary,
@@ -780,8 +782,18 @@ async def list_devices(
     session: DbSession,
     site_id: str | None = None,
     status: str | None = None,
+    lifecycle: str = "active",
 ) -> list[dict[str, Any]]:
+    if lifecycle not in {"active", "decommissioned", "all"}:
+        raise ProblemError(
+            422,
+            "Invalid lifecycle filter",
+            "Use active, decommissioned, or all",
+            "invalid_lifecycle_filter",
+        )
     query = select(Device).order_by(Device.name)
+    if lifecycle != "all":
+        query = query.where(Device.lifecycle_status == lifecycle)
     if site_id:
         query = query.where(Device.site_id == site_id)
     if status:
@@ -791,18 +803,55 @@ async def list_devices(
     for device in devices:
         heartbeat = await _latest_heartbeat(session, device.id)
         cursor = await session.get(SyncCursor, device.id)
+        site = await session.get(Site, device.site_id)
+        circuit = await session.get(Circuit, device.circuit_id) if device.circuit_id else None
+        removed_event = await session.scalar(
+            select(DeviceLifecycleEvent)
+            .where(
+                DeviceLifecycleEvent.device_id == device.id,
+                DeviceLifecycleEvent.event_type == "decommissioned",
+            )
+            .order_by(DeviceLifecycleEvent.occurred_at.desc())
+            .limit(1)
+        )
+        removed_circuit = (
+            await session.get(Circuit, removed_event.circuit_id)
+            if removed_event and removed_event.circuit_id
+            else None
+        )
+        removed_by = (
+            await session.get(User, device.decommissioned_by) if device.decommissioned_by else None
+        )
         output.append(
             {
                 "id": device.id,
                 "name": device.name,
                 "site_id": device.site_id,
+                "site_name": site.name if site else None,
                 "circuit_id": device.circuit_id,
+                "circuit_name": circuit.name if circuit else None,
                 "connection_mode": device.connection_mode,
                 "measurement_role": device.measurement_role,
                 "cost_scope": device.cost_scope,
                 "included_in_default": device.include_in_default_site_total,
                 "ct_rating_amps": device.ct_rating_amps,
-                "status": "revoked" if device.revoked_at else device.status,
+                "status": (
+                    "decommissioned"
+                    if device.lifecycle_status == "decommissioned"
+                    else "revoked"
+                    if device.revoked_at
+                    else device.status
+                ),
+                "lifecycle_status": device.lifecycle_status,
+                "decommissioned_at": device.decommissioned_at,
+                "decommissioned_by": device.decommissioned_by,
+                "decommissioned_by_name": removed_by.display_name if removed_by else None,
+                "decommission_reason": device.decommission_reason,
+                "removed_site_id": removed_event.site_id if removed_event else None,
+                "removed_circuit_id": removed_event.circuit_id if removed_event else None,
+                "removed_circuit_name": removed_circuit.name if removed_circuit else None,
+                "retained_history": True,
+                "re_enrollment_allowed": device.lifecycle_status == "decommissioned",
                 "last_seen_at": device.last_seen_at,
                 "firmware_version": device.firmware_version,
                 "current_watts": heartbeat.current_watts if heartbeat else None,
@@ -856,20 +905,50 @@ async def device_detail(device_id: str, _viewer: Viewer, session: DbSession) -> 
             .order_by(DeviceCredential.created_at.desc())
         )
     )
+    history_count, history_start, history_end = (
+        await session.execute(
+            select(
+                func.count(RawReading.id),
+                func.min(RawReading.interval_start),
+                func.max(RawReading.interval_end),
+            ).where(RawReading.device_id == device.id)
+        )
+    ).one()
+    lifecycle_events = list(
+        await session.scalars(
+            select(DeviceLifecycleEvent)
+            .where(DeviceLifecycleEvent.device_id == device.id)
+            .order_by(DeviceLifecycleEvent.occurred_at.desc())
+        )
+    )
+    site = await session.get(Site, device.site_id)
+    circuit = await session.get(Circuit, device.circuit_id) if device.circuit_id else None
     return {
         "device": {
             "id": device.id,
             "hardware_id": device.hardware_id,
             "name": device.name,
             "site_id": device.site_id,
+            "site_name": site.name if site else None,
             "circuit_id": device.circuit_id,
+            "circuit_name": circuit.name if circuit else None,
             "connection_mode": device.connection_mode,
             "measurement_role": device.measurement_role,
             "cost_scope": device.cost_scope,
             "ct_rating_amps": device.ct_rating_amps,
             "protocol_version": device.protocol_version,
             "firmware_version": device.firmware_version,
-            "status": "revoked" if device.revoked_at else device.status,
+            "status": (
+                "decommissioned"
+                if device.lifecycle_status == "decommissioned"
+                else "revoked"
+                if device.revoked_at
+                else device.status
+            ),
+            "lifecycle_status": device.lifecycle_status,
+            "decommissioned_at": device.decommissioned_at,
+            "decommissioned_by": device.decommissioned_by,
+            "decommission_reason": device.decommission_reason,
             "last_seen_at": device.last_seen_at,
             "desired_config_version": device.desired_config_version,
             "effective_config_version": device.effective_config_version,
@@ -906,6 +985,24 @@ async def device_detail(device_id: str, _viewer: Viewer, session: DbSession) -> 
                 "revoked_at": credential.revoked_at,
             }
             for credential in credentials
+        ],
+        "history": {
+            "reading_count": int(history_count or 0),
+            "earliest_reading_at": history_start,
+            "latest_reading_at": history_end,
+            "retained": True,
+        },
+        "lifecycle_events": [
+            {
+                "event_type": event.event_type,
+                "occurred_at": event.occurred_at,
+                "actor_id": event.actor_id,
+                "reason": event.reason,
+                "site_id": event.site_id,
+                "circuit_id": event.circuit_id,
+                "details": event.details,
+            }
+            for event in lifecycle_events
         ],
         "events": [
             {
@@ -999,25 +1096,184 @@ async def revoke_device(
     device = await session.get(Device, device_id)
     if device is None:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    already_decommissioned = device.lifecycle_status == "decommissioned"
+    if not already_decommissioned:
+        await _decommission_device(
+            device=device,
+            reason="other",
+            request=request,
+            principal=principal,
+            session=session,
+            audit_action="device.revoked",
+        )
+    await session.commit()
+    return {"revoked": True, "already_decommissioned": already_decommissioned}
+
+
+async def _decommission_device(
+    *,
+    device: Device,
+    reason: str | None,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+    audit_action: str = "device.unclaimed",
+) -> None:
     now = datetime.now(UTC)
+    prior_site_id = device.site_id
+    prior_circuit_id = device.circuit_id
     device.revoked_at = now
-    device.status = "revoked"
+    device.status = "decommissioned"
+    device.lifecycle_status = "decommissioned"
+    device.lifecycle_generation += 1
+    device.decommissioned_at = now
+    device.decommissioned_by = principal.user.id
+    device.decommission_reason = reason
+    device.circuit_id = None
+    device.maintenance_until = None
     for credential in await session.scalars(
         select(DeviceCredential).where(DeviceCredential.device_id == device.id)
     ):
-        credential.revoked_at = now
+        credential.revoked_at = credential.revoked_at or now
+        credential.valid_until = credential.valid_until or now
+    for config in await session.scalars(
+        select(DeviceConfigVersion).where(
+            DeviceConfigVersion.device_id == device.id,
+            DeviceConfigVersion.status == "pending",
+        )
+    ):
+        config.status = "cancelled"
+    for token in await session.scalars(
+        select(EnrollmentToken).where(
+            EnrollmentToken.consumed_at.is_(None), EnrollmentToken.revoked_at.is_(None)
+        )
+    ):
+        if token.preassignment.get("device_id") == device.id:
+            token.revoked_at = now
+    history_count, history_start, history_end = (
+        await session.execute(
+            select(
+                func.count(RawReading.id),
+                func.min(RawReading.interval_start),
+                func.max(RawReading.interval_end),
+            ).where(RawReading.device_id == device.id)
+        )
+    ).one()
+    session.add(
+        DeviceLifecycleEvent(
+            device_id=device.id,
+            generation=device.lifecycle_generation,
+            event_type="decommissioned",
+            occurred_at=now,
+            actor_id=principal.user.id,
+            reason=reason,
+            site_id=prior_site_id,
+            circuit_id=prior_circuit_id,
+            details={
+                "retained_history": True,
+                "reading_count": int(history_count or 0),
+                "earliest_reading_at": history_start.isoformat() if history_start else None,
+                "latest_reading_at": history_end.isoformat() if history_end else None,
+            },
+        )
+    )
     session.add(
         audit_event(
-            action="device.revoked",
+            action=audit_action,
             actor_type="user",
             actor_id=principal.user.id,
             request=request,
             object_type="device",
             object_id=device.id,
+            details={
+                "reason": reason,
+                "site_id": prior_site_id,
+                "circuit_id": prior_circuit_id,
+                "retained_history": True,
+                "reading_count": int(history_count or 0),
+                "correlation_id": request.state.request_id,
+            },
         )
     )
-    await session.commit()
-    return {"revoked": True}
+
+
+@router.post("/admin/devices/{device_id}/unclaim")
+async def unclaim_device(
+    device_id: str,
+    payload: DeviceUnclaimRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _roles(principal, "admin")
+    device = await session.get(Device, device_id)
+    if device is None:
+        raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    if payload.confirmation not in {device.name, device.id}:
+        raise ProblemError(
+            409,
+            "Confirmation does not match",
+            "Type the exact sensor name or immutable device ID",
+            "device_confirmation_mismatch",
+        )
+    if device.lifecycle_status == "decommissioned":
+        return {
+            "device_id": device.id,
+            "status": "decommissioned",
+            "already_decommissioned": True,
+            "decommissioned_at": device.decommissioned_at,
+            "historical_data_retained": True,
+        }
+    claimed = await session.execute(
+        update(Device)
+        .where(Device.id == device_id, Device.lifecycle_status == "active")
+        .values(lifecycle_status="decommissioning")
+    )
+    if claimed.rowcount != 1:  # type: ignore[attr-defined]
+        await session.rollback()
+        current = await session.get(Device, device_id)
+        if current:
+            return {
+                "device_id": current.id,
+                "status": (
+                    current.lifecycle_status
+                    if current.lifecycle_status != "active"
+                    else "decommissioning"
+                ),
+                "already_decommissioned": True,
+                "decommissioned_at": current.decommissioned_at,
+                "historical_data_retained": True,
+            }
+        raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    await session.refresh(device)
+    await _decommission_device(
+        device=device,
+        reason=payload.reason,
+        request=request,
+        principal=principal,
+        session=session,
+    )
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        current = await session.get(Device, device_id)
+        if current is None or current.lifecycle_status != "decommissioned":
+            raise
+        return {
+            "device_id": current.id,
+            "status": "decommissioned",
+            "already_decommissioned": True,
+            "decommissioned_at": current.decommissioned_at,
+            "historical_data_retained": True,
+        }
+    return {
+        "device_id": device.id,
+        "status": "decommissioned",
+        "already_decommissioned": False,
+        "decommissioned_at": device.decommissioned_at,
+        "historical_data_retained": True,
+    }
 
 
 @router.post("/devices/{device_id}/maintenance")
@@ -1312,7 +1568,7 @@ async def history(
 async def fleet_summary(
     _viewer: Viewer, session: DbSession, site_id: str | None = None
 ) -> FleetSummary:
-    device_query = select(Device)
+    device_query = select(Device).where(Device.lifecycle_status == "active")
     if site_id:
         device_query = device_query.where(Device.site_id == site_id)
     devices = list(await session.scalars(device_query))

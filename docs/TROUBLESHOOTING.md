@@ -12,3 +12,19 @@
 - **DST/report difference:** compare UTC instants and offsets. Spring has no fabricated hour; fall repeats local labels with different offsets.
 - **Worker unhealthy:** inspect JSON logs, PostgreSQL readiness, `worker_state`, polling timeouts, report/backup volumes, and advisory-lock ownership.
 - **Migration failure:** keep services stopped, preserve logs, restore the latest verified backup if needed, and never mark readiness manually.
+- **No downloadable application logs:** generate normal API or worker activity,
+  confirm the chosen dates intersect the available range, and verify that the
+  API, worker, and backup runtime UIDs can write the persistent logs mount. On
+  TrueNAS, recheck the dedicated dataset ACL rather than broadening container
+  privileges.
+- **Log export fails or is too large:** narrow the date range or service filter,
+  verify free temporary space, and inspect the audited failure category. The
+  server intentionally refuses ranges outside the retained 90-day window and
+  archives above its configured size cap.
+- **Removed sensor still sends data:** confirm it is Archived and all credentials
+  show revoked. An old signature must be rejected. Do not restore the credential;
+  re-enroll the physical hardware with a new one-time token so it receives a new
+  secret.
+- **Cannot remove a sensor:** the action is administrator-only and the
+  confirmation must exactly match the displayed friendly name or immutable UUID.
+  A concurrent or already completed removal is safe to retry.

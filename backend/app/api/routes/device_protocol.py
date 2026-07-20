@@ -18,6 +18,7 @@ from app.db.models import (
     DeviceCredential,
     DeviceEvent,
     DeviceHeartbeat,
+    DeviceLifecycleEvent,
     DeviceStatusSnapshot,
     EnrollmentToken,
     FirmwareDeployment,
@@ -90,7 +91,10 @@ async def claim_enrollment(
             "Enrollment requires operational microSD storage",
             "sd_required",
         )
-    if await session.scalar(select(Device.id).where(Device.hardware_id == payload.hardware_id)):
+    existing_device = await session.scalar(
+        select(Device).where(Device.hardware_id == payload.hardware_id).with_for_update()
+    )
+    if existing_device and existing_device.lifecycle_status != "decommissioned":
         raise ProblemError(
             409, "Already enrolled", "Hardware identity already exists", "hardware_exists"
         )
@@ -101,21 +105,56 @@ async def claim_enrollment(
     )
     if site is None:
         raise ProblemError(409, "No site", "Create a site before enrollment", "site_required")
-    device = Device(
-        site_id=site.id,
-        circuit_id=preassignment.get("circuit_id"),
-        hardware_id=payload.hardware_id,
-        name=preassignment.get("name")
-        or payload.requested_name
-        or f"Sensor {payload.hardware_id[-6:]}",
-        connection_mode=preassignment.get("connection_mode", "push"),
-        measurement_role=preassignment.get("measurement_role", "submeter"),
-        cost_scope="energy_only",
-        include_in_default_site_total=False,
-        ct_rating_amps=preassignment.get("ct_rating_amps", "100"),
-        protocol_version=PROTOCOL,
+    assigned_name = (
+        preassignment.get("name") or payload.requested_name or f"Sensor {payload.hardware_id[-6:]}"
     )
-    session.add(device)
+    reenrollment = existing_device is not None
+    if existing_device:
+        device = existing_device
+        device.site_id = site.id
+        device.circuit_id = preassignment.get("circuit_id")
+        device.name = assigned_name
+        device.connection_mode = preassignment.get("connection_mode", "push")
+        device.measurement_role = preassignment.get("measurement_role", "submeter")
+        device.ct_rating_amps = preassignment.get("ct_rating_amps", "100")
+        device.protocol_version = PROTOCOL
+        device.status = "offline_last_known"
+        device.last_seen_at = None
+        device.revoked_at = None
+        device.lifecycle_status = "active"
+        device.decommissioned_at = None
+        device.decommissioned_by = None
+        device.decommission_reason = None
+        device.maintenance_until = None
+        device.desired_config_version += 1
+        config_version = device.desired_config_version
+        session.add(
+            DeviceLifecycleEvent(
+                device_id=device.id,
+                generation=device.lifecycle_generation,
+                event_type="reenrolled",
+                occurred_at=now,
+                actor_id=token.created_by,
+                site_id=site.id,
+                circuit_id=device.circuit_id,
+                details={"new_credential": True},
+            )
+        )
+    else:
+        device = Device(
+            site_id=site.id,
+            circuit_id=preassignment.get("circuit_id"),
+            hardware_id=payload.hardware_id,
+            name=assigned_name,
+            connection_mode=preassignment.get("connection_mode", "push"),
+            measurement_role=preassignment.get("measurement_role", "submeter"),
+            cost_scope="energy_only",
+            include_in_default_site_total=False,
+            ct_rating_amps=preassignment.get("ct_rating_amps", "100"),
+            protocol_version=PROTOCOL,
+        )
+        session.add(device)
+        config_version = 1
     await session.flush()
     secret_text = secrets.token_urlsafe(48)
     secret = secret_text.encode()
@@ -128,8 +167,9 @@ async def claim_enrollment(
         created_at=now,
     )
     session.add(credential)
-    session.add(
-        DeviceCapability(
+    capability = await session.get(DeviceCapability, device.id)
+    if capability is None:
+        capability = DeviceCapability(
             device_id=device.id,
             hardware_target=payload.capabilities.hardware_target,
             pzem_model=payload.capabilities.pzem_model,
@@ -137,11 +177,17 @@ async def claim_enrollment(
             features={"supported_endpoints": payload.capabilities.supported_endpoints},
             reported_at=now,
         )
-    )
+        session.add(capability)
+    else:
+        capability.hardware_target = payload.capabilities.hardware_target
+        capability.pzem_model = payload.capabilities.pzem_model
+        capability.sd_required = True
+        capability.features = {"supported_endpoints": payload.capabilities.supported_endpoints}
+        capability.reported_at = now
     session.add(
         DeviceConfigVersion(
             device_id=device.id,
-            version=1,
+            version=config_version,
             desired_config={
                 "heartbeat_interval_seconds": settings.heartbeat_expectation_seconds,
                 "durable_log_interval_seconds": 60,
@@ -153,18 +199,19 @@ async def claim_enrollment(
             created_at=now,
         )
     )
-    session.add(
-        SyncCursor(
-            device_id=device.id,
-            highest_contiguous_sequence=0,
-            maximum_seen_sequence=0,
-            updated_at=now,
+    if await session.get(SyncCursor, device.id) is None:
+        session.add(
+            SyncCursor(
+                device_id=device.id,
+                highest_contiguous_sequence=0,
+                maximum_seen_sequence=0,
+                updated_at=now,
+            )
         )
-    )
     token.consumed_at = now
     session.add(
         audit_event(
-            action="device.enrolled",
+            action="device.reenrolled" if reenrollment else "device.enrolled",
             actor_type="device",
             actor_id=device.id,
             request=request,
@@ -173,6 +220,8 @@ async def claim_enrollment(
             details={
                 "credential_fingerprint": fingerprint,
                 "hardware_target": payload.capabilities.hardware_target,
+                "new_credential": True,
+                "lifecycle_generation": device.lifecycle_generation,
             },
         )
     )

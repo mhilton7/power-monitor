@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -472,6 +472,27 @@ class PasswordReset(ApiModel):
 
 class CredentialRotationRequest(ApiModel):
     overlap_seconds: int = Field(default=3600, ge=0, le=604800)
+
+
+class DeviceUnclaimRequest(ApiModel):
+    confirmation: str = Field(min_length=1, max_length=160)
+    reason: (
+        Literal[
+            "replaced",
+            "moved",
+            "failed_hardware",
+            "duplicate_enrollment",
+            "testing_device",
+            "other",
+        ]
+        | None
+    ) = None
+
+
+class LogExportCreate(ApiModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    services: list[str] | None = Field(default=None, min_length=1, max_length=6)
 
 
 class FirmwareDeploymentCreate(ApiModel):

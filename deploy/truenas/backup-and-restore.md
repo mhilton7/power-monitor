@@ -29,6 +29,12 @@ ZFS snapshots complement logical dumps but do not replace them. Take coordinated
 snapshots before upgrades and replicate both snapshot and logical-backup data to
 a different failure domain.
 
+The `/mnt/Apps/Power/power-monitor/logs` dataset is intentionally separate from
+the logical database dump. Snapshot or replicate it when operational log history
+must survive a pool-level disaster. Administrators can download a redacted,
+checksummed ZIP for any available range from **Administration > Backups** without
+opening a TrueNAS workload shell.
+
 ## Test restore
 
 From **Apps > Installed > power-monitor > Workloads**, open the `backup` workload
@@ -62,4 +68,3 @@ same controlled workload shell.
 `manifest.json` uses `power-monitor-backup/v2`. Checksums cover ciphertext so
 corruption is detected before decryption; the encryption passphrase never appears
 in the manifest, logs, or backup directory.
-

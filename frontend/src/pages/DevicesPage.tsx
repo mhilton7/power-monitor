@@ -15,7 +15,7 @@ export function DevicesPage() {
   ), [query.data, search, status])
   return (
     <>
-      <PageTitle eyebrow="Device operations" title="Sensor fleet" description="Permanent identities, mutable addresses, and evidence-backed health for every ESP32-S3 agent." />
+      <PageTitle eyebrow="Device operations" title="Device Management" description="Sensor health and general data" />
       <Panel className="table-panel">
         <div className="table-toolbar">
           <label className="search-field"><Search size={17} /><input placeholder="Search devices" value={search} onChange={(event) => { setSearch(event.target.value); }} /></label>
@@ -43,4 +43,3 @@ export function DevicesPage() {
     </>
   )
 }
-

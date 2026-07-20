@@ -26,6 +26,7 @@ def test_settings() -> Settings:
         firmware_path=runtime / "firmware",
         report_path=runtime / "reports",
         backup_path=runtime / "backups",
+        log_path=runtime / "logs",
     )
 
 

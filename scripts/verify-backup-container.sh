@@ -2,8 +2,11 @@
 set -Eeuo pipefail
 umask 077
 source /srv/scripts/container-secrets.sh
+source /srv/scripts/container-log.sh
 load_file_backed_variable PGPASSWORD
 prepare_backup_key
+maintain_application_logs
+write_application_log backup.verify_started info
 
 if [[ $# -ne 1 ]]; then
   echo "usage: verify-backup-container.sh /data/backups/power-monitor-TIMESTAMP" >&2
@@ -47,3 +50,4 @@ tables=$(psql --dbname="$test_db" --tuples-only --no-align -v ON_ERROR_STOP=1 -c
 manifest_hash=$(sha256sum "$resolved/manifest.json" | cut -d' ' -f1)
 psql -v ON_ERROR_STOP=1 -c "UPDATE backup_runs SET status='verified', verified_at=now(), verification_details=jsonb_build_object('migration_revision', '${revision}', 'table_count', ${tables}) WHERE manifest_hash='${manifest_hash}'"
 printf 'verified backup=%s migration=%s tables=%s\n' "$resolved" "$revision" "$tables"
+write_application_log backup.verified info

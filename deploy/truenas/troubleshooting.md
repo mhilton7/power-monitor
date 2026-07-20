@@ -9,6 +9,8 @@ commands in the TrueNAS host shell.
 - Run template validation, then deployment validation with the exact pool and
   gateway port. TrueNAS performs only basic YAML checks; the repository validator
   catches security and topology mistakes.
+- For this installation, render with `--pool Apps` and confirm every host path
+  begins with `/mnt/Apps/Power/power-monitor/`.
 - A valid release image contains a semver tag and `@sha256:` digest. Application
   images use the `ghcr.io/mhilton7/power-monitor-*` namespace. Resolve all-zero
   digests and `POOL` before installation.
@@ -27,8 +29,20 @@ data.
 
 Compare the workload UID/GID with [permissions.md](permissions.md). Common causes
 are UID 999 missing from `postgres`, UID 10002 missing from Caddy state datasets,
-or inherited ACLs stripping read/traverse access from secret files. Correct ACLs
+UID 10001 or 10003 missing Modify access on `logs`, or inherited ACLs stripping
+read/traverse access from secret files. Correct ACLs
 through **Datasets > Permissions**; never solve the problem with mode 0777.
+
+## Application logs are empty or cannot be downloaded
+
+- Confirm `/mnt/Apps/Power/power-monitor/logs` exists and is mounted at
+  `/data/logs` for API, worker, and backup.
+- Confirm numeric UIDs 10001 and 10003 both have inherited Modify access.
+- Use **Administration > Backups** to choose a range within the displayed 90-day
+  window. A `413` response means the configured export limit was reached; select
+  a smaller range or one service.
+- A completed download is deleted from temporary server storage. Prepare it again
+  if the browser reports that the short-lived export has expired.
 
 ## Gateway unhealthy or browser TLS warning
 

@@ -38,6 +38,7 @@ services:
       - firmware_data:/data/firmware
       - report_data:/data/reports
       - backup_data:/data/backups
+      - log_data:/data/logs
       - app_config:/data/config
     tmpfs: ["/tmp:size=64m,mode=1777"]
     depends_on:
@@ -60,6 +61,7 @@ services:
       - firmware_data:/data/firmware
       - report_data:/data/reports
       - backup_data:/data/backups
+      - log_data:/data/logs
       - app_config:/data/config
     tmpfs: ["/tmp:size=64m,mode=1777"]
     depends_on:
@@ -124,6 +126,7 @@ services:
     image: power-monitor-backup:${POWER_MONITOR_VERSION:-1.0.0}
     read_only: true
     cap_drop: [ALL]
+    group_add: ["10001"]
     security_opt: [no-new-privileges:true]
     environment:
       PGHOST: postgres
@@ -132,12 +135,14 @@ services:
       PGUSER: ${POSTGRES_USER:?set POSTGRES_USER}
       PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      LOG_RETENTION_DAYS: "90"
       BACKUP_ENCRYPTION_KEY_FILE: ${BACKUP_ENCRYPTION_KEY_FILE:-}
     volumes:
       - backup_data:/data/backups
       - firmware_data:/data/firmware:ro
       - report_data:/data/reports:ro
       - app_config:/data/config:ro
+      - log_data:/data/logs
     tmpfs: ["/tmp:size=512m,mode=1777"]
     depends_on:
       postgres:
@@ -149,6 +154,7 @@ volumes:
   firmware_data:
   report_data:
   backup_data:
+  log_data:
   app_config:
   caddy_data:
   caddy_config:

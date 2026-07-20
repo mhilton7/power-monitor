@@ -89,7 +89,13 @@ async def run_once() -> dict[str, Any]:
 
 async def main() -> None:
     settings = get_settings()
-    configure_logging(settings.log_level, json_logs=True)
+    configure_logging(
+        settings.log_level,
+        json_logs=True,
+        log_path=settings.log_path,
+        service="worker",
+        retention_days=settings.log_retention_days,
+    )
     logger = structlog.get_logger()
     while True:
         try:

@@ -52,6 +52,7 @@ REQUIRED_DATASET_SUFFIXES = {
     "postgres",
     "backups",
     "firmware",
+    "logs",
     "config",
     "caddy-data",
     "caddy-config",
@@ -62,7 +63,7 @@ IMAGE_PATTERN = re.compile(
 OFFICIAL_IMAGE_PATTERN = re.compile(
     r"^[a-z0-9._/-]+:(?!latest(?:@|$))[^@]+@sha256:([0-9a-f]{64})$"
 )
-DATASET_PATTERN = re.compile(r"^/mnt/([^/]+)/apps/power-monitor/([^:]+)")
+DATASET_PATTERN = re.compile(r"^/mnt/([^/]+)/Power/power-monitor/([^:]+)")
 SENSITIVE_ENVIRONMENT = re.compile(
     r"(?:PASSWORD|SECRET|PEPPER|MASTER_KEY|SETUP_TOKEN)$"
 )
@@ -355,7 +356,7 @@ def validate_compose(
     for name, definition in top_secrets.items():
         path = _mapping(definition, f"secret {name}", errors).get("file")
         template_secret = isinstance(path, str) and path.startswith(
-            "/mnt/POOL/apps/power-monitor/secrets/"
+            "/mnt/POOL/Power/power-monitor/secrets/"
         )
         deployed_secret = (
             deployment and isinstance(path, str) and bool(DATASET_PATTERN.match(path))

@@ -11,7 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
-from app.api.routes import auth, device_protocol, exports, firmware, management, rates, system
+from app.api.routes import auth, device_protocol, exports, firmware, logs, management, rates, system
 from app.config import get_settings
 from app.logging import configure_logging
 from app.problem import ProblemError, problem_response
@@ -21,7 +21,13 @@ from app.security.protocol import ProtocolAuthError
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> Any:
     settings = get_settings()
-    configure_logging(settings.log_level, json_logs=True)
+    configure_logging(
+        settings.log_level,
+        json_logs=True,
+        log_path=settings.log_path,
+        service="api",
+        retention_days=settings.log_retention_days,
+    )
     logger = structlog.get_logger()
     if not settings.production_secrets_valid:
         logger.warning("required_production_secrets_missing")
@@ -42,6 +48,7 @@ app = FastAPI(
 for router in (
     auth.router,
     device_protocol.router,
+    logs.router,
     management.router,
     rates.router,
     firmware.router,

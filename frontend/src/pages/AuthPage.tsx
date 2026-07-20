@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Activity, ArrowRight, Check, LockKeyhole, Server, ShieldCheck, Zap } from 'lucide-react'
+import { Activity, ArrowRight, Check, Server, ShieldCheck, Zap } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ApiError, api } from '../api'
@@ -44,7 +44,6 @@ export function AuthPage({ bootstrapRequired }: { bootstrapRequired: boolean }) 
             <span><ShieldCheck /><strong>Signed</strong><small>heartbeats</small></span>
           </div>
         </div>
-        <p className="auth-protocol"><LockKeyhole size={15} /> pm-protocol/1.0.0 · HMAC authenticated</p>
       </section>
       <section className="auth-form-wrap">
         <form className="auth-form" onSubmit={submit}>

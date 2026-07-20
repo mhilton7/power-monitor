@@ -6,6 +6,11 @@ The dashboard includes encrypted SMTP notification setup, test delivery and
 retry evidence, selectable sensor-disconnect alerts, and configurable power-surge
 thresholds and persistence timing.
 
+Administrators can also download redacted, checksum-manifested application-log
+archives for any available range in the rolling 90-day window and safely
+unclaim sensors without deleting their readings, calculations, alerts, or audit
+history. Removed hardware can be re-enrolled only with a new token and secret.
+
 The normative interoperability identifier is `pm-protocol/1.0.0`. The browser talks only to this server; device credentials never reach browser code.
 
 The canonical source repository is

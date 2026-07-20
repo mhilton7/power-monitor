@@ -43,24 +43,25 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes acl
-          sudo mkdir -p /mnt/pmci/apps/power-monitor/{postgres,backups,firmware,config/reports,secrets,caddy-data,caddy-config}
+          sudo mkdir -p /mnt/pmci/Power/power-monitor/{postgres,backups,firmware,logs,config/reports,secrets,caddy-data,caddy-config}
           python tools/generate-secrets.py --output /tmp/power-monitor-secrets
-          sudo cp /tmp/power-monitor-secrets/* /mnt/pmci/apps/power-monitor/secrets/
-          sudo cp deploy/truenas/Caddyfile /mnt/pmci/apps/power-monitor/config/Caddyfile
-          sudo chown -R 999:999 /mnt/pmci/apps/power-monitor/postgres
-          sudo chown -R 10003:10003 /mnt/pmci/apps/power-monitor/backups
-          sudo chown -R 10001:10001 /mnt/pmci/apps/power-monitor/firmware /mnt/pmci/apps/power-monitor/config
-          sudo chown -R 10002:10002 /mnt/pmci/apps/power-monitor/caddy-data /mnt/pmci/apps/power-monitor/caddy-config
-          sudo chmod 0750 /mnt/pmci/apps/power-monitor/{postgres,backups,firmware,config,secrets,caddy-data,caddy-config}
-          sudo setfacl -m u:10001:rX,u:10002:rX,u:10003:rX /mnt/pmci/apps/power-monitor/secrets
-          sudo setfacl -m u:999:r /mnt/pmci/apps/power-monitor/secrets/postgres_password
-          sudo setfacl -m u:10003:r /mnt/pmci/apps/power-monitor/secrets/postgres_password /mnt/pmci/apps/power-monitor/secrets/backup_encryption_key
-          sudo setfacl -m u:10001:r /mnt/pmci/apps/power-monitor/secrets/database_url /mnt/pmci/apps/power-monitor/secrets/app_master_key /mnt/pmci/apps/power-monitor/secrets/session_pepper /mnt/pmci/apps/power-monitor/secrets/admin_setup_token
-          sudo setfacl -m u:10002:r /mnt/pmci/apps/power-monitor/secrets/tls.crt /mnt/pmci/apps/power-monitor/secrets/tls.key
-          sudo setfacl -Rm u:10002:rX,u:10003:rX /mnt/pmci/apps/power-monitor/config
-          sudo setfacl -Rm u:10003:rX /mnt/pmci/apps/power-monitor/firmware
-          sudo setfacl -Rm u:10001:rX /mnt/pmci/apps/power-monitor/backups
-          sudo setfacl -m u:$(id -u):rwx,d:u:$(id -u):rX /mnt/pmci/apps/power-monitor/caddy-data
+          sudo cp /tmp/power-monitor-secrets/* /mnt/pmci/Power/power-monitor/secrets/
+          sudo cp deploy/truenas/Caddyfile /mnt/pmci/Power/power-monitor/config/Caddyfile
+          sudo chown -R 999:999 /mnt/pmci/Power/power-monitor/postgres
+          sudo chown -R 10003:10003 /mnt/pmci/Power/power-monitor/backups
+          sudo chown -R 10001:10001 /mnt/pmci/Power/power-monitor/firmware /mnt/pmci/Power/power-monitor/config /mnt/pmci/Power/power-monitor/logs
+          sudo chown -R 10002:10002 /mnt/pmci/Power/power-monitor/caddy-data /mnt/pmci/Power/power-monitor/caddy-config
+          sudo chmod 0750 /mnt/pmci/Power/power-monitor/{postgres,backups,firmware,logs,config,secrets,caddy-data,caddy-config}
+          sudo setfacl -m u:10001:rX,u:10002:rX,u:10003:rX /mnt/pmci/Power/power-monitor/secrets
+          sudo setfacl -m u:999:r /mnt/pmci/Power/power-monitor/secrets/postgres_password
+          sudo setfacl -m u:10003:r /mnt/pmci/Power/power-monitor/secrets/postgres_password /mnt/pmci/Power/power-monitor/secrets/backup_encryption_key
+          sudo setfacl -m u:10001:r /mnt/pmci/Power/power-monitor/secrets/database_url /mnt/pmci/Power/power-monitor/secrets/app_master_key /mnt/pmci/Power/power-monitor/secrets/session_pepper /mnt/pmci/Power/power-monitor/secrets/admin_setup_token
+          sudo setfacl -m u:10002:r /mnt/pmci/Power/power-monitor/secrets/tls.crt /mnt/pmci/Power/power-monitor/secrets/tls.key
+          sudo setfacl -Rm u:10002:rX,u:10003:rX /mnt/pmci/Power/power-monitor/config
+          sudo setfacl -Rm u:10003:rX /mnt/pmci/Power/power-monitor/firmware
+          sudo setfacl -Rm u:10001:rX /mnt/pmci/Power/power-monitor/backups
+          sudo setfacl -m u:10001:rwx,u:10003:rwx,d:u:10001:rwx,d:u:10003:rwx /mnt/pmci/Power/power-monitor/logs
+          sudo setfacl -m u:$(id -u):rwx,d:u:$(id -u):rX /mnt/pmci/Power/power-monitor/caddy-data
       - name: Render and validate deployment YAML
         shell: bash
         run: |
@@ -84,7 +85,7 @@ jobs:
           python tools/test-truenas-workflow.py \
             --compose /tmp/power-monitor-truenas-compose.yaml \
             --base-url https://localhost:18443 \
-            --ca-certificate /mnt/pmci/apps/power-monitor/caddy-data/caddy/pki/authorities/local/root.crt \
-            --setup-token-file /mnt/pmci/apps/power-monitor/secrets/admin_setup_token \
+            --ca-certificate /mnt/pmci/Power/power-monitor/caddy-data/caddy/pki/authorities/local/root.crt \
+            --setup-token-file /mnt/pmci/Power/power-monitor/secrets/admin_setup_token \
             --gateway-port 18443 \
             --device-count 3

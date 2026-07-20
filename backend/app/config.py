@@ -64,9 +64,27 @@ class Settings(BaseSettings):
     firmware_path: Path = Path("/data/firmware")
     report_path: Path = Path("/data/reports")
     backup_path: Path = Path("/data/backups")
+    log_path: Path = Path("/data/logs")
+    log_retention_days: int = 90
+    max_log_export_bytes: int = 250 * 1024 * 1024
+    log_format_version: str = "pm-log/1.0.0"
     poll_public_addresses: bool = False
     allowed_poll_ports: tuple[int, ...] = (80, 443, 8080, 8443)
     log_level: str = "INFO"
+
+    @field_validator("log_retention_days")
+    @classmethod
+    def valid_log_retention(cls, value: int) -> int:
+        if value != 90:
+            raise ValueError("LOG_RETENTION_DAYS must remain 90")
+        return value
+
+    @field_validator("max_log_export_bytes")
+    @classmethod
+    def valid_log_export_limit(cls, value: int) -> int:
+        if value < 1_048_576:
+            raise ValueError("MAX_LOG_EXPORT_BYTES must be at least 1 MiB")
+        return value
 
     @field_validator("public_origin")
     @classmethod

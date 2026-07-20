@@ -5,10 +5,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10003 power-monitor-backup \
     && useradd --system --uid 10003 --gid power-monitor-backup --home-dir /nonexistent power-monitor-backup \
-    && mkdir -p /srv/scripts /data/backups /data/firmware /data/config /data/reports \
-    && chown -R power-monitor-backup:power-monitor-backup /data
+    && mkdir -p /srv/scripts /data/backups /data/firmware /data/config /data/reports /data/logs \
+    && chown -R power-monitor-backup:power-monitor-backup /data \
+    && chmod 0770 /data/logs
 COPY scripts/backup-container.sh scripts/verify-backup-container.sh scripts/restore-container.sh \
-    scripts/backup-scheduler.sh scripts/container-secrets.sh /srv/scripts/
+    scripts/backup-scheduler.sh scripts/container-secrets.sh scripts/container-log.sh /srv/scripts/
 RUN chmod 0555 /srv/scripts/*.sh
 USER 10003:10003
 ENTRYPOINT []

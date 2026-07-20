@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clipboard, Clock3, KeyRound, Plus, RadioTower, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError } from '../api'
+import { ClaimedSensors } from '../components/ClaimedSensors'
 import type { Site } from '../types'
 import { EmptyState, ErrorState, formatTime, PageTitle, Panel, StatusPill } from '../components/UI'
 
@@ -83,7 +84,7 @@ export function EnrollmentPage() {
           </form>
         </Panel>
 
-        <Panel title={createdTokens.length ? `${createdTokens.length} ${createdTokens.length === 1 ? 'token' : 'tokens'} ready` : 'How enrollment works'} eyebrow={createdTokens.length ? 'Plaintext shown once' : 'pm-protocol/1.0.0'}>
+        <Panel title={createdTokens.length ? `${createdTokens.length} ${createdTokens.length === 1 ? 'token' : 'tokens'} ready` : 'How enrollment works'} eyebrow={createdTokens.length ? 'Plaintext shown once' : 'Secure provisioning'}>
           {createdTokens.length ? (
             <div className="generated-token-list">
               {createdTokens.map((token) => {
@@ -119,6 +120,7 @@ export function EnrollmentPage() {
           })}</tbody></table></div>
         ) : <EmptyState title="No enrollment tokens" message="Create one token for each physical or simulated sensor that is ready to claim it." />}
       </Panel>
+      <ClaimedSensors />
     </>
   )
 }

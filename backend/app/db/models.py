@@ -211,6 +211,13 @@ class Device(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(48), default="offline_last_known", index=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lifecycle_status: Mapped[str] = mapped_column(String(24), default="active", index=True)
+    lifecycle_generation: Mapped[int] = mapped_column(Integer, default=0)
+    decommissioned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    decommissioned_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    decommission_reason: Mapped[str | None] = mapped_column(String(64))
     maintenance_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     desired_config_version: Mapped[int] = mapped_column(Integer, default=1)
     effective_config_version: Mapped[int] = mapped_column(Integer, default=0)
@@ -220,6 +227,32 @@ class Device(TimestampMixin, Base):
             "cost_scope IN ('energy_only','allocated_account','full_account')", name="cost_scope"
         ),
         CheckConstraint("ct_rating_amps > 0", name="ct_rating"),
+    )
+
+
+class DeviceLifecycleEvent(Base):
+    __tablename__ = "device_lifecycle_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("devices.id", ondelete="RESTRICT"), index=True
+    )
+    generation: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(32), index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    actor_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    reason: Mapped[str | None] = mapped_column(String(64))
+    site_id: Mapped[str | None] = mapped_column(ForeignKey("sites.id", ondelete="SET NULL"))
+    circuit_id: Mapped[str | None] = mapped_column(ForeignKey("circuits.id", ondelete="SET NULL"))
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    __table_args__ = (
+        UniqueConstraint(
+            "device_id",
+            "generation",
+            "event_type",
+            name="uq_device_lifecycle_generation_event",
+        ),
     )
 
 
@@ -805,6 +838,26 @@ class BackupRun(Base):
     manifest_hash: Mapped[str | None] = mapped_column(String(64))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     verification_details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class LogExportJob(Base):
+    __tablename__ = "log_export_jobs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    requested_by: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date] = mapped_column(Date)
+    services: Mapped[list[str]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    file_path: Mapped[str | None] = mapped_column(Text)
+    size_bytes: Mapped[int | None] = mapped_column(Integer)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    correlation_id: Mapped[str] = mapped_column(String(128), index=True)
 
 
 class WorkerState(Base):

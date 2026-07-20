@@ -20,7 +20,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { FleetSummary, Session, Site } from '../types'
-import { formatNumber, StatusPill } from './UI'
+import { formatNumber } from './UI'
 
 const navigation = [
   { to: '/', label: 'Overview', icon: House },
@@ -83,13 +83,6 @@ export function Layout({ session, children }: { session: Session; children: Reac
               </NavLink>
             ))}
         </nav>
-        <div className="sidebar-scope">
-          <span className="scope-dot" />
-          <div>
-            <strong>Multi-sensor fleet</strong>
-            <small>Signed heartbeats · local custody</small>
-          </div>
-        </div>
       </aside>
       {menuOpen && <button className="nav-scrim" aria-label="Close navigation" onClick={() => { setMenuOpen(false) }} />}
       <div className="app-content">
@@ -127,11 +120,6 @@ export function Layout({ session, children }: { session: Session; children: Reac
           </div>
         </header>
         <main id="main">{children}</main>
-        <footer>
-          <span>Power Monitor Server 1.0.0</span>
-          <StatusPill status="healthy" label="Server protected" />
-          <span>pm-protocol/1.0.0</span>
-        </footer>
       </div>
     </div>
   )
