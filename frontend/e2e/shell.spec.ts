@@ -11,6 +11,7 @@ const fleet = { current_load_w: '960', energy_today_kwh: '12.5', estimated_cost_
 const device = { id: 'device-1', name: 'Garage HVAC', site_id: 'site-1', circuit_id: 'branch-1', connection_mode: 'hybrid', measurement_role: 'submeter', cost_scope: 'energy_only', included_in_default: true, ct_rating_amps: '100', status: 'online_synchronized', current_watts: '960', last_seen_at: '2026-07-20T06:00:00Z', firmware_version: '1.0.0', rssi_dbm: -52, pzem_ok: true, sd_ok: true, time_trusted: true, backlog: 0 }
 
 async function mockApplication(page: Page, roles: string[] = ['admin']) {
+  let enrollmentCounter = 0
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -28,7 +29,15 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     else if (path === '/api/v1/readings/history') body = { points: [{ timestamp: '2026-07-20T05:59:00Z', power_w: '900', quality_flags: [] }, { timestamp: '2026-07-20T06:00:00Z', power_w: '960', quality_flags: [] }], missing_ranges: [{ start_sequence: 2, end_sequence: 3 }], coverage_percent: '98.5' }
     else if (path === '/api/v1/alerts') body = [{ id: 'alert-1', name: 'Synchronization backlog', status: 'active', severity: 'warning', device_id: 'device-1', opened_at: '2026-07-20T06:00:00Z', evidence: { backlog: 42 } }]
     else if (path === '/api/v1/alert-rules') body = [{ id: 'rule-1', name: 'Backlog', rule_type: 'sync_backlog', severity: 'warning', enabled: true, debounce_seconds: 60, resolve_seconds: 60 }]
-    else if (path === '/api/v1/enrollment-tokens' && request.method() === 'POST') body = { id: 'token-1', token: 'public-one-time-enrollment-token', expires_at: new Date(Date.now() + 600_000).toISOString(), preassignment: { name: 'Garage HVAC' } }
+    else if (path === '/api/v1/users') body = [
+      { ...session(roles).user, is_active: true },
+      { id: 'user-2', email: 'viewer@example.test', display_name: 'Dashboard Viewer', roles: ['viewer'], is_active: true },
+    ]
+    else if (path === '/api/v1/enrollment-tokens' && request.method() === 'POST') {
+      enrollmentCounter += 1
+      const payload = JSON.parse(request.postData() ?? '{}') as { name?: string }
+      body = { id: `token-${enrollmentCounter}`, token: enrollmentCounter === 1 ? 'public-one-time-enrollment-token' : `public-one-time-enrollment-token-${enrollmentCounter}`, expires_at: new Date(Date.now() + 600_000).toISOString(), preassignment: { name: payload.name } }
+    }
     else if (path === '/api/v1/alerts/alert-1/acknowledge') body = { acknowledged: true }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
   })
@@ -37,7 +46,7 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
 test('unauthenticated users see a secure sign-in surface', async ({ page }) => {
   await page.route('**/api/v1/auth/session', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ authenticated: false, bootstrap_required: false }) }))
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Sign in to your fleet' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Sign in to your dashboard' })).toBeVisible()
   await expect(page.getByText('Private fleet intelligence')).toBeVisible()
 })
 
@@ -52,7 +61,7 @@ test('first run creates an administrator without a default password', async ({ p
 test('viewer sees fleet evidence but cannot open operator or admin pages', async ({ page }) => {
   await mockApplication(page, ['viewer'])
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Energy, without the guesswork.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
   await expect(page.getByText('960 W', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('link', { name: /Enroll sensor/ })).toHaveCount(0)
   await page.goto('/enrollment')
@@ -91,10 +100,32 @@ test('admin can create an enrollment token without seeing a permanent secret', a
   await mockApplication(page)
   await page.goto('/enrollment')
   await page.getByLabel('Friendly name').fill('Garage HVAC')
-  await page.getByRole('button', { name: /Create 10-minute token/ }).click()
-  await expect(page.getByText('Token ready')).toBeVisible()
+  await page.getByRole('button', { name: /Add enrollment token/ }).click()
+  await expect(page.getByText('1 token ready')).toBeVisible()
   await expect(page.getByText('public-one-time-enrollment-token')).toBeVisible()
-  await expect(page.getByText('The permanent secret is never shown here.')).toBeVisible()
+  await page.getByLabel('Friendly name').fill('Water Heater')
+  await page.getByRole('button', { name: /Add enrollment token/ }).click()
+  await expect(page.getByText('2 tokens ready')).toBeVisible()
+  await expect(page.getByText('Water Heater')).toBeVisible()
+  await expect(page.getByText('Permanent device secrets are never shown here.')).toBeVisible()
+})
+
+test('administrator can create and remove local users', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/admin')
+  await page.getByRole('button', { name: /Add user/ }).click()
+  await page.getByLabel('Display name').fill('Energy Analyst')
+  await page.getByLabel('Email address').fill('analyst@example.test')
+  await page.getByLabel('Temporary password').fill('Production-Password-42!')
+  const createRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/users') && request.method() === 'POST')
+  await page.getByRole('button', { name: /Create user/ }).click()
+  await createRequest
+
+  const viewerRow = page.getByRole('row').filter({ hasText: 'Dashboard Viewer' })
+  const removeRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/users/user-2') && request.method() === 'DELETE')
+  await viewerRow.getByRole('button', { name: 'Remove' }).click()
+  await viewerRow.getByRole('button', { name: 'Remove', exact: true }).click()
+  await removeRequest
 })
 
 test('alert acknowledgement calls the audited server action', async ({ page }) => {

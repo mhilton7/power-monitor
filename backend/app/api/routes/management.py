@@ -1880,8 +1880,16 @@ async def create_user(
             "Use at least 14 characters and three character classes",
             "weak_password",
         )
+    email = str(payload.email).lower()
+    if await session.scalar(select(User.id).where(func.lower(User.email) == email)):
+        raise ProblemError(
+            409,
+            "User already exists",
+            "An account with this email address already exists",
+            "user_email_exists",
+        )
     user = User(
-        email=str(payload.email).lower(),
+        email=email,
         display_name=payload.display_name,
         password_hash=hash_password(payload.password),
         password_changed_at=datetime.now(UTC),
@@ -1942,6 +1950,72 @@ async def admin_password_reset(
     )
     await session.commit()
     return {"reset": True, "sessions_revoked": True}
+
+
+@router.delete("/users/{user_id}", status_code=204)
+async def deactivate_user(
+    user_id: str,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> Response:
+    """Disable a user while retaining their audit and ownership history."""
+    _roles(principal, "admin")
+    user = await session.get(User, user_id)
+    if user is None:
+        raise ProblemError(404, "User not found", "User does not exist", "user_missing")
+    if user.id == principal.user.id:
+        raise ProblemError(
+            409,
+            "Cannot remove your own account",
+            "Another administrator must remove this account",
+            "self_deactivation_forbidden",
+        )
+    if not user.is_active:
+        return Response(status_code=204)
+
+    is_admin = await session.scalar(
+        select(UserRole.user_id).where(
+            UserRole.user_id == user.id,
+            UserRole.role_name == "admin",
+        )
+    )
+    if is_admin is not None:
+        active_admins = await session.scalar(
+            select(func.count())
+            .select_from(User)
+            .join(UserRole, UserRole.user_id == User.id)
+            .where(User.is_active.is_(True), UserRole.role_name == "admin")
+        )
+        if (active_admins or 0) <= 1:
+            raise ProblemError(
+                409,
+                "Last administrator cannot be removed",
+                "Create another administrator before removing this account",
+                "last_admin_required",
+            )
+
+    now = datetime.now(UTC)
+    user.is_active = False
+    for browser_session in await session.scalars(
+        select(BrowserSession).where(
+            BrowserSession.user_id == user.id,
+            BrowserSession.revoked_at.is_(None),
+        )
+    ):
+        browser_session.revoked_at = now
+    session.add(
+        audit_event(
+            action="user.deactivated",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="user",
+            object_id=user.id,
+        )
+    )
+    await session.commit()
+    return Response(status_code=204)
 
 
 @router.get("/audit-events")

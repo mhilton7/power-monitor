@@ -2,18 +2,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   Bell,
-  Boxes,
   ChevronDown,
   CircuitBoard,
-  FileBarChart,
-  Gauge,
   History,
+  House,
+  LogOut,
   Menu,
   Moon,
-  PackageCheck,
   RadioTower,
+  ScanLine,
   Settings,
-  ShieldCheck,
   Sun,
   WalletCards,
   X,
@@ -26,22 +24,20 @@ import type { FleetSummary, Session, Site } from '../types'
 import { formatNumber, StatusPill } from './UI'
 
 const navigation = [
-  { to: '/', label: 'Fleet', icon: Gauge },
+  { to: '/', label: 'Overview', icon: House },
   { to: '/devices', label: 'Devices', icon: RadioTower },
   { to: '/topology', label: 'Topology', icon: CircuitBoard },
   { to: '/history', label: 'History', icon: History },
-  { to: '/costs', label: 'Costs & billing', icon: WalletCards },
-  { to: '/rates', label: 'Rate plans', icon: Activity },
+  { to: '/costs', label: 'Costs', icon: WalletCards },
+  { to: '/rates', label: 'Rates', icon: Activity },
   { to: '/alerts', label: 'Alerts', icon: Bell },
-  { to: '/enrollment', label: 'Enrollment', icon: Boxes, operator: true },
-  { to: '/firmware', label: 'Firmware', icon: PackageCheck, operator: true },
-  { to: '/reports', label: 'Reports', icon: FileBarChart },
+  { to: '/enrollment', label: 'Enrollment', icon: ScanLine, admin: true },
   { to: '/admin', label: 'Administration', icon: Settings, admin: true },
 ]
 
 export function Layout({ session, children }: { session: Session; children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const [theme, setTheme] = useState(() => localStorage.getItem('pm-theme') ?? 'dark')
+  const [theme, setTheme] = useState(() => localStorage.getItem('pm-theme') ?? 'light')
   const [siteId, setSiteId] = useState<string>()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -65,68 +61,57 @@ export function Layout({ session, children }: { session: Session; children: Reac
     if (!siteId && sites.data?.[0]) setSiteId(sites.data[0].id)
   }, [siteId, sites.data])
   const roles = new Set(session.user?.roles ?? [])
+  const fleetHealthy = Boolean(summary.data?.total_devices) && summary.data?.online_devices === summary.data?.total_devices
 
   return (
     <div className="app-shell">
-      <a href="#main" className="skip-link">
-        Skip to content
-      </a>
+      <a href="#main" className="skip-link">Skip to content</a>
       <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}>
         <div className="brand">
-          <span className="brand-mark">
-            <Zap size={22} fill="currentColor" />
-          </span>
+          <span className="brand-mark"><Zap size={22} fill="currentColor" /></span>
           <div>
             <strong>Power Monitor</strong>
-            <small>Fleet control</small>
+            <small>Local energy intelligence</small>
           </div>
-          <button className="icon-button sidebar-close" onClick={() => { setMenuOpen(false); }} aria-label="Close navigation">
-            <X />
-          </button>
+          <button className="icon-button sidebar-close" onClick={() => { setMenuOpen(false) }} aria-label="Close navigation"><X /></button>
         </div>
         <nav aria-label="Primary">
           {navigation
             .filter((item) => !item.admin || roles.has('admin'))
-            .filter((item) => !item.operator || roles.has('admin') || roles.has('operator'))
             .map(({ to, label, icon: Icon }) => (
-              <NavLink key={to} to={to} end={to === '/'} onClick={() => { setMenuOpen(false); }}>
+              <NavLink key={to} to={to} end={to === '/'} onClick={() => { setMenuOpen(false) }}>
                 <Icon size={19} aria-hidden="true" />
                 <span>{label}</span>
               </NavLink>
             ))}
         </nav>
-        <div className="sidebar-security">
-          <ShieldCheck size={18} />
+        <div className="sidebar-scope">
+          <span className="scope-dot" />
           <div>
-            <strong>Private by design</strong>
-            <small>Same-origin · No cloud dependency</small>
+            <strong>Multi-sensor fleet</strong>
+            <small>Signed heartbeats · local custody</small>
           </div>
         </div>
       </aside>
-      {menuOpen && <button className="nav-scrim" aria-label="Close navigation" onClick={() => { setMenuOpen(false); }} />}
+      {menuOpen && <button className="nav-scrim" aria-label="Close navigation" onClick={() => { setMenuOpen(false) }} />}
       <div className="app-content">
         <header className="topbar">
-          <button className="icon-button menu-button" onClick={() => { setMenuOpen(true); }} aria-label="Open navigation">
-            <Menu />
-          </button>
+          <button className="icon-button menu-button" onClick={() => { setMenuOpen(true) }} aria-label="Open navigation"><Menu /></button>
           <label className="site-select">
-            <span>Site</span>
-            <select value={siteId ?? ''} onChange={(event) => { setSiteId(event.target.value); }}>
-              {sites.data?.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name}
-                </option>
-              ))}
+            <span>Viewing</span>
+            <select value={siteId ?? ''} onChange={(event) => { setSiteId(event.target.value) }}>
+              {sites.data?.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
             </select>
             <ChevronDown size={15} aria-hidden="true" />
           </label>
-          <div className="topbar-live" aria-label="Current aggregate load">
+          <div className="topbar-live" aria-label="Current fleet health and aggregate load">
             <span className="live-pulse" />
-            <span>Live load</span>
+            <span>{fleetHealthy ? 'Healthy' : 'Needs attention'}</span>
+            <small>· live</small>
             <strong>{formatNumber(summary.data?.current_load_w)} W</strong>
           </div>
           <div className="topbar-actions">
-            <button className="icon-button" onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark'); }} aria-label="Toggle color theme">
+            <button className="icon-button" onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark') }} aria-label="Toggle color theme">
               {theme === 'dark' ? <Sun /> : <Moon />}
             </button>
             <NavLink className="alert-button" to="/alerts" aria-label={`${summary.data?.active_alerts ?? 0} active alerts`}>
@@ -139,9 +124,7 @@ export function Layout({ session, children }: { session: Session; children: Reac
                 <strong>{session.user?.display_name}</strong>
                 <small>{session.user?.roles.join(' · ')}</small>
               </div>
-              <button onClick={() => { logout.mutate(); }} disabled={logout.isPending}>
-                Sign out
-              </button>
+              <button onClick={() => { logout.mutate() }} disabled={logout.isPending} aria-label="Sign out"><LogOut size={16} /></button>
             </div>
           </div>
         </header>
