@@ -441,7 +441,7 @@ class RatePreviewResponse(ApiModel):
 class CostRecalculationRequest(ApiModel):
     utility_account_id: str
     aggregate_set_id: str
-    rate_version_id: str
+    rate_version_id: str | None = None
     input_start: datetime
     input_end: datetime
 
@@ -463,7 +463,7 @@ class UserCreate(ApiModel):
     email: EmailStr
     display_name: str = Field(min_length=1, max_length=120)
     password: str = Field(min_length=14, max_length=1024)
-    roles: list[Literal["admin", "operator", "viewer"]] = Field(min_length=1)
+    roles: list[Literal["admin", "operator", "rate-manager", "viewer"]] = Field(min_length=1)
 
 
 class PasswordReset(ApiModel):

@@ -11,7 +11,17 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
-from app.api.routes import auth, device_protocol, exports, firmware, logs, management, rates, system
+from app.api.routes import (
+    auth,
+    device_protocol,
+    exports,
+    firmware,
+    logs,
+    management,
+    rate_management,
+    rates,
+    system,
+)
 from app.config import get_settings
 from app.logging import configure_logging
 from app.problem import ProblemError, problem_response
@@ -51,6 +61,7 @@ for router in (
     logs.router,
     management.router,
     rates.router,
+    rate_management.router,
     firmware.router,
     exports.router,
     system.router,

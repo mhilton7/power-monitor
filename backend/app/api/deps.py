@@ -51,7 +51,9 @@ def require_roles(*allowed: str) -> Callable[..., Awaitable[SessionPrincipal]]:
 
 Admin = Annotated[SessionPrincipal, Depends(require_roles("admin"))]
 Operator = Annotated[SessionPrincipal, Depends(require_roles("admin", "operator"))]
-Viewer = Annotated[SessionPrincipal, Depends(require_roles("admin", "operator", "viewer"))]
+Viewer = Annotated[
+    SessionPrincipal, Depends(require_roles("admin", "operator", "rate-manager", "viewer"))
+]
 
 
 async def require_csrf(
@@ -108,5 +110,6 @@ def audit_event(
         object_id=object_id,
         source_ip=request.client.host if request and request.client else None,
         outcome=outcome,
+        correlation_id=(getattr(request.state, "request_id", None) if request else None),
         details=details or {},
     )

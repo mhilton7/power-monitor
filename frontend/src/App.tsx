@@ -15,6 +15,8 @@ const DevicesPage = lazy(() => import('./pages/DevicesPage').then((module) => ({
 const EnrollmentPage = lazy(() => import('./pages/EnrollmentPage').then((module) => ({ default: module.EnrollmentPage })))
 const HistoryPage = lazy(() => import('./pages/HistoryPage').then((module) => ({ default: module.HistoryPage })))
 const RatesPage = lazy(() => import('./pages/RatesPage').then((module) => ({ default: module.RatesPage })))
+const RateEditorPage = lazy(() => import('./pages/RateEditorPage').then((module) => ({ default: module.RateEditorPage })))
+const RateSourcesPage = lazy(() => import('./pages/RateSourcesPage').then((module) => ({ default: module.RateSourcesPage })))
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((module) => ({ default: module.ReportsPage })))
 const TopologyPage = lazy(() => import('./pages/TopologyPage').then((module) => ({ default: module.TopologyPage })))
 
@@ -22,6 +24,7 @@ function ProtectedApp({ session }: { session: Session }) {
   const location = useLocation()
   if (!session.authenticated) return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />
   const isAdmin = session.user?.roles.includes('admin') ?? false
+  const canManageRates = isAdmin || (session.user?.roles.includes('rate-manager') ?? false)
   return (
     <Layout session={session}>
       <Suspense fallback={<LoadingState label="Opening this workspace…" />}>
@@ -31,7 +34,10 @@ function ProtectedApp({ session }: { session: Session }) {
         <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
         <Route path="/topology" element={<TopologyPage />} />
         <Route path="/history" element={<HistoryPage />} />
-        <Route path="/rates" element={<RatesPage />} />
+        <Route path="/rates" element={<RatesPage canManage={canManageRates} />} />
+        <Route path="/rates/new" element={canManageRates ? <RateEditorPage canManage /> : <Navigate to="/rates" replace />} />
+        <Route path="/rates/:planId/versions/:versionId" element={<RateEditorPage canManage={canManageRates} />} />
+        <Route path="/rates/sources" element={canManageRates ? <RateSourcesPage /> : <Navigate to="/rates" replace />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/enrollment" element={isAdmin ? <EnrollmentPage /> : <Navigate to="/" replace />} />
         <Route path="/reports" element={<ReportsPage />} />

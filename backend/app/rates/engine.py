@@ -36,6 +36,7 @@ class Calculation:
     baseline_credit: Decimal
     cca_adjustment: Decimal
     other_adjustment: Decimal
+    adjustment_breakdown: dict[str, Decimal]
     total: Decimal
 
 
@@ -99,7 +100,12 @@ class RateEngine:
         self.validate_plan()
 
     def validate_plan(self) -> None:
-        for season, day_types in self.plan["periods"].items():
+        schedules: list[tuple[str, dict[str, list[list[Any]]]]] = list(self.plan["periods"].items())
+        schedules.extend(
+            (f"{season}/special", date_schedules)
+            for season, date_schedules in self.plan.get("special_schedules", {}).items()
+        )
+        for season, day_types in schedules:
             for day_type, raw_periods in day_types.items():
                 periods = sorted(raw_periods, key=lambda item: int(item[0]))
                 cursor = 0
@@ -114,8 +120,22 @@ class RateEngine:
                 if cursor != 1440:
                     raise ValueError(f"{season}/{day_type} does not cover 24 hours")
 
-    @staticmethod
-    def _season(local_date: date) -> str:
+    def _season(self, local_date: date) -> str:
+        configured = self.plan.get("seasons")
+        if configured:
+            for name, value in sorted(
+                configured.items(), key=lambda item: int(item[1].get("priority", 0)), reverse=True
+            ):
+                start_month, start_day = (int(part) for part in value["start"].split("-"))
+                end_month, end_day = (int(part) for part in value["end"].split("-"))
+                current = (local_date.month, local_date.day)
+                start = (start_month, start_day)
+                end = (end_month, end_day)
+                if (start <= end and start <= current <= end) or (
+                    start > end and (current >= start or current <= end)
+                ):
+                    return str(name)
+            raise RuntimeError("validated rate plan has no matching season")
         return (
             "summer"
             if date(local_date.year, 6, 1) <= local_date <= date(local_date.year, 9, 30)
@@ -126,12 +146,20 @@ class RateEngine:
     def _day_type(local_date: date) -> str:
         return "weekend" if local_date.weekday() >= 5 else "weekday"
 
+    def _periods_for_date(self, local_date: date) -> list[list[Any]]:
+        season = self._season(local_date)
+        special = self.plan.get("special_schedules", {}).get(season, {})
+        return special.get(
+            local_date.isoformat(),
+            self.plan["periods"][season][self._day_type(local_date)],
+        )
+
     def period_at(self, instant: datetime) -> tuple[str, Decimal]:
         if instant.tzinfo is None:
             raise ValueError("instant must be timezone-aware")
         local = instant.astimezone(self.zone)
         minute = local.hour * 60 + local.minute
-        periods = self.plan["periods"][self._season(local.date())][self._day_type(local.date())]
+        periods = self._periods_for_date(local.date())
         for start, end, bucket, price in periods:
             if int(start) <= minute < int(end):
                 return str(bucket), Decimal(str(price))
@@ -158,11 +186,9 @@ class RateEngine:
         day = local_start
         while day <= local_end:
             candidates.update(self._valid_wall_instants(day, 0))
-            season = self._season(day)
-            for day_type in ("weekday", "weekend"):
-                for raw_period in self.plan["periods"][season][day_type]:
-                    candidates.update(self._valid_wall_instants(day, int(raw_period[0])))
-                    candidates.update(self._valid_wall_instants(day, int(raw_period[1])))
+            for raw_period in self._periods_for_date(day):
+                candidates.update(self._valid_wall_instants(day, int(raw_period[0])))
+                candidates.update(self._valid_wall_instants(day, int(raw_period[1])))
             day += timedelta(days=1)
         start_utc = start.astimezone(UTC)
         end_utc = end.astimezone(UTC)
@@ -193,7 +219,13 @@ class RateEngine:
         start: datetime,
         end: datetime,
         energy_kwh: Decimal,
-        cost_scope: Literal["energy_only", "allocated_account", "full_account"] = "energy_only",
+        cost_scope: Literal[
+            "energy_only",
+            "allocated_account",
+            "full_account",
+            "allocated_account_estimate",
+            "full_account_estimate",
+        ] = "energy_only",
         baseline_allocation_kwh: Decimal | None = None,
         billing_days: int | None = None,
         cca_adjustment_per_kwh: Decimal = Decimal("0"),
@@ -217,19 +249,94 @@ class RateEngine:
         energy_charge = sum((item.cost for item in slices), Decimal("0"))
         fixed = Decimal("0")
         baseline = Decimal("0")
-        if cost_scope == "full_account":
+        adjustment_breakdown: dict[str, Decimal] = {}
+        if cost_scope in {"full_account", "full_account_estimate"}:
             if billing_days is None:
                 local_days = {item.start.astimezone(self.zone).date() for item in slices} | {
                     end.astimezone(self.zone).date()
                 }
                 billing_days = max(1, len(local_days))
-            fixed = Decimal(str(self.plan["base_service_charge_per_day"])) * billing_days
-            raw_credit = self.plan.get("baseline_credit_per_kwh")
-            if raw_credit is not None and baseline_allocation_kwh is not None:
-                baseline = min(energy_kwh, baseline_allocation_kwh) * Decimal(str(raw_credit))
+            if not self.plan.get("adjustments"):
+                fixed = Decimal(str(self.plan["base_service_charge_per_day"])) * billing_days
+                raw_credit = self.plan.get("baseline_credit_per_kwh")
+                if raw_credit is not None and baseline_allocation_kwh is not None:
+                    baseline = min(energy_kwh, baseline_allocation_kwh) * Decimal(str(raw_credit))
         cca = energy_kwh * cca_adjustment_per_kwh
         adjustments = other_adjustment if cost_scope != "energy_only" else Decimal("0")
         total = energy_charge + fixed - baseline + cca + adjustments
+        for item in sorted(
+            self.plan.get("adjustments", []),
+            key=lambda value: int(value.get("calculation_order", 0)),
+        ):
+            scope = str(item.get("scope", "full_account_estimate"))
+            full_scope = cost_scope in {"full_account", "full_account_estimate"}
+            allocated_scope = cost_scope in {
+                "allocated_account",
+                "allocated_account_estimate",
+                "full_account",
+                "full_account_estimate",
+            }
+            if (scope == "full_account_estimate" and not full_scope) or (
+                scope == "allocated_account_estimate" and not allocated_scope
+            ):
+                continue
+            effective_from = (
+                date.fromisoformat(str(item["effective_from"]))
+                if item.get("effective_from")
+                else None
+            )
+            effective_to = (
+                date.fromisoformat(str(item["effective_to"])) if item.get("effective_to") else None
+            )
+            eligible_slices = [
+                value
+                for value in slices
+                if (
+                    effective_from is None
+                    or value.start.astimezone(self.zone).date() >= effective_from
+                )
+                and (
+                    effective_to is None or value.start.astimezone(self.zone).date() <= effective_to
+                )
+            ]
+            if not eligible_slices:
+                continue
+            eligible_energy = sum((value.energy_kwh for value in eligible_slices), Decimal("0"))
+            eligible_days = {value.start.astimezone(self.zone).date() for value in eligible_slices}
+            value = Decimal(str(item["value"]))
+            component = str(item["component"])
+            unit = str(item.get("unit", "fixed"))
+            if component == "baseline_credit":
+                if baseline_allocation_kwh is None or not full_scope:
+                    continue
+                amount = min(eligible_energy, baseline_allocation_kwh) * value
+            elif unit == "per_kwh":
+                amount = eligible_energy * value
+            elif unit == "per_day":
+                amount = value * Decimal(len(eligible_days) or 1)
+            elif unit == "per_month":
+                months = {(day.year, day.month) for day in eligible_days}
+                amount = value * Decimal(len(months) or 1)
+            elif unit == "percent":
+                amount = total * value / Decimal("100")
+            else:
+                amount = value
+            operation = str(item.get("operation", "add"))
+            signed = -amount if operation == "subtract" else amount
+            if operation == "multiply":
+                signed = total * (value - Decimal("1"))
+            if component == "minimum_charge":
+                signed = max(Decimal("0"), amount - total)
+            total += signed
+            adjustment_breakdown[str(item["name"])] = signed
+            if component in {"daily_fixed_charge", "monthly_fixed_charge"}:
+                fixed += signed
+            elif component == "baseline_credit":
+                baseline += amount
+            elif component in {"cca", "direct_access", "generation_provider"}:
+                cca += signed
+            else:
+                adjustments += signed
         return Calculation(
             slices=tuple(slices),
             energy_by_bucket=by_bucket,
@@ -238,6 +345,7 @@ class RateEngine:
             baseline_credit=baseline,
             cca_adjustment=cca,
             other_adjustment=adjustments,
+            adjustment_breakdown=adjustment_breakdown,
             total=total,
         )
 

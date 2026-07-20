@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "power-monitor-rate-plan/1.0",
+  "title": "Power Monitor rate plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "plan_name", "plan_code", "utility", "currency", "timezone", "effective_from", "cost_scope_default", "source_label", "provider_mode", "seasons", "adjustments"],
+  "properties": {
+    "schema_version": {"const": "power-monitor-rate-plan/1.0"},
+    "plan_name": {"type": "string", "minLength": 1, "maxLength": 160},
+    "plan_code": {"type": "string", "pattern": "^[A-Z0-9][A-Z0-9._-]{1,79}$"},
+    "utility": {"type": "string", "minLength": 1},
+    "description": {"type": "string"},
+    "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "timezone": {"type": "string", "minLength": 1},
+    "ownership_scope": {"enum": ["global", "site", "utility_account"]},
+    "owner_id": {"type": ["string", "null"]},
+    "effective_from": {"type": "string", "format": "date"},
+    "effective_through": {"type": ["string", "null"], "format": "date"},
+    "cost_scope_default": {"enum": ["energy_only", "allocated_account_estimate", "full_account_estimate"]},
+    "source_label": {"type": "string", "minLength": 1},
+    "source_note": {"type": "string"},
+    "provider_mode": {"enum": ["sce_delivery_generation", "sce_delivery_cca", "sce_delivery_direct_access", "custom_combined"]},
+    "seasons": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/season"}
+    },
+    "adjustments": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/adjustment"}
+    },
+    "custom_notes": {"type": "string"},
+    "cloned_from_rate_version_id": {"type": ["string", "null"]}
+  },
+  "$defs": {
+    "decimal": {"type": "string", "pattern": "^-?[0-9]+(?:\\.[0-9]{1,8})?$"},
+    "period": {
+      "type": "object", "additionalProperties": false,
+      "required": ["label", "start_minute", "end_minute", "price_per_kwh"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "start_minute": {"type": "integer", "minimum": 0, "maximum": 1439},
+        "end_minute": {"type": "integer", "minimum": 1, "maximum": 1440},
+        "price_per_kwh": {"$ref": "#/$defs/decimal"},
+        "delivery_per_kwh": {"$ref": "#/$defs/decimal", "default": "0"},
+        "generation_per_kwh": {"$ref": "#/$defs/decimal", "default": "0"},
+        "adjustment_per_kwh": {"$ref": "#/$defs/decimal", "default": "0"},
+        "display_order": {"type": "integer", "default": 0}
+      }
+    },
+    "schedule": {
+      "type": "object", "additionalProperties": false,
+      "required": ["day_type", "periods"],
+      "properties": {
+        "day_type": {"enum": ["weekday", "weekend", "all-days", "holiday", "date-override"]},
+        "dates": {"type": "array", "items": {"type": "string", "format": "date"}},
+        "periods": {"type": "array", "items": {"$ref": "#/$defs/period"}}
+      }
+    },
+    "season": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "start", "end", "schedules"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "start": {"type": "string", "pattern": "^[0-9]{2}-[0-9]{2}$"},
+        "end": {"type": "string", "pattern": "^[0-9]{2}-[0-9]{2}$"},
+        "priority": {"type": "integer", "default": 0},
+        "leap_day_behavior": {"enum": ["include", "previous_day", "next_day"]},
+        "schedules": {"type": "array", "items": {"$ref": "#/$defs/schedule"}}
+      }
+    },
+    "adjustment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "component", "operation", "value", "unit", "scope"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "component": {"enum": ["daily_fixed_charge", "monthly_fixed_charge", "minimum_charge", "baseline_credit", "percentage_tax", "fixed_tax", "generation_provider", "cca", "direct_access", "manual_credit", "other"]},
+        "operation": {"enum": ["add", "subtract", "minimum", "multiply"]},
+        "value": {"$ref": "#/$defs/decimal"},
+        "unit": {"type": "string"},
+        "scope": {"type": "string"},
+        "eligibility": {"type": "object"},
+        "effective_from": {"type": ["string", "null"], "format": "date"},
+        "effective_to": {"type": ["string", "null"], "format": "date"},
+        "calculation_order": {"type": "integer"},
+        "description": {"type": "string"}
+      }
+    }
+  }
+}

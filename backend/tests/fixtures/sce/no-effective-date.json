@@ -1,0 +1,1 @@
+{"schema_version":"power-monitor-rate-plan/1.0","plan_name":"No date","plan_code":"CUSTOM-NO-DATE","utility":"custom","currency":"USD","timezone":"America/Los_Angeles","cost_scope_default":"energy_only","source_label":"Fixture","provider_mode":"custom_combined","seasons":[],"adjustments":[]}

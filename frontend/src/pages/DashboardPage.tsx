@@ -77,7 +77,6 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
               <div><Zap fill="currentColor" /><strong>{formatNumber(data.current_load_w)}</strong><span>watts now</span></div>
             </div>
             <div className="power-hero-copy">
-              <span>Fleet availability</span>
               <strong>{onlinePercent}%</strong>
               <small>{data.online_devices} of {data.total_devices} devices reporting</small>
             </div>

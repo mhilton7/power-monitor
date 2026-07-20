@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BellRing, CheckCircle2, Mail, Power, Send, ServerCog, ShieldCheck, Unplug, X } from 'lucide-react'
+import { BellRing, CheckCircle2, Mail, Power, RefreshCw, Send, ServerCog, ShieldCheck, Unplug, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, ApiError } from '../api'
 import { ErrorState, LoadingState, Panel, StatusPill, formatTime } from './UI'
@@ -48,6 +48,17 @@ const splitRecipients = (value: string) => value
   .map((item) => item.trim())
   .filter(Boolean)
 
+const rateEmailEvents = [
+  'rate_source_changed',
+  'rate_candidate_pending',
+  'rate_candidate_validation_failed',
+  'rate_source_unavailable',
+  'rate_parser_failed',
+  'rate_source_conflict',
+  'rate_version_auto_activated',
+  'rate_source_stale',
+]
+
 export function NotificationSettings() {
   const queryClient = useQueryClient()
   const channels = useQuery({ queryKey: ['notification-channels'], queryFn: () => api<NotificationChannel[]>('/api/v1/notification-channels') })
@@ -66,6 +77,7 @@ export function NotificationSettings() {
   const [recipients, setRecipients] = useState('')
   const [emailDisconnects, setEmailDisconnects] = useState(true)
   const [emailSurges, setEmailSurges] = useState(true)
+  const [emailRateUpdates, setEmailRateUpdates] = useState(true)
   const [smtpInitialized, setSmtpInitialized] = useState(false)
 
   const [disconnectEnabled, setDisconnectEnabled] = useState(true)
@@ -85,6 +97,7 @@ export function NotificationSettings() {
     const selected = smtp.target.event_types ?? []
     setEmailDisconnects(!selected.length || selected.includes('heartbeat_stale'))
     setEmailSurges(!selected.length || selected.includes('power_surge'))
+    setEmailRateUpdates(!selected.length || rateEmailEvents.some((event) => selected.includes(event)))
     setSmtpInitialized(true)
   }, [smtp, smtpInitialized])
 
@@ -106,7 +119,11 @@ export function NotificationSettings() {
 
   const saveSmtp = useMutation({
     mutationFn: () => {
-      const eventTypes = [emailDisconnects && 'heartbeat_stale', emailSurges && 'power_surge'].filter(Boolean)
+      const eventTypes = [
+        emailDisconnects && 'heartbeat_stale',
+        emailSurges && 'power_surge',
+        ...(emailRateUpdates ? rateEmailEvents : []),
+      ].filter(Boolean)
       const configuration: Record<string, unknown> = {
         host: host.trim(),
         port,
@@ -169,7 +186,7 @@ export function NotificationSettings() {
 
   const smtpProblem = saveSmtp.error instanceof ApiError ? saveSmtp.error.problem : undefined
   const ruleProblem = saveRules.error instanceof ApiError ? saveRules.error.problem : undefined
-  const selectedEmailEvents = Number(emailDisconnects) + Number(emailSurges)
+  const selectedEmailEvents = Number(emailDisconnects) + Number(emailSurges) + Number(emailRateUpdates)
 
   if (channels.isLoading || rules.isLoading) return <LoadingState label="Loading notification settings…" />
   if (channels.error) return <ErrorState error={channels.error} retry={() => { void channels.refetch() }} />
@@ -209,6 +226,7 @@ export function NotificationSettings() {
               <legend>Email these events</legend>
               <label><input type="checkbox" checked={emailDisconnects} onChange={(event) => { setEmailDisconnects(event.target.checked) }} /><span><Unplug /><strong>Sensor disconnects</strong><small>After the configured heartbeat delay</small></span></label>
               <label><input type="checkbox" checked={emailSurges} onChange={(event) => { setEmailSurges(event.target.checked) }} /><span><Power /><strong>Power surges</strong><small>After the threshold persists</small></span></label>
+              <label><input aria-label="Email SCE rate updates" type="checkbox" checked={emailRateUpdates} onChange={(event) => { setEmailRateUpdates(event.target.checked) }} /><span><RefreshCw /><strong>SCE rate updates</strong><small>Source failures, candidates, conflicts, and safe activation</small></span></label>
             </fieldset>
             {!selectedEmailEvents && <p className="field-error">Select at least one event to email.</p>}
             <footer><button type="button" className="button secondary" onClick={() => { setShowSmtpForm(false) }}>Cancel</button><button className="button primary" disabled={saveSmtp.isPending || !selectedEmailEvents}><ShieldCheck size={16} /> {saveSmtp.isPending ? 'Saving…' : 'Save SMTP securely'}</button></footer>

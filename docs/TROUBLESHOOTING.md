@@ -28,3 +28,14 @@
 - **Cannot remove a sensor:** the action is administrator-only and the
   confirmation must exactly match the displayed friendly name or immutable UUID.
   A concurrent or already completed removal is safe to retry.
+- **SCE check remains queued:** confirm the worker is healthy and owns the
+  PostgreSQL advisory lock, then inspect the job and `rate_source_checks` rows.
+  Retrying is idempotent; unchanged bytes do not create duplicate versions.
+- **SCE source requires review:** download the archived hash-verified artifact.
+  Unstructured or image-only documents intentionally block parsing; upload an
+  official structured artifact or enter a reviewed custom version rather than
+  enabling OCR or guessing.
+- **Automatic activation was blocked:** review the candidate's explicit reasons,
+  including parser warnings, missing dates, source conflicts, rate-change
+  threshold, retroactivity, or provider-assumption changes. Keep the current
+  verified version active and use manual approval only after verifying evidence.

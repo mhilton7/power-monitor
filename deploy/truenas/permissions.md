@@ -36,6 +36,7 @@ Exact ACL matrix:
 | `backups` | UID 10003; UID 10001 | 10003 Modify; 10001 Read, traverse |
 | `firmware` | UID 10001; UID 10003 | 10001 Modify; 10003 Read, traverse |
 | `logs` | UID 10001; UID 10003 | Both UIDs Modify, traverse, and inherit; no access for frontend, gateway, or PostgreSQL |
+| `rate-source-artifacts` | UID 10001; UID 10003 | 10001 Modify, traverse, inherit; 10003 Read, traverse |
 | `config` | UID 10001; UID 10002; UID 10003 | 10001 Modify; 10002 Read, traverse; 10003 Read, traverse |
 | `secrets` | UID 999; UID 10001; UID 10002; UID 10003 | Read and traverse only for all four; dataset owner alone may create/replace files |
 | `caddy-data` | UID 10002 | Full Control / Modify, traverse, inherit |
@@ -57,5 +58,7 @@ not selected. Empty `tls.crt` and `tls.key` placeholders are expected for
 internal-CA and public-ACME modes.
 
 If PostgreSQL reports `Permission denied`, stop the App in **Apps**, correct UID
-999 on the empty/new dataset, and restart it from the UI. Do not make a database
-dataset world-writable.
+999 on the empty/new dataset, and restart it from the UI. PostgreSQL must be
+able to apply its owner-only mode bits, so use a POSIX owner/group of `999:999`
+for the `postgres` child dataset rather than an NFSv4 ACL that blocks `chmod`.
+Do not make a database dataset world-writable.

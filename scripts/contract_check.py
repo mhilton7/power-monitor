@@ -19,7 +19,11 @@ def validate_openapi() -> None:
 
 
 def validate_schemas() -> None:
-    for path in sorted((ROOT / "shared" / "schemas").glob("*.schema.json")):
+    schema_paths = list((ROOT / "shared" / "schemas").glob("*.schema.json"))
+    schema_paths.append(
+        ROOT / "shared" / "schemas" / "power-monitor-rate-plan-1.0.json"
+    )
+    for path in sorted(schema_paths):
         schema = json.loads(path.read_text(encoding="utf-8"))
         Draft202012Validator.check_schema(schema)
     examples = json.loads(
@@ -36,6 +40,15 @@ def validate_schemas() -> None:
         Draft202012Validator(schema, format_checker=FormatChecker()).validate(
             examples[name]
         )
+    rate_schema = json.loads(
+        (ROOT / "shared" / "schemas" / "power-monitor-rate-plan-1.0.json").read_text()
+    )
+    rate_example = json.loads(
+        (ROOT / "shared" / "examples" / "custom-rate-plan.json").read_text()
+    )
+    Draft202012Validator(rate_schema, format_checker=FormatChecker()).validate(
+        rate_example
+    )
 
 
 def validate_vectors() -> None:

@@ -21,6 +21,21 @@ x-app-environment:
   POLL_PUBLIC_ADDRESSES: 'false'
   DEFAULT_TIMEZONE: America/Los_Angeles
   LOG_LEVEL: INFO
+  RATE_SYNC_ENABLED: 'true'
+  RATE_SYNC_CRON: 15 3 * * 0
+  RATE_SYNC_TIMEZONE: America/Los_Angeles
+  RATE_SYNC_JITTER_MINUTES: '20'
+  RATE_SYNC_POLICY: manual_review
+  RATE_SYNC_MAX_SOURCE_BYTES: '10485760'
+  RATE_SYNC_CONNECT_TIMEOUT_SECONDS: '10'
+  RATE_SYNC_READ_TIMEOUT_SECONDS: '30'
+  RATE_SYNC_TOTAL_TIMEOUT_SECONDS: '45'
+  RATE_SYNC_MAX_REDIRECTS: '3'
+  RATE_SYNC_MAX_RETRIES: '3'
+  RATE_SYNC_ALLOWED_HOSTS: www.sce.com,sce.com
+  RATE_SYNC_ARTIFACT_PATH: /app/data/rate-source-artifacts
+  RATE_SYNC_AUTO_MAX_PERCENT_CHANGE: '25'
+  RATE_SYNC_RETROACTIVE_AUTO_DAYS: '0'
 services:
   postgres:
     init: true
@@ -119,6 +134,21 @@ services:
       POLL_PUBLIC_ADDRESSES: 'false'
       DEFAULT_TIMEZONE: America/Los_Angeles
       LOG_LEVEL: INFO
+      RATE_SYNC_ENABLED: 'true'
+      RATE_SYNC_CRON: 15 3 * * 0
+      RATE_SYNC_TIMEZONE: America/Los_Angeles
+      RATE_SYNC_JITTER_MINUTES: '20'
+      RATE_SYNC_POLICY: manual_review
+      RATE_SYNC_MAX_SOURCE_BYTES: '10485760'
+      RATE_SYNC_CONNECT_TIMEOUT_SECONDS: '10'
+      RATE_SYNC_READ_TIMEOUT_SECONDS: '30'
+      RATE_SYNC_TOTAL_TIMEOUT_SECONDS: '45'
+      RATE_SYNC_MAX_REDIRECTS: '3'
+      RATE_SYNC_MAX_RETRIES: '3'
+      RATE_SYNC_ALLOWED_HOSTS: www.sce.com,sce.com
+      RATE_SYNC_ARTIFACT_PATH: /app/data/rate-source-artifacts
+      RATE_SYNC_AUTO_MAX_PERCENT_CHANGE: '25'
+      RATE_SYNC_RETROACTIVE_AUTO_DAYS: '0'
       SESSION_PEPPER_FILE: /run/secrets/session_pepper
       BOOTSTRAP_SECRET_FILE: /run/secrets/admin_setup_token
     secrets:
@@ -132,6 +162,7 @@ services:
     - /mnt/Apps/Power/power-monitor/config/reports:/data/reports
     - /mnt/Apps/Power/power-monitor/backups:/data/backups:ro
     - /mnt/Apps/Power/power-monitor/logs:/data/logs
+    - /mnt/Apps/Power/power-monitor/rate-source-artifacts:/app/data/rate-source-artifacts
     tmpfs:
     - /tmp:size=128m,uid=10001,gid=10001,mode=1777
     depends_on:
@@ -190,6 +221,21 @@ services:
       POLL_PUBLIC_ADDRESSES: 'false'
       DEFAULT_TIMEZONE: America/Los_Angeles
       LOG_LEVEL: INFO
+      RATE_SYNC_ENABLED: 'true'
+      RATE_SYNC_CRON: 15 3 * * 0
+      RATE_SYNC_TIMEZONE: America/Los_Angeles
+      RATE_SYNC_JITTER_MINUTES: '20'
+      RATE_SYNC_POLICY: manual_review
+      RATE_SYNC_MAX_SOURCE_BYTES: '10485760'
+      RATE_SYNC_CONNECT_TIMEOUT_SECONDS: '10'
+      RATE_SYNC_READ_TIMEOUT_SECONDS: '30'
+      RATE_SYNC_TOTAL_TIMEOUT_SECONDS: '45'
+      RATE_SYNC_MAX_REDIRECTS: '3'
+      RATE_SYNC_MAX_RETRIES: '3'
+      RATE_SYNC_ALLOWED_HOSTS: www.sce.com,sce.com
+      RATE_SYNC_ARTIFACT_PATH: /app/data/rate-source-artifacts
+      RATE_SYNC_AUTO_MAX_PERCENT_CHANGE: '25'
+      RATE_SYNC_RETROACTIVE_AUTO_DAYS: '0'
     secrets:
     - database_url
     - app_master_key
@@ -199,6 +245,7 @@ services:
     - /mnt/Apps/Power/power-monitor/config/reports:/data/reports
     - /mnt/Apps/Power/power-monitor/backups:/data/backups:ro
     - /mnt/Apps/Power/power-monitor/logs:/data/logs
+    - /mnt/Apps/Power/power-monitor/rate-source-artifacts:/app/data/rate-source-artifacts
     tmpfs:
     - /tmp:size=128m,uid=10001,gid=10001,mode=1777
     depends_on:
@@ -343,6 +390,7 @@ services:
     - /mnt/Apps/Power/power-monitor/config:/data/config:ro
     - /mnt/Apps/Power/power-monitor/config/reports:/data/reports:ro
     - /mnt/Apps/Power/power-monitor/logs:/data/logs
+    - /mnt/Apps/Power/power-monitor/rate-source-artifacts:/app/data/rate-source-artifacts:ro
     tmpfs:
     - /tmp:size=1g,uid=10003,gid=10003,mode=1777
     depends_on:

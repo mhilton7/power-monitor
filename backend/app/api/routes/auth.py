@@ -104,7 +104,7 @@ async def bootstrap(
             "weak_password",
         )
     await ensure_roles(session)
-    await ensure_default_reference_data(session, settings.default_site_name)
+    await ensure_default_reference_data(session, settings.default_site_name, settings)
     user = User(
         email=str(payload.email).lower(),
         display_name=payload.display_name,

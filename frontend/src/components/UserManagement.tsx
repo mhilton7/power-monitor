@@ -10,6 +10,7 @@ type ManagedUser = User & { is_active: boolean }
 const roleOptions: Array<{ value: Role; label: string; description: string }> = [
   { value: 'admin', label: 'Administrator', description: 'Full user and system control' },
   { value: 'operator', label: 'Operator', description: 'Manage devices and operations' },
+  { value: 'rate-manager', label: 'Rate manager', description: 'Manage rate plans and SCE reviews' },
   { value: 'viewer', label: 'Viewer', description: 'Read-only dashboard access' },
 ]
 

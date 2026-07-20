@@ -15,7 +15,9 @@ this stack with direct `docker` commands in the TrueNAS shell.
 2. Follow [dataset-layout.md](dataset-layout.md) and
    [permissions.md](permissions.md) in the TrueNAS UI. This includes creating
    `/mnt/Apps/Power/power-monitor/logs` and granting inherited Modify access to
-   numeric UIDs 10001 and 10003 before the first deployment.
+   numeric UIDs 10001 and 10003 before the first deployment. Create the
+   `rate-source-artifacts` child dataset too; grant UID 10001 Modify and UID
+   10003 Read/traverse access.
 3. Generate secrets outside the source checkout and outside any synced folder:
 
    ```text

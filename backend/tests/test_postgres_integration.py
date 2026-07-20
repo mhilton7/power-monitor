@@ -80,25 +80,35 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 FROM devices WHERE id = 'device-migration'
                 """
             )
-            assert revision == "20260720_0002"
-            assert table_count == 56
+            assert revision == "20260720_0003"
+            assert table_count == 67
             assert dict(migrated) == {
                 "lifecycle_status": "decommissioned",
                 "lifecycle_generation": 1,
                 "decommission_reason": "legacy_revoke",
             }
 
+            await migrate("downgrade", "20260720_0002")
+            assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
+                "20260720_0002"
+            )
+            assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
+            await migrate("upgrade", "head")
+            assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
+                "20260720_0003"
+            )
+
             await connection.execute("DROP SCHEMA public CASCADE")
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260720_0002"
+                "20260720_0003"
             )
             assert (
                 await connection.fetchval(
                     "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
                 )
-                == 56
+                == 67
             )
         finally:
             await connection.close()

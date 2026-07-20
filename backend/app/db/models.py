@@ -90,6 +90,7 @@ class AuditEvent(Base):
     object_id: Mapped[str | None] = mapped_column(String(80))
     source_ip: Mapped[str | None] = mapped_column(String(64))
     outcome: Mapped[str] = mapped_column(String(24), default="success")
+    correlation_id: Mapped[str | None] = mapped_column(String(128), index=True)
     details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
@@ -123,6 +124,8 @@ class UtilityAccount(TimestampMixin, Base):
     billing_cycle_start_day: Mapped[int] = mapped_column(Integer, default=1)
     baseline_allocation_kwh: Mapped[Decimal | None] = mapped_column(Numeric(14, 6))
     generation_provider: Mapped[str] = mapped_column(String(32), default="sce")
+    provider_mode: Mapped[str] = mapped_column(String(32), default="sce_bundled")
+    cost_scope_default: Mapped[str] = mapped_column(String(40), default="energy_only")
     active_rate_version_id: Mapped[str | None] = mapped_column(
         ForeignKey("rate_versions.id", ondelete="SET NULL", use_alter=True)
     )
@@ -510,6 +513,21 @@ class RatePlan(TimestampMixin, Base):
     code: Mapped[str] = mapped_column(String(80))
     name: Mapped[str] = mapped_column(String(160))
     description: Mapped[str] = mapped_column(Text, default="")
+    plan_kind: Mapped[str] = mapped_column(String(32), default="official_sce")
+    ownership_scope: Mapped[str] = mapped_column(String(32), default="global")
+    owner_site_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sites.id", ondelete="CASCADE"), index=True
+    )
+    owner_utility_account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="CASCADE"), index=True
+    )
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
+    timezone: Mapped[str] = mapped_column(String(64), default="America/Los_Angeles")
+    status: Mapped[str] = mapped_column(String(24), default="active")
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    cloned_from_rate_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="SET NULL", use_alter=True)
+    )
     __table_args__ = (UniqueConstraint("utility_id", "code", name="uq_rate_plan_utility_code"),)
 
 
@@ -530,6 +548,17 @@ class RateVersion(Base):
     content_hash: Mapped[str] = mapped_column(String(64))
     immutable_after_use: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    source_kind: Mapped[str] = mapped_column(String(32), default="custom")
+    source_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_label: Mapped[str | None] = mapped_column(String(240))
+    change_summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    approved_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    activated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    normalized_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    automatically_activated: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     __table_args__ = (UniqueConstraint("rate_plan_id", "version", name="uq_rate_version_number"),)
@@ -546,6 +575,8 @@ class RateSeason(Base):
     start_day: Mapped[int] = mapped_column(Integer)
     end_month: Mapped[int] = mapped_column(Integer)
     end_day: Mapped[int] = mapped_column(Integer)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    leap_day_behavior: Mapped[str] = mapped_column(String(32), default="include")
 
 
 class RateDayType(Base):
@@ -572,6 +603,10 @@ class RatePeriod(Base):
     end_minute: Mapped[int] = mapped_column(Integer)
     bucket: Mapped[str] = mapped_column(String(40))
     price_per_kwh: Mapped[Decimal] = mapped_column(Numeric(14, 8))
+    delivery_per_kwh: Mapped[Decimal] = mapped_column(Numeric(14, 8), default=Decimal("0"))
+    generation_per_kwh: Mapped[Decimal] = mapped_column(Numeric(14, 8), default=Decimal("0"))
+    adjustment_per_kwh: Mapped[Decimal] = mapped_column(Numeric(14, 8), default=Decimal("0"))
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
     __table_args__ = (
         CheckConstraint("start_minute >= 0 AND start_minute < 1440", name="period_start"),
         CheckConstraint("end_minute > 0 AND end_minute <= 1440", name="period_end"),
@@ -611,7 +646,195 @@ class RateAdjustment(Base):
     component: Mapped[str] = mapped_column(String(40))
     operation: Mapped[str] = mapped_column(String(24))
     amount: Mapped[Decimal] = mapped_column(Numeric(16, 8))
+    unit: Mapped[str] = mapped_column(String(32), default="per_kwh")
+    scope: Mapped[str] = mapped_column(String(40), default="all_energy")
+    eligibility: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    effective_from: Mapped[date | None] = mapped_column(Date)
+    effective_to: Mapped[date | None] = mapped_column(Date)
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    description: Mapped[str] = mapped_column(Text, default="")
     configuration: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class RateSyncConfiguration(Base):
+    __tablename__ = "rate_sync_configuration"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default="default")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    schedule_cron: Mapped[str] = mapped_column(String(64), default="15 3 * * 0")
+    timezone: Mapped[str] = mapped_column(String(64), default="America/Los_Angeles")
+    jitter_minutes: Mapped[int] = mapped_column(Integer, default=20)
+    approval_mode: Mapped[str] = mapped_column(String(32), default="manual_review")
+    auto_activate_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_scheduled_run: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_attempted_run: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_successful_run: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_source_change: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_candidate_created: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_approved_version: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class RateSource(Base):
+    __tablename__ = "rate_sources"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    name: Mapped[str] = mapped_column(String(160))
+    url: Mapped[str] = mapped_column(String(500), unique=True)
+    parser_id: Mapped[str] = mapped_column(String(80))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    etag: Mapped[str | None] = mapped_column(String(500))
+    last_modified: Mapped[str | None] = mapped_column(String(200))
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class BackgroundJob(Base):
+    __tablename__ = "background_jobs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    job_type: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    requested_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    correlation_id: Mapped[str] = mapped_column(String(128), index=True)
+    progress: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    error_detail: Mapped[str | None] = mapped_column(Text)
+
+
+class RateSourceCheckRun(Base):
+    __tablename__ = "rate_source_checks"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("background_jobs.id", ondelete="CASCADE"), index=True
+    )
+    rate_source_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_sources.id", ondelete="RESTRICT"), index=True
+    )
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    outcome: Mapped[str] = mapped_column(String(32), index=True)
+    final_url: Mapped[str | None] = mapped_column(String(500))
+    etag: Mapped[str | None] = mapped_column(String(500))
+    last_modified: Mapped[str | None] = mapped_column(String(200))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    response_bytes: Mapped[int | None] = mapped_column(Integer)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    error_detail: Mapped[str | None] = mapped_column(Text)
+
+
+class RateSourceArtifact(Base):
+    __tablename__ = "rate_source_artifacts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    source_check_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_source_checks.id", ondelete="CASCADE"), index=True
+    )
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    content_type: Mapped[str] = mapped_column(String(160))
+    byte_size: Mapped[int] = mapped_column(Integer)
+    storage_path: Mapped[str] = mapped_column(String(1000))
+    original_filename: Mapped[str | None] = mapped_column(String(255))
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class RateExtractionResult(Base):
+    __tablename__ = "rate_extraction_results"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    artifact_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_source_artifacts.id", ondelete="CASCADE"), index=True
+    )
+    parser_id: Mapped[str] = mapped_column(String(80))
+    parser_version: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    normalized_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    errors: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    extracted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RateChangeCandidate(Base):
+    __tablename__ = "rate_change_candidates"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    rate_plan_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rate_plans.id", ondelete="SET NULL"), index=True
+    )
+    extraction_result_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_extraction_results.id", ondelete="RESTRICT"), index=True
+    )
+    base_rate_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="SET NULL")
+    )
+    candidate_rate_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="SET NULL")
+    )
+    status: Mapped[str] = mapped_column(String(32), default="pending_review", index=True)
+    risk_level: Mapped[str] = mapped_column(String(24), default="manual_review")
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class RateCandidateDifference(Base):
+    __tablename__ = "rate_candidate_differences"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_change_candidates.id", ondelete="CASCADE"), index=True
+    )
+    path: Mapped[str] = mapped_column(String(500))
+    change_type: Mapped[str] = mapped_column(String(24))
+    before_value: Mapped[Any | None] = mapped_column(JSON)
+    after_value: Mapped[Any | None] = mapped_column(JSON)
+    material: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class RateApprovalDecision(Base):
+    __tablename__ = "rate_approval_decisions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_change_candidates.id", ondelete="CASCADE"), index=True
+    )
+    decision: Mapped[str] = mapped_column(String(24))
+    comment: Mapped[str] = mapped_column(Text, default="")
+    decided_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class RateVersionSource(Base):
+    __tablename__ = "rate_version_sources"
+    rate_version_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="CASCADE"), primary_key=True
+    )
+    artifact_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_source_artifacts.id", ondelete="RESTRICT"), primary_key=True
+    )
+    extraction_result_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rate_extraction_results.id", ondelete="SET NULL")
+    )
+    relationship: Mapped[str] = mapped_column(String(32), default="primary")
+
+
+class RateAssignment(Base):
+    __tablename__ = "rate_assignments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    utility_account_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="CASCADE"), index=True
+    )
+    rate_version_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="RESTRICT"), index=True
+    )
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    assigned_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class BillingCycle(Base):
@@ -663,6 +886,8 @@ class CostIntervalResult(Base):
     price_per_kwh: Mapped[Decimal] = mapped_column(Numeric(14, 8))
     unrounded_cost: Mapped[Decimal] = mapped_column(Numeric(24, 12))
     component: Mapped[str] = mapped_column(String(40), default="energy")
+    adjustment_breakdown: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    calculation_version: Mapped[str] = mapped_column(String(40), default="rate-engine/1")
 
 
 class DailyCostRollup(Base):

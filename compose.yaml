@@ -40,6 +40,7 @@ services:
       - backup_data:/data/backups
       - log_data:/data/logs
       - app_config:/data/config
+      - rate_source_artifacts:/app/data/rate-source-artifacts
     tmpfs: ["/tmp:size=64m,mode=1777"]
     depends_on:
       postgres:
@@ -63,6 +64,7 @@ services:
       - backup_data:/data/backups
       - log_data:/data/logs
       - app_config:/data/config
+      - rate_source_artifacts:/app/data/rate-source-artifacts
     tmpfs: ["/tmp:size=64m,mode=1777"]
     depends_on:
       api:
@@ -143,6 +145,7 @@ services:
       - report_data:/data/reports:ro
       - app_config:/data/config:ro
       - log_data:/data/logs
+      - rate_source_artifacts:/app/data/rate-source-artifacts:ro
     tmpfs: ["/tmp:size=512m,mode=1777"]
     depends_on:
       postgres:
@@ -158,6 +161,7 @@ volumes:
   app_config:
   caddy_data:
   caddy_config:
+  rate_source_artifacts:
 
 networks:
   edge:

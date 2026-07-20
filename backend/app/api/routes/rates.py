@@ -17,6 +17,7 @@ from app.db.models import (
     CostCalculationRun,
     CostIntervalResult,
     FixedChargeRule,
+    RateAssignment,
     RateDayType,
     RatePeriod,
     RatePlan,
@@ -414,12 +415,14 @@ async def queue_recalculation(
     _operator(principal)
     account = await session.get(UtilityAccount, payload.utility_account_id)
     aggregate = await session.get(AggregateSet, payload.aggregate_set_id)
-    version = await session.get(RateVersion, payload.rate_version_id)
-    if account is None or aggregate is None or version is None:
+    version = (
+        await session.get(RateVersion, payload.rate_version_id) if payload.rate_version_id else None
+    )
+    if account is None or aggregate is None:
         raise ProblemError(
             422,
             "Invalid calculation scope",
-            "Account, aggregate set, or rate version does not exist",
+            "Account or aggregate set does not exist",
             "calculation_scope_invalid",
         )
     if aggregate.utility_account_id != account.id:
@@ -429,28 +432,113 @@ async def queue_recalculation(
             "The aggregate set is not assigned to the selected utility account",
             "aggregate_account_mismatch",
         )
-    run = CostCalculationRun(
-        utility_account_id=account.id,
-        aggregate_set_id=aggregate.id,
-        rate_version_id=version.id,
-        input_start=payload.input_start,
-        input_end=payload.input_end,
-        algorithm_version=RateEngine.algorithm_version,
-        status="queued",
-        coverage_percent=Decimal("0"),
-        created_at=datetime.now(UTC),
-    )
-    session.add(run)
-    session.add(
-        audit_event(
-            action="billing.recalculation_queued",
-            actor_type="user",
-            actor_id=principal.user.id,
-            request=request,
-            object_type="cost_calculation_run",
-            object_id=run.id,
-            details={"aggregate_set_id": aggregate.id, "rate_version_id": version.id},
+    calculation_ranges: list[tuple[datetime, datetime, RateVersion]] = []
+    if version:
+        calculation_ranges.append((payload.input_start, payload.input_end, version))
+    else:
+        assignments = list(
+            await session.scalars(
+                select(RateAssignment)
+                .where(
+                    RateAssignment.utility_account_id == account.id,
+                    RateAssignment.effective_from < payload.input_end,
+                    (
+                        RateAssignment.effective_to.is_(None)
+                        | (RateAssignment.effective_to > payload.input_start)
+                    ),
+                )
+                .order_by(RateAssignment.effective_from)
+            )
         )
-    )
+        for assignment in assignments:
+            assigned_version = await session.get(RateVersion, assignment.rate_version_id)
+            if assigned_version:
+                calculation_ranges.append(
+                    (
+                        max(payload.input_start, assignment.effective_from),
+                        min(payload.input_end, assignment.effective_to or payload.input_end),
+                        assigned_version,
+                    )
+                )
+        if calculation_ranges:
+            cursor = payload.input_start
+            normalized_ranges: list[tuple[datetime, datetime, RateVersion]] = []
+            for range_start, range_end, range_version in sorted(
+                calculation_ranges, key=lambda item: item[0]
+            ):
+                if range_start > cursor:
+                    raise ProblemError(
+                        409,
+                        "Rate assignment gap",
+                        "Assignments do not cover the complete calculation interval",
+                        "rate_assignment_gap",
+                    )
+                start_at = max(cursor, range_start)
+                if range_end > start_at:
+                    normalized_ranges.append((start_at, range_end, range_version))
+                    cursor = max(cursor, range_end)
+            if cursor < payload.input_end:
+                raise ProblemError(
+                    409,
+                    "Rate assignment gap",
+                    "Assignments do not cover the complete calculation interval",
+                    "rate_assignment_gap",
+                )
+            calculation_ranges = normalized_ranges
+        if not calculation_ranges and account.active_rate_version_id:
+            active = await session.get(RateVersion, account.active_rate_version_id)
+            if active:
+                calculation_ranges.append((payload.input_start, payload.input_end, active))
+    if not calculation_ranges:
+        raise ProblemError(
+            422,
+            "No assigned rate version",
+            "Assign an active rate version to this utility account first",
+            "rate_assignment_missing",
+        )
+    runs: list[CostCalculationRun] = []
+    for range_start, range_end, range_version in calculation_ranges:
+        if range_end <= range_start:
+            continue
+        run = CostCalculationRun(
+            utility_account_id=account.id,
+            aggregate_set_id=aggregate.id,
+            rate_version_id=range_version.id,
+            input_start=range_start,
+            input_end=range_end,
+            algorithm_version=RateEngine.algorithm_version,
+            status="queued",
+            coverage_percent=Decimal("0"),
+            created_at=datetime.now(UTC),
+        )
+        session.add(run)
+        runs.append(run)
+        session.add(
+            audit_event(
+                action="billing.recalculation_queued",
+                actor_type="user",
+                actor_id=principal.user.id,
+                request=request,
+                object_type="cost_calculation_run",
+                object_id=run.id,
+                details={
+                    "aggregate_set_id": aggregate.id,
+                    "rate_version_id": range_version.id,
+                    "assignment_resolved": payload.rate_version_id is None,
+                },
+            )
+        )
     await session.commit()
-    return {"id": run.id, "status": run.status}
+    return {
+        "id": runs[0].id,
+        "status": "queued",
+        "runs": [
+            {
+                "id": run.id,
+                "rate_version_id": run.rate_version_id,
+                "input_start": run.input_start,
+                "input_end": run.input_end,
+            }
+            for run in runs
+        ],
+    }

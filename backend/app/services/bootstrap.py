@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
 from app.db.models import (
     AlertRule,
     BaselineRule,
@@ -16,12 +17,26 @@ from app.db.models import (
     RatePeriod,
     RatePlan,
     RateSeason,
+    RateSource,
+    RateSyncConfiguration,
     RateVersion,
     Role,
     Site,
     Utility,
 )
 from app.rates.engine import load_seed_plans
+from app.rates.sources import APPROVED_SOURCE_URLS
+
+SOURCE_PARSERS = {
+    (
+        "https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans"
+    ): "sce_public_tou_html_v1",
+    "https://www.sce.com/save-money/rates-financing/sce-rate-advisory": "sce_rate_advisory_html_v1",
+    (
+        "https://www.sce.com/regulatory/regulatory-information/tariff-books/rates-pricing-choices"
+    ): "sce_tariff_index_html_v1",
+    "https://www.sce.com/regulatory/tariff-books/historical-rates": "sce_tariff_index_html_v1",
+}
 
 DEFAULT_ALERTS: tuple[tuple[str, str, str, int], ...] = (
     ("Heartbeat stale", "heartbeat_stale", "critical", 30),
@@ -43,6 +58,20 @@ DEFAULT_ALERTS: tuple[tuple[str, str, str, int], ...] = (
     ("Firmware deployment failed", "firmware_failed", "critical", 0),
     ("Server worker unhealthy", "worker_failure", "critical", 60),
     ("Backup verification failed", "backup_failure", "critical", 0),
+    ("SCE source check succeeded", "rate_check_succeeded", "info", 0),
+    ("Official rate source changed", "rate_source_changed", "warning", 0),
+    ("Rate candidate awaiting review", "rate_candidate_pending", "warning", 0),
+    ("Rate candidate validation failed", "rate_candidate_validation_failed", "critical", 0),
+    ("SCE rate source unavailable", "rate_source_unavailable", "warning", 0),
+    ("SCE rate parser failed", "rate_parser_failed", "critical", 0),
+    ("SCE source conflict detected", "rate_source_conflict", "critical", 0),
+    ("Rate candidate approved", "rate_candidate_approved", "info", 0),
+    ("Rate candidate rejected", "rate_candidate_rejected", "warning", 0),
+    ("Rate version activated", "rate_version_activated", "info", 0),
+    ("Rate version automatically activated", "rate_version_auto_activated", "warning", 0),
+    ("Retroactive rate activated", "rate_retroactive_activated", "warning", 0),
+    ("Rate estimates recalculated", "rate_estimates_recalculated", "info", 0),
+    ("SCE source check is stale", "rate_source_stale", "warning", 0),
 )
 
 
@@ -50,6 +79,7 @@ async def ensure_roles(session: AsyncSession) -> None:
     descriptions = {
         "admin": "Full system and security administration",
         "operator": "Devices, rates, alerts, firmware, and reports",
+        "rate-manager": "Create, review, approve, and assign rate plans",
         "viewer": "Read-only dashboard and permitted exports",
     }
     for name, description in descriptions.items():
@@ -57,7 +87,9 @@ async def ensure_roles(session: AsyncSession) -> None:
             session.add(Role(name=name, description=description))
 
 
-async def ensure_default_reference_data(session: AsyncSession, site_name: str) -> Site:
+async def ensure_default_reference_data(
+    session: AsyncSession, site_name: str, settings: Settings | None = None
+) -> Site:
     await ensure_roles(session)
     utility = await session.scalar(
         select(Utility).where(Utility.name == "Southern California Edison")
@@ -69,6 +101,43 @@ async def ensure_default_reference_data(session: AsyncSession, site_name: str) -
         )
         session.add(utility)
         await session.flush()
+    now = datetime.now(UTC)
+    sync_config = await session.get(RateSyncConfiguration, "default")
+    if sync_config is None:
+        session.add(
+            RateSyncConfiguration(
+                id="default",
+                enabled=settings.rate_sync_enabled if settings else True,
+                schedule_cron=settings.rate_sync_cron if settings else "15 3 * * 0",
+                timezone=(settings.rate_sync_timezone if settings else "America/Los_Angeles"),
+                jitter_minutes=settings.rate_sync_jitter_minutes if settings else 20,
+                approval_mode=settings.rate_sync_policy if settings else "manual_review",
+                auto_activate_verified=(
+                    settings.rate_sync_policy == "auto_activate_verified" if settings else False
+                ),
+                updated_at=now,
+            )
+        )
+    elif settings and sync_config.updated_by is None and sync_config.last_attempted_run is None:
+        sync_config.enabled = settings.rate_sync_enabled
+        sync_config.schedule_cron = settings.rate_sync_cron
+        sync_config.timezone = settings.rate_sync_timezone
+        sync_config.jitter_minutes = settings.rate_sync_jitter_minutes
+        sync_config.approval_mode = settings.rate_sync_policy
+        sync_config.auto_activate_verified = settings.rate_sync_policy == "auto_activate_verified"
+    for url in sorted(APPROVED_SOURCE_URLS):
+        if await session.scalar(select(RateSource.id).where(RateSource.url == url)) is None:
+            session.add(
+                RateSource(
+                    name=("SCE " + url.rsplit("/", 1)[-1].replace("-", " ").title()),
+                    url=url,
+                    parser_id=SOURCE_PARSERS[url],
+                    enabled=True,
+                    consecutive_failures=0,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
     site = await session.scalar(select(Site).where(Site.name == site_name))
     if site is None:
         site = Site(name=site_name, timezone="America/Los_Angeles")
@@ -76,13 +145,17 @@ async def ensure_default_reference_data(session: AsyncSession, site_name: str) -
         await session.flush()
     existing_plan = await session.scalar(select(RatePlan.id).limit(1))
     if existing_plan is None:
-        now = datetime.now(UTC)
         for plan_data in load_seed_plans().values():
             plan = RatePlan(
                 utility_id=utility.id,
                 code=plan_data["code"],
                 name=plan_data["name"],
                 description=plan_data.get("eligibility") or "SCE residential time-of-use preset",
+                plan_kind="official_sce",
+                ownership_scope="global",
+                currency=plan_data["currency"],
+                timezone=plan_data["timezone"],
+                status="active",
             )
             session.add(plan)
             await session.flush()
@@ -105,6 +178,11 @@ async def ensure_default_reference_data(session: AsyncSession, site_name: str) -
                 ),
                 content_hash=hashlib.sha256(canonical).hexdigest(),
                 is_active=True,
+                status="active",
+                source_kind="official_sce",
+                source_checked_at=datetime(2026, 7, 20, tzinfo=UTC),
+                source_label="SCE public residential TOU page",
+                immutable_after_use=True,
                 created_at=now,
             )
             session.add(version)
