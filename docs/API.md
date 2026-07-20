@@ -6,6 +6,19 @@ Browser routes use an opaque `pm_session` cookie and `X-CSRF-Token` on mutations
 
 Key groups are `/api/v1/auth`, `/sites`, `/utility-accounts`, `/circuits`, `/aggregate-sets`, `/devices`, `/readings/history`, `/rates`, `/billing`, `/alerts`, `/exports`, `/firmware-*`, `/reports`, `/backups`, `/audit-events`, `/system/info`, and `/events/stream`. Administrator log discovery and export use `/api/v1/admin/logs/availability`, `POST /api/v1/admin/logs/exports`, export status, and the short-lived authorized download route. Safe sensor removal uses `POST /api/v1/admin/devices/{device_id}/unclaim`; it requires CSRF, an administrator, and exact name-or-ID confirmation. Health endpoints are outside `/api/v1`. Metrics are authenticated.
 
+Human access administration uses `/api/v1/admin/users`,
+`/api/v1/admin/roles`, and `/api/v1/admin/permissions`, including user-access
+revision updates, enable/disable, idempotent session revocation, access history,
+custom-role cloning/revision/archive, and server catalog dependencies. High-risk
+mutations use `POST /api/v1/auth/reauthenticate` and a bounded confirmation
+window. Every mutation requires the existing session and CSRF proof.
+
+Published presentation values use authenticated `GET /api/v1/interface-text`.
+The unauthenticated `GET /api/v1/public/interface-text` returns only registered
+public keys with revision/ETag caching. Draft, preview, publish, reset,
+revision/restore, import, and export endpoints are under
+`/api/v1/admin/interface-text`. See [Interface text](INTERFACE_TEXT.md).
+
 Rate-plan lifecycle endpoints live under `/api/v1/rates/plans`,
 `/api/v1/rates/versions`, and `/api/v1/rates/assignments`. Approved-source,
 check, artifact, and candidate-review endpoints live under

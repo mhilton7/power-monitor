@@ -11,7 +11,8 @@ from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import BrowserSession, User, UserRole
+from app.access import effective_permissions, explicit_site_ids, user_role_names
+from app.db.models import BrowserSession, User
 
 PASSWORD_HASHER = PasswordHasher(
     time_cost=3,
@@ -88,6 +89,15 @@ class SessionPrincipal:
     user: User
     session: BrowserSession
     roles: frozenset[str]
+    permissions: frozenset[str]
+    all_sites: bool
+    site_ids: frozenset[str]
+
+    def has_permission(self, code: str) -> bool:
+        return code in self.permissions
+
+    def can_access_site(self, site_id: str) -> bool:
+        return self.all_sites or site_id in self.site_ids
 
 
 async def authenticate_session(
@@ -111,11 +121,18 @@ async def authenticate_session(
     user = await session.get(User, browser_session.user_id)
     if user is None or not user.is_active:
         return None
-    roles = frozenset(
-        await session.scalars(select(UserRole.role_name).where(UserRole.user_id == user.id))
-    )
+    roles = await user_role_names(session, user.id)
+    permissions = await effective_permissions(session, user.id)
+    site_ids = await explicit_site_ids(session, user.id)
     browser_session.last_seen_at = now
-    return SessionPrincipal(user=user, session=browser_session, roles=roles)
+    return SessionPrincipal(
+        user=user,
+        session=browser_session,
+        roles=roles,
+        permissions=permissions,
+        all_sites=user.all_sites,
+        site_ids=site_ids,
+    )
 
 
 def csrf_matches(session: BrowserSession, supplied: str | None, pepper: str) -> bool:

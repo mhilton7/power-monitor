@@ -49,11 +49,28 @@ def require_roles(*allowed: str) -> Callable[..., Awaitable[SessionPrincipal]]:
     return dependency
 
 
+def require_permissions(
+    *required: str, any_of: bool = False
+) -> Callable[..., Awaitable[SessionPrincipal]]:
+    async def dependency(principal: Principal) -> SessionPrincipal:
+        matches = [permission in principal.permissions for permission in required]
+        permitted = any(matches) if any_of else all(matches)
+        if not permitted:
+            raise ProblemError(
+                403,
+                "Permission denied",
+                "Your account does not have the required permission",
+                "forbidden",
+                extra={"required_permissions": list(required)},
+            )
+        return principal
+
+    return dependency
+
+
 Admin = Annotated[SessionPrincipal, Depends(require_roles("admin"))]
 Operator = Annotated[SessionPrincipal, Depends(require_roles("admin", "operator"))]
-Viewer = Annotated[
-    SessionPrincipal, Depends(require_roles("admin", "operator", "rate-manager", "viewer"))
-]
+Viewer = Annotated[SessionPrincipal, Depends(require_permissions("overview.view"))]
 
 
 async def require_csrf(

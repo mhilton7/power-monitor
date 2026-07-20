@@ -56,13 +56,14 @@ from app.rates.sources import (
 router = APIRouter(prefix="/api/v1", tags=["rate management"])
 
 
-def _rate_manager(principal: Principal) -> None:
-    if not principal.roles.intersection({"admin", "rate-manager"}):
+def _rate_manager(principal: Principal, permission: str = "rates.manage_custom") -> None:
+    if permission not in principal.permissions:
         raise ProblemError(
             403,
             "Permission denied",
-            "Administrator or rate-manager access is required",
+            "Your account does not have the required rate permission",
             "forbidden",
+            extra={"required_permission": permission},
         )
 
 
@@ -111,7 +112,8 @@ async def _plan_payload(session: DbSession, plan: RatePlan) -> dict[str, Any]:
 
 
 @router.get("/rates/plans")
-async def list_managed_rate_plans(_viewer: Viewer, session: DbSession) -> list[dict[str, Any]]:
+async def list_managed_rate_plans(principal: Viewer, session: DbSession) -> list[dict[str, Any]]:
+    _rate_manager(principal, "rates.view")
     plans = list(await session.scalars(select(RatePlan).order_by(RatePlan.code)))
     return [await _plan_payload(session, plan) for plan in plans]
 
@@ -581,6 +583,7 @@ async def validate_rate_document(
 
 @router.get("/rates/assignments")
 async def list_rate_assignments(_viewer: Viewer, session: DbSession) -> list[dict[str, Any]]:
+    _rate_manager(_viewer, "rates.view")
     assignments = await session.scalars(
         select(RateAssignment).order_by(RateAssignment.effective_from.desc())
     )
@@ -600,7 +603,7 @@ async def list_rate_assignments(_viewer: Viewer, session: DbSession) -> list[dic
 async def create_rate_assignment(
     payload: dict[str, Any], request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.assign")
     account_id = payload.get("utility_account_id")
     account = await session.get(UtilityAccount, str(account_id)) if account_id else None
     if account is None and payload.get("site_id"):
@@ -699,7 +702,7 @@ async def patch_rate_assignment(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.assign")
     assignment = await session.get(RateAssignment, assignment_id)
     if assignment is None:
         raise ProblemError(
@@ -740,7 +743,7 @@ async def delete_rate_assignment(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> None:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.assign")
     assignment = await session.get(RateAssignment, assignment_id)
     if assignment:
         session.add(
@@ -793,7 +796,7 @@ def _rate_source_payload(source: RateSource) -> dict[str, Any]:
 
 @router.get("/admin/rate-sources")
 async def list_rate_sources(principal: Principal, session: DbSession) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.manage_sources")
     config = await session.get(RateSyncConfiguration, "default")
     sources = list(await session.scalars(select(RateSource).order_by(RateSource.url)))
     last_success = await session.scalar(
@@ -816,7 +819,7 @@ async def create_rate_source(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.manage_sources")
     allowed = {"name", "url", "parser_id", "effective_from"}
     if set(payload) - allowed or not {"name", "url", "parser_id"}.issubset(payload):
         raise ProblemError(
@@ -931,7 +934,7 @@ async def create_rate_source(
 async def get_rate_source(
     source_id: str, principal: Principal, session: DbSession
 ) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.manage_sources")
     source = await session.get(RateSource, source_id)
     if source is None:
         raise ProblemError(
@@ -973,7 +976,7 @@ async def patch_rate_source(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.manage_sources")
     if set(payload) - {"enabled"}:
         raise ProblemError(
             422,
@@ -1007,7 +1010,7 @@ async def patch_rate_source(
 async def patch_rate_settings(
     payload: dict[str, Any], request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.manage_sources")
     allowed = {
         "enabled",
         "schedule_cron",
@@ -1089,7 +1092,7 @@ async def _queue_check(session: DbSession, user_id: str, source_ids: list[str]) 
 async def check_all_sources(
     request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> dict[str, str]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.check_sources")
     job = await _queue_check(session, principal.user.id, [])
     session.add(
         audit_event(
@@ -1109,7 +1112,7 @@ async def check_all_sources(
 async def check_one_source(
     source_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> dict[str, str]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.check_sources")
     if await session.get(RateSource, source_id) is None:
         raise ProblemError(
             404, "Rate source not found", "Source does not exist", "rate_source_missing"
@@ -1132,7 +1135,7 @@ async def check_one_source(
 
 @router.get("/admin/rate-checks")
 async def list_rate_checks(principal: Principal, session: DbSession) -> list[dict[str, Any]]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.review_candidates")
     checks = await session.scalars(
         select(RateSourceCheckRun).order_by(RateSourceCheckRun.checked_at.desc()).limit(100)
     )
@@ -1152,7 +1155,7 @@ async def list_rate_checks(principal: Principal, session: DbSession) -> list[dic
 
 @router.get("/admin/rate-checks/{check_id}")
 async def get_rate_check(check_id: str, principal: Principal, session: DbSession) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.review_candidates")
     check = await session.get(RateSourceCheckRun, check_id)
     if check is None:
         raise ProblemError(
@@ -1189,7 +1192,7 @@ async def get_rate_check(check_id: str, principal: Principal, session: DbSession
 
 @router.get("/admin/rate-candidates")
 async def list_rate_candidates(principal: Principal, session: DbSession) -> list[dict[str, Any]]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.review_candidates")
     candidates = await session.scalars(
         select(RateChangeCandidate).order_by(RateChangeCandidate.created_at.desc()).limit(100)
     )
@@ -1211,7 +1214,7 @@ async def list_rate_candidates(principal: Principal, session: DbSession) -> list
 async def get_rate_candidate(
     candidate_id: str, principal: Principal, session: DbSession
 ) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.review_candidates")
     candidate = await session.get(RateChangeCandidate, candidate_id)
     if candidate is None:
         raise ProblemError(
@@ -1267,7 +1270,7 @@ async def _decide_candidate(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> RateChangeCandidate:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.approve_candidates")
     candidate = await session.get(RateChangeCandidate, candidate_id)
     if candidate is None:
         raise ProblemError(
@@ -1377,7 +1380,7 @@ async def reject_candidate(
 async def activate_candidate(
     candidate_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.approve_candidates")
     candidate = await session.get(RateChangeCandidate, candidate_id)
     if (
         candidate is None
@@ -1445,7 +1448,7 @@ def _verified_artifact_path(artifact: RateSourceArtifact) -> Path:
 async def get_rate_artifact(
     artifact_id: str, principal: Principal, session: DbSession
 ) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.review_candidates")
     artifact = await session.get(RateSourceArtifact, artifact_id)
     if artifact is None:
         raise ProblemError(
@@ -1465,7 +1468,7 @@ async def get_rate_artifact(
 async def download_rate_artifact(
     artifact_id: str, principal: Principal, session: DbSession
 ) -> FileResponse:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.review_candidates")
     artifact = await session.get(RateSourceArtifact, artifact_id)
     if artifact is None:
         raise ProblemError(
@@ -1486,7 +1489,7 @@ async def upload_rate_artifact(
     session: DbSession,
     upload: Annotated[UploadFile, File()],
 ) -> dict[str, Any]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.manage_sources")
     source = await session.get(RateSource, source_id)
     if source is None:
         raise ProblemError(

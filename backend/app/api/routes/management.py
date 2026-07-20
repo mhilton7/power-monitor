@@ -12,9 +12,17 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import FileResponse
-from sqlalchemy import false, func, select, update
+from sqlalchemy import false, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
+from app.access import (
+    active_admin_count,
+    explicit_site_ids,
+    permissions_for_roles,
+    require_recent_reauthentication,
+    revoke_user_sessions,
+    user_role_names,
+)
 from app.api.deps import AppSettings, CsrfPrincipal, DbSession, Principal, Viewer, audit_event
 from app.db.models import (
     AggregateMember,
@@ -23,7 +31,6 @@ from app.db.models import (
     AlertRule,
     AuditEvent,
     BackupRun,
-    BrowserSession,
     Circuit,
     CostCalculationRun,
     CostIntervalResult,
@@ -84,16 +91,29 @@ ESTIMATE_DISCLOSURE = (
 )
 
 
-def _roles(principal: Principal, *roles: str) -> None:
-    if not principal.roles.intersection(roles):
+def _permission(principal: Principal, permission: str) -> None:
+    if permission not in principal.permissions:
         raise ProblemError(
-            403, "Permission denied", "Your role cannot perform this action", "forbidden"
+            403,
+            "Permission denied",
+            "Your account does not have the required permission",
+            "forbidden",
+            extra={"required_permission": permission},
         )
 
 
+def _site_allowed(principal: Principal, site_id: str) -> None:
+    if not principal.can_access_site(site_id):
+        raise ProblemError(404, "Resource not found", "Resource does not exist", "resource_missing")
+
+
 @router.get("/sites", response_model=list[SiteView])
-async def list_sites(_viewer: Viewer, session: DbSession) -> list[Site]:
-    return list(await session.scalars(select(Site).order_by(Site.name)))
+async def list_sites(principal: Viewer, session: DbSession) -> list[Site]:
+    _permission(principal, "sites.view")
+    query = select(Site).order_by(Site.name)
+    if not principal.all_sites:
+        query = query.where(Site.id.in_(principal.site_ids))
+    return list(await session.scalars(query))
 
 
 @router.post("/sites", response_model=SiteView, status_code=201)
@@ -103,7 +123,7 @@ async def create_site(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> Site:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "sites.manage")
     site = Site(**payload.model_dump())
     session.add(site)
     session.add(
@@ -128,7 +148,8 @@ async def update_site(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> Site:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "sites.manage")
+    _site_allowed(principal, site_id)
     site = await session.get(Site, site_id)
     if site is None:
         raise ProblemError(404, "Site not found", "Site does not exist", "site_missing")
@@ -152,7 +173,8 @@ async def update_site(
 async def delete_site(
     site_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> Response:
-    _roles(principal, "admin")
+    _permission(principal, "sites.manage")
+    _site_allowed(principal, site_id)
     site = await session.get(Site, site_id)
     if site is None:
         raise ProblemError(404, "Site not found", "Site does not exist", "site_missing")
@@ -187,8 +209,12 @@ async def delete_site(
 
 
 @router.get("/utility-accounts")
-async def list_utility_accounts(_viewer: Viewer, session: DbSession) -> list[dict[str, Any]]:
-    accounts = list(await session.scalars(select(UtilityAccount).order_by(UtilityAccount.name)))
+async def list_utility_accounts(principal: Viewer, session: DbSession) -> list[dict[str, Any]]:
+    _permission(principal, "sites.view")
+    query = select(UtilityAccount).order_by(UtilityAccount.name)
+    if not principal.all_sites:
+        query = query.where(UtilityAccount.site_id.in_(principal.site_ids))
+    accounts = list(await session.scalars(query))
     return [
         {
             "id": account.id,
@@ -212,7 +238,7 @@ async def create_utility_account(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "sites.manage")
     utility = await session.scalar(
         select(Utility).where(Utility.name == "Southern California Edison")
     )
@@ -235,6 +261,7 @@ async def create_utility_account(
         raise ProblemError(
             422, "Invalid account", "site_id and name are required", "invalid_account"
         )
+    _site_allowed(principal, str(values["site_id"]))
     account = UtilityAccount(utility_id=utility.id, **values)
     session.add(account)
     session.add(
@@ -259,12 +286,15 @@ async def update_utility_account(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "sites.manage")
     account = await session.get(UtilityAccount, account_id)
     if account is None:
         raise ProblemError(
             404, "Account not found", "Utility account does not exist", "account_missing"
         )
+    _site_allowed(principal, account.site_id)
+    if payload.get("site_id"):
+        _site_allowed(principal, str(payload["site_id"]))
     allowed = {
         "site_id",
         "name",
@@ -296,12 +326,13 @@ async def update_utility_account(
 async def delete_utility_account(
     account_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> Response:
-    _roles(principal, "admin")
+    _permission(principal, "sites.manage")
     account = await session.get(UtilityAccount, account_id)
     if account is None:
         raise ProblemError(
             404, "Account not found", "Utility account does not exist", "account_missing"
         )
+    _site_allowed(principal, account.site_id)
     in_use = int(
         await session.scalar(
             select(func.count()).select_from(Device).where(Device.utility_account_id == account.id)
@@ -341,11 +372,15 @@ async def delete_utility_account(
 
 @router.get("/circuits", response_model=list[CircuitView])
 async def list_circuits(
-    _viewer: Viewer, session: DbSession, site_id: str | None = None
+    principal: Viewer, session: DbSession, site_id: str | None = None
 ) -> list[Circuit]:
+    _permission(principal, "topology.view")
     query = select(Circuit).order_by(Circuit.name)
     if site_id:
+        _site_allowed(principal, site_id)
         query = query.where(Circuit.site_id == site_id)
+    elif not principal.all_sites:
+        query = query.where(Circuit.site_id.in_(principal.site_ids))
     return list(await session.scalars(query))
 
 
@@ -356,7 +391,8 @@ async def create_circuit(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> Circuit:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "topology.manage")
+    _site_allowed(principal, payload.site_id)
     site = await session.get(Site, payload.site_id)
     if site is None:
         raise ProblemError(
@@ -401,10 +437,12 @@ async def update_circuit(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> Circuit:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "topology.manage")
     circuit = await session.get(Circuit, circuit_id)
     if circuit is None:
         raise ProblemError(404, "Circuit not found", "Circuit does not exist", "circuit_missing")
+    _site_allowed(principal, circuit.site_id)
+    _site_allowed(principal, payload.site_id)
     parents = {
         item.id: item.parent_id
         for item in await session.scalars(select(Circuit).where(Circuit.site_id == circuit.site_id))
@@ -433,10 +471,11 @@ async def update_circuit(
 async def delete_circuit(
     circuit_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> Response:
-    _roles(principal, "admin")
+    _permission(principal, "topology.manage")
     circuit = await session.get(Circuit, circuit_id)
     if circuit is None:
         raise ProblemError(404, "Circuit not found", "Circuit does not exist", "circuit_missing")
+    _site_allowed(principal, circuit.site_id)
     child_count = int(
         await session.scalar(
             select(func.count()).select_from(Circuit).where(Circuit.parent_id == circuit.id)
@@ -472,8 +511,12 @@ async def delete_circuit(
 
 
 @router.get("/aggregate-sets")
-async def list_aggregate_sets(_viewer: Viewer, session: DbSession) -> list[dict[str, Any]]:
-    aggregates = list(await session.scalars(select(AggregateSet).order_by(AggregateSet.name)))
+async def list_aggregate_sets(principal: Viewer, session: DbSession) -> list[dict[str, Any]]:
+    _permission(principal, "topology.view")
+    query = select(AggregateSet).order_by(AggregateSet.name)
+    if not principal.all_sites:
+        query = query.where(AggregateSet.site_id.in_(principal.site_ids))
+    aggregates = list(await session.scalars(query))
     response: list[dict[str, Any]] = []
     for aggregate in aggregates:
         members = list(
@@ -509,7 +552,8 @@ async def create_aggregate_set(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin")
+    _permission(principal, "topology.manage")
+    _site_allowed(principal, payload.site_id)
     circuits = {
         item.id: item
         for item in await session.scalars(select(Circuit).where(Circuit.site_id == payload.site_id))
@@ -575,12 +619,14 @@ async def update_aggregate_set(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin")
+    _permission(principal, "topology.manage")
     aggregate = await session.get(AggregateSet, aggregate_id)
     if aggregate is None:
         raise ProblemError(
             404, "Aggregate not found", "Aggregate set does not exist", "aggregate_missing"
         )
+    _site_allowed(principal, aggregate.site_id)
+    _site_allowed(principal, payload.site_id)
     circuits = {
         item.id: item
         for item in await session.scalars(select(Circuit).where(Circuit.site_id == payload.site_id))
@@ -650,12 +696,13 @@ async def update_aggregate_set(
 async def delete_aggregate_set(
     aggregate_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> Response:
-    _roles(principal, "admin")
+    _permission(principal, "topology.manage")
     aggregate = await session.get(AggregateSet, aggregate_id)
     if aggregate is None:
         raise ProblemError(
             404, "Aggregate not found", "Aggregate set does not exist", "aggregate_missing"
         )
+    _site_allowed(principal, aggregate.site_id)
     session.add(
         audit_event(
             action="aggregate.deleted",
@@ -687,7 +734,9 @@ async def create_enrollment_token(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> EnrollmentTokenView:
-    _roles(principal, "admin")
+    _permission(principal, "enrollment.manage")
+    if payload.site_id:
+        _site_allowed(principal, payload.site_id)
     now = datetime.now(UTC)
     plaintext = secrets.token_urlsafe(48)
     preassignment = payload.model_dump(
@@ -719,7 +768,8 @@ async def create_enrollment_token(
 
 
 @router.get("/enrollment-tokens")
-async def list_enrollment_tokens(_viewer: Viewer, session: DbSession) -> list[dict[str, Any]]:
+async def list_enrollment_tokens(principal: Viewer, session: DbSession) -> list[dict[str, Any]]:
+    _permission(principal, "enrollment.view")
     tokens = list(
         await session.scalars(
             select(EnrollmentToken).order_by(EnrollmentToken.created_at.desc()).limit(200)
@@ -735,6 +785,8 @@ async def list_enrollment_tokens(_viewer: Viewer, session: DbSession) -> list[di
             "preassignment": token.preassignment,
         }
         for token in tokens
+        if not token.preassignment.get("site_id")
+        or principal.can_access_site(str(token.preassignment["site_id"]))
     ]
 
 
@@ -745,12 +797,14 @@ async def revoke_enrollment_token(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> Response:
-    _roles(principal, "admin")
+    _permission(principal, "enrollment.manage")
     token = await session.get(EnrollmentToken, token_id)
     if token is None:
         raise ProblemError(
             404, "Token not found", "Enrollment token does not exist", "token_missing"
         )
+    if token.preassignment.get("site_id"):
+        _site_allowed(principal, str(token.preassignment["site_id"]))
     token.revoked_at = datetime.now(UTC)
     session.add(
         audit_event(
@@ -778,12 +832,13 @@ async def _latest_heartbeat(session: DbSession, device_id: str) -> DeviceHeartbe
 
 @router.get("/devices")
 async def list_devices(
-    _viewer: Viewer,
+    principal: Viewer,
     session: DbSession,
     site_id: str | None = None,
     status: str | None = None,
     lifecycle: str = "active",
 ) -> list[dict[str, Any]]:
+    _permission(principal, "devices.view")
     if lifecycle not in {"active", "decommissioned", "all"}:
         raise ProblemError(
             422,
@@ -795,7 +850,10 @@ async def list_devices(
     if lifecycle != "all":
         query = query.where(Device.lifecycle_status == lifecycle)
     if site_id:
+        _site_allowed(principal, site_id)
         query = query.where(Device.site_id == site_id)
+    elif not principal.all_sites:
+        query = query.where(Device.site_id.in_(principal.site_ids))
     if status:
         query = query.where(Device.status == status)
     devices = list(await session.scalars(query))
@@ -870,10 +928,12 @@ async def list_devices(
 
 
 @router.get("/devices/{device_id}")
-async def device_detail(device_id: str, _viewer: Viewer, session: DbSession) -> dict[str, Any]:
+async def device_detail(device_id: str, principal: Viewer, session: DbSession) -> dict[str, Any]:
+    _permission(principal, "devices.view")
     device = await session.get(Device, device_id)
     if device is None:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
     heartbeat = await _latest_heartbeat(session, device.id)
     cursor = await session.get(SyncCursor, device.id)
     addresses = list(
@@ -1026,12 +1086,13 @@ async def rotate_credential(
     session: DbSession,
     settings: AppSettings,
 ) -> dict[str, Any]:
-    _roles(principal, "admin")
+    _permission(principal, "devices.manage")
     device = await session.get(Device, device_id)
     if device is None or device.revoked_at:
         raise ProblemError(
             404, "Device not active", "Device cannot rotate credentials", "device_missing"
         )
+    _site_allowed(principal, device.site_id)
     now = datetime.now(UTC)
     old_credentials = list(
         await session.scalars(
@@ -1092,10 +1153,11 @@ async def revoke_device(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, bool]:
-    _roles(principal, "admin")
+    _permission(principal, "devices.remove")
     device = await session.get(Device, device_id)
     if device is None:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
     already_decommissioned = device.lifecycle_status == "decommissioned"
     if not already_decommissioned:
         await _decommission_device(
@@ -1205,10 +1267,11 @@ async def unclaim_device(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin")
+    _permission(principal, "devices.remove")
     device = await session.get(Device, device_id)
     if device is None:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
     if payload.confirmation not in {device.name, device.id}:
         raise ProblemError(
             409,
@@ -1284,7 +1347,7 @@ async def set_device_maintenance(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "devices.manage")
     now = datetime.now(UTC)
     if payload.until <= now or payload.until > now + timedelta(days=31):
         raise ProblemError(
@@ -1296,6 +1359,7 @@ async def set_device_maintenance(
     device = await session.get(Device, device_id)
     if device is None or device.revoked_at:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
     device.maintenance_until = payload.until
     device.status = "maintenance"
     session.add(
@@ -1317,10 +1381,11 @@ async def set_device_maintenance(
 async def clear_device_maintenance(
     device_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> Response:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "devices.manage")
     device = await session.get(Device, device_id)
     if device is None:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
     device.maintenance_until = None
     device.status = "offline_last_known"
     session.add(
@@ -1345,10 +1410,11 @@ async def create_device_config(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "devices.manage")
     device = await session.get(Device, device_id)
     if device is None:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
     forbidden = {key for key in payload.settings if "pin" in key.lower() or "gpio" in key.lower()}
     if forbidden:
         raise ProblemError(
@@ -1395,7 +1461,7 @@ async def create_device_config(
 
 @router.get("/readings/history", response_model=HistoryResponse)
 async def history(
-    _viewer: Viewer,
+    principal: Viewer,
     session: DbSession,
     start: datetime,
     end: datetime,
@@ -1407,6 +1473,7 @@ async def history(
     limit: int = Query(default=5000, ge=1, le=20000),
     after_sequence: int = Query(default=0, ge=0),
 ) -> HistoryResponse:
+    _permission(principal, "history.view")
     if start.tzinfo is None or end.tzinfo is None or end <= start:
         raise ProblemError(
             422, "Invalid range", "Use an increasing timezone-aware range", "invalid_range"
@@ -1421,12 +1488,25 @@ async def history(
         )
     selected_device_ids: set[str] = set()
     if device_id:
+        device = await session.get(Device, device_id)
+        if device is None:
+            raise ProblemError(
+                404, "Resource not found", "Resource does not exist", "resource_missing"
+            )
+        _site_allowed(principal, device.site_id)
         selected_device_ids.add(device_id)
     elif circuit_id:
+        circuit = await session.get(Circuit, circuit_id)
+        if circuit is None:
+            raise ProblemError(
+                404, "Resource not found", "Resource does not exist", "resource_missing"
+            )
+        _site_allowed(principal, circuit.site_id)
         selected_device_ids.update(
             await session.scalars(select(Device.id).where(Device.circuit_id == circuit_id))
         )
     elif site_id:
+        _site_allowed(principal, site_id)
         selected_device_ids.update(
             await session.scalars(select(Device.id).where(Device.site_id == site_id))
         )
@@ -1439,6 +1519,7 @@ async def history(
                 "Aggregate set does not exist",
                 "aggregate_missing",
             )
+        _site_allowed(principal, aggregate.site_id)
         members = await session.scalars(
             select(AggregateMember).where(AggregateMember.aggregate_set_id == aggregate.id)
         )
@@ -1566,11 +1647,15 @@ async def history(
 
 @router.get("/fleet/summary", response_model=FleetSummary)
 async def fleet_summary(
-    _viewer: Viewer, session: DbSession, site_id: str | None = None
+    principal: Viewer, session: DbSession, site_id: str | None = None
 ) -> FleetSummary:
+    _permission(principal, "overview.view")
     device_query = select(Device).where(Device.lifecycle_status == "active")
     if site_id:
+        _site_allowed(principal, site_id)
         device_query = device_query.where(Device.site_id == site_id)
+    elif not principal.all_sites:
+        device_query = device_query.where(Device.site_id.in_(principal.site_ids))
     devices = list(await session.scalars(device_query))
     included_device_ids = [device.id for device in devices if device.include_in_default_site_total]
     now = datetime.now(UTC)
@@ -1597,6 +1682,10 @@ async def fleet_summary(
         run_query = run_query.join(
             AggregateSet, AggregateSet.id == CostCalculationRun.aggregate_set_id
         ).where(AggregateSet.site_id == site_id)
+    elif not principal.all_sites:
+        run_query = run_query.join(
+            AggregateSet, AggregateSet.id == CostCalculationRun.aggregate_set_id
+        ).where(AggregateSet.site_id.in_(principal.site_ids))
     latest_run = await session.scalar(
         run_query.order_by(CostCalculationRun.completed_at.desc()).limit(1)
     )
@@ -1622,9 +1711,16 @@ async def fleet_summary(
             default=None,
         )
         current_bucket = recent_energy.bucket if recent_energy else None
-    alerts = await session.scalar(
+    alert_query = (
         select(func.count()).select_from(AlertInstance).where(AlertInstance.status == "active")
     )
+    if site_id:
+        alert_query = alert_query.where(AlertInstance.site_id == site_id)
+    elif not principal.all_sites:
+        alert_query = alert_query.where(
+            or_(AlertInstance.site_id.is_(None), AlertInstance.site_id.in_(principal.site_ids))
+        )
+    alerts = await session.scalar(alert_query)
     online_states = {
         "online_synchronized",
         "online_with_backlog",
@@ -1655,9 +1751,14 @@ async def fleet_summary(
 
 @router.get("/alerts")
 async def list_alerts(
-    _viewer: Viewer, session: DbSession, status: str | None = None
+    principal: Viewer, session: DbSession, status: str | None = None
 ) -> list[dict[str, Any]]:
+    _permission(principal, "alerts.view")
     query = select(AlertInstance).order_by(AlertInstance.opened_at.desc()).limit(1000)
+    if not principal.all_sites:
+        query = query.where(
+            or_(AlertInstance.site_id.is_(None), AlertInstance.site_id.in_(principal.site_ids))
+        )
     if status:
         query = query.where(AlertInstance.status == status)
     alerts = list(await session.scalars(query))
@@ -1680,8 +1781,14 @@ async def list_alerts(
 
 
 @router.get("/alert-rules")
-async def list_alert_rules(_viewer: Viewer, session: DbSession) -> list[dict[str, Any]]:
-    rules = list(await session.scalars(select(AlertRule).order_by(AlertRule.name)))
+async def list_alert_rules(principal: Viewer, session: DbSession) -> list[dict[str, Any]]:
+    _permission(principal, "alerts.view")
+    query = select(AlertRule).order_by(AlertRule.name)
+    if not principal.all_sites:
+        query = query.where(
+            or_(AlertRule.site_id.is_(None), AlertRule.site_id.in_(principal.site_ids))
+        )
+    rules = list(await session.scalars(query))
     return [
         {
             "id": rule.id,
@@ -1743,12 +1850,21 @@ async def create_alert_rule(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "alerts.manage_rules")
     _validate_alert_rule_configuration(payload)
-    if payload.device_id and await session.get(Device, payload.device_id) is None:
-        raise ProblemError(422, "Invalid rule", "Device does not exist", "device_missing")
+    if payload.device_id:
+        selected_device = await session.get(Device, payload.device_id)
+        if selected_device is None:
+            raise ProblemError(422, "Invalid rule", "Device does not exist", "device_missing")
+        _site_allowed(principal, selected_device.site_id)
     if payload.site_id and await session.get(Site, payload.site_id) is None:
         raise ProblemError(422, "Invalid rule", "Site does not exist", "site_missing")
+    if payload.site_id:
+        _site_allowed(principal, payload.site_id)
+    elif not payload.device_id and not principal.all_sites:
+        raise ProblemError(
+            403, "Global rule denied", "Select an assigned site", "site_scope_required"
+        )
     rule = AlertRule(**payload.model_dump())
     session.add(rule)
     session.add(
@@ -1773,11 +1889,17 @@ async def update_alert_rule(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "alerts.manage_rules")
     _validate_alert_rule_configuration(payload)
     rule = await session.get(AlertRule, rule_id)
     if rule is None:
         raise ProblemError(404, "Rule not found", "Alert rule does not exist", "rule_missing")
+    if rule.site_id:
+        _site_allowed(principal, rule.site_id)
+    elif not principal.all_sites:
+        raise ProblemError(404, "Rule not found", "Alert rule does not exist", "rule_missing")
+    if payload.site_id:
+        _site_allowed(principal, payload.site_id)
     for key, value in payload.model_dump().items():
         setattr(rule, key, value)
     session.add(
@@ -1798,9 +1920,13 @@ async def update_alert_rule(
 async def delete_alert_rule(
     rule_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> Response:
-    _roles(principal, "admin")
+    _permission(principal, "alerts.manage_rules")
     rule = await session.get(AlertRule, rule_id)
     if rule is None:
+        raise ProblemError(404, "Rule not found", "Alert rule does not exist", "rule_missing")
+    if rule.site_id:
+        _site_allowed(principal, rule.site_id)
+    elif not principal.all_sites:
         raise ProblemError(404, "Rule not found", "Alert rule does not exist", "rule_missing")
     instance_count = int(
         await session.scalar(
@@ -1836,10 +1962,12 @@ async def acknowledge_alert(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, str]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "alerts.acknowledge")
     alert = await session.get(AlertInstance, alert_id)
     if alert is None:
         raise ProblemError(404, "Alert not found", "Alert does not exist", "alert_missing")
+    if alert.site_id:
+        _site_allowed(principal, alert.site_id)
     alert.status = "acknowledged"
     alert.acknowledged_at = datetime.now(UTC)
     alert.acknowledged_by = principal.user.id
@@ -1866,7 +1994,7 @@ async def silence_alert(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "alerts.acknowledge")
     if payload.until <= datetime.now(UTC):
         raise ProblemError(
             422, "Invalid silence", "Silence end must be in the future", "silence_invalid"
@@ -1874,6 +2002,8 @@ async def silence_alert(
     alert = await session.get(AlertInstance, alert_id)
     if alert is None:
         raise ProblemError(404, "Alert not found", "Alert does not exist", "alert_missing")
+    if alert.site_id:
+        _site_allowed(principal, alert.site_id)
     alert.silenced_until = payload.until
     alert.evidence = {**alert.evidence, "silence_note": payload.note}
     session.add(
@@ -2069,7 +2199,7 @@ def _redacted_channel(channel: NotificationChannel, cipher: SecretCipher) -> dic
 async def list_notification_channels(
     principal: Principal, session: DbSession, settings: AppSettings
 ) -> list[dict[str, Any]]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "alerts.manage_delivery")
     cipher = SecretCipher(settings.app_master_key)
     channels = list(
         await session.scalars(select(NotificationChannel).order_by(NotificationChannel.name))
@@ -2085,7 +2215,7 @@ async def create_notification_channel(
     session: DbSession,
     settings: AppSettings,
 ) -> dict[str, Any]:
-    _roles(principal, "admin")
+    _permission(principal, "alerts.manage_delivery")
     _validate_notification_configuration(payload)
     protected = SecretCipher(settings.app_master_key).encrypt(
         json.dumps(payload.configuration, sort_keys=True, separators=(",", ":")).encode()
@@ -2121,7 +2251,7 @@ async def update_notification_channel(
     session: DbSession,
     settings: AppSettings,
 ) -> dict[str, Any]:
-    _roles(principal, "admin")
+    _permission(principal, "alerts.manage_delivery")
     channel = await session.get(NotificationChannel, channel_id)
     if channel is None:
         raise ProblemError(
@@ -2164,7 +2294,7 @@ async def update_notification_channel(
 async def disable_notification_channel(
     channel_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> Response:
-    _roles(principal, "admin")
+    _permission(principal, "alerts.manage_delivery")
     channel = await session.get(NotificationChannel, channel_id)
     if channel is None:
         raise ProblemError(
@@ -2192,7 +2322,7 @@ async def test_notification_channel(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin")
+    _permission(principal, "alerts.manage_delivery")
     channel = await session.get(NotificationChannel, channel_id)
     if channel is None or not channel.enabled:
         raise ProblemError(
@@ -2229,7 +2359,7 @@ async def list_notification_attempts(
     session: DbSession,
     limit: int = Query(default=200, ge=1, le=1000),
 ) -> list[dict[str, Any]]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "alerts.manage_delivery")
     attempts = list(
         await session.scalars(
             select(NotificationAttempt)
@@ -2253,12 +2383,25 @@ async def list_notification_attempts(
     ]
 
 
+async def _target_user_scope_allowed(session: DbSession, principal: Principal, user: User) -> bool:
+    if principal.all_sites:
+        return True
+    if user.all_sites:
+        return False
+    return set(await explicit_site_ids(session, user.id)).issubset(principal.site_ids)
+
+
 @router.get("/users")
 async def list_users(principal: Principal, session: DbSession) -> list[dict[str, Any]]:
-    _roles(principal, "admin")
+    _permission(principal, "users.view")
     users = list(await session.scalars(select(User).order_by(User.email)))
     output: list[dict[str, Any]] = []
     for user in users:
+        if not principal.all_sites and (
+            user.all_sites
+            or not set(await explicit_site_ids(session, user.id)).issubset(principal.site_ids)
+        ):
+            continue
         roles = list(
             await session.scalars(select(UserRole.role_name).where(UserRole.user_id == user.id))
         )
@@ -2281,7 +2424,7 @@ async def create_user(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin")
+    _permission(principal, "users.manage")
     if not password_is_strong(payload.password):
         raise ProblemError(
             422,
@@ -2305,9 +2448,28 @@ async def create_user(
     )
     session.add(user)
     await session.flush()
-    effective_roles = set(payload.roles)
+    effective_roles: set[str] = set(payload.roles)
     if "rate-manager" in effective_roles:
         effective_roles.add("viewer")
+    if "admin" in effective_roles:
+        _permission(principal, "users.manage_protected")
+        if not payload.confirm_high_risk:
+            raise ProblemError(
+                409,
+                "Protected confirmation required",
+                "Confirm creation of the protected administrator",
+                "protected_confirmation_required",
+            )
+        require_recent_reauthentication(principal.session.reauthenticated_at)
+    requested_permissions = await permissions_for_roles(session, effective_roles)
+    if not requested_permissions.issubset(principal.permissions):
+        raise ProblemError(
+            403,
+            "Privilege delegation denied",
+            "You cannot grant permissions that you do not possess",
+            "permission_delegation_forbidden",
+        )
+    user.all_sites = principal.all_sites
     for role in sorted(effective_roles):
         session.add(UserRole(user_id=user.id, role_name=role))
     session.add(
@@ -2333,7 +2495,7 @@ async def admin_password_reset(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, bool]:
-    _roles(principal, "admin")
+    _permission(principal, "users.manage")
     if not password_is_strong(payload.new_password):
         raise ProblemError(
             422,
@@ -2341,15 +2503,18 @@ async def admin_password_reset(
             "Use at least 14 characters and three character classes",
             "weak_password",
         )
-    user = await session.get(User, user_id)
+    user = await session.scalar(select(User).where(User.id == user_id).with_for_update())
     if user is None:
         raise ProblemError(404, "User not found", "User does not exist", "user_missing")
+    if not await _target_user_scope_allowed(session, principal, user):
+        raise ProblemError(404, "User not found", "User does not exist", "user_missing")
+    if "admin" in await user_role_names(session, user.id):
+        _permission(principal, "users.manage_protected")
+        require_recent_reauthentication(principal.session.reauthenticated_at)
     user.password_hash = hash_password(payload.new_password)
     user.password_changed_at = datetime.now(UTC)
-    for browser_session in await session.scalars(
-        select(BrowserSession).where(BrowserSession.user_id == user.id)
-    ):
-        browser_session.revoked_at = datetime.now(UTC)
+    user.access_revision += 1
+    revoked = await revoke_user_sessions(session, user.id)
     session.add(
         audit_event(
             action="user.password_reset",
@@ -2361,7 +2526,7 @@ async def admin_password_reset(
         )
     )
     await session.commit()
-    return {"reset": True, "sessions_revoked": True}
+    return {"reset": True, "sessions_revoked": revoked > 0}
 
 
 @router.delete("/users/{user_id}", status_code=204)
@@ -2372,9 +2537,11 @@ async def deactivate_user(
     session: DbSession,
 ) -> Response:
     """Disable a user while retaining their audit and ownership history."""
-    _roles(principal, "admin")
-    user = await session.get(User, user_id)
+    _permission(principal, "users.manage")
+    user = await session.scalar(select(User).where(User.id == user_id).with_for_update())
     if user is None:
+        raise ProblemError(404, "User not found", "User does not exist", "user_missing")
+    if not await _target_user_scope_allowed(session, principal, user):
         raise ProblemError(404, "User not found", "User does not exist", "user_missing")
     if user.id == principal.user.id:
         raise ProblemError(
@@ -2386,20 +2553,11 @@ async def deactivate_user(
     if not user.is_active:
         return Response(status_code=204)
 
-    is_admin = await session.scalar(
-        select(UserRole.user_id).where(
-            UserRole.user_id == user.id,
-            UserRole.role_name == "admin",
-        )
-    )
-    if is_admin is not None:
-        active_admins = await session.scalar(
-            select(func.count())
-            .select_from(User)
-            .join(UserRole, UserRole.user_id == User.id)
-            .where(User.is_active.is_(True), UserRole.role_name == "admin")
-        )
-        if (active_admins or 0) <= 1:
+    is_admin = "admin" in await user_role_names(session, user.id)
+    if is_admin:
+        _permission(principal, "users.manage_protected")
+        require_recent_reauthentication(principal.session.reauthenticated_at)
+        if await active_admin_count(session, excluding_user_id=user.id, lock=True) == 0:
             raise ProblemError(
                 409,
                 "Last administrator cannot be removed",
@@ -2407,15 +2565,9 @@ async def deactivate_user(
                 "last_admin_required",
             )
 
-    now = datetime.now(UTC)
     user.is_active = False
-    for browser_session in await session.scalars(
-        select(BrowserSession).where(
-            BrowserSession.user_id == user.id,
-            BrowserSession.revoked_at.is_(None),
-        )
-    ):
-        browser_session.revoked_at = now
+    user.access_revision += 1
+    await revoke_user_sessions(session, user.id)
     session.add(
         audit_event(
             action="user.deactivated",
@@ -2436,7 +2588,7 @@ async def list_audit_events(
     session: DbSession,
     limit: int = Query(default=200, ge=1, le=1000),
 ) -> list[dict[str, Any]]:
-    _roles(principal, "admin")
+    _permission(principal, "audit.view")
     events = list(
         await session.scalars(
             select(AuditEvent).order_by(AuditEvent.occurred_at.desc()).limit(limit)
@@ -2460,7 +2612,7 @@ async def list_audit_events(
 
 @router.get("/backups")
 async def list_backups(principal: Principal, session: DbSession) -> list[dict[str, Any]]:
-    _roles(principal, "admin")
+    _permission(principal, "backups.view")
     runs = list(
         await session.scalars(select(BackupRun).order_by(BackupRun.started_at.desc()).limit(100))
     )
@@ -2479,12 +2631,12 @@ async def list_backups(principal: Principal, session: DbSession) -> list[dict[st
 
 
 @router.get("/reports")
-async def list_reports(_viewer: Viewer, session: DbSession) -> list[dict[str, Any]]:
-    reports = list(
-        await session.scalars(
-            select(GeneratedReport).order_by(GeneratedReport.created_at.desc()).limit(100)
-        )
-    )
+async def list_reports(principal: Viewer, session: DbSession) -> list[dict[str, Any]]:
+    _permission(principal, "history.export")
+    query = select(GeneratedReport).order_by(GeneratedReport.created_at.desc()).limit(100)
+    if not principal.all_sites:
+        query = query.where(GeneratedReport.requested_by == principal.user.id)
+    reports = list(await session.scalars(query))
     return [
         {
             "id": report.id,
@@ -2498,7 +2650,8 @@ async def list_reports(_viewer: Viewer, session: DbSession) -> list[dict[str, An
 
 
 @router.get("/report-definitions")
-async def list_report_definitions(_viewer: Viewer, session: DbSession) -> list[dict[str, Any]]:
+async def list_report_definitions(principal: Viewer, session: DbSession) -> list[dict[str, Any]]:
+    _permission(principal, "history.export")
     definitions = list(
         await session.scalars(select(ReportDefinition).order_by(ReportDefinition.name))
     )
@@ -2521,7 +2674,7 @@ async def create_report_definition(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "history.export")
     definition = ReportDefinition(**payload.model_dump(), created_by=principal.user.id)
     session.add(definition)
     session.add(
@@ -2546,7 +2699,7 @@ async def update_report_definition(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "history.export")
     definition = await session.get(ReportDefinition, definition_id)
     if definition is None:
         raise ProblemError(
@@ -2572,7 +2725,7 @@ async def update_report_definition(
 async def delete_report_definition(
     definition_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> Response:
-    _roles(principal, "admin")
+    _permission(principal, "history.export")
     definition = await session.get(ReportDefinition, definition_id)
     if definition is None:
         raise ProblemError(
@@ -2600,7 +2753,7 @@ async def queue_report(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _roles(principal, "admin", "operator")
+    _permission(principal, "history.export")
     definition = await session.get(ReportDefinition, definition_id)
     if definition is None:
         raise ProblemError(
@@ -2635,11 +2788,12 @@ async def queue_report(
 async def download_report(
     report_id: str, principal: Principal, session: DbSession, settings: AppSettings
 ) -> FileResponse:
+    _permission(principal, "history.export")
     report = await session.get(GeneratedReport, report_id)
     if report is None or report.status != "completed" or not report.file_path:
         raise ProblemError(404, "Report unavailable", "Report is not ready", "report_unavailable")
-    if "viewer" not in principal.roles and report.requested_by != principal.user.id:
-        _roles(principal, "admin", "operator")
+    if not principal.all_sites and report.requested_by != principal.user.id:
+        raise ProblemError(404, "Report unavailable", "Report is not ready", "report_unavailable")
     root = settings.report_path.resolve()
     path = Path(report.file_path).resolve()
     if root not in path.parents or not path.is_file():

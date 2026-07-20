@@ -20,6 +20,9 @@ export function UserManagement({ currentUserId }: { currentUserId?: string }) {
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [actorPassword, setActorPassword] = useState('')
+  const [totp, setTotp] = useState('')
+  const [confirmAdmin, setConfirmAdmin] = useState(false)
   const [roles, setRoles] = useState<Role[]>(['viewer'])
   const [confirmRemoval, setConfirmRemoval] = useState<string>()
   const users = useQuery({ queryKey: ['users'], queryFn: () => api<ManagedUser[]>('/api/v1/users') })
@@ -28,13 +31,24 @@ export function UserManagement({ currentUserId }: { currentUserId?: string }) {
     setDisplayName('')
     setEmail('')
     setPassword('')
+    setActorPassword('')
+    setTotp('')
+    setConfirmAdmin(false)
     setRoles(['viewer'])
   }
   const createUser = useMutation({
-    mutationFn: () => api<{ id: string }>('/api/v1/users', {
-      method: 'POST',
-      body: JSON.stringify({ display_name: displayName.trim(), email: email.trim(), password, roles }),
-    }),
+    mutationFn: async () => {
+      if (roles.includes('admin')) {
+        await api('/api/v1/auth/reauthenticate', {
+          method: 'POST',
+          body: JSON.stringify({ password: actorPassword, totp_code: totp || undefined }),
+        })
+      }
+      return api<{ id: string }>('/api/v1/users', {
+        method: 'POST',
+        body: JSON.stringify({ display_name: displayName.trim(), email: email.trim(), password, roles, confirm_high_risk: confirmAdmin }),
+      })
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['users'] })
       resetForm()
@@ -85,8 +99,9 @@ export function UserManagement({ currentUserId }: { currentUserId?: string }) {
               </label>
             ))}
           </fieldset>
+          {roles.includes('admin') && <section className="high-risk-warning"><strong>Protected administrator creation</strong><p>Confirm this privilege grant and reauthenticate before creating the account.</p><label className="checkbox-line"><input type="checkbox" checked={confirmAdmin} onChange={(event) => { setConfirmAdmin(event.target.checked) }} />I reviewed the administrator access being granted.</label><div className="form-columns"><label><span>Current password</span><input type="password" autoComplete="current-password" value={actorPassword} onChange={(event) => { setActorPassword(event.target.value) }} required /></label><label><span>MFA code <small>if enabled</small></span><input inputMode="numeric" pattern="[0-9]{6}" value={totp} onChange={(event) => { setTotp(event.target.value) }} /></label></div></section>}
           {!roles.length && <p className="field-error">Select at least one role.</p>}
-          <footer><button type="button" className="button secondary" onClick={() => { setShowCreate(false) }}>Cancel</button><button className="button primary" disabled={createUser.isPending || !roles.length}><Plus size={16} /> {createUser.isPending ? 'Creating…' : 'Create user'}</button></footer>
+          <footer><button type="button" className="button secondary" onClick={() => { setShowCreate(false) }}>Cancel</button><button className="button primary" disabled={createUser.isPending || !roles.length || (roles.includes('admin') && (!confirmAdmin || !actorPassword))}><Plus size={16} /> {createUser.isPending ? 'Creating…' : 'Create user'}</button></footer>
         </form>
       )}
 
@@ -107,7 +122,7 @@ export function UserManagement({ currentUserId }: { currentUserId?: string }) {
                       {confirmRemoval === user.id ? (
                         <div className="confirm-action"><span>Remove access?</span><button className="button ghost" onClick={() => { setConfirmRemoval(undefined) }}>Cancel</button><button className="button danger" onClick={() => { removeUser.mutate(user.id) }} disabled={removeUser.isPending}>Remove</button></div>
                       ) : (
-                        <button className="button ghost danger-text" disabled={!user.is_active || isCurrent} title={isCurrent ? 'Another administrator must remove your account' : undefined} onClick={() => { setConfirmRemoval(user.id); removeUser.reset() }}><Trash2 size={15} /> {isCurrent ? 'Current account' : 'Remove'}</button>
+                        <button className="button ghost danger-text" disabled={!user.is_active || isCurrent || user.roles.includes('admin')} title={isCurrent ? 'Another administrator must remove your account' : user.roles.includes('admin') ? 'Use Users & Access for protected administrator changes' : undefined} onClick={() => { setConfirmRemoval(user.id); removeUser.reset() }}><Trash2 size={15} /> {isCurrent ? 'Current account' : 'Remove'}</button>
                       )}
                     </td>
                   </tr>

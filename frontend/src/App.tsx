@@ -1,9 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { hasPermission } from './access'
 import { api } from './api'
 import { Layout } from './components/Layout'
 import { LoadingState } from './components/UI'
+import { InterfaceTextProvider } from './interfaceText'
+import { AccessDeniedPage } from './pages/AccessDeniedPage'
 import { AuthPage } from './pages/AuthPage'
 import type { Session } from './types'
 
@@ -19,33 +22,42 @@ const RateEditorPage = lazy(() => import('./pages/RateEditorPage').then((module)
 const RateSourcesPage = lazy(() => import('./pages/RateSourcesPage').then((module) => ({ default: module.RateSourcesPage })))
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((module) => ({ default: module.ReportsPage })))
 const TopologyPage = lazy(() => import('./pages/TopologyPage').then((module) => ({ default: module.TopologyPage })))
+const UsersAccessPage = lazy(() => import('./pages/UsersAccessPage').then((module) => ({ default: module.UsersAccessPage })))
+const InterfaceTextPage = lazy(() => import('./pages/InterfaceTextPage').then((module) => ({ default: module.InterfaceTextPage })))
+
+function Guard({ session, permission, children }: { session: Session; permission: string; children: ReactNode }) {
+  return hasPermission(session, permission) ? children : <AccessDeniedPage permission={permission} />
+}
 
 function ProtectedApp({ session }: { session: Session }) {
   const location = useLocation()
   if (!session.authenticated) return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />
-  const isAdmin = session.user?.roles.includes('admin') ?? false
-  const canManageRates = isAdmin || (session.user?.roles.includes('rate-manager') ?? false)
+  const canManageRates = hasPermission(session, 'rates.manage_custom')
   return (
-    <Layout session={session}>
-      <Suspense fallback={<LoadingState label="Opening this workspace…" />}>
+    <InterfaceTextProvider>
+      <Layout session={session}>
+        <Suspense fallback={<LoadingState label="Opening this workspace…" />}>
         <Routes>
-        <Route path="/" element={<DashboardPage canEnroll={isAdmin} />} />
-        <Route path="/devices" element={<DevicesPage />} />
-        <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
-        <Route path="/topology" element={<TopologyPage />} />
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/rates" element={<RatesPage canManage={canManageRates} />} />
-        <Route path="/rates/new" element={canManageRates ? <RateEditorPage canManage /> : <Navigate to="/rates" replace />} />
-        <Route path="/rates/:planId/versions/:versionId" element={<RateEditorPage canManage={canManageRates} />} />
-        <Route path="/rates/sources" element={canManageRates ? <RateSourcesPage /> : <Navigate to="/rates" replace />} />
-        <Route path="/alerts" element={<AlertsPage />} />
-        <Route path="/enrollment" element={isAdmin ? <EnrollmentPage /> : <Navigate to="/" replace />} />
-        <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/admin" element={isAdmin ? <AdminPage currentUserId={session.user?.id} /> : <Navigate to="/" replace />} />
+        <Route path="/" element={<Guard session={session} permission="overview.view"><DashboardPage canEnroll={hasPermission(session, 'enrollment.manage')} /></Guard>} />
+        <Route path="/devices" element={<Guard session={session} permission="devices.view"><DevicesPage /></Guard>} />
+        <Route path="/devices/:deviceId" element={<Guard session={session} permission="devices.view"><DeviceDetailPage /></Guard>} />
+        <Route path="/topology" element={<Guard session={session} permission="topology.view"><TopologyPage /></Guard>} />
+        <Route path="/history" element={<Guard session={session} permission="history.view"><HistoryPage /></Guard>} />
+        <Route path="/rates" element={<Guard session={session} permission="rates.view"><RatesPage canManage={canManageRates} /></Guard>} />
+        <Route path="/rates/new" element={<Guard session={session} permission="rates.manage_custom"><RateEditorPage canManage /></Guard>} />
+        <Route path="/rates/:planId/versions/:versionId" element={<Guard session={session} permission="rates.view"><RateEditorPage canManage={canManageRates} /></Guard>} />
+        <Route path="/rates/sources" element={<Guard session={session} permission="rates.manage_sources"><RateSourcesPage /></Guard>} />
+        <Route path="/alerts" element={<Guard session={session} permission="alerts.view"><AlertsPage /></Guard>} />
+        <Route path="/enrollment" element={<Guard session={session} permission="enrollment.view"><EnrollmentPage /></Guard>} />
+        <Route path="/reports" element={<Guard session={session} permission="history.export"><ReportsPage /></Guard>} />
+        <Route path="/admin" element={<Guard session={session} permission="settings.view"><AdminPage currentUserId={session.user?.id} /></Guard>} />
+        <Route path="/administration/users-access" element={<Guard session={session} permission="users.view"><UsersAccessPage session={session} /></Guard>} />
+        <Route path="/administration/interface-text" element={<Guard session={session} permission="interface_text.view"><InterfaceTextPage canManage={hasPermission(session, 'interface_text.manage')} /></Guard>} />
         <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </Suspense>
-    </Layout>
+        </Suspense>
+      </Layout>
+    </InterfaceTextProvider>
   )
 }
 

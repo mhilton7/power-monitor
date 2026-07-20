@@ -31,13 +31,14 @@ router = APIRouter(prefix="/api/v1", tags=["firmware"])
 MAX_FIRMWARE_BYTES = 32 * 1024 * 1024
 
 
-def _operator(principal: Principal) -> None:
-    if not principal.roles.intersection({"admin", "operator"}):
-        raise ProblemError(403, "Permission denied", "Operator access is required", "forbidden")
+def _operator(principal: Principal, permission: str = "firmware.manage") -> None:
+    if permission not in principal.permissions:
+        raise ProblemError(403, "Permission denied", "Firmware permission is required", "forbidden")
 
 
 @router.get("/firmware-releases")
-async def list_releases(_viewer: Viewer, session: DbSession) -> list[dict[str, Any]]:
+async def list_releases(principal: Viewer, session: DbSession) -> list[dict[str, Any]]:
+    _operator(principal, "firmware.view")
     releases = list(
         await session.scalars(select(FirmwareRelease).order_by(FirmwareRelease.created_at.desc()))
     )

@@ -49,6 +49,9 @@ class UserSummary(ApiModel):
     email: EmailStr
     display_name: str
     roles: list[str]
+    permissions: list[str] = Field(default_factory=list)
+    all_sites: bool = True
+    site_ids: list[str] = Field(default_factory=list)
 
 
 class SessionView(ApiModel):
@@ -464,6 +467,75 @@ class UserCreate(ApiModel):
     display_name: str = Field(min_length=1, max_length=120)
     password: str = Field(min_length=14, max_length=1024)
     roles: list[Literal["admin", "operator", "rate-manager", "viewer"]] = Field(min_length=1)
+    confirm_high_risk: bool = False
+
+
+class ReauthenticateRequest(ApiModel):
+    password: str = Field(max_length=1024)
+    totp_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+
+
+class UserAccessUpdate(ApiModel):
+    role_ids: list[str] = Field(min_length=1, max_length=20)
+    all_sites: bool
+    site_ids: list[str] = Field(default_factory=list, max_length=500)
+    expected_revision: int = Field(ge=1)
+    reason: str | None = Field(default=None, max_length=500)
+    confirm_high_risk: bool = False
+
+
+class UserStatusChange(ApiModel):
+    reason: str | None = Field(default=None, max_length=500)
+    confirm_high_risk: bool = False
+
+
+class RoleWrite(ApiModel):
+    display_name: str = Field(min_length=3, max_length=120)
+    description: str = Field(min_length=3, max_length=255)
+    permissions: list[str] = Field(min_length=1, max_length=100)
+    expected_revision: int | None = Field(default=None, ge=1)
+    reason: str | None = Field(default=None, max_length=500)
+    confirm_high_risk: bool = False
+
+
+class InterfaceTextDraftWrite(ApiModel):
+    base_revision: int = Field(ge=0)
+    draft_revision: int | None = Field(default=None, ge=1)
+    values: dict[str, str]
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class InterfaceTextPublish(ApiModel):
+    base_revision: int = Field(ge=0)
+    draft_revision: int = Field(ge=1)
+    reason: str | None = Field(default=None, max_length=500)
+    confirm: bool = False
+
+
+class InterfaceTextRestore(ApiModel):
+    base_revision: int = Field(ge=0)
+    reason: str | None = Field(default=None, max_length=500)
+    confirm: bool = False
+
+
+class InterfaceTextReset(ApiModel):
+    base_revision: int = Field(ge=0)
+    key: str | None = None
+    section: str | None = None
+    reason: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def exactly_one_scope(self) -> InterfaceTextReset:
+        if bool(self.key) == bool(self.section):
+            raise ValueError("provide exactly one of key or section")
+        return self
+
+
+class InterfaceTextImport(ApiModel):
+    schema_version: Literal["power-monitor-interface-text/1.0"]
+    base_revision: int = Field(ge=0)
+    values: dict[str, str]
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class PasswordReset(ApiModel):

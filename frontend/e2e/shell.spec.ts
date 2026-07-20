@@ -12,6 +12,28 @@ const fleet = { current_load_w: '960', energy_today_kwh: '12.5', estimated_cost_
 const device = { id: 'device-1', name: 'Garage HVAC', site_id: 'site-1', site_name: 'Upland Site', circuit_id: 'branch-1', circuit_name: 'Garage branch', connection_mode: 'hybrid', measurement_role: 'submeter', cost_scope: 'energy_only', included_in_default: true, ct_rating_amps: '100', status: 'online_synchronized', lifecycle_status: 'active', current_watts: '960', last_seen_at: '2026-07-20T06:00:00Z', firmware_version: '1.0.0', rssi_dbm: -52, pzem_ok: true, sd_ok: true, time_trusted: true, backlog: 0 }
 const officialVersion = { id: 'rate-version-official', version: 1, effective_from: '2026-06-01', effective_through: null, status: 'active', source_kind: 'official_sce', source_checked_at: '2026-07-19T10:15:00Z', source_label: 'SCE archived evidence', integrity_sha256: 'a'.repeat(64), is_active: true, immutable: true, created_at: '2026-06-01T00:00:00Z' }
 const officialPlan = { id: 'rate-plan-official', code: 'TOU-D-4-9PM', name: 'TOU-D 4 PM to 9 PM', description: 'Official SCE residential time-of-use plan.', plan_kind: 'official_sce', ownership_scope: 'global', currency: 'USD', timezone: 'America/Los_Angeles', status: 'active', versions: [officialVersion] }
+const accessPermissions = [
+  ['overview.view', 'Dashboard', 'View overview', false], ['sites.view', 'Sites', 'View sites', false],
+  ['devices.view', 'Devices', 'View devices', false], ['devices.manage', 'Devices', 'Manage devices', false],
+  ['users.view', 'Administration', 'View users', true], ['users.manage', 'Administration', 'Manage users', true],
+  ['roles.view', 'Administration', 'View roles', true], ['roles.manage', 'Administration', 'Manage roles', true],
+  ['interface_text.view', 'Administration', 'View interface text', true], ['interface_text.manage', 'Administration', 'Manage interface text', true],
+].map(([code, group, label, highRisk]) => ({ code, group, label, description: `${String(label)} permission`, high_risk: Boolean(highRisk) }))
+const textDefinitions = [
+  ['general.application_name', 'General', 'Power Monitor', 'Application display name', 'public', 160],
+  ['general.application_short_name', 'General', 'Power Monitor', 'Application short name', 'authenticated', 40],
+  ['general.organization_tagline', 'General', 'Local energy intelligence', 'Organization or site tagline', 'authenticated', 120],
+  ['general.browser_title_prefix', 'General', 'Power Monitor', 'Browser-title prefix', 'authenticated', 60],
+  ['login.heading', 'Login Screen', 'Sign in to your dashboard', 'Login heading', 'public', 160],
+  ['login.subtitle', 'Login Screen', 'Use your local Power Monitor account to continue.', 'Login subtitle', 'public', 240],
+  ['login.email_label', 'Login Screen', 'Email address', 'Email field label', 'public', 60],
+  ['login.password_label', 'Login Screen', 'Password', 'Password field label', 'public', 60],
+  ['login.sign_in_button', 'Login Screen', 'Sign in', 'Sign-in button label', 'public', 60],
+  ['navigation.overview', 'Navigation', 'Overview', 'Overview', 'authenticated', 40],
+  ['navigation.users_access', 'Navigation', 'Users & Access', 'Users & Access', 'authenticated', 60],
+  ['pages.overview.title', 'Page Titles & Subtitles', 'Power Dashboard', 'Overview title', 'authenticated', 160],
+  ['footer.dashboard', 'Footer & Support', 'Power Monitor Server', 'Dashboard footer text', 'authenticated', 160],
+].map(([key, section, defaultValue, label, visibility, maxLength]) => ({ key, section, default: defaultValue, label, description: `${String(label)} description`, field_type: 'text', required: true, visibility, max_length: Number(maxLength), min_length: 1, line_breaks: false, url_companion: false, markdown: false, blank_allowed: false, preview_location: 'dashboard', current_value: defaultValue, published_revision: 0 }))
 
 async function mockApplication(page: Page, roles: string[] = ['admin']) {
   let enrollmentCounter = 0
@@ -20,6 +42,13 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
   let customVersionStatus = 'draft'
   let candidateStatus = 'pending_review'
   let jobPolls = 0
+  let userAccessRevision = 1
+  let managedUserRoles = ['viewer']
+  let textRevision = 0
+  let textDraftRevision = 0
+  let textPreviewedRevision = 0
+  let textDraft: Record<string, string> = {}
+  let publishedText: Record<string, string> = {}
   let rateConfiguration = { enabled: true, schedule_cron: '15 3 * * 0', timezone: 'America/Los_Angeles', jitter_minutes: 20, approval_mode: 'manual_review', auto_activate_verified: false, next_scheduled_run: '2026-07-26T10:15:00Z' }
   let rateSources: Array<{ id: string; name: string; url: string; parser_id: string; effective_from?: string; enabled: boolean; last_success_at?: string; consecutive_failures: number }> = [{ id: 'source-1', name: 'SCE public TOU page', url: 'https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans', parser_id: 'sce_public_tou_html_v1', effective_from: '2026-06-01', enabled: true, last_success_at: '2026-07-19T10:15:00Z', consecutive_failures: 0 }]
   await page.route('**/api/v1/**', async (route) => {
@@ -28,6 +57,36 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     const path = url.pathname
     let body: unknown = []
     if (path === '/api/v1/auth/session') body = session(roles)
+    else if (path === '/api/v1/auth/reauthenticate') body = { reauthenticated: true, valid_for_seconds: 300 }
+    else if (path === '/api/v1/interface-text') body = { revision: textRevision, values: publishedText }
+    else if (path === '/api/v1/public/interface-text') body = { revision: textRevision, values: Object.fromEntries(Object.entries(publishedText).filter(([key]) => textDefinitions.some((definition) => definition.key === key && definition.visibility === 'public'))) }
+    else if (path === '/api/v1/admin/permissions') body = { permissions: accessPermissions, dependencies: { 'users.manage': ['users.view'], 'roles.manage': ['roles.view'], 'interface_text.manage': ['interface_text.view'] } }
+    else if (path === '/api/v1/admin/roles') body = { roles: [
+      { id: 'admin', display_name: 'Administrator', description: 'Full application administration', built_in: true, archived: false, revision: 1, permissions: accessPermissions.map((item) => item.code), assigned_user_count: 1, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-07-01T00:00:00Z' },
+      { id: 'viewer', display_name: 'Read-Only Viewer', description: 'Read-only assigned-site access', built_in: true, archived: false, revision: 1, permissions: ['overview.view', 'sites.view', 'devices.view'], assigned_user_count: 1, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-07-01T00:00:00Z' },
+      { id: 'operator', display_name: 'Operator', description: 'Assigned-site operations', built_in: true, archived: false, revision: 1, permissions: ['overview.view', 'sites.view', 'devices.view', 'devices.manage'], assigned_user_count: 0, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-07-01T00:00:00Z' },
+    ] }
+    else if (path === '/api/v1/admin/users' && request.method() === 'GET') body = { users: [
+      { ...session(roles).user, is_active: true, status: 'active', all_sites: true, sites: [], site_ids: [], permissions: accessPermissions.map((item) => item.code), permission_count: accessPermissions.length, mfa_enabled: true, last_login_at: '2026-07-20T10:00:00Z', active_session_count: 1, created_at: '2026-07-01T00:00:00Z', access_revision: 1, protected_administrator: true },
+      { id: 'user-2', email: 'viewer@example.test', display_name: 'Dashboard Viewer', roles: managedUserRoles, is_active: true, status: 'active', all_sites: false, sites: [site], site_ids: ['site-1'], permissions: managedUserRoles.includes('operator') ? ['overview.view', 'sites.view', 'devices.view', 'devices.manage'] : ['overview.view', 'sites.view', 'devices.view'], permission_count: managedUserRoles.includes('operator') ? 4 : 3, mfa_enabled: false, last_login_at: '2026-07-19T10:00:00Z', active_session_count: 2, created_at: '2026-07-02T00:00:00Z', access_revision: userAccessRevision, protected_administrator: false },
+    ] }
+    else if (path === '/api/v1/admin/users/user-2' && request.method() === 'GET') body = { id: 'user-2', email: 'viewer@example.test', display_name: 'Dashboard Viewer', roles: managedUserRoles, is_active: true, status: 'active', all_sites: false, sites: [site], site_ids: ['site-1'], permissions: managedUserRoles.includes('operator') ? ['overview.view', 'sites.view', 'devices.view', 'devices.manage'] : ['overview.view', 'sites.view', 'devices.view'], permission_count: managedUserRoles.includes('operator') ? 4 : 3, mfa_enabled: false, last_login_at: '2026-07-19T10:00:00Z', active_session_count: 2, created_at: '2026-07-02T00:00:00Z', access_revision: userAccessRevision, protected_administrator: false, sessions: [{ id: 'session-2', created_at: '2026-07-20T08:00:00Z', last_seen_at: '2026-07-20T10:00:00Z', expires_at: '2026-07-21T10:00:00Z', source_ip: '192.168.0.20', user_agent: 'Browser' }], permission_sources: { viewer: ['overview.view', 'sites.view', 'devices.view'] } }
+    else if (path === '/api/v1/admin/users/user-2/access' && request.method() === 'PUT') { const update = JSON.parse(request.postData() ?? '{}') as { role_ids: string[] }; managedUserRoles = update.role_ids; userAccessRevision += 1; body = { id: 'user-2', email: 'viewer@example.test', display_name: 'Dashboard Viewer', roles: managedUserRoles, is_active: true, status: 'active', all_sites: false, sites: [site], site_ids: ['site-1'], permissions: ['overview.view', 'sites.view', 'devices.view', 'devices.manage'], permission_count: 4, mfa_enabled: false, active_session_count: 0, created_at: '2026-07-02T00:00:00Z', access_revision: userAccessRevision, protected_administrator: false, sessions_revoked: 2 } }
+    else if (path === '/api/v1/admin/users/user-2/access-history') body = { events: [{ id: 'audit-1', occurred_at: '2026-07-20T10:00:00Z', actor_id: 'user-1', action: 'user.access_updated', outcome: 'success', details: { reason: 'Operational assignment' } }] }
+    else if (path === '/api/v1/admin/users/user-2/revoke-sessions') body = { sessions_revoked: 2 }
+    else if (path === '/api/v1/admin/interface-text/catalog') body = {
+      revision: textRevision,
+      definitions: textDefinitions.map((item) => {
+        const key = String(item.key)
+        return { ...item, current_value: publishedText[key] ?? item.default, current_override: publishedText[key], published_revision: textRevision }
+      }),
+    }
+    else if (path === '/api/v1/admin/interface-text/draft' && request.method() === 'GET') body = { exists: textDraftRevision > 0, base_revision: textRevision, draft_revision: textDraftRevision, previewed_revision: textPreviewedRevision || undefined, values: textDraft }
+    else if (path === '/api/v1/admin/interface-text/draft' && request.method() === 'PUT') { const update = JSON.parse(request.postData() ?? '{}') as { values: Record<string, string> }; textDraft = update.values; textDraftRevision += 1; textPreviewedRevision = 0; body = { exists: true, base_revision: textRevision, draft_revision: textDraftRevision, values: textDraft } }
+    else if (path === '/api/v1/admin/interface-text/draft' && request.method() === 'DELETE') { textDraft = {}; textDraftRevision = 0; textPreviewedRevision = 0; await route.fulfill({ status: 204, body: '' }); return }
+    else if (path === '/api/v1/admin/interface-text/preview') { textPreviewedRevision = textDraftRevision; body = { draft_revision: textDraftRevision, values: { ...publishedText, ...textDraft } } }
+    else if (path === '/api/v1/admin/interface-text/publish') { publishedText = { ...publishedText, ...textDraft }; textRevision += 1; textDraft = {}; textDraftRevision = 0; textPreviewedRevision = 0; body = { id: `revision-${textRevision}`, revision: textRevision, values: publishedText, overrides: publishedText, changed_key_count: Object.keys(publishedText).length, created_at: '2026-07-20T10:00:00Z', created_by: 'user-1' } }
+    else if (path === '/api/v1/admin/interface-text/revisions') body = { revisions: textRevision ? [{ id: `revision-${textRevision}`, revision: textRevision, created_by: 'user-1', created_at: '2026-07-20T10:00:00Z', reason: 'Dashboard update', changed_key_count: Object.keys(publishedText).length }] : [] }
     else if (path === '/api/v1/sites') body = [site]
     else if (path === '/api/v1/fleet/summary') body = fleet
     else if (path === '/api/v1/devices') {
@@ -146,16 +205,16 @@ test('first run creates an administrator without a default password', async ({ p
   await expect(page.getByText('There is no default password.')).toBeVisible()
 })
 
-test('viewer sees fleet evidence but cannot open operator or admin pages', async ({ page }) => {
+test('viewer sees fleet evidence and an in-app denial for restricted pages', async ({ page }) => {
   await mockApplication(page, ['viewer'])
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
   await expect(page.getByText('960 W', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('link', { name: /Enroll sensor/ })).toHaveCount(0)
   await page.goto('/enrollment')
-  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible()
   await page.goto('/admin')
-  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible()
 })
 
 test('history keeps missing-data regions visible', async ({ page }) => {
@@ -214,6 +273,52 @@ test('administrator can create and remove local users', async ({ page }) => {
   await viewerRow.getByRole('button', { name: 'Remove' }).click()
   await viewerRow.getByRole('button', { name: 'Remove', exact: true }).click()
   await removeRequest
+})
+
+test('administrator previews effective access and promotes a site-scoped user', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/administration/users-access')
+  await expect(page.getByRole('heading', { name: 'Users & Access' })).toBeVisible()
+  await page.getByLabel('Search users').fill('Dashboard Viewer')
+  const row = page.getByRole('row').filter({ hasText: 'Dashboard Viewer' })
+  await expect(row).toContainText('3 effective')
+  await row.getByRole('button', { name: 'View access' }).click()
+  const dialog = page.getByRole('dialog', { name: 'User access details' })
+  await expect(dialog.getByText('192.168.0.20')).toBeVisible()
+  await expect(dialog.getByText('Operational assignment')).toBeVisible()
+  await dialog.getByRole('button', { name: /Edit access/ }).click()
+  await dialog.getByRole('checkbox', { name: /Operator/ }).check()
+  await expect(dialog.getByText('Manage devices')).toBeVisible()
+  await expect(dialog.getByText(/2 active session\(s\) will be revoked/)).toBeVisible()
+  await dialog.getByRole('checkbox', { name: /I reviewed the privilege increase/ }).check()
+  await dialog.getByLabel('Current password').fill('Production-Password-42!')
+  const updateRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/admin/users/user-2/access') && request.method() === 'PUT')
+  await dialog.getByRole('button', { name: 'Save access' }).click()
+  const payload = JSON.parse((await updateRequest).postData() ?? '{}') as { role_ids: string[]; site_ids: string[]; confirm_high_risk: boolean }
+  expect(payload.role_ids).toEqual(expect.arrayContaining(['viewer', 'operator']))
+  expect(payload.site_ids).toEqual(['site-1'])
+  expect(payload.confirm_high_risk).toBe(true)
+  await expect(page.getByText(/User access updated\. 2 session/)).toBeVisible()
+})
+
+test('administrator drafts, previews, and publishes safe login text', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/administration/interface-text')
+  await expect(page.getByRole('heading', { name: 'Dashboard & Login Text' })).toBeVisible()
+  await page.getByRole('tab', { name: 'Login Screen' }).click()
+  await page.getByLabel('Login heading').fill('Welcome to the Upland energy dashboard')
+  const draftRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/admin/interface-text/draft') && request.method() === 'PUT')
+  await page.getByRole('button', { name: 'Save draft' }).first().click()
+  await draftRequest
+  await expect(page.getByText('Text draft saved.')).toBeVisible()
+  await page.getByRole('button', { name: 'Preview' }).click()
+  await expect(page.getByText('Welcome to the Upland energy dashboard').first()).toBeVisible()
+  await expect(page.getByText(/Nothing has been published/)).toBeVisible()
+  await page.getByRole('button', { name: 'Publish', exact: true }).first().click()
+  const publishDialog = page.getByRole('dialog', { name: 'Publish interface text' })
+  await expect(publishDialog.getByText(/Internal routes, API identifiers, and permission codes will not change/)).toBeVisible()
+  await publishDialog.getByRole('button', { name: 'Confirm and publish' }).click()
+  await expect(page.getByText('Interface text published.')).toBeVisible()
 })
 
 test('administrator removes a claimed sensor with exact confirmation and can view it archived', async ({ page }) => {

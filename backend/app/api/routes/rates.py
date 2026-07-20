@@ -42,13 +42,19 @@ DISCLOSURE = (
 )
 
 
-def _operator(principal: Principal) -> None:
-    if not principal.roles.intersection({"admin", "operator"}):
-        raise ProblemError(403, "Permission denied", "Operator access is required", "forbidden")
+def _operator(principal: Principal, permission: str = "rates.manage_custom") -> None:
+    if permission not in principal.permissions:
+        raise ProblemError(
+            403,
+            "Permission denied",
+            "Your account does not have the required rate permission",
+            "forbidden",
+        )
 
 
 @router.get("/rate-plans")
-async def list_rate_plans(_viewer: Viewer, session: DbSession) -> list[dict[str, Any]]:
+async def list_rate_plans(principal: Viewer, session: DbSession) -> list[dict[str, Any]]:
+    _operator(principal, "rates.view")
     plans = list(await session.scalars(select(RatePlan).order_by(RatePlan.code)))
     output: list[dict[str, Any]] = []
     for plan in plans:

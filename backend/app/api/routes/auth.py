@@ -9,10 +9,17 @@ import pyotp
 from fastapi import APIRouter, Cookie, Request, Response
 from sqlalchemy import func, select
 
+from app.access import ALL_PERMISSIONS, effective_permissions, explicit_site_ids
 from app.api.deps import AppSettings, CsrfPrincipal, DbSession, audit_event
 from app.db.models import BrowserSession, TotpCredential, User, UserRole
 from app.problem import ProblemError
-from app.schemas import BootstrapRequest, LoginRequest, SessionView, UserSummary
+from app.schemas import (
+    BootstrapRequest,
+    LoginRequest,
+    ReauthenticateRequest,
+    SessionView,
+    UserSummary,
+)
 from app.security.browser import (
     authenticate_session,
     create_session,
@@ -28,7 +35,13 @@ _attempts: dict[str, deque[float]] = defaultdict(deque)
 
 
 def _session_view(
-    user: User, roles: list[str], browser_session: BrowserSession, csrf: str | None
+    user: User,
+    roles: list[str],
+    browser_session: BrowserSession,
+    csrf: str | None,
+    *,
+    permissions: list[str],
+    site_ids: list[str],
 ) -> SessionView:
     return SessionView(
         authenticated=True,
@@ -37,6 +50,9 @@ def _session_view(
             email=user.email,
             display_name=user.display_name,
             roles=roles,
+            permissions=permissions,
+            all_sites=user.all_sites,
+            site_ids=site_ids,
         ),
         expires_at=browser_session.expires_at,
         csrf_token=csrf,
@@ -136,7 +152,14 @@ async def bootstrap(
     _set_session_cookies(
         response, settings, created.token, created.csrf_token, created.row.expires_at
     )
-    return _session_view(user, ["admin"], created.row, created.csrf_token)
+    return _session_view(
+        user,
+        ["admin"],
+        created.row,
+        created.csrf_token,
+        permissions=sorted(ALL_PERMISSIONS),
+        site_ids=[],
+    )
 
 
 @router.post("/login", response_model=SessionView)
@@ -191,6 +214,9 @@ async def login(
     roles = list(
         await session.scalars(select(UserRole.role_name).where(UserRole.user_id == user.id))
     )
+    permissions = sorted(await effective_permissions(session, user.id))
+    site_ids = sorted(await explicit_site_ids(session, user.id))
+    user.last_login_at = datetime.now(UTC)
     created = create_session(
         user_id=user.id,
         pepper=settings.session_pepper,
@@ -213,7 +239,14 @@ async def login(
     _set_session_cookies(
         response, settings, created.token, created.csrf_token, created.row.expires_at
     )
-    return _session_view(user, roles, created.row, created.csrf_token)
+    return _session_view(
+        user,
+        roles,
+        created.row,
+        created.csrf_token,
+        permissions=permissions,
+        site_ids=site_ids,
+    )
 
 
 @router.get("/session", response_model=SessionView)
@@ -226,7 +259,12 @@ async def session_status(
         principal = await authenticate_session(session, token, settings.session_pepper)
         if principal:
             return _session_view(
-                principal.user, sorted(principal.roles), principal.session, csrf=None
+                principal.user,
+                sorted(principal.roles),
+                principal.session,
+                csrf=None,
+                permissions=sorted(principal.permissions),
+                site_ids=sorted(principal.site_ids),
             )
     count = await session.scalar(select(func.count()).select_from(User))
     return SessionView(authenticated=False, bootstrap_required=not bool(count))
@@ -256,6 +294,63 @@ async def logout(
     response.delete_cookie(settings.csrf_cookie_name, path="/")
     response.status_code = 204
     return response
+
+
+@router.post("/reauthenticate")
+async def reauthenticate(
+    payload: ReauthenticateRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+    settings: AppSettings,
+) -> dict[str, object]:
+    if not verify_password(principal.user.password_hash, payload.password):
+        session.add(
+            audit_event(
+                action="auth.reauthentication_failed",
+                actor_type="user",
+                actor_id=principal.user.id,
+                request=request,
+                outcome="denied",
+            )
+        )
+        await session.commit()
+        raise ProblemError(
+            401,
+            "Reauthentication failed",
+            "The current password or MFA code was not accepted",
+            "reauthentication_failed",
+        )
+    totp = await session.get(TotpCredential, principal.user.id)
+    if totp is not None and totp.confirmed:
+        if payload.totp_code is None:
+            raise ProblemError(
+                401,
+                "TOTP required",
+                "Enter your six-digit code",
+                "totp_required",
+            )
+        secret = SecretCipher(settings.app_master_key).decrypt(totp.encrypted_secret).decode()
+        if not pyotp.TOTP(secret).verify(payload.totp_code, valid_window=1):
+            raise ProblemError(
+                401,
+                "Reauthentication failed",
+                "The current password or MFA code was not accepted",
+                "reauthentication_failed",
+            )
+    principal.session.reauthenticated_at = datetime.now(UTC)
+    session.add(
+        audit_event(
+            action="auth.reauthenticated",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="session",
+            object_id=principal.session.id,
+        )
+    )
+    await session.commit()
+    return {"reauthenticated": True, "valid_for_seconds": 300}
 
 
 @router.post("/totp/setup")

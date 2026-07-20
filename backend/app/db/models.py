@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -19,6 +19,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +34,60 @@ class Role(Base):
     __tablename__ = "roles"
     name: Mapped[str] = mapped_column(String(32), primary_key=True)
     description: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(120), default="")
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+    __table_args__ = (Index("uq_roles_display_name_lower", func.lower(display_name), unique=True),)
+
+
+class Permission(Base):
+    __tablename__ = "permissions"
+    code: Mapped[str] = mapped_column(String(80), primary_key=True)
+    group_name: Mapped[str] = mapped_column(String(80), index=True)
+    label: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(String(500))
+    high_risk: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    role_name: Mapped[str] = mapped_column(
+        ForeignKey("roles.name", ondelete="CASCADE"), primary_key=True
+    )
+    permission_code: Mapped[str] = mapped_column(
+        ForeignKey("permissions.code", ondelete="RESTRICT"), primary_key=True
+    )
+
+
+class RoleRevision(Base):
+    __tablename__ = "role_revisions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    role_name: Mapped[str] = mapped_column(
+        ForeignKey("roles.name", ondelete="RESTRICT"), index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer)
+    display_name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(String(255))
+    permissions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str | None] = mapped_column(String(500))
+    __table_args__ = (UniqueConstraint("role_name", "revision", name="uq_role_revision"),)
 
 
 class User(TimestampMixin, Base):
@@ -43,6 +98,9 @@ class User(TimestampMixin, Base):
     password_hash: Mapped[str] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    all_sites: Mapped[bool] = mapped_column(Boolean, default=True)
+    access_revision: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class UserRole(Base):
@@ -52,6 +110,16 @@ class UserRole(Base):
     )
     role_name: Mapped[str] = mapped_column(
         ForeignKey("roles.name", ondelete="RESTRICT"), primary_key=True
+    )
+
+
+class UserSite(Base):
+    __tablename__ = "user_sites"
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    site_id: Mapped[str] = mapped_column(
+        ForeignKey("sites.id", ondelete="CASCADE"), primary_key=True
     )
 
 
@@ -67,6 +135,7 @@ class BrowserSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source_ip: Mapped[str | None] = mapped_column(String(64))
     user_agent: Mapped[str | None] = mapped_column(String(512))
+    reauthenticated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TotpCredential(TimestampMixin, Base):
@@ -92,6 +161,46 @@ class AuditEvent(Base):
     outcome: Mapped[str] = mapped_column(String(24), default="success")
     correlation_id: Mapped[str | None] = mapped_column(String(128), index=True)
     details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class InterfaceTextRevision(Base):
+    __tablename__ = "interface_text_revisions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    revision: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    values: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    created_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str | None] = mapped_column(String(500))
+    restored_from_id: Mapped[str | None] = mapped_column(
+        ForeignKey("interface_text_revisions.id", ondelete="SET NULL")
+    )
+
+
+class InterfaceTextDraft(Base):
+    __tablename__ = "interface_text_drafts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default="current")
+    base_revision: Mapped[int] = mapped_column(Integer, default=0)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    previewed_revision: Mapped[int | None] = mapped_column(Integer)
+    values: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    edited_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    reason: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class InterfaceTextState(Base):
+    __tablename__ = "interface_text_state"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default="current")
+    current_revision_id: Mapped[str | None] = mapped_column(
+        ForeignKey("interface_text_revisions.id", ondelete="RESTRICT")
+    )
+    current_revision: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class Site(TimestampMixin, Base):

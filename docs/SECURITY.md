@@ -4,7 +4,7 @@
 
 The system assumes hostile browser traffic, replayed device traffic, compromised LAN peers, malicious pull targets, tampered firmware, and database disclosure. Caddy provides TLS; API security headers include HSTS, restrictive CSP, frame denial, MIME sniff protection, no-referrer, and no-store for sensitive responses.
 
-Passwords use Argon2id. Browser sessions are random, server-stored, expiring, revocable, HttpOnly, Secure, and SameSite; mutations require a CSRF proof. Login throttling and audit events apply. Admin/operator/viewer authorization is enforced in route dependencies. Optional TOTP secrets are encrypted. No default credentials exist.
+Passwords use Argon2id. Browser sessions are random, server-stored, expiring, revocable, HttpOnly, Secure, and SameSite; mutations require a CSRF proof. Login throttling and audit events apply. Server-defined granular permissions and site scope are recalculated on each request; hiding frontend controls is never the security boundary. Material access/role changes revoke affected sessions. Last-administrator, self-lockout, protected-administrator, actor-permission, actor-site, archived-role, dependency, and optimistic-revision checks run server-side. Optional TOTP secrets are encrypted. No default credentials exist.
 
 Each device gets a unique high-entropy secret encrypted by Fernet under `APP_MASTER_KEY`. HKDF separates request directions. Exact body hashing, canonical HMAC, timestamp bounds, nonce persistence, constant-time comparison, per-device failure handling, revocation, and audit defend the device API. Logs redact secret-like fields and never print full signatures.
 
@@ -29,6 +29,20 @@ Back up the master key offline and separately. To rotate it, stop API/worker, ta
 For a compromised device, revoke it, preserve audit/events, rotate related tokens, inspect nonce/auth failures, and reenroll only after factory reset. For a server compromise, isolate it, preserve logs, rotate TLS/session/master/device credentials as applicable, restore a verified backup, and let microSD history backfill from the restored cursor.
 
 Report vulnerabilities privately to the deployment owner; this standalone source distribution does not configure a public disclosure inbox.
+
+Emergency administrator recovery requires a trusted API workload console and
+the audited `/srv/tools/recover-admin.py` utility described in
+[Users & Access](USER_MANAGEMENT.md). It acts only on an existing account,
+accepts replacement passwords through a private interactive prompt, revokes all
+sessions, and has no web endpoint or static recovery credential.
+
+Editable interface values are restricted to the code-backed catalog. The API
+rejects markup/templates, control characters, unknown keys, invalid lengths,
+credential-bearing URLs, and unsafe schemes. Public login delivery exposes only
+public published values; drafts, editor identity, audit data, users, and private
+settings are excluded. Compiled frontend defaults preserve a usable sign-in
+form when delivery fails. Security-critical authentication messages are not
+editable.
 
 ## Presentation and accessibility
 

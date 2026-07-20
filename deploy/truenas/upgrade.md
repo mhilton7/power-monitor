@@ -35,6 +35,15 @@ the registry, use `latest`, or deploy a tag without its content digest.
 4. Verify every health indicator, the migration log, sign-in, fleet heartbeats,
    historical readings, an SCE rate preview, and the next verified backup.
 
+For the Users & Access / Dashboard & Login Text release, migration
+`20260720_0005` adds permission definitions, role revisions/permissions,
+user-site scope, session reauthentication timestamps, and interface-text
+draft/revision/current-pointer tables. No new dataset, secret, port, capability,
+or Compose variable is required. Existing users are backfilled to all-site scope
+and existing built-in role identifiers remain unchanged. After upgrade, verify
+that at least one Administrator opens both new Administration pages before
+narrowing any user's site scope.
+
 If migration fails, do not bypass its dependency or point the old application at
 a partly migrated database. Preserve logs and follow the rollback path.
 

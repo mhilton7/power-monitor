@@ -1,5 +1,23 @@
 import { useEffect, type ReactNode } from 'react'
 import { AlertTriangle, CheckCircle2, LoaderCircle, RefreshCw } from 'lucide-react'
+import { useInterfaceText } from '../interfaceText'
+
+const PAGE_TEXT_KEYS: Record<string, string> = {
+  'Power Dashboard': 'overview',
+  'Device Management': 'devices',
+  'Site & circuit topology': 'topology',
+  'Usage by Time of Day': 'usage',
+  'History & comparison': 'history',
+  Costs: 'costs',
+  'Rate plans': 'rates',
+  'SCE rate sources': 'rate_sources',
+  'Alerts & Notifications': 'alerts',
+  'Multi-device enrollment': 'enrollment',
+  Backups: 'backups',
+  'Users & Access': 'users_access',
+  'Dashboard & Login Text': 'interface_text',
+  Administration: 'administration',
+}
 
 export function Panel({
   title,
@@ -60,15 +78,19 @@ export function StatusPill({ status, label }: { status: string; label?: string }
 }
 
 export function PageTitle({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description?: string; actions?: ReactNode }) {
+  const { text } = useInterfaceText()
+  const pageKey = PAGE_TEXT_KEYS[title]
+  const visibleTitle = pageKey ? text(`pages.${pageKey}.title`, title) : title
+  const visibleDescription = pageKey && description ? text(`pages.${pageKey}.subtitle`, description) : description
   useEffect(() => {
-    document.title = `${title} · Power Monitor`
-  }, [title])
+    document.title = `${visibleTitle} · ${text('general.browser_title_prefix', 'Power Monitor')}`
+  }, [text, visibleTitle])
   return (
     <header className="page-title">
       <div>
         <span className="eyebrow">{eyebrow}</span>
-        <h1>{title}</h1>
-        {description && <p>{description}</p>}
+        <h1>{visibleTitle}</h1>
+        {visibleDescription && <p>{visibleDescription}</p>}
       </div>
       {actions && <div className="page-actions">{actions}</div>}
     </header>

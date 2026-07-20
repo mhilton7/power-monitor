@@ -12,10 +12,12 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
 from app.api.routes import (
+    access_control,
     auth,
     device_protocol,
     exports,
     firmware,
+    interface_text,
     logs,
     management,
     rate_management,
@@ -57,6 +59,8 @@ app = FastAPI(
 
 for router in (
     auth.router,
+    interface_text.router,
+    access_control.router,
     device_protocol.router,
     logs.router,
     management.router,

@@ -22,6 +22,14 @@ async def create_export(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
+    if (
+        "history.export" not in principal.permissions
+        and "costs.export" not in principal.permissions
+    ):
+        raise ProblemError(403, "Permission denied", "Export permission is required", "forbidden")
+    requested_site = payload.get("site_id")
+    if requested_site and not principal.can_access_site(str(requested_site)):
+        raise ProblemError(404, "Resource not found", "Resource does not exist", "resource_missing")
     if payload.get("format") not in {"csv", "json"}:
         raise ProblemError(422, "Invalid export", "Format must be csv or json", "invalid_export")
     now = datetime.now(UTC)

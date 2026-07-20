@@ -1,10 +1,14 @@
-export type Role = 'admin' | 'operator' | 'rate-manager' | 'viewer'
+export type BuiltInRole = 'admin' | 'operator' | 'rate-manager' | 'viewer'
+export type Role = string
 
 export interface User {
   id: string
   email: string
   display_name: string
   roles: Role[]
+  permissions?: string[]
+  all_sites?: boolean
+  site_ids?: string[]
 }
 
 export interface Session {
@@ -80,4 +84,81 @@ export interface ApiProblem {
   code: string
   errors?: Array<{ location: string[]; message: string }>
   warnings?: string[]
+}
+
+export interface PermissionDefinition {
+  code: string
+  group: string
+  label: string
+  description: string
+  high_risk: boolean
+}
+
+export interface AccessRole {
+  id: string
+  display_name: string
+  description: string
+  built_in: boolean
+  archived: boolean
+  revision: number
+  permissions: string[]
+  assigned_user_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ManagedUser extends User {
+  is_active: boolean
+  status: 'active' | 'disabled'
+  all_sites: boolean
+  sites: Array<{ id: string; name: string }>
+  site_ids: string[]
+  permissions: string[]
+  permission_count: number
+  mfa_enabled: boolean
+  last_login_at?: string
+  active_session_count: number
+  created_at: string
+  access_revision: number
+  protected_administrator: boolean
+  sessions?: Array<{
+    id: string
+    created_at: string
+    last_seen_at: string
+    expires_at: string
+    source_ip?: string
+    user_agent?: string
+  }>
+  permission_sources?: Record<string, string[]>
+}
+
+export interface InterfaceTextDefinition {
+  key: string
+  section: string
+  default: string
+  label: string
+  description: string
+  field_type: 'text' | 'textarea' | 'url'
+  required: boolean
+  visibility: 'public' | 'authenticated'
+  max_length: number
+  min_length: number
+  line_breaks: boolean
+  url_companion: boolean
+  markdown: boolean
+  blank_allowed: boolean
+  preview_location: string
+  current_override?: string
+  current_value: string
+  published_revision: number
+}
+
+export interface InterfaceTextRevisionSummary {
+  id: string
+  revision: number
+  created_by: string
+  created_at: string
+  reason?: string
+  restored_from_id?: string
+  changed_key_count: number
 }

@@ -80,8 +80,8 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 FROM devices WHERE id = 'device-migration'
                 """
             )
-            assert revision == "20260720_0004"
-            assert table_count == 67
+            assert revision == "20260720_0005"
+            assert table_count == 74
             assert dict(migrated) == {
                 "lifecycle_status": "decommissioned",
                 "lifecycle_generation": 1,
@@ -95,20 +95,52 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260720_0004"
+                "20260720_0005"
+            )
+
+            await connection.execute("DROP SCHEMA public CASCADE")
+            await connection.execute("CREATE SCHEMA public")
+            await migrate("upgrade", "20260720_0004")
+            await connection.execute(
+                "INSERT INTO roles (name, description) VALUES ('admin', 'Existing admin')"
+            )
+            await connection.execute(
+                """
+                INSERT INTO users
+                    (id, email, display_name, password_hash, is_active,
+                     password_changed_at, created_at, updated_at)
+                VALUES
+                    ('user-prior-schema', 'prior@example.test', 'Prior User',
+                     'not-a-real-login-hash', true, $1, $1, $1)
+                """,
+                now,
+            )
+            await connection.execute(
+                "INSERT INTO user_roles (user_id, role_name) VALUES ('user-prior-schema', 'admin')"
+            )
+            await migrate("upgrade", "head")
+            prior_user = await connection.fetchrow(
+                "SELECT all_sites, access_revision FROM users WHERE id = 'user-prior-schema'"
+            )
+            assert dict(prior_user) == {"all_sites": True, "access_revision": 1}
+            assert (
+                await connection.fetchval(
+                    "SELECT count(*) FROM role_permissions WHERE role_name = 'admin'"
+                )
+                == 42
             )
 
             await connection.execute("DROP SCHEMA public CASCADE")
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260720_0004"
+                "20260720_0005"
             )
             assert (
                 await connection.fetchval(
                     "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
                 )
-                == 67
+                == 74
             )
         finally:
             await connection.close()

@@ -11,6 +11,13 @@ archives for any available range in the rolling 90-day window and safely
 unclaim sensors without deleting their readings, calculations, alerts, or audit
 history. Removed hardware can be re-enrolled only with a new token and secret.
 
+The integrated **Users & Access** workspace provides server-enforced granular
+permissions, custom roles, site scope, session revocation, and last-administrator
+protection. **Dashboard & Login Text** provides a safe approved-text catalog with
+draft, responsive preview, immutable publish, defaults, and rollback. See
+[user management](docs/USER_MANAGEMENT.md), [permissions](docs/PERMISSIONS.md),
+[site access](docs/SITE_ACCESS.md), and [interface text](docs/INTERFACE_TEXT.md).
+
 The normative interoperability identifier is `pm-protocol/1.0.0`. The browser talks only to this server; device credentials never reach browser code.
 
 The canonical source repository is

@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.access import ensure_access_catalog
 from app.config import Settings
 from app.db.models import (
     AlertRule,
@@ -20,7 +21,6 @@ from app.db.models import (
     RateSource,
     RateSyncConfiguration,
     RateVersion,
-    Role,
     Site,
     Utility,
 )
@@ -81,15 +81,7 @@ DEFAULT_ALERTS: tuple[tuple[str, str, str, int], ...] = (
 
 
 async def ensure_roles(session: AsyncSession) -> None:
-    descriptions = {
-        "admin": "Full system and security administration",
-        "operator": "Devices, rates, alerts, firmware, and reports",
-        "rate-manager": "Create, review, approve, and assign rate plans",
-        "viewer": "Read-only dashboard and permitted exports",
-    }
-    for name, description in descriptions.items():
-        if await session.get(Role, name) is None:
-            session.add(Role(name=name, description=description))
+    await ensure_access_catalog(session)
 
 
 async def ensure_default_reference_data(

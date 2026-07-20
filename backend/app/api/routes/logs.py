@@ -26,9 +26,9 @@ router = APIRouter(prefix="/api/v1/admin/logs", tags=["administration logs"])
 
 
 def _require_admin(principal: Principal) -> None:
-    if "admin" not in principal.roles:
+    if "logs.export" not in principal.permissions:
         raise ProblemError(
-            403, "Permission denied", "Only administrators may export logs", "forbidden"
+            403, "Permission denied", "Log export permission is required", "forbidden"
         )
 
 

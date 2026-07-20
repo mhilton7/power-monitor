@@ -81,7 +81,9 @@ async def time_hint(request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/v1/system/info")
-async def system_info(_viewer: Viewer, session: DbSession) -> dict[str, Any]:
+async def system_info(principal: Viewer, session: DbSession) -> dict[str, Any]:
+    if "settings.view" not in principal.permissions:
+        raise ProblemError(403, "Permission denied", "Settings permission is required", "forbidden")
     settings = get_settings()
     worker = await session.get(WorkerState, "main")
     rate_config = await session.get(RateSyncConfiguration, "default")
@@ -128,7 +130,9 @@ async def system_info(_viewer: Viewer, session: DbSession) -> dict[str, Any]:
 
 
 @router.get("/api/v1/metrics", response_class=PlainTextResponse)
-async def metrics(_viewer: Viewer, session: DbSession) -> PlainTextResponse:
+async def metrics(principal: Viewer, session: DbSession) -> PlainTextResponse:
+    if "settings.view" not in principal.permissions:
+        raise ProblemError(403, "Permission denied", "Settings permission is required", "forbidden")
     registry = CollectorRegistry()
     device_count = Gauge(
         "power_monitor_devices", "Devices by status", ["status"], registry=registry
@@ -171,13 +175,15 @@ async def metrics(_viewer: Viewer, session: DbSession) -> PlainTextResponse:
     return PlainTextResponse(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
 
 
-async def _sse_stream(site_id: str | None) -> Any:
+async def _sse_stream(site_id: str | None, allowed_site_ids: frozenset[str] | None) -> Any:
     last_payload = ""
     while True:
         async with session_factory()() as session:
             query = select(Device).where(Device.lifecycle_status == "active")
             if site_id:
                 query = query.where(Device.site_id == site_id)
+            elif allowed_site_ids is not None:
+                query = query.where(Device.site_id.in_(allowed_site_ids))
             devices = list(await session.scalars(query))
             compact = [
                 {
@@ -200,9 +206,15 @@ async def _sse_stream(site_id: str | None) -> Any:
 
 
 @router.get("/api/v1/events/stream", response_class=StreamingResponse)
-async def live_events(_viewer: Viewer, site_id: str | None = None) -> StreamingResponse:
+async def live_events(principal: Viewer, site_id: str | None = None) -> StreamingResponse:
+    if "devices.view" not in principal.permissions:
+        raise ProblemError(
+            403, "Permission denied", "Device view permission is required", "forbidden"
+        )
+    if site_id and not principal.can_access_site(site_id):
+        raise ProblemError(404, "Resource not found", "Resource does not exist", "resource_missing")
     return StreamingResponse(
-        _sse_stream(site_id),
+        _sse_stream(site_id, None if principal.all_sites else principal.site_ids),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )

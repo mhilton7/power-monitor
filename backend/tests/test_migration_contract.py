@@ -27,6 +27,13 @@ def test_initial_migration_is_frozen_and_covers_metadata() -> None:
         "rate_approval_decisions",
         "rate_version_sources",
         "rate_assignments",
+        "permissions",
+        "role_permissions",
+        "role_revisions",
+        "user_sites",
+        "interface_text_revisions",
+        "interface_text_drafts",
+        "interface_text_state",
     }
     assert "CREATE UNIQUE INDEX" in schema
     assert "ix_raw_site_time" in schema
@@ -64,5 +71,22 @@ def test_managed_rate_source_migration_is_append_only() -> None:
     assert 'op.add_column("rate_sources"' in revision
     assert '"effective_from_hint"' in revision
     assert '"created_by"' in revision
+    assert "DROP SCHEMA" not in revision
+    assert "def downgrade()" in revision
+
+
+def test_user_access_and_interface_text_migration_is_append_only() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260720_0005_user_access_interface_text.py"
+    ).read_text()
+    assert 'down_revision: str | None = "20260720_0004"' in revision
+    assert 'op.add_column("users"' in revision
+    assert '"role_permissions"' in revision
+    assert '"user_sites"' in revision
+    assert '"interface_text_revisions"' in revision
+    assert '"interface_text_drafts"' in revision
+    assert '"previewed_revision"' in revision
+    assert '"uq_roles_display_name_lower"' in revision
     assert "DROP SCHEMA" not in revision
     assert "def downgrade()" in revision
