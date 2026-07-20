@@ -2305,7 +2305,10 @@ async def create_user(
     )
     session.add(user)
     await session.flush()
-    for role in sorted(set(payload.roles)):
+    effective_roles = set(payload.roles)
+    if "rate-manager" in effective_roles:
+        effective_roles.add("viewer")
+    for role in sorted(effective_roles):
         session.add(UserRole(user_id=user.id, role_name=role))
     session.add(
         audit_event(
@@ -2315,11 +2318,11 @@ async def create_user(
             request=request,
             object_type="user",
             object_id=user.id,
-            details={"roles": sorted(set(payload.roles))},
+            details={"roles": sorted(effective_roles)},
         )
     )
     await session.commit()
-    return {"id": user.id, "email": user.email, "roles": sorted(set(payload.roles))}
+    return {"id": user.id, "email": user.email, "roles": sorted(effective_roles)}
 
 
 @router.post("/users/{user_id}/password-reset")

@@ -1,0 +1,14 @@
+{
+  "base": "current-tou.html",
+  "scenarios": {
+    "unchanged": [],
+    "one_price_changed": [{"path": "seasons.0.schedules.0.periods.0.price_per_kwh", "value": "0.35000000"}],
+    "daily_charge_changed": [{"path": "adjustments.0.value", "value": "0.85"}],
+    "baseline_credit_changed": [{"path": "adjustments.1.value", "value": "0.11"}],
+    "time_boundary_changed": [{"path": "seasons.0.schedules.0.periods.0.end_minute", "value": 990}],
+    "eligibility_text_changed": [{"path": "description", "value": "Updated official eligibility text"}],
+    "provider_assumption_changed": [{"path": "provider_mode", "value": "sce_delivery_cca"}],
+    "missing_plan": [{"path": "plans.0", "operation": "remove"}],
+    "duplicate_plan": [{"path": "plans.1", "operation": "copy", "from": "plans.0"}]
+  }
+}

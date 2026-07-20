@@ -16,7 +16,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { FleetSummary, Session, Site } from '../types'
@@ -37,6 +37,7 @@ export function Layout({ session, children }: { session: Session; children: Reac
   const [menuOpen, setMenuOpen] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('pm-theme') ?? 'light')
   const [siteId, setSiteId] = useState<string>()
+  const pointerSelectedControl = useRef<HTMLSelectElement | null>(null)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api<Site[]>('/api/v1/sites') })
@@ -62,7 +63,21 @@ export function Layout({ session, children }: { session: Session; children: Reac
   const fleetHealthy = Boolean(summary.data?.total_devices) && summary.data?.online_devices === summary.data?.total_devices
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      onPointerDownCapture={(event) => {
+        pointerSelectedControl.current = event.target instanceof HTMLSelectElement ? event.target : null
+      }}
+      onChangeCapture={(event) => {
+        if (!(event.target instanceof HTMLSelectElement) || pointerSelectedControl.current !== event.target) return
+        const control = event.target
+        requestAnimationFrame(() => {
+          if (pointerSelectedControl.current !== control) return
+          control.blur()
+          pointerSelectedControl.current = null
+        })
+      }}
+    >
       <a href="#main" className="skip-link">Skip to content</a>
       <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}>
         <div className="brand">

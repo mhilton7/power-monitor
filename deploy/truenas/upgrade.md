@@ -6,7 +6,8 @@ the registry, use `latest`, or deploy a tag without its content digest.
 ## Pre-upgrade checkpoint
 
 1. If the installed release predates durable application logs, use **Datasets**
-   to create `/mnt/Apps/Power/power-monitor/logs` before editing the App. In **Permissions >
+   to create `/mnt/Apps/Power/power-monitor/logs` and
+   `/mnt/Apps/Power/power-monitor/rate-source-artifacts` before editing the App. In **Permissions >
    Edit ACL**, add inherited numeric user ACEs for UID 10001 and UID 10003 with
    Modify, traverse, and inherit access. Do not grant `Everyone@` write access.
 2. In **Apps > Installed > power-monitor**, record the current complete image
@@ -16,7 +17,7 @@ the registry, use `latest`, or deploy a tag without its content digest.
    wait for the backup workload log to report a verified backup. Return the value
    to `"false"` and save again. Confirm the new verified run in the application
    Backups view.
-4. In **Datasets**, create recursive ZFS snapshots of the eight application
+4. In **Datasets**, create recursive ZFS snapshots of the nine application
    datasets. Name them with the release and UTC time, for example
    `pre-upgrade-1.1.0-20260720T220000Z`.
 5. Replicate or copy the verified logical backup and checksum manifest off the

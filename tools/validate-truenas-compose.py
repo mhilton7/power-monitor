@@ -56,6 +56,7 @@ REQUIRED_DATASET_SUFFIXES = {
     "config",
     "caddy-data",
     "caddy-config",
+    "rate-source-artifacts",
 }
 IMAGE_PATTERN = re.compile(
     r"^[a-z0-9.-]+(?::[0-9]+)?/[A-Za-z0-9._/-]+:(?!latest(?:@|$))[^@]+@sha256:([0-9a-f]{64})$"

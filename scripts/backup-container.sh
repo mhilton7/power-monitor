@@ -29,15 +29,16 @@ pg_dump --format=custom --compress=zstd:6 --no-owner --no-privileges --file="$pa
 tar -C /data -czf "$partial/firmware.tar.gz" firmware
 tar -C /data -czf "$partial/config.tar.gz" config
 tar -C /data -czf "$partial/reports.tar.gz" reports
+tar -C /app/data -czf "$partial/rate-source-artifacts.tar.gz" rate-source-artifacts
 pg_restore --list "$partial/database.dump" >/dev/null
 
-artifacts=(database.dump firmware.tar.gz config.tar.gz reports.tar.gz)
+artifacts=(database.dump firmware.tar.gz config.tar.gz reports.tar.gz rate-source-artifacts.tar.gz)
 encrypted=false
 if [[ -n "$BACKUP_KEY_PATH" ]]; then
   for artifact in "${artifacts[@]}"; do
     encrypt_backup_artifact "$partial/$artifact"
   done
-  artifacts=(database.dump.enc firmware.tar.gz.enc config.tar.gz.enc reports.tar.gz.enc)
+  artifacts=(database.dump.enc firmware.tar.gz.enc config.tar.gz.enc reports.tar.gz.enc rate-source-artifacts.tar.gz.enc)
   encrypted=true
 fi
 

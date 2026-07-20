@@ -15,7 +15,16 @@ from sqlalchemy import func, select, text
 from app import __version__
 from app.api.deps import DbSession, Viewer
 from app.config import get_settings
-from app.db.models import AlertInstance, Device, DeviceHeartbeat, RawReading, WorkerState
+from app.db.models import (
+    AlertInstance,
+    Device,
+    DeviceHeartbeat,
+    RateChangeCandidate,
+    RateSource,
+    RateSyncConfiguration,
+    RawReading,
+    WorkerState,
+)
 from app.db.session import session_factory
 from app.problem import ProblemError
 
@@ -75,6 +84,18 @@ async def time_hint(request: Request) -> dict[str, Any]:
 async def system_info(_viewer: Viewer, session: DbSession) -> dict[str, Any]:
     settings = get_settings()
     worker = await session.get(WorkerState, "main")
+    rate_config = await session.get(RateSyncConfiguration, "default")
+    last_rate_success = await session.scalar(
+        select(RateSource.last_success_at)
+        .where(RateSource.enabled.is_(True), RateSource.last_success_at.is_not(None))
+        .order_by(RateSource.last_success_at.desc())
+        .limit(1)
+    )
+    pending_candidates = await session.scalar(
+        select(func.count())
+        .select_from(RateChangeCandidate)
+        .where(RateChangeCandidate.status == "pending_review")
+    )
     return {
         "product": settings.app_name,
         "version": __version__,
@@ -84,6 +105,18 @@ async def system_info(_viewer: Viewer, session: DbSession) -> dict[str, Any]:
             "status": worker.status if worker else "not_started",
             "last_loop_at": worker.last_loop_at if worker else None,
             "last_success_at": worker.last_success_at if worker else None,
+        },
+        "rate_sync": {
+            "enabled": rate_config.enabled if rate_config else settings.rate_sync_enabled,
+            "schedule_cron": (
+                rate_config.schedule_cron if rate_config else settings.rate_sync_cron
+            ),
+            "timezone": (rate_config.timezone if rate_config else settings.rate_sync_timezone),
+            "approval_mode": (
+                rate_config.approval_mode if rate_config else settings.rate_sync_policy
+            ),
+            "last_success_at": last_rate_success,
+            "pending_candidates": pending_candidates or 0,
         },
         "defaults": {
             "site": settings.default_site_name,
@@ -107,6 +140,11 @@ async def metrics(_viewer: Viewer, session: DbSession) -> PlainTextResponse:
         "power_monitor_readings_total", "Persisted durable readings", registry=registry
     )
     active_alerts = Gauge("power_monitor_active_alerts", "Active alerts", registry=registry)
+    pending_rate_candidates = Gauge(
+        "power_monitor_rate_candidates_pending",
+        "Rate candidates awaiting administrator review",
+        registry=registry,
+    )
     rows = (
         await session.execute(select(Device.status, func.count()).group_by(Device.status))
     ).all()
@@ -119,6 +157,14 @@ async def metrics(_viewer: Viewer, session: DbSession) -> PlainTextResponse:
     active_alerts.set(
         await session.scalar(
             select(func.count()).select_from(AlertInstance).where(AlertInstance.status == "active")
+        )
+        or 0
+    )
+    pending_rate_candidates.set(
+        await session.scalar(
+            select(func.count())
+            .select_from(RateChangeCandidate)
+            .where(RateChangeCandidate.status == "pending_review")
         )
         or 0
     )

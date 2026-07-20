@@ -47,7 +47,9 @@ from app.db.models import (
     UtilityAccount,
 )
 from app.polling.ssrf import validate_poll_target
+from app.rates.documents import engine_plan
 from app.rates.engine import RateEngine
+from app.rates.service import version_document
 from app.security.protocol import SecretCipher
 
 
@@ -59,6 +61,8 @@ def _csv_safe(value: Any) -> str:
 async def _calculation_plan(
     session: AsyncSession, version: RateVersion
 ) -> dict[str, Any]:
+    if version.normalized_payload:
+        return engine_plan(await version_document(session, version))
     periods = list(
         await session.scalars(
             select(RatePeriod)
@@ -177,6 +181,8 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
                         price_per_kwh=item.price_per_kwh,
                         unrounded_cost=item.cost,
                         component="energy",
+                        adjustment_breakdown={},
+                        calculation_version=engine.algorithm_version,
                     )
                 )
         adjustments = list(
@@ -186,13 +192,19 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
                 )
             )
         )
-        cca_per_kwh = sum(
-            (
-                item.amount
-                for item in adjustments
-                if item.component == "cca_generation" and item.operation == "per_kwh"
-            ),
-            Decimal("0"),
+        cca_per_kwh = (
+            Decimal("0")
+            if version.normalized_payload
+            else sum(
+                (
+                    item.amount
+                    for item in adjustments
+                    if item.component
+                    in {"cca_generation", "cca", "direct_access", "generation_provider"}
+                    and (item.operation == "per_kwh" or item.unit == "per_kwh")
+                ),
+                Decimal("0"),
+            )
         )
         manual_total = await session.scalar(
             select(func.coalesce(func.sum(ManualBillAdjustment.amount), 0)).where(
@@ -206,7 +218,13 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
             end=job.input_end,
             energy_kwh=total_energy_kwh,
             cost_scope=cast(
-                Literal["energy_only", "allocated_account", "full_account"],
+                Literal[
+                    "energy_only",
+                    "allocated_account",
+                    "full_account",
+                    "allocated_account_estimate",
+                    "full_account_estimate",
+                ],
                 aggregate.cost_scope,
             ),
             baseline_allocation_kwh=account.baseline_allocation_kwh,
@@ -231,6 +249,12 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
                         price_per_kwh=Decimal("0"),
                         unrounded_cost=amount,
                         component=component,
+                        adjustment_breakdown={
+                            key: str(value)
+                            for key, value in account_components.adjustment_breakdown.items()
+                        }
+                        or {component: str(amount)},
+                        calculation_version=engine.algorithm_version,
                     )
                 )
         expected_seconds = Decimal(

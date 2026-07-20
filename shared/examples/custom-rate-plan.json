@@ -1,0 +1,27 @@
+{
+  "schema_version": "power-monitor-rate-plan/1.0",
+  "plan_name": "Example all-day plan",
+  "plan_code": "CUSTOM-EXAMPLE",
+  "utility": "custom",
+  "description": "Example import document; verify all values before activation.",
+  "currency": "USD",
+  "timezone": "America/Los_Angeles",
+  "ownership_scope": "global",
+  "owner_id": null,
+  "effective_from": "2026-08-01",
+  "effective_through": null,
+  "cost_scope_default": "energy_only",
+  "source_label": "Administrator-defined example",
+  "source_note": "Not an official utility rate.",
+  "provider_mode": "custom_combined",
+  "seasons": [{
+    "name": "all-year", "start": "01-01", "end": "12-31", "priority": 0,
+    "leap_day_behavior": "include",
+    "schedules": [{"day_type": "all-days", "dates": [], "periods": [
+      {"label": "flat", "start_minute": 0, "end_minute": 1440, "price_per_kwh": "0.25000000", "delivery_per_kwh": "0", "generation_per_kwh": "0", "adjustment_per_kwh": "0", "display_order": 0}
+    ]}]
+  }],
+  "adjustments": [],
+  "custom_notes": "",
+  "cloned_from_rate_version_id": null
+}

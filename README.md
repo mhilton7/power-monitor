@@ -48,6 +48,11 @@ dataset ACLs, three TLS modes, nightly encrypted/restore-tested backups, and an
 automated multi-device release gate. Protocol and deployment details are in
 [Architecture](docs/ARCHITECTURE.md), [Device protocol](docs/DEVICE_PROTOCOL.md),
 [Security](docs/SECURITY.md), and [Operations](docs/OPERATIONS.md).
+Rate administration is covered by [SCE synchronization](docs/SCE_RATE_SYNC.md),
+[custom plans](docs/CUSTOM_RATE_PLANS.md), [source security](docs/RATE_SOURCE_SECURITY.md),
+and [versioning](docs/RATE_VERSIONING.md). See the consolidated
+[TrueNAS deployment notes](docs/TRUE_NAS_DEPLOYMENT.md) before installing an
+upgrade.
 
 Verification evidence is recorded in [Testing](docs/TESTING.md) and [Load test results](docs/LOAD_TEST_RESULTS.md).
 

@@ -1,0 +1,7 @@
+{
+  "not_found": {"status": 404, "content_type": "text/html", "body": "not found"},
+  "server_error": {"status": 500, "content_type": "text/html", "body": "temporary failure"},
+  "oversized": {"status": 200, "content_type": "text/html", "declared_bytes": 10485761},
+  "unsupported_content": {"status": 200, "content_type": "application/octet-stream", "body": "unsupported"},
+  "disallowed_redirect": {"status": 302, "location": "https://example.com/rates"}
+}

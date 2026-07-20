@@ -7,6 +7,8 @@ from typing import Self
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.rates.schedule import schedule_parts
+
 _FILE_BACKED_SETTINGS = (
     ("database_url", "database_url_file"),
     ("app_master_key", "app_master_key_file"),
@@ -63,6 +65,21 @@ class Settings(BaseSettings):
     default_currency: str = "USD"
     firmware_path: Path = Path("/data/firmware")
     report_path: Path = Path("/data/reports")
+    rate_sync_artifact_path: Path = Path("/app/data/rate-source-artifacts")
+    rate_sync_enabled: bool = True
+    rate_sync_cron: str = "15 3 * * 0"
+    rate_sync_timezone: str = "America/Los_Angeles"
+    rate_sync_jitter_minutes: int = 20
+    rate_sync_policy: str = "manual_review"
+    rate_sync_max_source_bytes: int = 10_485_760
+    rate_sync_connect_timeout_seconds: int = 10
+    rate_sync_read_timeout_seconds: int = 30
+    rate_sync_total_timeout_seconds: int = 45
+    rate_sync_max_redirects: int = 3
+    rate_sync_max_retries: int = 3
+    rate_sync_allowed_hosts: str = "www.sce.com,sce.com"
+    rate_sync_auto_max_percent_change: int = 25
+    rate_sync_retroactive_auto_days: int = 0
     backup_path: Path = Path("/data/backups")
     log_path: Path = Path("/data/logs")
     log_retention_days: int = 90
@@ -84,6 +101,69 @@ class Settings(BaseSettings):
     def valid_log_export_limit(cls, value: int) -> int:
         if value < 1_048_576:
             raise ValueError("MAX_LOG_EXPORT_BYTES must be at least 1 MiB")
+        return value
+
+    @field_validator("rate_sync_jitter_minutes")
+    @classmethod
+    def valid_rate_jitter(cls, value: int) -> int:
+        if not 0 <= value <= 20:
+            raise ValueError("RATE_SYNC_JITTER_MINUTES must be between 0 and 20")
+        return value
+
+    @field_validator("rate_sync_policy")
+    @classmethod
+    def valid_rate_sync_policy(cls, value: str) -> str:
+        if value not in {"manual_review", "notify_only", "auto_activate_verified"}:
+            raise ValueError("RATE_SYNC_POLICY is invalid")
+        return value
+
+    @field_validator("rate_sync_cron")
+    @classmethod
+    def valid_rate_sync_cron(cls, value: str) -> str:
+        schedule_parts(value)
+        return value
+
+    @field_validator("rate_sync_allowed_hosts")
+    @classmethod
+    def valid_rate_hosts(cls, value: str) -> str:
+        hosts = {item.strip().lower() for item in value.split(",") if item.strip()}
+        if not hosts or not hosts.issubset({"sce.com", "www.sce.com"}):
+            raise ValueError("RATE_SYNC_ALLOWED_HOSTS may contain only approved SCE hosts")
+        return ",".join(sorted(hosts))
+
+    @field_validator("rate_sync_max_redirects")
+    @classmethod
+    def valid_rate_redirect_limit(cls, value: int) -> int:
+        if not 0 <= value <= 5:
+            raise ValueError("RATE_SYNC_MAX_REDIRECTS must be between 0 and 5")
+        return value
+
+    @field_validator("rate_sync_max_retries")
+    @classmethod
+    def valid_rate_retry_limit(cls, value: int) -> int:
+        if not 1 <= value <= 5:
+            raise ValueError("RATE_SYNC_MAX_RETRIES must be between 1 and 5")
+        return value
+
+    @field_validator("rate_sync_auto_max_percent_change")
+    @classmethod
+    def valid_rate_change_threshold(cls, value: int) -> int:
+        if not 0 <= value <= 100:
+            raise ValueError("RATE_SYNC_AUTO_MAX_PERCENT_CHANGE must be between 0 and 100")
+        return value
+
+    @field_validator("rate_sync_retroactive_auto_days")
+    @classmethod
+    def valid_retroactive_days(cls, value: int) -> int:
+        if not 0 <= value <= 31:
+            raise ValueError("RATE_SYNC_RETROACTIVE_AUTO_DAYS must be between 0 and 31")
+        return value
+
+    @field_validator("rate_sync_max_source_bytes")
+    @classmethod
+    def valid_rate_source_limit(cls, value: int) -> int:
+        if not 65_536 <= value <= 50 * 1024 * 1024:
+            raise ValueError("RATE_SYNC_MAX_SOURCE_BYTES must be between 64 KiB and 50 MiB")
         return value
 
     @field_validator("public_origin")

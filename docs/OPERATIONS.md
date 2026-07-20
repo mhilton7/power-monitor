@@ -70,3 +70,17 @@ Maintenance windows continue to suppress delivery while retaining evidence.
 These alerts are operational telemetry, not protective electrical controls; do
 not use them in place of correctly rated breakers, surge protection, or qualified
 electrical inspection.
+
+## Rate-source administration
+
+Use **Rates > Rate source settings** to enable or disable the weekly check,
+change its local schedule, select `manual_review`, `notify_only`, or the strict
+`auto_activate_verified` policy, inspect job progress, and review archived
+evidence. Source addresses are server-controlled. Approve a candidate only
+after comparing every material difference and resolving any source conflict;
+then activate it now or leave it scheduled for its future effective date.
+
+Subscribe SMTP channels to **SCE rate updates** for source failures, parser
+warnings, review candidates, conflicts, stale checks, and automatic activation.
+To roll back, clone the prior version and activate a new prospective version;
+do not edit an active historical row.

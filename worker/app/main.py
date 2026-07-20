@@ -14,6 +14,11 @@ from app.db.models import WorkerState
 from app.db.session import session_factory
 from app.logging import configure_logging
 from worker.app.polling import poll_due_devices
+from worker.app.rate_sync import (
+    activate_due_versions,
+    check_stale_sources,
+    process_rate_sync_jobs,
+)
 from worker.app.tasks import (
     evaluate_alerts,
     process_cost_jobs,
@@ -52,6 +57,9 @@ async def run_once() -> dict[str, Any]:
             reports = await process_report_jobs(session, settings)
             costs = await process_cost_jobs(session)
             rollups = await recompute_recent_rollups(session)
+            rate_sync = await process_rate_sync_jobs(session, settings)
+            rates_activated = await activate_due_versions(session)
+            stale_rate_sources = await check_stale_sources(session)
             polling = await poll_due_devices(factory, settings)
             now = datetime.now(UTC)
             state = await session.get(WorkerState, "main")
@@ -75,6 +83,9 @@ async def run_once() -> dict[str, Any]:
                 "reports_completed": reports,
                 "cost_runs_completed": costs,
                 "rollups": rollups,
+                "rate_sync": rate_sync,
+                "rates_activated": rates_activated,
+                "stale_rate_sources": stale_rate_sources,
                 "polled": len(polling),
                 "poll_failures": sum(
                     item["status"] not in {"ok", "not_configured", "circuit_open"}

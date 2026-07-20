@@ -107,6 +107,10 @@ def prepare_docker_desktop_volumes(compose: Path) -> None:
         "desktop_firmware": (10001, 10001, "0775"),
         "desktop_config": (10001, 10001, "0775"),
         "desktop_config_reports": (10001, 10001, "0775"),
+        # Docker Desktop named volumes cannot reproduce the two-user TrueNAS
+        # ACL on logs, so the integration-only volume permits both runtimes.
+        "desktop_logs": (10001, 10001, "0777"),
+        "desktop_rate-source-artifacts": (10001, 10001, "0775"),
         "desktop_caddy-data": (10002, 10002, "0700"),
         "desktop_caddy-config": (10002, 10002, "0700"),
     }

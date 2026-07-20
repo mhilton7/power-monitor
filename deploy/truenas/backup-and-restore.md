@@ -2,7 +2,7 @@
 
 The `backup` service remains running as a scheduler. At `02:17` UTC each night by
 default it creates a PostgreSQL custom-format logical dump plus firmware, config,
-and report archives. It encrypts every artifact when
+report, and archived SCE rate-source evidence archives. It encrypts every artifact when
 `BACKUP_ENCRYPTION_KEY_FILE` is configured (the TrueNAS deployment always
 configures it), writes SHA-256 checksums and a manifest, atomically publishes the
 completed directory, and removes backups older than 30 days.
@@ -35,6 +35,10 @@ must survive a pool-level disaster. Administrators can download a redacted,
 checksummed ZIP for any available range from **Administration > Backups** without
 opening a TrueNAS workload shell.
 
+`rate-source-artifacts.tar.gz` (or its encrypted `.enc` form) is included in
+the checksum manifest. It preserves the exact downloaded bytes, metadata,
+normalized extraction, validation output, and hashes linked to rate versions.
+
 ## Test restore
 
 From **Apps > Installed > power-monitor > Workloads**, open the `backup` workload
@@ -60,8 +64,10 @@ same controlled workload shell.
 3. During an approved maintenance window, restore to a new production database or
    replace the database dataset from the coordinated snapshot. Do not restore over
    a database with active connections.
-4. Restore firmware/config datasets from the matching backup generation when
-   consistency requires it.
+4. Restore firmware/config and `rate-source-artifacts` datasets from the
+   matching backup generation when consistency requires it. Verify the manifest
+   before extraction and restore rate evidence only to the dedicated dataset,
+   never to a public web directory.
 5. Start the immutable application release compatible with that migration,
    verify all health checks, then take a new verified backup.
 

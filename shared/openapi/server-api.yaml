@@ -3185,6 +3185,1584 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/plans:
+    get:
+      tags:
+      - rate management
+      summary: List Managed Rate Plans
+      operationId: list_managed_rate_plans_api_v1_rates_plans_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Managed Rate Plans Api V1 Rates Plans Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - rate management
+      summary: Create Rate Plan
+      operationId: create_rate_plan_api_v1_rates_plans_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatePlanDocument'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Rate Plan Api V1 Rates Plans Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/plans/{plan_id}:
+    get:
+      tags:
+      - rate management
+      summary: Get Managed Rate Plan
+      operationId: get_managed_rate_plan_api_v1_rates_plans__plan_id__get
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Plan Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Managed Rate Plan Api V1 Rates Plans  Plan Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - rate management
+      summary: Update Rate Plan
+      operationId: update_rate_plan_api_v1_rates_plans__plan_id__patch
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Plan Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatePlanDocument'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Rate Plan Api V1 Rates Plans  Plan Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/plans/{plan_id}/clone:
+    post:
+      tags:
+      - rate management
+      summary: Clone Rate Plan
+      operationId: clone_rate_plan_api_v1_rates_plans__plan_id__clone_post
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Plan Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Clone Rate Plan Api V1 Rates Plans  Plan Id  Clone
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/plans/{plan_id}/versions:
+    post:
+      tags:
+      - rate management
+      summary: Create Plan Version
+      operationId: create_plan_version_api_v1_rates_plans__plan_id__versions_post
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Plan Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Plan Version Api V1 Rates Plans  Plan Id  Versions
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - rate management
+      summary: List Plan Versions
+      operationId: list_plan_versions_api_v1_rates_plans__plan_id__versions_get
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Plan Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Plan Versions Api V1 Rates Plans  Plan Id  Versions
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/versions/{version_id}:
+    get:
+      tags:
+      - rate management
+      summary: Get Rate Version
+      operationId: get_rate_version_api_v1_rates_versions__version_id__get
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Rate Version Api V1 Rates Versions  Version Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - rate management
+      summary: Patch Rate Version
+      operationId: patch_rate_version_api_v1_rates_versions__version_id__patch
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatePlanDocument'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Patch Rate Version Api V1 Rates Versions  Version
+                  Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - rate management
+      summary: Delete Draft Version
+      operationId: delete_draft_version_api_v1_rates_versions__version_id__delete
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/versions/{version_id}/validate:
+    post:
+      tags:
+      - rate management
+      summary: Validate Managed Version
+      operationId: validate_managed_version_api_v1_rates_versions__version_id__validate_post
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Validate Managed Version Api V1 Rates Versions  Version
+                  Id  Validate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/versions/{version_id}/activate:
+    post:
+      tags:
+      - rate management
+      summary: Activate Managed Version
+      operationId: activate_managed_version_api_v1_rates_versions__version_id__activate_post
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Activate Managed Version Api V1 Rates Versions  Version
+                  Id  Activate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/versions/{version_id}/retire:
+    post:
+      tags:
+      - rate management
+      summary: Retire Managed Version
+      operationId: retire_managed_version_api_v1_rates_versions__version_id__retire_post
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Retire Managed Version Api V1 Rates Versions  Version
+                  Id  Retire Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/versions/{version_id}/export:
+    get:
+      tags:
+      - rate management
+      summary: Export Managed Version
+      operationId: export_managed_version_api_v1_rates_versions__version_id__export_get
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Export Managed Version Api V1 Rates Versions  Version
+                  Id  Export Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/import:
+    post:
+      tags:
+      - rate management
+      summary: Import Rate Plan
+      operationId: import_rate_plan_api_v1_rates_import_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_import_rate_plan_api_v1_rates_import_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Import Rate Plan Api V1 Rates Import Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/preview-cost:
+    post:
+      tags:
+      - rate management
+      summary: Preview Managed Cost
+      operationId: preview_managed_cost_api_v1_rates_preview_cost_post
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Preview Managed Cost Api V1 Rates Preview Cost Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/validate-document:
+    post:
+      tags:
+      - rate management
+      summary: Validate Rate Document
+      operationId: validate_rate_document_api_v1_rates_validate_document_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatePlanDocument'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Validate Rate Document Api V1 Rates Validate Document
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/assignments:
+    get:
+      tags:
+      - rate management
+      summary: List Rate Assignments
+      operationId: list_rate_assignments_api_v1_rates_assignments_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Rate Assignments Api V1 Rates Assignments Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - rate management
+      summary: Create Rate Assignment
+      operationId: create_rate_assignment_api_v1_rates_assignments_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Rate Assignment Api V1 Rates Assignments Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/assignments/{assignment_id}:
+    patch:
+      tags:
+      - rate management
+      summary: Patch Rate Assignment
+      operationId: patch_rate_assignment_api_v1_rates_assignments__assignment_id__patch
+      parameters:
+      - name: assignment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Assignment Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Patch Rate Assignment Api V1 Rates Assignments  Assignment
+                  Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - rate management
+      summary: Delete Rate Assignment
+      operationId: delete_rate_assignment_api_v1_rates_assignments__assignment_id__delete
+      parameters:
+      - name: assignment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Assignment Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-sources:
+    get:
+      tags:
+      - rate management
+      summary: List Rate Sources
+      operationId: list_rate_sources_api_v1_admin_rate_sources_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Rate Sources Api V1 Admin Rate Sources Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-sources/{source_id}:
+    get:
+      tags:
+      - rate management
+      summary: Get Rate Source
+      operationId: get_rate_source_api_v1_admin_rate_sources__source_id__get
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Source Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Rate Source Api V1 Admin Rate Sources  Source
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - rate management
+      summary: Patch Rate Source
+      operationId: patch_rate_source_api_v1_admin_rate_sources__source_id__patch
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Source Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Patch Rate Source Api V1 Admin Rate Sources  Source
+                  Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-source-settings:
+    patch:
+      tags:
+      - rate management
+      summary: Patch Rate Settings
+      operationId: patch_rate_settings_api_v1_admin_rate_source_settings_patch
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Patch Rate Settings Api V1 Admin Rate Source Settings
+                  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-sources/check-now:
+    post:
+      tags:
+      - rate management
+      summary: Check All Sources
+      operationId: check_all_sources_api_v1_admin_rate_sources_check_now_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Check All Sources Api V1 Admin Rate Sources Check
+                  Now Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-sources/{source_id}/check:
+    post:
+      tags:
+      - rate management
+      summary: Check One Source
+      operationId: check_one_source_api_v1_admin_rate_sources__source_id__check_post
+      parameters:
+      - name: source_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Source Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Check One Source Api V1 Admin Rate Sources  Source
+                  Id  Check Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-checks:
+    get:
+      tags:
+      - rate management
+      summary: List Rate Checks
+      operationId: list_rate_checks_api_v1_admin_rate_checks_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Rate Checks Api V1 Admin Rate Checks Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-checks/{check_id}:
+    get:
+      tags:
+      - rate management
+      summary: Get Rate Check
+      operationId: get_rate_check_api_v1_admin_rate_checks__check_id__get
+      parameters:
+      - name: check_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Check Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Rate Check Api V1 Admin Rate Checks  Check Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-candidates:
+    get:
+      tags:
+      - rate management
+      summary: List Rate Candidates
+      operationId: list_rate_candidates_api_v1_admin_rate_candidates_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Rate Candidates Api V1 Admin Rate Candidates
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-candidates/{candidate_id}:
+    get:
+      tags:
+      - rate management
+      summary: Get Rate Candidate
+      operationId: get_rate_candidate_api_v1_admin_rate_candidates__candidate_id__get
+      parameters:
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Candidate Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Rate Candidate Api V1 Admin Rate Candidates  Candidate
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-candidates/{candidate_id}/approve:
+    post:
+      tags:
+      - rate management
+      summary: Approve Candidate
+      operationId: approve_candidate_api_v1_admin_rate_candidates__candidate_id__approve_post
+      parameters:
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Candidate Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Approve Candidate Api V1 Admin Rate Candidates  Candidate
+                  Id  Approve Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-candidates/{candidate_id}/reject:
+    post:
+      tags:
+      - rate management
+      summary: Reject Candidate
+      operationId: reject_candidate_api_v1_admin_rate_candidates__candidate_id__reject_post
+      parameters:
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Candidate Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Reject Candidate Api V1 Admin Rate Candidates  Candidate
+                  Id  Reject Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-candidates/{candidate_id}/activate:
+    post:
+      tags:
+      - rate management
+      summary: Activate Candidate
+      operationId: activate_candidate_api_v1_admin_rate_candidates__candidate_id__activate_post
+      parameters:
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Candidate Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Activate Candidate Api V1 Admin Rate Candidates  Candidate
+                  Id  Activate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-artifacts/{artifact_id}:
+    get:
+      tags:
+      - rate management
+      summary: Get Rate Artifact
+      operationId: get_rate_artifact_api_v1_admin_rate_artifacts__artifact_id__get
+      parameters:
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Artifact Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Rate Artifact Api V1 Admin Rate Artifacts  Artifact
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-artifacts/{artifact_id}/download:
+    get:
+      tags:
+      - rate management
+      summary: Download Rate Artifact
+      operationId: download_rate_artifact_api_v1_admin_rate_artifacts__artifact_id__download_get
+      parameters:
+      - name: artifact_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Artifact Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-artifacts/upload:
+    post:
+      tags:
+      - rate management
+      summary: Upload Rate Artifact
+      operationId: upload_rate_artifact_api_v1_admin_rate_artifacts_upload_post
+      parameters:
+      - name: source_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Source Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_rate_artifact_api_v1_admin_rate_artifacts_upload_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Upload Rate Artifact Api V1 Admin Rate Artifacts Upload
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/jobs/{job_id}:
+    get:
+      tags:
+      - rate management
+      summary: Get Background Job
+      operationId: get_background_job_api_v1_jobs__job_id__get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Background Job Api V1 Jobs  Job Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/firmware-releases:
     get:
       tags:
@@ -3765,6 +5343,26 @@ components:
       required:
       - until
       title: AlertSilence
+    Body_import_rate_plan_api_v1_rates_import_post:
+      properties:
+        upload:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Upload
+      type: object
+      required:
+      - upload
+      title: Body_import_rate_plan_api_v1_rates_import_post
+    Body_upload_rate_artifact_api_v1_admin_rate_artifacts_upload_post:
+      properties:
+        upload:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Upload
+      type: object
+      required:
+      - upload
+      title: Body_upload_rate_artifact_api_v1_admin_rate_artifacts_upload_post
     Body_upload_release_api_v1_firmware_releases_post:
       properties:
         manifest_json:
@@ -3949,7 +5547,9 @@ components:
           type: string
           title: Aggregate Set Id
         rate_version_id:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Rate Version Id
         input_start:
           type: string
@@ -3964,7 +5564,6 @@ components:
       required:
       - utility_account_id
       - aggregate_set_id
-      - rate_version_id
       - input_start
       - input_end
       title: CostRecalculationRequest
@@ -3979,6 +5578,27 @@ components:
       additionalProperties: false
       type: object
       title: CredentialRotationRequest
+    DayScheduleDocument:
+      properties:
+        day_type:
+          type: string
+          title: Day Type
+        dates:
+          items:
+            type: string
+            format: date
+          type: array
+          title: Dates
+        periods:
+          items:
+            $ref: '#/components/schemas/RatePeriodDocument'
+          type: array
+          title: Periods
+      additionalProperties: false
+      type: object
+      required:
+      - day_type
+      title: DayScheduleDocument
     DeviceCapabilities:
       properties:
         hardware_target:
@@ -4756,6 +6376,223 @@ components:
       required:
       - new_password
       title: PasswordReset
+    RateAdjustmentDocument:
+      properties:
+        name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Name
+        component:
+          type: string
+          enum:
+          - daily_fixed_charge
+          - monthly_fixed_charge
+          - minimum_charge
+          - baseline_credit
+          - percentage_tax
+          - fixed_tax
+          - generation_provider
+          - cca
+          - direct_access
+          - manual_credit
+          - other
+          title: Component
+        operation:
+          type: string
+          enum:
+          - add
+          - subtract
+          - minimum
+          - multiply
+          title: Operation
+          default: add
+        value:
+          type: string
+          title: Value
+        unit:
+          type: string
+          title: Unit
+        scope:
+          type: string
+          title: Scope
+          default: full_account_estimate
+        eligibility:
+          additionalProperties: true
+          type: object
+          title: Eligibility
+        effective_from:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Effective From
+        effective_to:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Effective To
+        calculation_order:
+          type: integer
+          title: Calculation Order
+          default: 0
+        description:
+          type: string
+          title: Description
+          default: ''
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - component
+      - value
+      - unit
+      title: RateAdjustmentDocument
+    RatePeriodDocument:
+      properties:
+        label:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Label
+        start_minute:
+          type: integer
+          maximum: 1439.0
+          minimum: 0.0
+          title: Start Minute
+        end_minute:
+          type: integer
+          maximum: 1440.0
+          minimum: 1.0
+          title: End Minute
+        price_per_kwh:
+          type: string
+          title: Price Per Kwh
+        delivery_per_kwh:
+          type: string
+          title: Delivery Per Kwh
+          default: '0'
+        generation_per_kwh:
+          type: string
+          title: Generation Per Kwh
+          default: '0'
+        adjustment_per_kwh:
+          type: string
+          title: Adjustment Per Kwh
+          default: '0'
+        display_order:
+          type: integer
+          title: Display Order
+          default: 0
+      additionalProperties: false
+      type: object
+      required:
+      - label
+      - start_minute
+      - end_minute
+      - price_per_kwh
+      title: RatePeriodDocument
+    RatePlanDocument:
+      properties:
+        schema_version:
+          type: string
+          const: power-monitor-rate-plan/1.0
+          title: Schema Version
+          default: power-monitor-rate-plan/1.0
+        plan_name:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Plan Name
+        plan_code:
+          type: string
+          pattern: ^[A-Z0-9][A-Z0-9._-]{1,79}$
+          title: Plan Code
+        utility:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Utility
+        description:
+          type: string
+          title: Description
+          default: ''
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          title: Currency
+        timezone:
+          type: string
+          title: Timezone
+        ownership_scope:
+          type: string
+          enum:
+          - global
+          - site
+          - utility_account
+          title: Ownership Scope
+          default: global
+        owner_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Owner Id
+        effective_from:
+          type: string
+          format: date
+          title: Effective From
+        effective_through:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Effective Through
+        cost_scope_default:
+          type: string
+          title: Cost Scope Default
+          default: energy_only
+        source_label:
+          type: string
+          title: Source Label
+          default: Administrator-defined rate plan
+        source_note:
+          type: string
+          title: Source Note
+          default: ''
+        provider_mode:
+          type: string
+          title: Provider Mode
+          default: custom_combined
+        seasons:
+          items:
+            $ref: '#/components/schemas/RateSeasonDocument'
+          type: array
+          title: Seasons
+        adjustments:
+          items:
+            $ref: '#/components/schemas/RateAdjustmentDocument'
+          type: array
+          title: Adjustments
+        custom_notes:
+          type: string
+          title: Custom Notes
+          default: ''
+        cloned_from_rate_version_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cloned From Rate Version Id
+      additionalProperties: false
+      type: object
+      required:
+      - plan_name
+      - plan_code
+      - utility
+      - currency
+      - timezone
+      - effective_from
+      title: RatePlanDocument
     RatePreviewRequest:
       properties:
         plan_code:
@@ -4862,6 +6699,45 @@ components:
       - coverage_percent
       - disclosure
       title: RatePreviewResponse
+    RateSeasonDocument:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Name
+        start:
+          type: string
+          pattern: ^\d{2}-\d{2}$
+          title: Start
+        end:
+          type: string
+          pattern: ^\d{2}-\d{2}$
+          title: End
+        priority:
+          type: integer
+          title: Priority
+          default: 0
+        leap_day_behavior:
+          type: string
+          enum:
+          - include
+          - previous_day
+          - next_day
+          title: Leap Day Behavior
+          default: include
+        schedules:
+          items:
+            $ref: '#/components/schemas/DayScheduleDocument'
+          type: array
+          title: Schedules
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - start
+      - end
+      title: RateSeasonDocument
     Reading:
       properties:
         sequence:
@@ -5306,6 +7182,7 @@ components:
             enum:
             - admin
             - operator
+            - rate-manager
             - viewer
           type: array
           minItems: 1
