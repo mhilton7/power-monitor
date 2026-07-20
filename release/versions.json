@@ -1,0 +1,17 @@
+{
+  "product": "Power Monitor Server",
+  "version": "1.0.0",
+  "protocol": "pm-protocol/1.0.0",
+  "migration_revision": "20260720_0001",
+  "python": "3.13.14",
+  "node": "v26.0.0",
+  "npm": "11.12.1",
+  "git_commit": "ecf86ac2ca23cb8159d91fd3557dc0cbd7f653ac",
+  "images": {
+    "api": "power-monitor-api:1.0.0",
+    "frontend": "power-monitor-frontend:1.0.0",
+    "backup": "power-monitor-backup:1.0.0",
+    "postgres": "postgres:17.5-alpine",
+    "caddy": "caddy:2.10.0-alpine"
+  }
+}

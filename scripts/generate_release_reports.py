@@ -4,6 +4,7 @@ import csv
 import hashlib
 import importlib.metadata
 import json
+import os
 import platform
 import re
 import subprocess
@@ -96,7 +97,7 @@ def versions() -> None:
         "migration_revision": "20260720_0001",
         "python": platform.python_version(),
         "node": command_version(["node", "--version"]),
-        "npm": command_version(["npm", "--version"]),
+        "npm": command_version(["npm.cmd" if os.name == "nt" else "npm", "--version"]),
         "git_commit": git,
         "images": {
             "api": "power-monitor-api:1.0.0",
