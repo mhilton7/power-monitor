@@ -34,6 +34,9 @@ def test_truenas_template_and_icmp_overlay_are_valid() -> None:
 def test_deployment_validation_rejects_fail_closed_placeholders() -> None:
     validator = _load_tool("validate-truenas-compose.py", "truenas_validator_deployment")
     compose = yaml.safe_load((ROOT / "deploy/truenas/compose.yaml").read_text(encoding="utf-8"))
+    compose["services"]["api"]["image"] = compose["services"]["api"]["image"].replace(
+        "mhilton7", "REPLACE_WITH_GHCR_OWNER"
+    )
 
     errors = validator.validate_compose(
         compose, deployment=True, expected_pool="tank", gateway_port=8443

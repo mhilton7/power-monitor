@@ -9,6 +9,9 @@ this stack with direct `docker` commands in the TrueNAS shell.
 1. Obtain the three application images (`api`, `frontend`, and `backup`) and the
    approved Caddy and PostgreSQL images as versioned `linux/amd64` OCI references
    containing `@sha256:<64 hex characters>`. A tag alone is not sufficient.
+   The canonical application images are published from
+   `https://github.com/mhilton7/power-monitor` under
+   `ghcr.io/mhilton7/power-monitor-{api,frontend,backup}`.
 2. Follow [dataset-layout.md](dataset-layout.md) and
    [permissions.md](permissions.md) in the TrueNAS UI.
 3. Generate secrets outside the source checkout and outside any synced folder:
@@ -36,7 +39,7 @@ this stack with direct `docker` commands in the TrueNAS shell.
    argument must be the exact release reference and digest you approved:
 
    ```text
-   python tools/render-truenas-compose.py --pool MYPOOL --gateway-port 8443 --site-address https://power-monitor.local --public-origin https://power-monitor.local:8443 --api-image ghcr.io/OWNER/power-monitor-api:1.0.0@sha256:DIGEST --frontend-image ghcr.io/OWNER/power-monitor-frontend:1.0.0@sha256:DIGEST --backup-image ghcr.io/OWNER/power-monitor-backup:1.0.0@sha256:DIGEST --postgres-image docker.io/library/postgres:17.5-bookworm@sha256:DIGEST --gateway-image docker.io/library/caddy:2.10.0-alpine@sha256:DIGEST --output rendered-compose.yaml
+   python tools/render-truenas-compose.py --pool MYPOOL --gateway-port 8443 --site-address https://power-monitor.local --public-origin https://power-monitor.local:8443 --api-image ghcr.io/mhilton7/power-monitor-api:1.0.0@sha256:DIGEST --frontend-image ghcr.io/mhilton7/power-monitor-frontend:1.0.0@sha256:DIGEST --backup-image ghcr.io/mhilton7/power-monitor-backup:1.0.0@sha256:DIGEST --postgres-image docker.io/library/postgres:17.5-bookworm@sha256:DIGEST --gateway-image docker.io/library/caddy:2.10.0-alpine@sha256:DIGEST --output rendered-compose.yaml
    python tools/validate-truenas-compose.py --deployment --pool MYPOOL --gateway-port 8443 rendered-compose.yaml
    ```
 

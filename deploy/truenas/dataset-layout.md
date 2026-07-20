@@ -32,6 +32,5 @@ workstation:
 python tools/validate-truenas-compose.py --deployment --pool MYPOOL --gateway-port 8443 rendered-compose.yaml
 ```
 
-The command fails if any `POOL`, registry-owner, or all-zero digest placeholder
-remains, if paths span pools, or if a required dataset root is absent.
-
+The command fails if any `POOL` or all-zero digest placeholder remains, if paths
+span pools, or if a required dataset root is absent.

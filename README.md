@@ -4,6 +4,11 @@ Power Monitor Server is a self-hosted control plane for fleets of ESP32-S3 power
 
 The normative interoperability identifier is `pm-protocol/1.0.0`. The browser talks only to this server; device credentials never reach browser code.
 
+The canonical source repository is
+[github.com/mhilton7/power-monitor](https://github.com/mhilton7/power-monitor).
+Production application images are published as
+`ghcr.io/mhilton7/power-monitor-{api,frontend,backup}`.
+
 ```text
 ESP32 agents -- signed heartbeat / batches --> FastAPI --> PostgreSQL
       ^                                       |  |

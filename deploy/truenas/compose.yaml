@@ -1,8 +1,8 @@
 name: power-monitor
 
-# This checked-in deployment template is intentionally non-runnable until POOL,
-# registry owner, and all-zero image digests are replaced. Validate the rendered
-# copy with: python tools/validate-truenas-compose.py --deployment COMPOSE_FILE
+# This checked-in deployment template is intentionally non-runnable until POOL
+# and all-zero image digests are replaced. Validate the rendered copy with:
+# python tools/validate-truenas-compose.py --deployment COMPOSE_FILE
 
 x-security: &security
   init: true
@@ -58,7 +58,7 @@ services:
 
   migrate:
     <<: *security
-    image: ghcr.io/REPLACE_WITH_GHCR_OWNER/power-monitor-api:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/mhilton7/power-monitor-api:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
     platform: linux/amd64
     user: "10001:10001"
     restart: "no"
@@ -76,7 +76,7 @@ services:
 
   api:
     <<: *security
-    image: ghcr.io/REPLACE_WITH_GHCR_OWNER/power-monitor-api:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/mhilton7/power-monitor-api:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
     platform: linux/amd64
     user: "10001:10001"
     restart: unless-stopped
@@ -108,7 +108,7 @@ services:
 
   worker:
     <<: *security
-    image: ghcr.io/REPLACE_WITH_GHCR_OWNER/power-monitor-api:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/mhilton7/power-monitor-api:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
     platform: linux/amd64
     user: "10001:10001"
     restart: unless-stopped
@@ -139,7 +139,7 @@ services:
 
   frontend:
     <<: *security
-    image: ghcr.io/REPLACE_WITH_GHCR_OWNER/power-monitor-frontend:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/mhilton7/power-monitor-frontend:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
     platform: linux/amd64
     user: "101:101"
     restart: unless-stopped
@@ -194,7 +194,7 @@ services:
 
   backup:
     <<: *security
-    image: ghcr.io/REPLACE_WITH_GHCR_OWNER/power-monitor-backup:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: ghcr.io/mhilton7/power-monitor-backup:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
     platform: linux/amd64
     user: "10003:10003"
     restart: unless-stopped

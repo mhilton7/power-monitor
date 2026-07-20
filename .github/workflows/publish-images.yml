@@ -35,6 +35,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - id: image
+        name: Resolve canonical GHCR namespace
+        shell: bash
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          owner="${REPOSITORY_OWNER,,}"
+          repository="${REPOSITORY_NAME,,}"
+          if [[ -z "$owner" || -z "$repository" ]]; then
+            echo "GitHub repository owner and name are required" >&2
+            exit 1
+          fi
+          echo "prefix=ghcr.io/${owner}/${repository}" >> "$GITHUB_OUTPUT"
       - id: version
         shell: bash
         run: |
@@ -54,7 +68,11 @@ jobs:
           provenance: mode=max
           sbom: true
           push: true
-          tags: ghcr.io/mhilton7/power-monitor-${{ matrix.component }}:${{ steps.version.outputs.value }}
+          tags: ${{ steps.image.outputs.prefix }}-${{ matrix.component }}:${{ steps.version.outputs.value }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.value }}
       - shell: bash
         run: |
-          echo '${{ matrix.component }}=ghcr.io/${{ github.repository_owner }}/power-monitor-${{ matrix.component }}:${{ steps.version.outputs.value }}@${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+          echo '${{ matrix.component }}=${{ steps.image.outputs.prefix }}-${{ matrix.component }}:${{ steps.version.outputs.value }}@${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"

@@ -9,8 +9,9 @@ commands in the TrueNAS host shell.
 - Run template validation, then deployment validation with the exact pool and
   gateway port. TrueNAS performs only basic YAML checks; the repository validator
   catches security and topology mistakes.
-- A valid release image contains a semver tag and `@sha256:` digest. Resolve
-  `REPLACE_WITH_GHCR_OWNER`, all-zero digests, and `POOL` before installation.
+- A valid release image contains a semver tag and `@sha256:` digest. Application
+  images use the `ghcr.io/mhilton7/power-monitor-*` namespace. Resolve all-zero
+  digests and `POOL` before installation.
 - Confirm the registry package is public or that TrueNAS has approved registry
   credentials. Confirm the manifest includes `linux/amd64`.
 
@@ -70,4 +71,3 @@ The App UI must show only the configured gateway mapping, normally TCP 8443 to
 container TCP 443. PostgreSQL 5432, API 8000, frontend 8080, worker, migration,
 and backup must have no host publication. Re-render from the checked-in template
 if any other host port appears.
-
