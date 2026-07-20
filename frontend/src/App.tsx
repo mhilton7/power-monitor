@@ -9,7 +9,6 @@ import type { Session } from './types'
 
 const AdminPage = lazy(() => import('./pages/AdminPage').then((module) => ({ default: module.AdminPage })))
 const AlertsPage = lazy(() => import('./pages/AlertsPage').then((module) => ({ default: module.AlertsPage })))
-const CostsPage = lazy(() => import('./pages/CostsPage').then((module) => ({ default: module.CostsPage })))
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage })))
 const DeviceDetailPage = lazy(() => import('./pages/DeviceDetailPage').then((module) => ({ default: module.DeviceDetailPage })))
 const DevicesPage = lazy(() => import('./pages/DevicesPage').then((module) => ({ default: module.DevicesPage })))
@@ -32,7 +31,6 @@ function ProtectedApp({ session }: { session: Session }) {
         <Route path="/devices/:deviceId" element={<DeviceDetailPage />} />
         <Route path="/topology" element={<TopologyPage />} />
         <Route path="/history" element={<HistoryPage />} />
-        <Route path="/costs" element={<CostsPage />} />
         <Route path="/rates" element={<RatesPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/enrollment" element={isAdmin ? <EnrollmentPage /> : <Navigate to="/" replace />} />

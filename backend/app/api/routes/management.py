@@ -1443,6 +1443,43 @@ async def list_alert_rules(_viewer: Viewer, session: DbSession) -> list[dict[str
     ]
 
 
+def _validate_alert_rule_configuration(payload: AlertRuleWrite) -> None:
+    if payload.rule_type == "heartbeat_stale":
+        stale_seconds = payload.configuration.get("stale_seconds", 30)
+        if isinstance(stale_seconds, bool) or not isinstance(stale_seconds, int):
+            raise ProblemError(
+                422,
+                "Invalid disconnect rule",
+                "Disconnect delay must be a whole number of seconds",
+                "alert_rule_config_invalid",
+            )
+        if not 15 <= stale_seconds <= 86400:
+            raise ProblemError(
+                422,
+                "Invalid disconnect rule",
+                "Disconnect delay must be between 15 seconds and 24 hours",
+                "alert_rule_config_invalid",
+            )
+    elif payload.rule_type == "power_surge":
+        threshold = payload.configuration.get("threshold_watts")
+        try:
+            threshold_watts = Decimal(str(threshold))
+        except Exception as exc:
+            raise ProblemError(
+                422,
+                "Invalid power surge rule",
+                "Power surge threshold must be a number of watts",
+                "alert_rule_config_invalid",
+            ) from exc
+        if not Decimal("1") <= threshold_watts <= Decimal("10000000"):
+            raise ProblemError(
+                422,
+                "Invalid power surge rule",
+                "Power surge threshold must be between 1 W and 10,000,000 W",
+                "alert_rule_config_invalid",
+            )
+
+
 @router.post("/alert-rules", status_code=201)
 async def create_alert_rule(
     payload: AlertRuleWrite,
@@ -1451,6 +1488,7 @@ async def create_alert_rule(
     session: DbSession,
 ) -> dict[str, Any]:
     _roles(principal, "admin", "operator")
+    _validate_alert_rule_configuration(payload)
     if payload.device_id and await session.get(Device, payload.device_id) is None:
         raise ProblemError(422, "Invalid rule", "Device does not exist", "device_missing")
     if payload.site_id and await session.get(Site, payload.site_id) is None:
@@ -1480,6 +1518,7 @@ async def update_alert_rule(
     session: DbSession,
 ) -> dict[str, Any]:
     _roles(principal, "admin", "operator")
+    _validate_alert_rule_configuration(payload)
     rule = await session.get(AlertRule, rule_id)
     if rule is None:
         raise ProblemError(404, "Rule not found", "Alert rule does not exist", "rule_missing")
@@ -1596,8 +1635,21 @@ async def silence_alert(
     return {"id": alert.id, "silenced_until": alert.silenced_until}
 
 
-def _validate_notification_configuration(payload: NotificationChannelWrite) -> None:
-    config = payload.configuration
+def _valid_notification_address(value: Any) -> bool:
+    if (
+        not isinstance(value, str)
+        or value != value.strip()
+        or any(character in value for character in ("\r", "\n", "\x00"))
+    ):
+        return False
+    local, separator, domain = value.rpartition("@")
+    return bool(separator and local and "." in domain and not domain.startswith("."))
+
+
+def _validate_notification_configuration(
+    payload: NotificationChannelWrite, configuration: dict[str, Any] | None = None
+) -> None:
+    config = configuration if configuration is not None else payload.configuration
     if payload.channel_type == "smtp":
         missing = [key for key in ("host", "port", "from", "recipients") if not config.get(key)]
         if missing:
@@ -1607,12 +1659,98 @@ def _validate_notification_configuration(payload: NotificationChannelWrite) -> N
                 f"Missing SMTP settings: {', '.join(missing)}",
                 "notification_config_invalid",
             )
+        host = config.get("host")
+        if (
+            not isinstance(host, str)
+            or not host.strip()
+            or host != host.strip()
+            or any(character in host for character in ("\r", "\n", "\x00"))
+        ):
+            raise ProblemError(
+                422,
+                "Invalid SMTP channel",
+                "SMTP host must be a valid hostname or IP address",
+                "notification_config_invalid",
+            )
         port = config.get("port")
-        if not isinstance(port, int) or not 1 <= port <= 65535:
+        if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
             raise ProblemError(
                 422,
                 "Invalid SMTP channel",
                 "SMTP port must be between 1 and 65535",
+                "notification_config_invalid",
+            )
+        sender = config.get("from")
+        recipients = config.get("recipients")
+        if not _valid_notification_address(sender):
+            raise ProblemError(
+                422,
+                "Invalid SMTP channel",
+                "Sender must be a valid email address",
+                "notification_config_invalid",
+            )
+        if (
+            not isinstance(recipients, list)
+            or not 1 <= len(recipients) <= 50
+            or not all(_valid_notification_address(item) for item in recipients)
+        ):
+            raise ProblemError(
+                422,
+                "Invalid SMTP channel",
+                "Provide between 1 and 50 valid recipient email addresses",
+                "notification_config_invalid",
+            )
+        starttls = config.get("starttls", True)
+        implicit_tls = config.get("implicit_tls", False)
+        if not isinstance(starttls, bool) or not isinstance(implicit_tls, bool):
+            raise ProblemError(
+                422,
+                "Invalid SMTP channel",
+                "SMTP TLS settings must be boolean values",
+                "notification_config_invalid",
+            )
+        if starttls and implicit_tls:
+            raise ProblemError(
+                422,
+                "Invalid SMTP channel",
+                "Choose STARTTLS or implicit TLS, not both",
+                "notification_config_invalid",
+            )
+        username = config.get("username")
+        password = config.get("password")
+        if bool(username) != bool(password):
+            raise ProblemError(
+                422,
+                "Invalid SMTP channel",
+                "SMTP username and password must be configured together",
+                "notification_config_invalid",
+            )
+        if username and not (starttls or implicit_tls):
+            raise ProblemError(
+                422,
+                "Invalid SMTP channel",
+                "Authenticated SMTP requires STARTTLS or implicit TLS",
+                "notification_config_invalid",
+            )
+        event_types = config.get("event_types", [])
+        if (
+            not isinstance(event_types, list)
+            or len(event_types) > 50
+            or not all(
+                isinstance(item, str)
+                and item
+                and len(item) <= 80
+                and all(
+                    character.islower() or character.isdigit() or character == "_"
+                    for character in item
+                )
+                for item in event_types
+            )
+        ):
+            raise ProblemError(
+                422,
+                "Invalid SMTP channel",
+                "Notification event types must be lowercase identifiers",
                 "notification_config_invalid",
             )
     elif payload.channel_type == "https_webhook":
@@ -1654,6 +1792,9 @@ def _redacted_channel(channel: NotificationChannel, cipher: SecretCipher) -> dic
             "from": config.get("from"),
             "recipient_count": len(config.get("recipients", [])),
             "starttls": bool(config.get("starttls", True)),
+            "implicit_tls": bool(config.get("implicit_tls", False)),
+            "authentication_configured": bool(config.get("username")),
+            "event_types": list(config.get("event_types", [])),
         }
     elif channel.channel_type == "https_webhook":
         parsed = urlsplit(str(config.get("url", "")))
@@ -1725,17 +1866,29 @@ async def update_notification_channel(
     settings: AppSettings,
 ) -> dict[str, Any]:
     _roles(principal, "admin")
-    _validate_notification_configuration(payload)
     channel = await session.get(NotificationChannel, channel_id)
     if channel is None:
         raise ProblemError(
             404, "Channel not found", "Notification channel does not exist", "channel_missing"
         )
+    configuration = dict(payload.configuration)
+    if channel.channel_type == "smtp" and payload.channel_type == "smtp":
+        try:
+            existing = json.loads(
+                SecretCipher(settings.app_master_key).decrypt(channel.encrypted_config)
+            )
+        except (RuntimeError, ValueError, json.JSONDecodeError):
+            existing = {}
+        if not configuration.get("password") and existing.get("password"):
+            configuration["password"] = existing["password"]
+        if not configuration.get("username") and existing.get("username"):
+            configuration["username"] = existing["username"]
+    _validate_notification_configuration(payload, configuration)
     channel.name = payload.name
     channel.channel_type = payload.channel_type
     channel.enabled = payload.enabled
     channel.encrypted_config = SecretCipher(settings.app_master_key).encrypt(
-        json.dumps(payload.configuration, sort_keys=True, separators=(",", ":")).encode()
+        json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
     )
     session.add(
         audit_event(

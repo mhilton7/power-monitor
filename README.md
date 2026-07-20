@@ -2,6 +2,10 @@
 
 Power Monitor Server is a self-hosted control plane for fleets of ESP32-S3 power sensors using a PZEM-004T V4.x, one current transformer, and mandatory microSD storage. It enrolls devices with unique credentials, accepts signed outbound data, pulls retained history from reachable devices, preserves raw readings in PostgreSQL, calculates effective-dated SCE time-of-use estimates, and presents the result in a responsive React application.
 
+The dashboard includes encrypted SMTP notification setup, test delivery and
+retry evidence, selectable sensor-disconnect alerts, and configurable power-surge
+thresholds and persistence timing.
+
 The normative interoperability identifier is `pm-protocol/1.0.0`. The browser talks only to this server; device credentials never reach browser code.
 
 The canonical source repository is

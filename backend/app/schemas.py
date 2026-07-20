@@ -129,6 +129,7 @@ class AlertRuleWrite(ApiModel):
         "sequence_gap",
         "time_untrusted",
         "low_rssi",
+        "power_surge",
         "ct_utilization",
         "voltage_frequency_range",
         "reboot_loop",

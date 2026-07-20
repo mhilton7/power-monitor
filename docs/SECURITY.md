@@ -8,6 +8,11 @@ Passwords use Argon2id. Browser sessions are random, server-stored, expiring, re
 
 Each device gets a unique high-entropy secret encrypted by Fernet under `APP_MASTER_KEY`. HKDF separates request directions. Exact body hashing, canonical HMAC, timestamp bounds, nonce persistence, constant-time comparison, per-device failure handling, revocation, and audit defend the device API. Logs redact secret-like fields and never print full signatures.
 
+SMTP credentials and webhook secrets are also encrypted under `APP_MASTER_KEY`.
+The API returns only redacted delivery targets and configuration state; it never
+returns a saved SMTP password. Authenticated SMTP is rejected unless STARTTLS or
+implicit TLS is enabled.
+
 Pull policy prevents arbitrary URLs and revalidates DNS results. Use VLANs/VPN; do not expose sensor ports. Firmware must have matching SHA-256 and a valid Ed25519 signature before activation; the server normally stores only public verification keys and already signed packages.
 
 ## Key rotation and incident response

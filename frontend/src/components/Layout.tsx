@@ -13,7 +13,6 @@ import {
   ScanLine,
   Settings,
   Sun,
-  WalletCards,
   X,
   Zap,
 } from 'lucide-react'
@@ -28,7 +27,6 @@ const navigation = [
   { to: '/devices', label: 'Devices', icon: RadioTower },
   { to: '/topology', label: 'Topology', icon: CircuitBoard },
   { to: '/history', label: 'History', icon: History },
-  { to: '/costs', label: 'Costs', icon: WalletCards },
   { to: '/rates', label: 'Rates', icon: Activity },
   { to: '/alerts', label: 'Alerts', icon: Bell },
   { to: '/enrollment', label: 'Enrollment', icon: ScanLine, admin: true },

@@ -3,6 +3,7 @@ import { Archive, BellRing, Database, HardDrive, Network, ServerCog, ShieldCheck
 import { useState } from 'react'
 import { api } from '../api'
 import { UserManagement } from '../components/UserManagement'
+import { NotificationSettings } from '../components/NotificationSettings'
 import type { Site } from '../types'
 import { EmptyState, ErrorState, formatTime, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
 
@@ -63,13 +64,7 @@ export function AdminPage({ currentUserId }: { currentUserId?: string }) {
           )}
 
           {tab === 'Notifications' && (
-            <Panel title="Notification channels" eyebrow="Secrets encrypted at rest">
-              <div className="channel-grid">
-                <article><span><BellRing /></span><p><strong>In-app</strong><small>Always available for authenticated users</small></p><StatusPill status="healthy" label="Enabled" /></article>
-                <article><span><ServerCog /></span><p><strong>SMTP</strong><small>Configure a local or trusted mail relay</small></p><StatusPill status="pending" label="Not configured" /></article>
-                <article><span><Network /></span><p><strong>Generic HTTPS webhook</strong><small>Redacted payloads with delivery retry history</small></p><StatusPill status="pending" label="Not configured" /></article>
-              </div>
-            </Panel>
+            <NotificationSettings />
           )}
 
           {tab === 'Backups' && (

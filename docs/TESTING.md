@@ -23,13 +23,14 @@ cd frontend && npm run e2e
 cd frontend && npm audit --json
 ```
 
-The 2026-07-20 portable release run passed 31 Python tests, including the
-100-device/18,000-reading retry load gate, with the two separately executed
-Docker integration tests skipped in that invocation. It also passed 5 frontend
-unit tests and 9 Chromium E2E tests. Ruff, format checking, strict mypy, OpenAPI
+The 2026-07-20 portable release run passed 34 Python tests, with the load,
+live-PostgreSQL, and deployed-TrueNAS tests explicitly gated for their required
+environments. It also passed 5 frontend unit tests and 11 Chromium E2E tests,
+including SMTP notification setup, trigger timing, and Costs-route removal.
+Ruff, format checking, strict mypy, OpenAPI
 validation, JSON Schema examples, HMAC vectors, the offline PostgreSQL migration
 render, both dependency audits, and the secret scan passed. The production
-frontend build's largest JavaScript chunk was 282.95 kB (91.11 kB gzip).
+frontend build's largest JavaScript chunk was 281.41 kB (90.52 kB gzip).
 
 The checked host had Node 26, so npm emitted the expected engine warning; the build image and supported runtime are pinned to Node 24.4.0. No test failure or source change resulted from the warning.
 

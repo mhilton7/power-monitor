@@ -28,7 +28,14 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     else if (path === '/api/v1/aggregate-sets') body = [{ id: 'aggregate-1', name: 'Explicit home total', cost_scope: 'full_account', is_default: true, members: [{ circuit_id: 'main-1' }, { circuit_id: 'branch-1' }], overlap_confirmed_at: '2026-07-20T06:00:00Z' }]
     else if (path === '/api/v1/readings/history') body = { points: [{ timestamp: '2026-07-20T05:59:00Z', power_w: '900', quality_flags: [] }, { timestamp: '2026-07-20T06:00:00Z', power_w: '960', quality_flags: [] }], missing_ranges: [{ start_sequence: 2, end_sequence: 3 }], coverage_percent: '98.5' }
     else if (path === '/api/v1/alerts') body = [{ id: 'alert-1', name: 'Synchronization backlog', status: 'active', severity: 'warning', device_id: 'device-1', opened_at: '2026-07-20T06:00:00Z', evidence: { backlog: 42 } }]
-    else if (path === '/api/v1/alert-rules') body = [{ id: 'rule-1', name: 'Backlog', rule_type: 'sync_backlog', severity: 'warning', enabled: true, debounce_seconds: 60, resolve_seconds: 60 }]
+    else if (path === '/api/v1/alert-rules' && request.method() === 'GET') body = [
+      { id: 'rule-disconnect', name: 'Sensor disconnected', rule_type: 'heartbeat_stale', severity: 'critical', enabled: true, debounce_seconds: 0, resolve_seconds: 30, configuration: { stale_seconds: 60 } },
+      { id: 'rule-surge', name: 'Power surge', rule_type: 'power_surge', severity: 'critical', enabled: false, debounce_seconds: 10, resolve_seconds: 30, configuration: { threshold_watts: 5000 } },
+    ]
+    else if (path.startsWith('/api/v1/alert-rules/') && request.method() === 'PUT') body = { id: path.split('/').at(-1), enabled: true }
+    else if (path === '/api/v1/notification-channels' && request.method() === 'GET') body = []
+    else if (path === '/api/v1/notification-channels' && request.method() === 'POST') body = { id: 'smtp-1', name: 'Power Monitor email', channel_type: 'smtp', enabled: true, target: { host: 'smtp.example.com', port: 587, from: 'monitor@example.com', recipient_count: 1, starttls: true, implicit_tls: false, authentication_configured: true, event_types: ['heartbeat_stale', 'power_surge'] }, secrets_redacted: true }
+    else if (path === '/api/v1/notification-attempts') body = []
     else if (path === '/api/v1/users') body = [
       { ...session(roles).user, is_active: true },
       { id: 'user-2', email: 'viewer@example.test', display_name: 'Dashboard Viewer', roles: ['viewer'], is_active: true },
@@ -87,13 +94,13 @@ test('topology shows an explicitly confirmed overlap warning', async ({ page }) 
   await expect(page.getByText('Never summed by default')).toBeVisible()
 })
 
-test('cost pages always disclose that estimates are not utility bills', async ({ page }) => {
+test('cost workspace is removed from navigation and routing', async ({ page }) => {
   await mockApplication(page)
+  await page.goto('/')
+  await expect(page.getByRole('link', { name: 'Costs' })).toHaveCount(0)
   await page.goto('/costs')
-  await expect(page.getByRole('heading', { name: 'Costs & billing' })).toBeVisible()
-  await expect(page.getByText('Estimate, not utility bill.')).toBeVisible()
-  await page.getByLabel('Cost scope').selectOption('full_account')
-  await expect(page.getByText('Full-account mode is explicit.')).toBeVisible()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
 })
 
 test('admin can create an enrollment token without seeing a permanent secret', async ({ page }) => {
@@ -126,6 +133,30 @@ test('administrator can create and remove local users', async ({ page }) => {
   await viewerRow.getByRole('button', { name: 'Remove' }).click()
   await viewerRow.getByRole('button', { name: 'Remove', exact: true }).click()
   await removeRequest
+})
+
+test('administrator can configure SMTP and notification timing', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/admin')
+  await page.getByRole('tab', { name: 'Notifications' }).click()
+  await page.getByRole('button', { name: 'Configure SMTP' }).click()
+  await page.getByLabel('SMTP host').fill('smtp.example.com')
+  await page.getByLabel('Username').fill('mailer')
+  await page.getByLabel('Password').fill('smtp-secret-password')
+  await page.getByLabel('From address').fill('monitor@example.com')
+  await page.getByLabel('Recipients').fill('owner@example.com')
+  const smtpRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/notification-channels') && request.method() === 'POST')
+  await page.getByRole('button', { name: 'Save SMTP securely' }).click()
+  const smtpPayload = JSON.parse((await smtpRequest).postData() ?? '{}') as { configuration: { event_types: string[] } }
+  expect(smtpPayload.configuration.event_types).toEqual(['heartbeat_stale', 'power_surge'])
+
+  await page.getByLabel('Enable power surge notifications').check()
+  await page.getByLabel('Power surge threshold').fill('7200')
+  await page.getByLabel('Power surge duration').fill('15')
+  const surgeRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/alert-rules/rule-surge') && request.method() === 'PUT')
+  await page.getByRole('button', { name: 'Save notification triggers' }).click()
+  const surgePayload = JSON.parse((await surgeRequest).postData() ?? '{}') as { enabled: boolean; debounce_seconds: number; configuration: { threshold_watts: number } }
+  expect(surgePayload).toMatchObject({ enabled: true, debounce_seconds: 15, configuration: { threshold_watts: 7200 } })
 })
 
 test('alert acknowledgement calls the audited server action', async ({ page }) => {

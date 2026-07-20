@@ -556,6 +556,7 @@ async def process_notification_jobs(
     session: AsyncSession, settings: Settings, limit: int = 20
 ) -> dict[str, int]:
     now = datetime.now(UTC)
+    cipher = SecretCipher(settings.app_master_key)
     channels = list(
         await session.scalars(
             select(NotificationChannel).where(NotificationChannel.enabled.is_(True))
@@ -570,8 +571,23 @@ async def process_notification_jobs(
             )
         )
     )
+    rule_types = {
+        rule.id: rule.rule_type for rule in await session.scalars(select(AlertRule))
+    }
+    channel_configs: dict[str, dict[str, Any]] = {}
+    for channel in channels:
+        try:
+            channel_configs[channel.id] = json.loads(
+                cipher.decrypt(channel.encrypted_config)
+            )
+        except (RuntimeError, ValueError, json.JSONDecodeError):
+            channel_configs[channel.id] = {}
     for alert in alerts:
+        rule_type = rule_types.get(alert.rule_id)
         for channel in channels:
+            event_types = channel_configs[channel.id].get("event_types", [])
+            if event_types and rule_type not in event_types:
+                continue
             existing = await session.scalar(
                 select(NotificationAttempt.id).where(
                     NotificationAttempt.alert_instance_id == alert.id,
@@ -606,7 +622,6 @@ async def process_notification_jobs(
     )
     delivered = 0
     failed = 0
-    cipher = SecretCipher(settings.app_master_key)
     for attempt in attempts:
         current_channel = await session.get(NotificationChannel, attempt.channel_id)
         current_alert = (
@@ -620,17 +635,25 @@ async def process_notification_jobs(
             continue
         try:
             config = json.loads(cipher.decrypt(current_channel.encrypted_config))
+            current_rule = (
+                await session.get(AlertRule, current_alert.rule_id)
+                if current_alert
+                else None
+            )
             payload = {
                 "schema_version": "power-monitor-notification/1.0.0",
                 "title": "Power Monitor notification test"
                 if attempt.is_test
-                else f"Power Monitor {current_alert.severity if current_alert else 'alert'} alert",
+                else f"Power Monitor: {current_rule.name if current_rule else 'alert'}",
                 "test": attempt.is_test,
                 "alert_id": current_alert.id if current_alert else None,
+                "alert_name": current_rule.name if current_rule else None,
+                "event_type": current_rule.rule_type if current_rule else None,
                 "status": current_alert.status if current_alert else "test",
                 "severity": current_alert.severity if current_alert else "info",
                 "site_id": current_alert.site_id if current_alert else None,
                 "device_id": current_alert.device_id if current_alert else None,
+                "evidence": current_alert.evidence if current_alert else {},
                 "occurred_at": (
                     current_alert.opened_at if current_alert else now
                 ).isoformat(),
@@ -672,22 +695,18 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
     devices = list(
         await session.scalars(select(Device).where(Device.revoked_at.is_(None)))
     )
-    rules = {
-        rule.rule_type: rule
-        for rule in await session.scalars(
-            select(AlertRule).where(AlertRule.enabled.is_(True))
-        )
-    }
+    rules: dict[str, list[AlertRule]] = {}
+    for rule in await session.scalars(
+        select(AlertRule).where(AlertRule.enabled.is_(True))
+    ):
+        rules.setdefault(rule.rule_type, []).append(rule)
     opened = 0
     resolved = 0
 
     async def set_condition(
-        device: Device, rule_type: str, active: bool, evidence: dict[str, Any]
+        device: Device, rule: AlertRule, active: bool, evidence: dict[str, Any]
     ) -> None:
         nonlocal opened, resolved
-        rule = rules.get(rule_type)
-        if rule is None:
-            return
         instance = await session.scalar(
             select(AlertInstance).where(
                 AlertInstance.rule_id == rule.id,
@@ -746,7 +765,15 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
                 if observed <= now - timedelta(seconds=rule.resolve_seconds):
                     instance.status = "resolved"
                     instance.resolved_at = now
-                    resolved += 1
+                resolved += 1
+
+    def matching_rules(device: Device, rule_type: str) -> list[AlertRule]:
+        return [
+            rule
+            for rule in rules.get(rule_type, [])
+            if (rule.device_id is None or rule.device_id == device.id)
+            and (rule.site_id is None or rule.site_id == device.site_id)
+        ]
 
     for device in devices:
         if device.maintenance_until:
@@ -764,46 +791,70 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
             .order_by(DeviceHeartbeat.received_at.desc())
             .limit(1)
         )
-        stale = heartbeat is None or heartbeat.received_at < now - timedelta(
-            seconds=settings.heartbeat_expectation_seconds * 2
+        heartbeat_received_at = heartbeat.received_at if heartbeat else None
+        if heartbeat_received_at is not None and heartbeat_received_at.tzinfo is None:
+            heartbeat_received_at = heartbeat_received_at.replace(tzinfo=UTC)
+        stale = (
+            heartbeat_received_at is None
+            or heartbeat_received_at
+            < now - timedelta(seconds=settings.heartbeat_expectation_seconds * 2)
         )
-        await set_condition(
-            device,
-            "heartbeat_stale",
-            stale,
-            {
-                "last_seen_at": device.last_seen_at.isoformat()
-                if device.last_seen_at
-                else None
-            },
-        )
+        for rule in matching_rules(device, "heartbeat_stale"):
+            stale_seconds = int(
+                rule.configuration.get(
+                    "stale_seconds", settings.heartbeat_expectation_seconds * 2
+                )
+            )
+            rule_stale = (
+                heartbeat_received_at is None
+                or heartbeat_received_at < now - timedelta(seconds=stale_seconds)
+            )
+            await set_condition(
+                device,
+                rule,
+                rule_stale,
+                {
+                    "last_seen_at": device.last_seen_at.isoformat()
+                    if device.last_seen_at
+                    else None,
+                    "stale_after_seconds": stale_seconds,
+                },
+            )
         if stale and device.status not in {"maintenance", "revoked"}:
             device.status = "offline_last_known"
         if heartbeat:
-            await set_condition(
-                device,
-                "pzem_failure",
-                not heartbeat.pzem_ok,
-                {"heartbeat_id": heartbeat.id},
-            )
-            await set_condition(
-                device,
-                "sd_failure",
-                not heartbeat.sd_ok,
-                {"heartbeat_id": heartbeat.id},
-            )
-            await set_condition(
-                device,
-                "time_untrusted",
-                not heartbeat.time_trusted,
-                {"heartbeat_id": heartbeat.id},
-            )
-            await set_condition(
-                device,
-                "low_rssi",
-                heartbeat.rssi_dbm is not None and heartbeat.rssi_dbm < -75,
-                {"rssi_dbm": heartbeat.rssi_dbm},
-            )
+            for rule in matching_rules(device, "power_surge"):
+                threshold_watts = Decimal(str(rule.configuration["threshold_watts"]))
+                await set_condition(
+                    device,
+                    rule,
+                    not stale
+                    and heartbeat.current_watts is not None
+                    and heartbeat.current_watts >= threshold_watts,
+                    {
+                        "current_watts": str(heartbeat.current_watts)
+                        if heartbeat.current_watts is not None
+                        else None,
+                        "threshold_watts": str(threshold_watts),
+                        "heartbeat_id": heartbeat.id,
+                    },
+                )
+            for rule_type, active, evidence in (
+                ("pzem_failure", not heartbeat.pzem_ok, {"heartbeat_id": heartbeat.id}),
+                ("sd_failure", not heartbeat.sd_ok, {"heartbeat_id": heartbeat.id}),
+                (
+                    "time_untrusted",
+                    not heartbeat.time_trusted,
+                    {"heartbeat_id": heartbeat.id},
+                ),
+                (
+                    "low_rssi",
+                    heartbeat.rssi_dbm is not None and heartbeat.rssi_dbm < -75,
+                    {"rssi_dbm": heartbeat.rssi_dbm},
+                ),
+            ):
+                for rule in matching_rules(device, rule_type):
+                    await set_condition(device, rule, active, evidence)
         gap_count = await session.scalar(
             select(func.count())
             .select_from(SequenceGap)
@@ -811,9 +862,10 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
                 SequenceGap.device_id == device.id, SequenceGap.resolved_at.is_(None)
             )
         )
-        await set_condition(
-            device, "sequence_gap", bool(gap_count), {"open_gap_count": gap_count or 0}
-        )
+        for rule in matching_rules(device, "sequence_gap"):
+            await set_condition(
+                device, rule, bool(gap_count), {"open_gap_count": gap_count or 0}
+            )
     await session.commit()
     return {"opened": opened, "resolved": resolved}
 

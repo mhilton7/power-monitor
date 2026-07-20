@@ -1,14 +1,27 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from worker.app.tasks import process_notification_jobs, process_report_jobs
+from worker.app.tasks import evaluate_alerts, process_notification_jobs, process_report_jobs
 
 from app.config import Settings
-from app.db.models import GeneratedReport, NotificationAttempt
+from app.db.models import (
+    AlertInstance,
+    AlertRule,
+    Device,
+    DeviceHeartbeat,
+    GeneratedReport,
+    NotificationAttempt,
+    NotificationChannel,
+    Site,
+)
+from app.security.protocol import SecretCipher
 
 
 def csrf(client: httpx.AsyncClient) -> dict[str, str]:
@@ -113,3 +126,143 @@ async def test_alert_rule_and_maintenance_management(api_client: Any) -> None:
     assert any(item["id"] == rule.json()["id"] for item in rules.json())
     deleted = await client.delete(f"/api/v1/alert-rules/{rule.json()['id']}", headers=csrf(client))
     assert deleted.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_smtp_configuration_is_validated_redacted_and_password_preserving(
+    api_client: Any,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    test_settings: Settings,
+) -> None:
+    client: httpx.AsyncClient = api_client
+    await client.post(
+        "/api/v1/auth/bootstrap",
+        json={
+            "bootstrap_secret": "test-bootstrap-secret-with-at-least-16",
+            "email": "smtp-admin@example.com",
+            "display_name": "SMTP Admin",
+            "password": "Long-Production-Password-42!",
+        },
+    )
+    created = await client.post(
+        "/api/v1/notification-channels",
+        headers=csrf(client),
+        json={
+            "name": "Operations email",
+            "channel_type": "smtp",
+            "enabled": True,
+            "configuration": {
+                "host": "smtp.example.com",
+                "port": 587,
+                "from": "monitor@example.com",
+                "recipients": ["owner@example.com"],
+                "starttls": True,
+                "implicit_tls": False,
+                "username": "mailer",
+                "password": "smtp-password",
+                "event_types": ["heartbeat_stale", "power_surge"],
+            },
+        },
+    )
+    assert created.status_code == 201, created.text
+    response = created.json()
+    assert response["target"]["event_types"] == ["heartbeat_stale", "power_surge"]
+    assert response["target"]["authentication_configured"] is True
+    assert "password" not in response["target"]
+    assert "configuration" not in response
+
+    updated = await client.put(
+        f"/api/v1/notification-channels/{response['id']}",
+        headers=csrf(client),
+        json={
+            "name": "Operations email",
+            "channel_type": "smtp",
+            "enabled": True,
+            "configuration": {
+                "host": "smtp.example.com",
+                "port": 587,
+                "from": "monitor@example.com",
+                "recipients": ["on-call@example.com"],
+                "starttls": True,
+                "implicit_tls": False,
+                "event_types": ["power_surge"],
+            },
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    async with session_factory_fixture() as session:
+        channel = await session.get(NotificationChannel, response["id"])
+        assert channel is not None
+        config = SecretCipher(test_settings.app_master_key).decrypt(channel.encrypted_config)
+        assert b'"username":"mailer"' in config
+        assert b'"password":"smtp-password"' in config
+        assert b'"on-call@example.com"' in config
+
+
+@pytest.mark.asyncio
+async def test_power_surge_rule_opens_and_resolves_from_signed_heartbeat_power(
+    session_factory_fixture: async_sessionmaker[AsyncSession], test_settings: Settings
+) -> None:
+    now = datetime.now(UTC)
+    async with session_factory_fixture() as session:
+        site = Site(name="Surge test", timezone="America/Los_Angeles")
+        session.add(site)
+        await session.flush()
+        device = Device(
+            site_id=site.id,
+            hardware_id="surge-sensor",
+            name="Surge sensor",
+            status="online_synchronized",
+            last_seen_at=now,
+        )
+        rule = AlertRule(
+            name="Power surge",
+            rule_type="power_surge",
+            severity="critical",
+            enabled=True,
+            debounce_seconds=0,
+            resolve_seconds=0,
+            configuration={"threshold_watts": 5000},
+        )
+        session.add_all([device, rule])
+        await session.flush()
+        session.add(
+            DeviceHeartbeat(
+                device_id=device.id,
+                boot_id="123e4567-e89b-12d3-a456-426614174000",
+                received_at=now,
+                current_watts=Decimal("7200"),
+                pzem_ok=True,
+                sd_ok=True,
+                time_trusted=True,
+                newest_sequence=1,
+                backlog_estimate=0,
+                payload={},
+            )
+        )
+        await session.commit()
+        result = await evaluate_alerts(session, test_settings)
+        assert result["opened"] == 1
+        alert = await session.scalar(select(AlertInstance).where(AlertInstance.rule_id == rule.id))
+        assert alert is not None and alert.status == "active"
+        assert alert.evidence["current_watts"] == "7200.0000"
+
+        session.add(
+            DeviceHeartbeat(
+                device_id=device.id,
+                boot_id="123e4567-e89b-12d3-a456-426614174001",
+                received_at=datetime.now(UTC),
+                current_watts=Decimal("900"),
+                pzem_ok=True,
+                sd_ok=True,
+                time_trusted=True,
+                newest_sequence=2,
+                backlog_estimate=0,
+                payload={},
+            )
+        )
+        await session.commit()
+        result = await evaluate_alerts(session, test_settings)
+        await session.refresh(alert)
+        assert result["resolved"] == 1
+        assert alert.status == "resolved"
