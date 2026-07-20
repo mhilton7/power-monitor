@@ -1300,5 +1300,423 @@ INSERT INTO rate_sync_configuration (id, enabled, schedule_cron, timezone, jitte
 
 UPDATE alembic_version SET version_num='20260720_0003' WHERE alembic_version.version_num = '20260720_0002';
 
+-- Running upgrade 20260720_0003 -> 20260720_0004
+
+ALTER TABLE rate_sources ADD COLUMN effective_from_hint DATE;
+
+ALTER TABLE rate_sources ADD COLUMN created_by VARCHAR(36);
+
+ALTER TABLE rate_sources ADD CONSTRAINT fk_rate_sources_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE SET NULL;
+
+UPDATE rate_sources SET effective_from_hint = DATE '2026-06-01' WHERE url = 'https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans';
+
+UPDATE alembic_version SET version_num='20260720_0004' WHERE alembic_version.version_num = '20260720_0003';
+
+-- Running upgrade 20260720_0004 -> 20260720_0005
+
+ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE users ADD COLUMN all_sites BOOLEAN DEFAULT true NOT NULL;
+
+ALTER TABLE users ADD COLUMN access_revision INTEGER DEFAULT '1' NOT NULL;
+
+ALTER TABLE sessions ADD COLUMN reauthenticated_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE roles ADD COLUMN display_name VARCHAR(120) DEFAULT '' NOT NULL;
+
+ALTER TABLE roles ADD COLUMN is_builtin BOOLEAN DEFAULT false NOT NULL;
+
+ALTER TABLE roles ADD COLUMN is_archived BOOLEAN DEFAULT false NOT NULL;
+
+ALTER TABLE roles ADD COLUMN revision INTEGER DEFAULT '1' NOT NULL;
+
+ALTER TABLE roles ADD COLUMN created_by VARCHAR(36);
+
+ALTER TABLE roles ADD COLUMN updated_by VARCHAR(36);
+
+ALTER TABLE roles ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL;
+
+ALTER TABLE roles ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL;
+
+ALTER TABLE roles ADD CONSTRAINT fk_roles_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE roles ADD CONSTRAINT fk_roles_updated_by_users FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE SET NULL;
+
+CREATE INDEX ix_roles_is_builtin ON roles (is_builtin);
+
+CREATE INDEX ix_roles_is_archived ON roles (is_archived);
+
+INSERT INTO roles (name, description) SELECT 'admin', 'Full application administration' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'admin');
+
+INSERT INTO roles (name, description) SELECT 'operator', 'Assigned-site device and alert operations' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'operator');
+
+INSERT INTO roles (name, description) SELECT 'rate-manager', 'Rate plan and source administration' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'rate-manager');
+
+INSERT INTO roles (name, description) SELECT 'viewer', 'Read-only assigned-site dashboard access' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'viewer');
+
+UPDATE roles SET display_name = name WHERE display_name = '';
+
+UPDATE roles SET display_name = 'Administrator', is_builtin = true WHERE name = 'admin';
+
+UPDATE roles SET display_name = 'Operator', is_builtin = true WHERE name = 'operator';
+
+UPDATE roles SET display_name = 'Rate Manager', is_builtin = true WHERE name = 'rate-manager';
+
+UPDATE roles SET display_name = 'Regular User / Read-Only Viewer', is_builtin = true WHERE name = 'viewer';
+
+CREATE UNIQUE INDEX uq_roles_display_name_lower ON roles (lower(display_name));
+
+CREATE TABLE permissions (
+    code VARCHAR(80) NOT NULL,
+    group_name VARCHAR(80) NOT NULL,
+    label VARCHAR(120) NOT NULL,
+    description VARCHAR(500) NOT NULL,
+    high_risk BOOLEAN DEFAULT false NOT NULL,
+    CONSTRAINT pk_permissions PRIMARY KEY (code)
+);
+
+CREATE INDEX ix_permissions_group_name ON permissions (group_name);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('overview.view', 'overview', 'overview.view', 'overview.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('usage.view', 'usage', 'usage.view', 'usage.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('history.view', 'history', 'history.view', 'history.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('history.export', 'history', 'history.export', 'history.export', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('costs.view', 'costs', 'costs.view', 'costs.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('costs.export', 'costs', 'costs.export', 'costs.export', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('sites.view', 'sites', 'sites.view', 'sites.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('sites.manage', 'sites', 'sites.manage', 'sites.manage', true);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('topology.view', 'topology', 'topology.view', 'topology.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('topology.manage', 'topology', 'topology.manage', 'topology.manage', true);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('devices.view', 'devices', 'devices.view', 'devices.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('devices.manage', 'devices', 'devices.manage', 'devices.manage', true);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('devices.remove', 'devices', 'devices.remove', 'devices.remove', true);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('enrollment.view', 'enrollment', 'enrollment.view', 'enrollment.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('enrollment.manage', 'enrollment', 'enrollment.manage', 'enrollment.manage', true);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('firmware.view', 'firmware', 'firmware.view', 'firmware.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('firmware.manage', 'firmware', 'firmware.manage', 'firmware.manage', true);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('rates.view', 'rates', 'rates.view', 'rates.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('rates.manage_custom', 'rates', 'rates.manage_custom', 'rates.manage_custom', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('rates.manage_sources', 'rates', 'rates.manage_sources', 'rates.manage_sources', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('rates.check_sources', 'rates', 'rates.check_sources', 'rates.check_sources', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('rates.review_candidates', 'rates', 'rates.review_candidates', 'rates.review_candidates', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('rates.approve_candidates', 'rates', 'rates.approve_candidates', 'rates.approve_candidates', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('rates.assign', 'rates', 'rates.assign', 'rates.assign', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('alerts.view', 'alerts', 'alerts.view', 'alerts.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('alerts.acknowledge', 'alerts', 'alerts.acknowledge', 'alerts.acknowledge', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('alerts.manage_rules', 'alerts', 'alerts.manage_rules', 'alerts.manage_rules', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('alerts.manage_delivery', 'alerts', 'alerts.manage_delivery', 'alerts.manage_delivery', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('backups.view', 'backups', 'backups.view', 'backups.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('backups.create', 'backups', 'backups.create', 'backups.create', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('backups.restore', 'backups', 'backups.restore', 'backups.restore', true);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('logs.export', 'logs', 'logs.export', 'logs.export', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('users.view', 'users', 'users.view', 'users.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('users.manage', 'users', 'users.manage', 'users.manage', true);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('users.manage_protected', 'users', 'users.manage_protected', 'users.manage_protected', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('roles.view', 'roles', 'roles.view', 'roles.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('roles.manage', 'roles', 'roles.manage', 'roles.manage', true);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('audit.view', 'audit', 'audit.view', 'audit.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('settings.view', 'settings', 'settings.view', 'settings.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('settings.manage', 'settings', 'settings.manage', 'settings.manage', true);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('interface_text.view', 'interface_text', 'interface_text.view', 'interface_text.view', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('interface_text.manage', 'interface_text', 'interface_text.manage', 'interface_text.manage', true);
+
+CREATE TABLE role_permissions (
+    role_name VARCHAR(32) NOT NULL,
+    permission_code VARCHAR(80) NOT NULL,
+    CONSTRAINT pk_role_permissions PRIMARY KEY (role_name, permission_code),
+    CONSTRAINT fk_role_permissions_role_name_roles FOREIGN KEY(role_name) REFERENCES roles (name) ON DELETE CASCADE,
+    CONSTRAINT fk_role_permissions_permission_code_permissions FOREIGN KEY(permission_code) REFERENCES permissions (code) ON DELETE RESTRICT
+);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'alerts.acknowledge');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'alerts.manage_delivery');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'alerts.manage_rules');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'alerts.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'audit.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'backups.create');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'backups.restore');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'backups.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'costs.export');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'costs.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'devices.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'devices.remove');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'devices.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'enrollment.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'enrollment.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'firmware.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'firmware.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'history.export');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'history.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'interface_text.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'interface_text.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'logs.export');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'overview.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'rates.approve_candidates');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'rates.assign');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'rates.check_sources');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'rates.manage_custom');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'rates.manage_sources');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'rates.review_candidates');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'rates.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'roles.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'roles.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'settings.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'settings.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'sites.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'sites.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'topology.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'topology.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'usage.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'users.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'users.manage_protected');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'users.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'alerts.acknowledge');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'alerts.manage_rules');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'alerts.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'costs.export');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'costs.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'devices.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'devices.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'enrollment.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'enrollment.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'firmware.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'history.export');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'history.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'overview.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'rates.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'sites.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'topology.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'topology.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'usage.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'alerts.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'costs.export');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'costs.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'devices.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'history.export');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'history.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'overview.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'rates.approve_candidates');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'rates.assign');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'rates.check_sources');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'rates.manage_custom');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'rates.manage_sources');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'rates.review_candidates');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'rates.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'sites.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'topology.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'usage.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'alerts.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'costs.export');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'costs.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'devices.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'history.export');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'history.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'overview.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'rates.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'sites.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'topology.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'usage.view');
+
+CREATE TABLE user_sites (
+    user_id VARCHAR(36) NOT NULL,
+    site_id VARCHAR(36) NOT NULL,
+    CONSTRAINT pk_user_sites PRIMARY KEY (user_id, site_id),
+    CONSTRAINT fk_user_sites_user_id_users FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT fk_user_sites_site_id_sites FOREIGN KEY(site_id) REFERENCES sites (id) ON DELETE CASCADE
+);
+
+CREATE TABLE role_revisions (
+    id VARCHAR(36) NOT NULL,
+    role_name VARCHAR(32) NOT NULL,
+    revision INTEGER NOT NULL,
+    display_name VARCHAR(120) NOT NULL,
+    description VARCHAR(255) NOT NULL,
+    permissions JSON NOT NULL,
+    created_by VARCHAR(36),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    reason VARCHAR(500),
+    CONSTRAINT pk_role_revisions PRIMARY KEY (id),
+    CONSTRAINT uq_role_revision UNIQUE (role_name, revision),
+    CONSTRAINT fk_role_revisions_role_name_roles FOREIGN KEY(role_name) REFERENCES roles (name) ON DELETE RESTRICT,
+    CONSTRAINT fk_role_revisions_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_role_revisions_role_name ON role_revisions (role_name);
+
+CREATE TABLE interface_text_revisions (
+    id VARCHAR(36) NOT NULL,
+    revision INTEGER NOT NULL,
+    values JSON NOT NULL,
+    created_by VARCHAR(36),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    reason VARCHAR(500),
+    restored_from_id VARCHAR(36),
+    CONSTRAINT pk_interface_text_revisions PRIMARY KEY (id),
+    CONSTRAINT uq_interface_text_revisions_revision UNIQUE (revision),
+    CONSTRAINT fk_interface_text_revisions_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT fk_interface_text_revisions_restored_from_id_interface__2109 FOREIGN KEY(restored_from_id) REFERENCES interface_text_revisions (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_interface_text_revisions_revision ON interface_text_revisions (revision);
+
+CREATE INDEX ix_interface_text_revisions_created_by ON interface_text_revisions (created_by);
+
+CREATE TABLE interface_text_drafts (
+    id VARCHAR(36) NOT NULL,
+    base_revision INTEGER DEFAULT '0' NOT NULL,
+    revision INTEGER DEFAULT '1' NOT NULL,
+    previewed_revision INTEGER,
+    values JSON NOT NULL,
+    edited_by VARCHAR(36),
+    reason VARCHAR(500),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_interface_text_drafts PRIMARY KEY (id),
+    CONSTRAINT fk_interface_text_drafts_edited_by_users FOREIGN KEY(edited_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_interface_text_drafts_edited_by ON interface_text_drafts (edited_by);
+
+CREATE TABLE interface_text_state (
+    id VARCHAR(36) NOT NULL,
+    current_revision_id VARCHAR(36),
+    current_revision INTEGER DEFAULT '0' NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_interface_text_state PRIMARY KEY (id),
+    CONSTRAINT fk_interface_text_state_current_revision_id_interface_t_285a FOREIGN KEY(current_revision_id) REFERENCES interface_text_revisions (id) ON DELETE RESTRICT
+);
+
+INSERT INTO interface_text_state (id, current_revision_id, current_revision, updated_at) VALUES ('current', NULL, 0, CURRENT_TIMESTAMP);
+
+UPDATE alembic_version SET version_num='20260720_0005' WHERE alembic_version.version_num = '20260720_0004';
+
 COMMIT;
 
