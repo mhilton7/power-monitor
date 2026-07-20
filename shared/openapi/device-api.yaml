@@ -1,0 +1,71 @@
+openapi: 3.1.0
+info:
+  title: Power Monitor Sensor Agent local API
+  version: 1.0.0
+  description: Server-to-device half of pm-protocol/1.0.0. Every operation requires directional HMAC headers.
+servers:
+  - url: https://device.local
+components:
+  securitySchemes:
+    pmHmac:
+      type: apiKey
+      in: header
+      name: X-PM-Signature
+  schemas:
+    JsonObject: {type: object, additionalProperties: true}
+    Problem:
+      type: object
+      required: [title, status, detail, code]
+      properties:
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        code: {type: string}
+paths:
+  /api/v1/health:
+    get: {operationId: getHealth, security: [{pmHmac: []}], responses: {'200': {description: Health evidence, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}}
+  /api/v1/info:
+    get: {operationId: getInfo, security: [{pmHmac: []}], responses: {'200': {description: Identity and capabilities, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}}
+  /api/v1/live:
+    get: {operationId: getLive, security: [{pmHmac: []}], responses: {'200': {description: Latest measurement, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}}
+  /api/v1/readings:
+    get:
+      operationId: getReadings
+      security: [{pmHmac: []}]
+      parameters:
+        - {name: after_sequence, in: query, required: true, schema: {type: integer, minimum: 0}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 500}}
+      responses:
+        '200': {description: Bounded sequence page, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
+        '410': {description: Requested history is no longer retained, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /api/v1/events:
+    get: {operationId: getEvents, security: [{pmHmac: []}], responses: {'200': {description: Event page, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}}
+  /api/v1/storage:
+    get: {operationId: getStorage, security: [{pmHmac: []}], responses: {'200': {description: microSD state, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}}
+  /api/v1/sync-status:
+    get: {operationId: getSyncStatus, security: [{pmHmac: []}], responses: {'200': {description: Cursor and backlog, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}}
+  /api/v1/config:
+    get: {operationId: getConfig, security: [{pmHmac: []}], responses: {'200': {description: Effective non-secret config, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}}
+    put:
+      operationId: putConfig
+      security: [{pmHmac: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
+      responses: {'200': {description: Application result, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}
+  /api/v1/sync/ack:
+    post:
+      operationId: acknowledgeSync
+      security: [{pmHmac: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
+      responses: {'204': {description: Cursor durably acknowledged}}
+  /api/v1/actions/{action}:
+    post:
+      operationId: runMaintenanceAction
+      security: [{pmHmac: []}]
+      parameters: [{name: action, in: path, required: true, schema: {type: string, enum: [reboot, sync-retry]}}]
+      responses: {'202': {description: Action accepted}}
+  /api/v1/ota/apply:
+    post:
+      operationId: applyOta
+      security: [{pmHmac: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
+      responses: {'202': {description: Compatible signed OTA accepted}}

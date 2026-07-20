@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://power-monitor.local/schemas/device-config.schema.json",
+  "title": "Power Monitor desired device configuration",
+  "type": "object",
+  "required": ["protocol_version", "version", "settings"],
+  "properties": {
+    "protocol_version": {"const": "pm-protocol/1.0.0"},
+    "version": {"type": "integer", "minimum": 1},
+    "settings": {"type": "object", "not": {"required": ["hardware_pins"]}},
+    "signature": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": true
+}

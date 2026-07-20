@@ -1,0 +1,1 @@
+"""Asynchronous PostgreSQL-coordinated worker."""

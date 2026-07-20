@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://power-monitor.local/schemas/reading-batch.schema.json",
+  "title": "Power Monitor durable reading batch",
+  "type": "object",
+  "required": ["protocol_version", "schema_version", "device_id", "readings"],
+  "properties": {
+    "protocol_version": {"const": "pm-protocol/1.0.0"},
+    "schema_version": {"const": "reading-batch/1.0.0"},
+    "device_id": {"type": "string", "format": "uuid"},
+    "readings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "required": ["sequence", "boot_id", "interval_start", "interval_end", "time_trusted", "energy_method", "ct_rating_amps", "quality_flags", "firmware_version"],
+        "properties": {
+          "sequence": {"type": "integer", "minimum": 1},
+          "boot_id": {"type": "string", "format": "uuid"},
+          "interval_start": {"type": "string", "format": "date-time"},
+          "interval_end": {"type": "string", "format": "date-time"},
+          "time_trusted": {"type": "boolean"},
+          "power_avg": {"type": ["number", "string", "null"], "minimum": 0},
+          "interval_energy_wh": {"type": ["number", "string", "null"], "minimum": 0},
+          "energy_method": {"type": "string"},
+          "ct_rating_amps": {"type": ["number", "string"], "exclusiveMinimum": 0},
+          "quality_flags": {"type": "array", "items": {"type": "string"}},
+          "firmware_version": {"type": "string"},
+          "record_hash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}
+

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://power-monitor.local/schemas/heartbeat.schema.json",
+  "title": "Power Monitor device heartbeat",
+  "type": "object",
+  "required": ["protocol_version", "schema_version", "device_id", "boot_id", "firmware_version", "firmware_build_hash", "uptime_seconds", "reboot_reason", "connection_mode", "pzem", "sd", "oldest_stored_sequence", "newest_stored_sequence", "server_ack_sequence", "backlog_estimate", "configuration_version", "time", "resources", "queue"],
+  "properties": {
+    "protocol_version": {"const": "pm-protocol/1.0.0"},
+    "schema_version": {"const": "heartbeat/1.0.0"},
+    "device_id": {"type": "string", "format": "uuid"},
+    "boot_id": {"type": "string", "format": "uuid"},
+    "firmware_version": {"type": "string"},
+    "firmware_build_hash": {"type": "string"},
+    "uptime_seconds": {"type": "integer", "minimum": 0},
+    "reboot_reason": {"type": "string"},
+    "current_ip": {"type": ["string", "null"]},
+    "hostname": {"type": ["string", "null"]},
+    "rssi_dbm": {"type": ["integer", "null"], "minimum": -127, "maximum": 0},
+    "connection_mode": {"enum": ["pull", "push", "hybrid"]},
+    "latest": {"type": ["object", "null"]},
+    "pzem": {"$ref": "#/$defs/health"},
+    "sd": {"$ref": "#/$defs/health"},
+    "oldest_stored_sequence": {"type": "integer", "minimum": 0},
+    "newest_stored_sequence": {"type": "integer", "minimum": 0},
+    "server_ack_sequence": {"type": "integer", "minimum": 0},
+    "backlog_estimate": {"type": "integer", "minimum": 0},
+    "configuration_version": {"type": "integer", "minimum": 0},
+    "time": {"type": "object", "required": ["trusted", "source"], "properties": {"trusted": {"type": "boolean"}, "source": {"type": "string"}}, "additionalProperties": true},
+    "resources": {"type": "object"},
+    "queue": {"type": "object"}
+  },
+  "$defs": {
+    "health": {"type": "object", "required": ["ok", "status"], "properties": {"ok": {"type": "boolean"}, "status": {"type": "string"}, "error_count": {"type": "integer", "minimum": 0}}, "additionalProperties": true}
+  },
+  "additionalProperties": true
+}
+

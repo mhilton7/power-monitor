@@ -1,0 +1,22 @@
+{
+  "protocol": "pm-protocol/1.0.0",
+  "vectors": [
+    {
+      "name": "device push with duplicate and escaped query values",
+      "secret_encoding": "hex",
+      "secret": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "direction": "device-to-server",
+      "method": "POST",
+      "target_input": "/api/v1/device-readings/batch?z=last&a=hello%20world&a=&slash=%2F",
+      "canonical_target": "/api/v1/device-readings/batch?a=&a=hello%20world&slash=%2F&z=last",
+      "timestamp": "1784558400",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "body_utf8": "{\"device_id\":\"123e4567-e89b-12d3-a456-426614174000\",\"sequence\":42}",
+      "content_sha256": "2b6341f1d5ce79c205eaf40981d99053de417039df083fbc71315c5ac3ca7fc7",
+      "canonical_string": "PM-HMAC-SHA256-V1\nPOST\n/api/v1/device-readings/batch?a=&a=hello%20world&slash=%2F&z=last\n1784558400\n0123456789abcdef0123456789abcdef\n2b6341f1d5ce79c205eaf40981d99053de417039df083fbc71315c5ac3ca7fc7",
+      "derived_key_hex": "07cb6af66354ae4dfb0c2377bb805ba8865ffe5529a6aa25e2318a07973308bd",
+      "signature": "14679605a1d3b5b3654f9a5bd7615c9824bdabc6326796ee9e881f467d8c2fce"
+    }
+  ]
+}
+

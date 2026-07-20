@@ -1,0 +1,5083 @@
+openapi: 3.1.0
+info:
+  title: Power Monitor Server API
+  description: Central server for pm-protocol/1.0.0 sensor fleets
+  version: 1.0.0
+paths:
+  /api/v1/auth/bootstrap:
+    post:
+      tags:
+      - authentication
+      summary: Bootstrap
+      operationId: bootstrap_api_v1_auth_bootstrap_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BootstrapRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/login:
+    post:
+      tags:
+      - authentication
+      summary: Login
+      operationId: login_api_v1_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/session:
+    get:
+      tags:
+      - authentication
+      summary: Session Status
+      operationId: session_status_api_v1_auth_session_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/logout:
+    post:
+      tags:
+      - authentication
+      summary: Logout
+      operationId: logout_api_v1_auth_logout_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/totp/setup:
+    post:
+      tags:
+      - authentication
+      summary: Setup Totp
+      operationId: setup_totp_api_v1_auth_totp_setup_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Setup Totp Api V1 Auth Totp Setup Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/totp/verify:
+    post:
+      tags:
+      - authentication
+      summary: Verify Totp Setup
+      operationId: verify_totp_setup_api_v1_auth_totp_verify_post
+      parameters:
+      - name: code
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Code
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+                title: Response Verify Totp Setup Api V1 Auth Totp Verify Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/device-enrollment/claim:
+    post:
+      tags:
+      - device protocol
+      summary: Claim Enrollment
+      operationId: claim_enrollment_api_v1_device_enrollment_claim_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentClaim'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentClaimResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/device-heartbeats:
+    post:
+      tags:
+      - device protocol
+      summary: Heartbeat
+      operationId: heartbeat_api_v1_device_heartbeats_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Heartbeat'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/device-readings/batch:
+    post:
+      tags:
+      - device protocol
+      summary: Reading Batch
+      operationId: reading_batch_api_v1_device_readings_batch_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReadingBatch'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadingBatchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/device-events/batch:
+    post:
+      tags:
+      - device protocol
+      summary: Event Batch
+      operationId: event_batch_api_v1_device_events_batch_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceEventBatch'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Event Batch Api V1 Device Events Batch Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/device-config/effective:
+    get:
+      tags:
+      - device protocol
+      summary: Effective Config
+      operationId: effective_config_api_v1_device_config_effective_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Effective Config Api V1 Device Config Effective Get
+  /api/v1/device-credentials/rotation:
+    get:
+      tags:
+      - device protocol
+      summary: Deliver Rotated Credential
+      operationId: deliver_rotated_credential_api_v1_device_credentials_rotation_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Deliver Rotated Credential Api V1 Device Credentials
+                  Rotation Get
+  /api/v1/device-credentials/rotation/confirm:
+    post:
+      tags:
+      - device protocol
+      summary: Confirm Rotated Credential
+      operationId: confirm_rotated_credential_api_v1_device_credentials_rotation_confirm_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: boolean
+                type: object
+                title: Response Confirm Rotated Credential Api V1 Device Credentials
+                  Rotation Confirm Post
+  /api/v1/device-config/report:
+    post:
+      tags:
+      - device protocol
+      summary: Report Config
+      operationId: report_config_api_v1_device_config_report_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigReport'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: boolean
+                type: object
+                title: Response Report Config Api V1 Device Config Report Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/device-firmware/manifest:
+    get:
+      tags:
+      - device protocol
+      summary: Firmware Manifest
+      operationId: firmware_manifest_api_v1_device_firmware_manifest_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Firmware Manifest Api V1 Device Firmware Manifest
+                  Get
+  /api/v1/sites:
+    get:
+      tags:
+      - management
+      summary: List Sites
+      operationId: list_sites_api_v1_sites_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SiteView'
+                title: Response List Sites Api V1 Sites Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - management
+      summary: Create Site
+      operationId: create_site_api_v1_sites_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sites/{site_id}:
+    put:
+      tags:
+      - management
+      summary: Update Site
+      operationId: update_site_api_v1_sites__site_id__put
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteCreate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - management
+      summary: Delete Site
+      operationId: delete_site_api_v1_sites__site_id__delete
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/utility-accounts:
+    get:
+      tags:
+      - management
+      summary: List Utility Accounts
+      operationId: list_utility_accounts_api_v1_utility_accounts_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Utility Accounts Api V1 Utility Accounts Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - management
+      summary: Create Utility Account
+      operationId: create_utility_account_api_v1_utility_accounts_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Utility Account Api V1 Utility Accounts Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/utility-accounts/{account_id}:
+    put:
+      tags:
+      - management
+      summary: Update Utility Account
+      operationId: update_utility_account_api_v1_utility_accounts__account_id__put
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Utility Account Api V1 Utility Accounts  Account
+                  Id  Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - management
+      summary: Delete Utility Account
+      operationId: delete_utility_account_api_v1_utility_accounts__account_id__delete
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/circuits:
+    get:
+      tags:
+      - management
+      summary: List Circuits
+      operationId: list_circuits_api_v1_circuits_get
+      parameters:
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CircuitView'
+                title: Response List Circuits Api V1 Circuits Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - management
+      summary: Create Circuit
+      operationId: create_circuit_api_v1_circuits_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CircuitCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CircuitView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/circuits/{circuit_id}:
+    put:
+      tags:
+      - management
+      summary: Update Circuit
+      operationId: update_circuit_api_v1_circuits__circuit_id__put
+      parameters:
+      - name: circuit_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Circuit Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CircuitCreate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CircuitView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - management
+      summary: Delete Circuit
+      operationId: delete_circuit_api_v1_circuits__circuit_id__delete
+      parameters:
+      - name: circuit_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Circuit Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/aggregate-sets:
+    get:
+      tags:
+      - management
+      summary: List Aggregate Sets
+      operationId: list_aggregate_sets_api_v1_aggregate_sets_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Aggregate Sets Api V1 Aggregate Sets Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - management
+      summary: Create Aggregate Set
+      operationId: create_aggregate_set_api_v1_aggregate_sets_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AggregateSetCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Aggregate Set Api V1 Aggregate Sets Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/aggregate-sets/{aggregate_id}:
+    put:
+      tags:
+      - management
+      summary: Update Aggregate Set
+      operationId: update_aggregate_set_api_v1_aggregate_sets__aggregate_id__put
+      parameters:
+      - name: aggregate_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Aggregate Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AggregateSetCreate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Aggregate Set Api V1 Aggregate Sets  Aggregate
+                  Id  Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - management
+      summary: Delete Aggregate Set
+      operationId: delete_aggregate_set_api_v1_aggregate_sets__aggregate_id__delete
+      parameters:
+      - name: aggregate_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Aggregate Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/enrollment-tokens:
+    post:
+      tags:
+      - management
+      summary: Create Enrollment Token
+      operationId: create_enrollment_token_api_v1_enrollment_tokens_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentTokenCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentTokenView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - management
+      summary: List Enrollment Tokens
+      operationId: list_enrollment_tokens_api_v1_enrollment_tokens_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Enrollment Tokens Api V1 Enrollment Tokens Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/enrollment-tokens/{token_id}:
+    delete:
+      tags:
+      - management
+      summary: Revoke Enrollment Token
+      operationId: revoke_enrollment_token_api_v1_enrollment_tokens__token_id__delete
+      parameters:
+      - name: token_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Token Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices:
+    get:
+      tags:
+      - management
+      summary: List Devices
+      operationId: list_devices_api_v1_devices_get
+      parameters:
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Devices Api V1 Devices Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}:
+    get:
+      tags:
+      - management
+      summary: Device Detail
+      operationId: device_detail_api_v1_devices__device_id__get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Device Detail Api V1 Devices  Device Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/credential-rotation:
+    post:
+      tags:
+      - management
+      summary: Rotate Credential
+      operationId: rotate_credential_api_v1_devices__device_id__credential_rotation_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CredentialRotationRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Rotate Credential Api V1 Devices  Device Id  Credential
+                  Rotation Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/revoke:
+    post:
+      tags:
+      - management
+      summary: Revoke Device
+      operationId: revoke_device_api_v1_devices__device_id__revoke_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+                title: Response Revoke Device Api V1 Devices  Device Id  Revoke Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/maintenance:
+    post:
+      tags:
+      - management
+      summary: Set Device Maintenance
+      operationId: set_device_maintenance_api_v1_devices__device_id__maintenance_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceWindow'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Set Device Maintenance Api V1 Devices  Device Id  Maintenance
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - management
+      summary: Clear Device Maintenance
+      operationId: clear_device_maintenance_api_v1_devices__device_id__maintenance_delete
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/config:
+    post:
+      tags:
+      - management
+      summary: Create Device Config
+      operationId: create_device_config_api_v1_devices__device_id__config_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceConfigCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Device Config Api V1 Devices  Device Id  Config
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/readings/history:
+    get:
+      tags:
+      - management
+      summary: History
+      operationId: history_api_v1_readings_history_get
+      parameters:
+      - name: start
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date-time
+          title: Start
+      - name: end
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date-time
+          title: End
+      - name: device_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Device Id
+      - name: circuit_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Circuit Id
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+      - name: aggregate_set_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Aggregate Set Id
+      - name: resolution
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(raw|5-minute|hourly|daily)$
+          default: raw
+          title: Resolution
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 20000
+          minimum: 1
+          default: 5000
+          title: Limit
+      - name: after_sequence
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: After Sequence
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/fleet/summary:
+    get:
+      tags:
+      - management
+      summary: Fleet Summary
+      operationId: fleet_summary_api_v1_fleet_summary_get
+      parameters:
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FleetSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/alerts:
+    get:
+      tags:
+      - management
+      summary: List Alerts
+      operationId: list_alerts_api_v1_alerts_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Alerts Api V1 Alerts Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/alert-rules:
+    get:
+      tags:
+      - management
+      summary: List Alert Rules
+      operationId: list_alert_rules_api_v1_alert_rules_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Alert Rules Api V1 Alert Rules Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - management
+      summary: Create Alert Rule
+      operationId: create_alert_rule_api_v1_alert_rules_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRuleWrite'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Alert Rule Api V1 Alert Rules Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/alert-rules/{rule_id}:
+    put:
+      tags:
+      - management
+      summary: Update Alert Rule
+      operationId: update_alert_rule_api_v1_alert_rules__rule_id__put
+      parameters:
+      - name: rule_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Rule Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRuleWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Alert Rule Api V1 Alert Rules  Rule Id  Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - management
+      summary: Delete Alert Rule
+      operationId: delete_alert_rule_api_v1_alert_rules__rule_id__delete
+      parameters:
+      - name: rule_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Rule Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/alerts/{alert_id}/acknowledge:
+    post:
+      tags:
+      - management
+      summary: Acknowledge Alert
+      operationId: acknowledge_alert_api_v1_alerts__alert_id__acknowledge_post
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Alert Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertAcknowledge'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Acknowledge Alert Api V1 Alerts  Alert Id  Acknowledge
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/alerts/{alert_id}/silence:
+    post:
+      tags:
+      - management
+      summary: Silence Alert
+      operationId: silence_alert_api_v1_alerts__alert_id__silence_post
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Alert Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertSilence'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Silence Alert Api V1 Alerts  Alert Id  Silence Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notification-channels:
+    get:
+      tags:
+      - management
+      summary: List Notification Channels
+      operationId: list_notification_channels_api_v1_notification_channels_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Notification Channels Api V1 Notification Channels
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - management
+      summary: Create Notification Channel
+      operationId: create_notification_channel_api_v1_notification_channels_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationChannelWrite'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Notification Channel Api V1 Notification Channels
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notification-channels/{channel_id}:
+    put:
+      tags:
+      - management
+      summary: Update Notification Channel
+      operationId: update_notification_channel_api_v1_notification_channels__channel_id__put
+      parameters:
+      - name: channel_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Channel Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationChannelWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Notification Channel Api V1 Notification Channels  Channel
+                  Id  Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - management
+      summary: Disable Notification Channel
+      operationId: disable_notification_channel_api_v1_notification_channels__channel_id__delete
+      parameters:
+      - name: channel_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Channel Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notification-channels/{channel_id}/test:
+    post:
+      tags:
+      - management
+      summary: Test Notification Channel
+      operationId: test_notification_channel_api_v1_notification_channels__channel_id__test_post
+      parameters:
+      - name: channel_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Channel Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Test Notification Channel Api V1 Notification Channels  Channel
+                  Id  Test Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notification-attempts:
+    get:
+      tags:
+      - management
+      summary: List Notification Attempts
+      operationId: list_notification_attempts_api_v1_notification_attempts_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 200
+          title: Limit
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Notification Attempts Api V1 Notification Attempts
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/users:
+    get:
+      tags:
+      - management
+      summary: List Users
+      operationId: list_users_api_v1_users_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Users Api V1 Users Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - management
+      summary: Create User
+      operationId: create_user_api_v1_users_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create User Api V1 Users Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/users/{user_id}/password-reset:
+    post:
+      tags:
+      - management
+      summary: Admin Password Reset
+      operationId: admin_password_reset_api_v1_users__user_id__password_reset_post
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: User Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordReset'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+                title: Response Admin Password Reset Api V1 Users  User Id  Password
+                  Reset Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/audit-events:
+    get:
+      tags:
+      - management
+      summary: List Audit Events
+      operationId: list_audit_events_api_v1_audit_events_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 200
+          title: Limit
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Audit Events Api V1 Audit Events Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/backups:
+    get:
+      tags:
+      - management
+      summary: List Backups
+      operationId: list_backups_api_v1_backups_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Backups Api V1 Backups Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/reports:
+    get:
+      tags:
+      - management
+      summary: List Reports
+      operationId: list_reports_api_v1_reports_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Reports Api V1 Reports Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/report-definitions:
+    get:
+      tags:
+      - management
+      summary: List Report Definitions
+      operationId: list_report_definitions_api_v1_report_definitions_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Report Definitions Api V1 Report Definitions
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - management
+      summary: Create Report Definition
+      operationId: create_report_definition_api_v1_report_definitions_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportDefinitionWrite'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Report Definition Api V1 Report Definitions
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/report-definitions/{definition_id}:
+    put:
+      tags:
+      - management
+      summary: Update Report Definition
+      operationId: update_report_definition_api_v1_report_definitions__definition_id__put
+      parameters:
+      - name: definition_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Definition Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportDefinitionWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Report Definition Api V1 Report Definitions  Definition
+                  Id  Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - management
+      summary: Delete Report Definition
+      operationId: delete_report_definition_api_v1_report_definitions__definition_id__delete
+      parameters:
+      - name: definition_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Definition Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/report-definitions/{definition_id}/generate:
+    post:
+      tags:
+      - management
+      summary: Queue Report
+      operationId: queue_report_api_v1_report_definitions__definition_id__generate_post
+      parameters:
+      - name: definition_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Definition Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Queue Report Api V1 Report Definitions  Definition
+                  Id  Generate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/reports/{report_id}/download:
+    get:
+      tags:
+      - management
+      summary: Download Report
+      operationId: download_report_api_v1_reports__report_id__download_get
+      parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Report Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rate-plans:
+    get:
+      tags:
+      - rates and billing
+      summary: List Rate Plans
+      operationId: list_rate_plans_api_v1_rate_plans_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Rate Plans Api V1 Rate Plans Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rate-plans/{rate_plan_id}/export:
+    get:
+      tags:
+      - rates and billing
+      summary: Export Rate Plan
+      operationId: export_rate_plan_api_v1_rate_plans__rate_plan_id__export_get
+      parameters:
+      - name: rate_plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Rate Plan Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Export Rate Plan Api V1 Rate Plans  Rate Plan Id  Export
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rate-plans/{rate_plan_id}/versions:
+    post:
+      tags:
+      - rates and billing
+      summary: Clone Rate Version
+      operationId: clone_rate_version_api_v1_rate_plans__rate_plan_id__versions_post
+      parameters:
+      - name: rate_plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Rate Plan Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Clone Rate Version Api V1 Rate Plans  Rate Plan Id  Versions
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rate-versions/{version_id}/activate:
+    post:
+      tags:
+      - rates and billing
+      summary: Activate Rate Version
+      operationId: activate_rate_version_api_v1_rate_versions__version_id__activate_post
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+                title: Response Activate Rate Version Api V1 Rate Versions  Version
+                  Id  Activate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/preview:
+    post:
+      tags:
+      - rates and billing
+      summary: Preview Rate
+      operationId: preview_rate_api_v1_rates_preview_post
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatePreviewRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RatePreviewResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/billing/cycles:
+    get:
+      tags:
+      - rates and billing
+      summary: Billing Cycles
+      operationId: billing_cycles_api_v1_billing_cycles_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response Billing Cycles Api V1 Billing Cycles Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/billing/runs:
+    get:
+      tags:
+      - rates and billing
+      summary: Billing Runs
+      operationId: billing_runs_api_v1_billing_runs_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response Billing Runs Api V1 Billing Runs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/billing/recalculations:
+    post:
+      tags:
+      - rates and billing
+      summary: Queue Recalculation
+      operationId: queue_recalculation_api_v1_billing_recalculations_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CostRecalculationRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Queue Recalculation Api V1 Billing Recalculations
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/firmware-releases:
+    get:
+      tags:
+      - firmware
+      summary: List Releases
+      operationId: list_releases_api_v1_firmware_releases_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Releases Api V1 Firmware Releases Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - firmware
+      summary: Upload Release
+      operationId: upload_release_api_v1_firmware_releases_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_release_api_v1_firmware_releases_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Upload Release Api V1 Firmware Releases Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/firmware-deployments:
+    post:
+      tags:
+      - firmware
+      summary: Create Deployments
+      operationId: create_deployments_api_v1_firmware_deployments_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FirmwareDeploymentCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Deployments Api V1 Firmware Deployments Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - firmware
+      summary: List Deployments
+      operationId: list_deployments_api_v1_firmware_deployments_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Deployments Api V1 Firmware Deployments Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/device-firmware/{release_id}/download:
+    get:
+      tags:
+      - firmware
+      summary: Device Download Firmware
+      operationId: device_download_firmware_api_v1_device_firmware__release_id__download_get
+      parameters:
+      - name: release_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Release Id
+      responses:
+        '200':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/exports:
+    post:
+      tags:
+      - exports and reports
+      summary: Create Export
+      operationId: create_export_api_v1_exports_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Export Api V1 Exports Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - exports and reports
+      summary: List Exports
+      operationId: list_exports_api_v1_exports_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Exports Api V1 Exports Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/exports/{job_id}/download:
+    get:
+      tags:
+      - exports and reports
+      summary: Download Export
+      operationId: download_export_api_v1_exports__job_id__download_get
+      parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /health/live:
+    get:
+      tags:
+      - system
+      summary: Liveness
+      operationId: liveness_health_live_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Liveness Health Live Get
+  /health/ready:
+    get:
+      tags:
+      - system
+      summary: Readiness
+      operationId: readiness_health_ready_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/time:
+    get:
+      tags:
+      - system
+      summary: Time Hint
+      operationId: time_hint_api_v1_time_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Time Hint Api V1 Time Get
+  /api/v1/system/info:
+    get:
+      tags:
+      - system
+      summary: System Info
+      operationId: system_info_api_v1_system_info_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response System Info Api V1 System Info Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/metrics:
+    get:
+      tags:
+      - system
+      summary: Metrics
+      operationId: metrics_api_v1_metrics_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            text/plain:
+              schema:
+                type: string
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/events/stream:
+    get:
+      tags:
+      - system
+      summary: Live Events
+      operationId: live_events_api_v1_events_stream_get
+      parameters:
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    AggregateMemberInput:
+      properties:
+        circuit_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Circuit Id
+        device_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Device Id
+        allocation_percent:
+          anyOf:
+          - type: number
+            maximum: 100.0
+            exclusiveMinimum: 0.0
+          - type: string
+          title: Allocation Percent
+          default: '100'
+      additionalProperties: false
+      type: object
+      title: AggregateMemberInput
+    AggregateSetCreate:
+      properties:
+        site_id:
+          type: string
+          title: Site Id
+        utility_account_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Utility Account Id
+        name:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Name
+        cost_scope:
+          type: string
+          enum:
+          - energy_only
+          - allocated_account
+          - full_account
+          title: Cost Scope
+          default: energy_only
+        is_default:
+          type: boolean
+          title: Is Default
+          default: false
+        confirm_overlap:
+          type: boolean
+          title: Confirm Overlap
+          default: false
+        members:
+          items:
+            $ref: '#/components/schemas/AggregateMemberInput'
+          type: array
+          minItems: 1
+          title: Members
+      additionalProperties: false
+      type: object
+      required:
+      - site_id
+      - name
+      - members
+      title: AggregateSetCreate
+    AlertAcknowledge:
+      properties:
+        note:
+          type: string
+          maxLength: 500
+          title: Note
+          default: ''
+      additionalProperties: false
+      type: object
+      title: AlertAcknowledge
+    AlertRuleWrite:
+      properties:
+        name:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Name
+        rule_type:
+          type: string
+          enum:
+          - heartbeat_stale
+          - device_api_unreachable
+          - authentication_failure
+          - protocol_incompatible
+          - pzem_failure
+          - no_valid_reading
+          - sd_failure
+          - sync_backlog
+          - sequence_gap
+          - time_untrusted
+          - low_rssi
+          - ct_utilization
+          - voltage_frequency_range
+          - reboot_loop
+          - firmware_failure
+          - server_failure
+          title: Rule Type
+        severity:
+          type: string
+          enum:
+          - info
+          - warning
+          - error
+          - critical
+          title: Severity
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        site_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+        device_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Device Id
+        debounce_seconds:
+          type: integer
+          maximum: 86400.0
+          minimum: 0.0
+          title: Debounce Seconds
+          default: 0
+        resolve_seconds:
+          type: integer
+          maximum: 86400.0
+          minimum: 0.0
+          title: Resolve Seconds
+          default: 0
+        configuration:
+          additionalProperties: true
+          type: object
+          title: Configuration
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - rule_type
+      - severity
+      title: AlertRuleWrite
+    AlertSilence:
+      properties:
+        until:
+          type: string
+          format: date-time
+          title: Until
+        note:
+          type: string
+          maxLength: 500
+          title: Note
+          default: ''
+      additionalProperties: false
+      type: object
+      required:
+      - until
+      title: AlertSilence
+    Body_upload_release_api_v1_firmware_releases_post:
+      properties:
+        manifest_json:
+          type: string
+          title: Manifest Json
+        public_key_pem:
+          type: string
+          title: Public Key Pem
+        binary:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Binary
+      type: object
+      required:
+      - manifest_json
+      - public_key_pem
+      - binary
+      title: Body_upload_release_api_v1_firmware_releases_post
+    BootstrapRequest:
+      properties:
+        bootstrap_secret:
+          type: string
+          minLength: 16
+          title: Bootstrap Secret
+        email:
+          type: string
+          format: email
+          title: Email
+        display_name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Display Name
+        password:
+          type: string
+          maxLength: 1024
+          minLength: 14
+          title: Password
+      additionalProperties: false
+      type: object
+      required:
+      - bootstrap_secret
+      - email
+      - display_name
+      - password
+      title: BootstrapRequest
+    CircuitCreate:
+      properties:
+        site_id:
+          type: string
+          title: Site Id
+        parent_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parent Id
+        name:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Name
+        measurement_role:
+          type: string
+          enum:
+          - main
+          - service-leg
+          - branch
+          - submeter
+          - informational
+          title: Measurement Role
+        split_phase_group:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Split Phase Group
+      additionalProperties: false
+      type: object
+      required:
+      - site_id
+      - name
+      - measurement_role
+      title: CircuitCreate
+    CircuitView:
+      properties:
+        site_id:
+          type: string
+          title: Site Id
+        parent_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Parent Id
+        name:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Name
+        measurement_role:
+          type: string
+          enum:
+          - main
+          - service-leg
+          - branch
+          - submeter
+          - informational
+          title: Measurement Role
+        split_phase_group:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Split Phase Group
+        id:
+          type: string
+          title: Id
+      additionalProperties: false
+      type: object
+      required:
+      - site_id
+      - name
+      - measurement_role
+      - id
+      title: CircuitView
+    ConfigReport:
+      properties:
+        protocol_version:
+          type: string
+          title: Protocol Version
+        device_id:
+          type: string
+          title: Device Id
+        version:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Version
+        status:
+          type: string
+          enum:
+          - applied
+          - partially_applied
+          - rejected
+          - rolled_back
+          title: Status
+        applied:
+          items:
+            type: string
+          type: array
+          title: Applied
+        rejected:
+          additionalProperties:
+            type: string
+          type: object
+          title: Rejected
+      type: object
+      required:
+      - protocol_version
+      - device_id
+      - version
+      - status
+      title: ConfigReport
+    CostComponent:
+      properties:
+        name:
+          type: string
+          title: Name
+        amount:
+          type: string
+          title: Amount
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - amount
+      title: CostComponent
+    CostRecalculationRequest:
+      properties:
+        utility_account_id:
+          type: string
+          title: Utility Account Id
+        aggregate_set_id:
+          type: string
+          title: Aggregate Set Id
+        rate_version_id:
+          type: string
+          title: Rate Version Id
+        input_start:
+          type: string
+          format: date-time
+          title: Input Start
+        input_end:
+          type: string
+          format: date-time
+          title: Input End
+      additionalProperties: false
+      type: object
+      required:
+      - utility_account_id
+      - aggregate_set_id
+      - rate_version_id
+      - input_start
+      - input_end
+      title: CostRecalculationRequest
+    CredentialRotationRequest:
+      properties:
+        overlap_seconds:
+          type: integer
+          maximum: 604800.0
+          minimum: 0.0
+          title: Overlap Seconds
+          default: 3600
+      additionalProperties: false
+      type: object
+      title: CredentialRotationRequest
+    DeviceCapabilities:
+      properties:
+        hardware_target:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Hardware Target
+        pzem_model:
+          type: string
+          pattern: ^PZEM-004T V4
+          title: Pzem Model
+        sd_present:
+          type: boolean
+          title: Sd Present
+        sd_required:
+          type: boolean
+          title: Sd Required
+          default: true
+        supported_endpoints:
+          items:
+            type: string
+          type: array
+          title: Supported Endpoints
+      type: object
+      required:
+      - hardware_target
+      - pzem_model
+      - sd_present
+      title: DeviceCapabilities
+    DeviceConfigCreate:
+      properties:
+        settings:
+          additionalProperties: true
+          type: object
+          title: Settings
+        acknowledge_ct_rating_change:
+          type: boolean
+          title: Acknowledge Ct Rating Change
+          default: false
+        network_rollback_seconds:
+          type: integer
+          maximum: 3600.0
+          minimum: 60.0
+          title: Network Rollback Seconds
+          default: 300
+      additionalProperties: false
+      type: object
+      required:
+      - settings
+      title: DeviceConfigCreate
+    DeviceEventBatch:
+      properties:
+        protocol_version:
+          type: string
+          title: Protocol Version
+        device_id:
+          type: string
+          title: Device Id
+        events:
+          items:
+            $ref: '#/components/schemas/DeviceEventInput'
+          type: array
+          maxItems: 500
+          minItems: 1
+          title: Events
+      type: object
+      required:
+      - protocol_version
+      - device_id
+      - events
+      title: DeviceEventBatch
+    DeviceEventInput:
+      properties:
+        event_id:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Event Id
+        occurred_at:
+          type: string
+          format: date-time
+          title: Occurred At
+        category:
+          type: string
+          enum:
+          - boot
+          - pzem
+          - ct_limit
+          - sd
+          - network
+          - time
+          - configuration
+          - ota
+          - security
+          title: Category
+        severity:
+          type: string
+          enum:
+          - info
+          - warning
+          - error
+          - critical
+          title: Severity
+        evidence:
+          additionalProperties: true
+          type: object
+          title: Evidence
+      type: object
+      required:
+      - event_id
+      - occurred_at
+      - category
+      - severity
+      title: DeviceEventInput
+    EnrollmentClaim:
+      properties:
+        token:
+          type: string
+          maxLength: 256
+          minLength: 32
+          title: Token
+        protocol_version:
+          type: string
+          title: Protocol Version
+        hardware_id:
+          type: string
+          maxLength: 128
+          minLength: 8
+          title: Hardware Id
+        requested_name:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Requested Name
+        capabilities:
+          $ref: '#/components/schemas/DeviceCapabilities'
+      type: object
+      required:
+      - token
+      - protocol_version
+      - hardware_id
+      - capabilities
+      title: EnrollmentClaim
+    EnrollmentClaimResponse:
+      properties:
+        protocol_version:
+          type: string
+          title: Protocol Version
+        device_id:
+          type: string
+          title: Device Id
+        enrollment_secret:
+          type: string
+          title: Enrollment Secret
+        credential_fingerprint:
+          type: string
+          title: Credential Fingerprint
+        effective_metadata:
+          additionalProperties: true
+          type: object
+          title: Effective Metadata
+        server_ota_signing_public_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Server Ota Signing Public Key
+        heartbeat_policy:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Heartbeat Policy
+        sync_policy:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Sync Policy
+      additionalProperties: false
+      type: object
+      required:
+      - protocol_version
+      - device_id
+      - enrollment_secret
+      - credential_fingerprint
+      - effective_metadata
+      - server_ota_signing_public_key
+      - heartbeat_policy
+      - sync_policy
+      title: EnrollmentClaimResponse
+    EnrollmentTokenCreate:
+      properties:
+        expires_in_seconds:
+          type: integer
+          maximum: 86400.0
+          minimum: 60.0
+          title: Expires In Seconds
+          default: 600
+        site_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+        circuit_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Circuit Id
+        name:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Name
+        measurement_role:
+          type: string
+          enum:
+          - main
+          - service-leg
+          - branch
+          - submeter
+          - informational
+          title: Measurement Role
+          default: submeter
+        ct_rating_amps:
+          anyOf:
+          - type: number
+            maximum: 5000.0
+            exclusiveMinimum: 0.0
+          - type: string
+          title: Ct Rating Amps
+          default: '100'
+        connection_mode:
+          type: string
+          enum:
+          - pull
+          - push
+          - hybrid
+          title: Connection Mode
+          default: push
+      additionalProperties: false
+      type: object
+      title: EnrollmentTokenCreate
+    EnrollmentTokenView:
+      properties:
+        id:
+          type: string
+          title: Id
+        token:
+          type: string
+          title: Token
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        preassignment:
+          additionalProperties: true
+          type: object
+          title: Preassignment
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - token
+      - expires_at
+      - preassignment
+      title: EnrollmentTokenView
+    FirmwareDeploymentCreate:
+      properties:
+        firmware_release_id:
+          type: string
+          title: Firmware Release Id
+        device_ids:
+          items:
+            type: string
+          type: array
+          maxItems: 1000
+          minItems: 1
+          title: Device Ids
+        scheduled_at:
+          type: string
+          format: date-time
+          title: Scheduled At
+      additionalProperties: false
+      type: object
+      required:
+      - firmware_release_id
+      - device_ids
+      - scheduled_at
+      title: FirmwareDeploymentCreate
+    FleetSummary:
+      properties:
+        site_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+        current_load_w:
+          type: string
+          title: Current Load W
+        energy_today_kwh:
+          type: string
+          title: Energy Today Kwh
+        estimated_cost_today:
+          type: string
+          title: Estimated Cost Today
+        billing_cycle_energy_kwh:
+          type: string
+          title: Billing Cycle Energy Kwh
+        estimated_billing_cycle_cost:
+          type: string
+          title: Estimated Billing Cycle Cost
+        online_devices:
+          type: integer
+          title: Online Devices
+        synchronized_devices:
+          type: integer
+          title: Synchronized Devices
+        total_devices:
+          type: integer
+          title: Total Devices
+        active_alerts:
+          type: integer
+          title: Active Alerts
+        current_tou_bucket:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Tou Bucket
+        recent_peak_w:
+          type: string
+          title: Recent Peak W
+        disclosure:
+          type: string
+          title: Disclosure
+      additionalProperties: false
+      type: object
+      required:
+      - site_id
+      - current_load_w
+      - energy_today_kwh
+      - estimated_cost_today
+      - billing_cycle_energy_kwh
+      - estimated_billing_cycle_cost
+      - online_devices
+      - synchronized_devices
+      - total_devices
+      - active_alerts
+      - current_tou_bucket
+      - recent_peak_w
+      - disclosure
+      title: FleetSummary
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    Heartbeat:
+      properties:
+        protocol_version:
+          type: string
+          title: Protocol Version
+        schema_version:
+          type: string
+          title: Schema Version
+          default: heartbeat/1.0.0
+        device_id:
+          type: string
+          title: Device Id
+        boot_id:
+          type: string
+          title: Boot Id
+        firmware_version:
+          type: string
+          title: Firmware Version
+        firmware_build_hash:
+          type: string
+          title: Firmware Build Hash
+        uptime_seconds:
+          type: integer
+          minimum: 0.0
+          title: Uptime Seconds
+        reboot_reason:
+          type: string
+          title: Reboot Reason
+        current_ip:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Ip
+        hostname:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Hostname
+        rssi_dbm:
+          anyOf:
+          - type: integer
+            maximum: 0.0
+            minimum: -127.0
+          - type: 'null'
+          title: Rssi Dbm
+        connection_mode:
+          type: string
+          enum:
+          - pull
+          - push
+          - hybrid
+          title: Connection Mode
+        latest:
+          anyOf:
+          - $ref: '#/components/schemas/LiveMeasurement'
+          - type: 'null'
+        pzem:
+          $ref: '#/components/schemas/SubsystemHealth'
+        sd:
+          $ref: '#/components/schemas/SubsystemHealth'
+        oldest_stored_sequence:
+          type: integer
+          minimum: 0.0
+          title: Oldest Stored Sequence
+        newest_stored_sequence:
+          type: integer
+          minimum: 0.0
+          title: Newest Stored Sequence
+        server_ack_sequence:
+          type: integer
+          minimum: 0.0
+          title: Server Ack Sequence
+        backlog_estimate:
+          type: integer
+          minimum: 0.0
+          title: Backlog Estimate
+        configuration_version:
+          type: integer
+          minimum: 0.0
+          title: Configuration Version
+        time:
+          $ref: '#/components/schemas/TimeHealth'
+        resources:
+          additionalProperties: true
+          type: object
+          title: Resources
+        queue:
+          additionalProperties: true
+          type: object
+          title: Queue
+      type: object
+      required:
+      - protocol_version
+      - device_id
+      - boot_id
+      - firmware_version
+      - firmware_build_hash
+      - uptime_seconds
+      - reboot_reason
+      - connection_mode
+      - pzem
+      - sd
+      - oldest_stored_sequence
+      - newest_stored_sequence
+      - server_ack_sequence
+      - backlog_estimate
+      - configuration_version
+      - time
+      title: Heartbeat
+    HeartbeatResponse:
+      properties:
+        server_receive_time:
+          type: string
+          format: date-time
+          title: Server Receive Time
+        highest_contiguous_accepted_sequence:
+          type: integer
+          title: Highest Contiguous Accepted Sequence
+        gap_ranges:
+          items:
+            prefixItems:
+            - type: integer
+            - type: integer
+            type: array
+            maxItems: 2
+            minItems: 2
+          type: array
+          title: Gap Ranges
+        desired_configuration_version:
+          type: integer
+          title: Desired Configuration Version
+        firmware_release_available:
+          type: boolean
+          title: Firmware Release Available
+        recommended_heartbeat_interval_seconds:
+          type: integer
+          title: Recommended Heartbeat Interval Seconds
+        immediate_sync_requested:
+          type: boolean
+          title: Immediate Sync Requested
+      additionalProperties: false
+      type: object
+      required:
+      - server_receive_time
+      - highest_contiguous_accepted_sequence
+      - gap_ranges
+      - desired_configuration_version
+      - firmware_release_available
+      - recommended_heartbeat_interval_seconds
+      - immediate_sync_requested
+      title: HeartbeatResponse
+    HistoryPoint:
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          title: Timestamp
+        power_w:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Power W
+        energy_wh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Energy Wh
+        voltage_v:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Voltage V
+        current_a:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current A
+        power_factor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Power Factor
+        frequency_hz:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Frequency Hz
+        quality_flags:
+          items:
+            type: string
+          type: array
+          title: Quality Flags
+      additionalProperties: false
+      type: object
+      required:
+      - timestamp
+      - power_w
+      - energy_wh
+      - voltage_v
+      - current_a
+      - power_factor
+      - frequency_hz
+      - quality_flags
+      title: HistoryPoint
+    HistoryResponse:
+      properties:
+        points:
+          items:
+            $ref: '#/components/schemas/HistoryPoint'
+          type: array
+          title: Points
+        missing_ranges:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Missing Ranges
+        coverage_percent:
+          type: string
+          title: Coverage Percent
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Cursor
+      additionalProperties: false
+      type: object
+      required:
+      - points
+      - missing_ranges
+      - coverage_percent
+      title: HistoryResponse
+    LiveMeasurement:
+      properties:
+        measured_at:
+          type: string
+          format: date-time
+          title: Measured At
+        voltage_v:
+          anyOf:
+          - type: number
+            maximum: 400.0
+            minimum: 0.0
+          - type: string
+          title: Voltage V
+        current_a:
+          anyOf:
+          - type: number
+            maximum: 5000.0
+            minimum: 0.0
+          - type: string
+          title: Current A
+        power_w:
+          anyOf:
+          - type: number
+            maximum: 10000000.0
+            minimum: 0.0
+          - type: string
+          title: Power W
+        power_factor:
+          anyOf:
+          - type: number
+            maximum: 1.0
+            minimum: 0.0
+          - type: string
+          title: Power Factor
+        frequency_hz:
+          anyOf:
+          - type: number
+            maximum: 70.0
+            minimum: 40.0
+          - type: string
+          title: Frequency Hz
+        energy_wh:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+          title: Energy Wh
+      type: object
+      required:
+      - measured_at
+      - voltage_v
+      - current_a
+      - power_w
+      - power_factor
+      - frequency_hz
+      - energy_wh
+      title: LiveMeasurement
+    LoginRequest:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        password:
+          type: string
+          maxLength: 1024
+          title: Password
+        totp_code:
+          anyOf:
+          - type: string
+            pattern: ^\d{6}$
+          - type: 'null'
+          title: Totp Code
+      additionalProperties: false
+      type: object
+      required:
+      - email
+      - password
+      title: LoginRequest
+    MaintenanceWindow:
+      properties:
+        until:
+          type: string
+          format: date-time
+          title: Until
+        note:
+          type: string
+          maxLength: 500
+          title: Note
+          default: ''
+      additionalProperties: false
+      type: object
+      required:
+      - until
+      title: MaintenanceWindow
+    NotificationChannelWrite:
+      properties:
+        name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Name
+        channel_type:
+          type: string
+          enum:
+          - smtp
+          - https_webhook
+          - in_app
+          title: Channel Type
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        configuration:
+          additionalProperties: true
+          type: object
+          title: Configuration
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - channel_type
+      title: NotificationChannelWrite
+    PasswordReset:
+      properties:
+        new_password:
+          type: string
+          maxLength: 1024
+          minLength: 14
+          title: New Password
+      additionalProperties: false
+      type: object
+      required:
+      - new_password
+      title: PasswordReset
+    RatePreviewRequest:
+      properties:
+        plan_code:
+          type: string
+          title: Plan Code
+        interval_start:
+          type: string
+          format: date-time
+          title: Interval Start
+        interval_end:
+          type: string
+          format: date-time
+          title: Interval End
+        energy_kwh:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: string
+          title: Energy Kwh
+        cost_scope:
+          type: string
+          enum:
+          - energy_only
+          - allocated_account
+          - full_account
+          title: Cost Scope
+          default: energy_only
+        baseline_allocation_kwh:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Baseline Allocation Kwh
+        billing_days:
+          type: integer
+          maximum: 366.0
+          minimum: 1.0
+          title: Billing Days
+          default: 1
+        cca_adjustment_per_kwh:
+          anyOf:
+          - type: number
+          - type: string
+          title: Cca Adjustment Per Kwh
+          default: '0'
+        other_adjustment:
+          anyOf:
+          - type: number
+          - type: string
+          title: Other Adjustment
+          default: '0'
+      additionalProperties: false
+      type: object
+      required:
+      - plan_code
+      - interval_start
+      - interval_end
+      - energy_kwh
+      title: RatePreviewRequest
+    RatePreviewResponse:
+      properties:
+        plan_code:
+          type: string
+          title: Plan Code
+        rate_version:
+          type: string
+          title: Rate Version
+        timezone:
+          type: string
+          title: Timezone
+        energy_by_bucket_kwh:
+          additionalProperties:
+            type: string
+          type: object
+          title: Energy By Bucket Kwh
+        components:
+          items:
+            $ref: '#/components/schemas/CostComponent'
+          type: array
+          title: Components
+        unrounded_total:
+          type: string
+          title: Unrounded Total
+        display_total:
+          type: string
+          title: Display Total
+        coverage_percent:
+          type: string
+          title: Coverage Percent
+        disclosure:
+          type: string
+          title: Disclosure
+      additionalProperties: false
+      type: object
+      required:
+      - plan_code
+      - rate_version
+      - timezone
+      - energy_by_bucket_kwh
+      - components
+      - unrounded_total
+      - display_total
+      - coverage_percent
+      - disclosure
+      title: RatePreviewResponse
+    Reading:
+      properties:
+        sequence:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Sequence
+        boot_id:
+          type: string
+          title: Boot Id
+        interval_start:
+          type: string
+          format: date-time
+          title: Interval Start
+        interval_end:
+          type: string
+          format: date-time
+          title: Interval End
+        time_trusted:
+          type: boolean
+          title: Time Trusted
+        voltage_avg:
+          anyOf:
+          - type: number
+            maximum: 400.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Voltage Avg
+        voltage_min:
+          anyOf:
+          - type: number
+            maximum: 400.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Voltage Min
+        voltage_max:
+          anyOf:
+          - type: number
+            maximum: 400.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Voltage Max
+        current_avg:
+          anyOf:
+          - type: number
+            maximum: 5000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Current Avg
+        current_min:
+          anyOf:
+          - type: number
+            maximum: 5000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Current Min
+        current_max:
+          anyOf:
+          - type: number
+            maximum: 5000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Current Max
+        power_avg:
+          anyOf:
+          - type: number
+            maximum: 10000000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Power Avg
+        power_min:
+          anyOf:
+          - type: number
+            maximum: 10000000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Power Min
+        power_max:
+          anyOf:
+          - type: number
+            maximum: 10000000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Power Max
+        power_factor:
+          anyOf:
+          - type: number
+            maximum: 1.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Power Factor
+        frequency_hz:
+          anyOf:
+          - type: number
+            maximum: 70.0
+            minimum: 40.0
+          - type: string
+          - type: 'null'
+          title: Frequency Hz
+        pzem_energy_start_wh:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Pzem Energy Start Wh
+        pzem_energy_end_wh:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Pzem Energy End Wh
+        device_lifetime_energy_wh:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Device Lifetime Energy Wh
+        interval_energy_wh:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Interval Energy Wh
+        energy_method:
+          type: string
+          maxLength: 40
+          title: Energy Method
+        ct_rating_amps:
+          anyOf:
+          - type: number
+            maximum: 5000.0
+            exclusiveMinimum: 0.0
+          - type: string
+          title: Ct Rating Amps
+        quality_flags:
+          items:
+            type: string
+          type: array
+          title: Quality Flags
+        firmware_version:
+          type: string
+          title: Firmware Version
+        record_hash:
+          anyOf:
+          - type: string
+            pattern: ^[0-9a-f]{64}$
+          - type: 'null'
+          title: Record Hash
+      type: object
+      required:
+      - sequence
+      - boot_id
+      - interval_start
+      - interval_end
+      - time_trusted
+      - energy_method
+      - ct_rating_amps
+      - firmware_version
+      title: Reading
+    ReadingBatch:
+      properties:
+        protocol_version:
+          type: string
+          title: Protocol Version
+        schema_version:
+          type: string
+          title: Schema Version
+          default: reading-batch/1.0.0
+        device_id:
+          type: string
+          title: Device Id
+        readings:
+          items:
+            $ref: '#/components/schemas/Reading'
+          type: array
+          maxItems: 500
+          minItems: 1
+          title: Readings
+      type: object
+      required:
+      - protocol_version
+      - device_id
+      - readings
+      title: ReadingBatch
+    ReadingBatchResponse:
+      properties:
+        accepted:
+          items:
+            type: integer
+          type: array
+          title: Accepted
+        duplicates:
+          items:
+            type: integer
+          type: array
+          title: Duplicates
+        rejected:
+          items:
+            $ref: '#/components/schemas/RejectedReading'
+          type: array
+          title: Rejected
+        highest_contiguous_accepted_sequence:
+          type: integer
+          title: Highest Contiguous Accepted Sequence
+        missing_ranges:
+          items:
+            prefixItems:
+            - type: integer
+            - type: integer
+            type: array
+            maxItems: 2
+            minItems: 2
+          type: array
+          title: Missing Ranges
+      additionalProperties: false
+      type: object
+      required:
+      - accepted
+      - duplicates
+      - rejected
+      - highest_contiguous_accepted_sequence
+      - missing_ranges
+      title: ReadingBatchResponse
+    RejectedReading:
+      properties:
+        sequence:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Sequence
+        code:
+          type: string
+          title: Code
+        detail:
+          type: string
+          title: Detail
+      additionalProperties: false
+      type: object
+      required:
+      - sequence
+      - code
+      - detail
+      title: RejectedReading
+    ReportDefinitionWrite:
+      properties:
+        name:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Name
+        report_type:
+          type: string
+          enum:
+          - daily_summary
+          - monthly_summary
+          - billing_cycle_summary
+          - device_comparison
+          - tou_breakdown
+          - cost_component_breakdown
+          title: Report Type
+        configuration:
+          additionalProperties: true
+          type: object
+          title: Configuration
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - report_type
+      title: ReportDefinitionWrite
+    SessionView:
+      properties:
+        authenticated:
+          type: boolean
+          title: Authenticated
+        user:
+          anyOf:
+          - $ref: '#/components/schemas/UserSummary'
+          - type: 'null'
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        csrf_token:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Csrf Token
+        bootstrap_required:
+          type: boolean
+          title: Bootstrap Required
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - authenticated
+      title: SessionView
+    SiteCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Name
+        timezone:
+          type: string
+          title: Timezone
+          default: America/Los_Angeles
+        allowed_cidrs:
+          items:
+            type: string
+          type: array
+          title: Allowed Cidrs
+        allowed_domains:
+          items:
+            type: string
+          type: array
+          title: Allowed Domains
+        allow_public_polling:
+          type: boolean
+          title: Allow Public Polling
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: SiteCreate
+    SiteView:
+      properties:
+        name:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Name
+        timezone:
+          type: string
+          title: Timezone
+          default: America/Los_Angeles
+        allowed_cidrs:
+          items:
+            type: string
+          type: array
+          title: Allowed Cidrs
+        allowed_domains:
+          items:
+            type: string
+          type: array
+          title: Allowed Domains
+        allow_public_polling:
+          type: boolean
+          title: Allow Public Polling
+          default: false
+        id:
+          type: string
+          title: Id
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - id
+      title: SiteView
+    SubsystemHealth:
+      properties:
+        ok:
+          type: boolean
+          title: Ok
+        status:
+          type: string
+          title: Status
+        error_count:
+          type: integer
+          minimum: 0.0
+          title: Error Count
+          default: 0
+        details:
+          additionalProperties: true
+          type: object
+          title: Details
+      type: object
+      required:
+      - ok
+      - status
+      title: SubsystemHealth
+    TimeHealth:
+      properties:
+        trusted:
+          type: boolean
+          title: Trusted
+        source:
+          type: string
+          title: Source
+        offset_ms:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Offset Ms
+        last_sync_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Sync At
+      type: object
+      required:
+      - trusted
+      - source
+      title: TimeHealth
+    UserCreate:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        display_name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Display Name
+        password:
+          type: string
+          maxLength: 1024
+          minLength: 14
+          title: Password
+        roles:
+          items:
+            type: string
+            enum:
+            - admin
+            - operator
+            - viewer
+          type: array
+          minItems: 1
+          title: Roles
+      additionalProperties: false
+      type: object
+      required:
+      - email
+      - display_name
+      - password
+      - roles
+      title: UserCreate
+    UserSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        email:
+          type: string
+          format: email
+          title: Email
+        display_name:
+          type: string
+          title: Display Name
+        roles:
+          items:
+            type: string
+          type: array
+          title: Roles
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - email
+      - display_name
+      - roles
+      title: UserSummary
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

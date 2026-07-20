@@ -1,0 +1,26 @@
+{
+  "name": "deterministic protocol and hardware fault matrix",
+  "seed": 20260720,
+  "device_count": 20,
+  "initial_records": 180,
+  "heartbeat_seconds": 15,
+  "live_update_seconds": 5,
+  "durable_record_seconds": 60,
+  "faults": [
+    {"device": 1, "at_second": 30, "type": "offline", "duration_seconds": 90},
+    {"device": 2, "at_second": 45, "type": "ip_change"},
+    {"device": 3, "at_second": 60, "type": "pzem_failure"},
+    {"device": 4, "at_second": 60, "type": "sd_removed"},
+    {"device": 5, "at_second": 60, "type": "sd_full"},
+    {"device": 6, "at_second": 60, "type": "sd_corrupt"},
+    {"device": 7, "at_second": 60, "type": "clock_untrusted"},
+    {"device": 8, "at_second": 60, "type": "counter_reset"},
+    {"device": 9, "at_second": 60, "type": "duplicate"},
+    {"device": 10, "at_second": 60, "type": "gap_then_fill"},
+    {"device": 11, "at_second": 60, "type": "invalid_signature"},
+    {"device": 12, "at_second": 60, "type": "replay"},
+    {"device": 13, "at_second": 60, "type": "protocol_mismatch"},
+    {"device": 14, "at_second": 60, "type": "ota_failure"},
+    {"device": 15, "at_second": 60, "type": "slow_response", "delay_seconds": 8}
+  ]
+}

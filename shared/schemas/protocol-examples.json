@@ -1,0 +1,47 @@
+{
+  "heartbeat": {
+    "protocol_version": "pm-protocol/1.0.0",
+    "schema_version": "heartbeat/1.0.0",
+    "device_id": "c5db1c32-67ab-4bdd-9a18-7f0012f8bcc1",
+    "boot_id": "264c9c49-3fd0-4eeb-ab24-3a61cc155759",
+    "firmware_version": "1.0.0",
+    "firmware_build_hash": "4cc90cf78c17",
+    "uptime_seconds": 3600,
+    "reboot_reason": "power_on",
+    "current_ip": "192.168.50.20",
+    "hostname": "pm-sensor-garage",
+    "rssi_dbm": -58,
+    "connection_mode": "hybrid",
+    "pzem": {"ok": true, "status": "connected", "error_count": 0},
+    "sd": {"ok": true, "status": "mounted", "free_bytes": 8000000000},
+    "oldest_stored_sequence": 1,
+    "newest_stored_sequence": 60,
+    "server_ack_sequence": 59,
+    "backlog_estimate": 1,
+    "configuration_version": 2,
+    "time": {"trusted": true, "source": "sntp"},
+    "resources": {"free_heap_bytes": 201344},
+    "queue": {"pending_records": 1}
+  },
+  "reading_batch": {
+    "protocol_version": "pm-protocol/1.0.0",
+    "schema_version": "reading-batch/1.0.0",
+    "device_id": "c5db1c32-67ab-4bdd-9a18-7f0012f8bcc1",
+    "readings": [{
+      "sequence": 60,
+      "boot_id": "264c9c49-3fd0-4eeb-ab24-3a61cc155759",
+      "interval_start": "2026-07-20T06:00:00Z",
+      "interval_end": "2026-07-20T06:01:00Z",
+      "time_trusted": true,
+      "power_avg": "960.0",
+      "interval_energy_wh": "16.0",
+      "energy_method": "pzem-counter-delta",
+      "ct_rating_amps": "100",
+      "quality_flags": [],
+      "firmware_version": "1.0.0"
+    }]
+  },
+  "problem": {"type": "about:blank", "title": "Protocol mismatch", "status": 426, "detail": "Upgrade required", "instance": "/api/v1/device-heartbeats", "code": "protocol_incompatible"},
+  "health": {"protocol_version": "pm-protocol/1.0.0", "status": "healthy", "pzem": {"ok": true}, "sd": {"ok": true}, "time": {"trusted": true}, "latest_sequence": 60},
+  "config": {"protocol_version": "pm-protocol/1.0.0", "version": 2, "settings": {"heartbeat_seconds": 15, "ct_rating_amps": 100}}
+}

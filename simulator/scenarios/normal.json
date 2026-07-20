@@ -1,0 +1,10 @@
+{
+  "name": "twenty-device normal operation",
+  "seed": 20260720,
+  "device_count": 20,
+  "initial_records": 10,
+  "heartbeat_seconds": 15,
+  "live_update_seconds": 5,
+  "durable_record_seconds": 60,
+  "faults": []
+}

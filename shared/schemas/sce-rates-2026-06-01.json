@@ -1,0 +1,103 @@
+{
+  "schema_version": "rate-seed/1.0.0",
+  "metadata": {
+    "utility": "Southern California Edison",
+    "timezone": "America/Los_Angeles",
+    "currency": "USD",
+    "source_checked_on": "2026-07-20",
+    "independent_retrieval_on": "2026-07-19",
+    "effective_from": "2026-06-01",
+    "source_type": "SCE public residential TOU page",
+    "source_url": "https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans",
+    "rates_include": "SCE delivery and SCE generation as displayed publicly",
+    "user_verification_required": true,
+    "notes": "TOU page shows $0.79/day. The general Base Services Charge FAQ separately describes $24.15/month and approximately $0.80/day. The effective-dated seed preserves the TOU page value required by the product specification."
+  },
+  "plans": [
+    {
+      "code": "TOU-D-4-9PM",
+      "name": "TOU-D 4 PM to 9 PM",
+      "version": 1,
+      "effective_from": "2026-06-01",
+      "effective_to": null,
+      "timezone": "America/Los_Angeles",
+      "currency": "USD",
+      "base_service_charge_per_day": "0.79",
+      "baseline_credit_per_kwh": "0.10",
+      "eligibility": null,
+      "seasons": {
+        "summer": {"start": "06-01", "end": "09-30"},
+        "winter": {"start": "10-01", "end": "05-31"}
+      },
+      "periods": {
+        "summer": {
+          "weekday": [[0, 960, "off-peak", "0.34"], [960, 1260, "on-peak", "0.58"], [1260, 1440, "off-peak", "0.34"]],
+          "weekend": [[0, 960, "off-peak", "0.34"], [960, 1260, "mid-peak", "0.46"], [1260, 1440, "off-peak", "0.34"]]
+        },
+        "winter": {
+          "weekday": [[0, 480, "off-peak", "0.37"], [480, 960, "super-off-peak", "0.33"], [960, 1260, "mid-peak", "0.51"], [1260, 1440, "off-peak", "0.37"]],
+          "weekend": [[0, 480, "off-peak", "0.37"], [480, 960, "super-off-peak", "0.33"], [960, 1260, "mid-peak", "0.51"], [1260, 1440, "off-peak", "0.37"]]
+        }
+      },
+      "holiday_behavior": "weekday",
+      "holiday_source": "No holiday override verified on public TOU page; editable before activation"
+    },
+    {
+      "code": "TOU-D-5-8PM",
+      "name": "TOU-D 5 PM to 8 PM",
+      "version": 1,
+      "effective_from": "2026-06-01",
+      "effective_to": null,
+      "timezone": "America/Los_Angeles",
+      "currency": "USD",
+      "base_service_charge_per_day": "0.79",
+      "baseline_credit_per_kwh": "0.10",
+      "eligibility": null,
+      "seasons": {
+        "summer": {"start": "06-01", "end": "09-30"},
+        "winter": {"start": "10-01", "end": "05-31"}
+      },
+      "periods": {
+        "summer": {
+          "weekday": [[0, 1020, "off-peak", "0.34"], [1020, 1200, "on-peak", "0.74"], [1200, 1440, "off-peak", "0.34"]],
+          "weekend": [[0, 1020, "off-peak", "0.34"], [1020, 1200, "mid-peak", "0.54"], [1200, 1440, "off-peak", "0.34"]]
+        },
+        "winter": {
+          "weekday": [[0, 480, "off-peak", "0.38"], [480, 1020, "super-off-peak", "0.32"], [1020, 1200, "mid-peak", "0.60"], [1200, 1440, "off-peak", "0.38"]],
+          "weekend": [[0, 480, "off-peak", "0.38"], [480, 1020, "super-off-peak", "0.32"], [1020, 1200, "mid-peak", "0.60"], [1200, 1440, "off-peak", "0.38"]]
+        }
+      },
+      "holiday_behavior": "weekday",
+      "holiday_source": "No holiday override verified on public TOU page; editable before activation"
+    },
+    {
+      "code": "TOU-D-PRIME",
+      "name": "TOU-D-PRIME",
+      "version": 1,
+      "effective_from": "2026-06-01",
+      "effective_to": null,
+      "timezone": "America/Los_Angeles",
+      "currency": "USD",
+      "base_service_charge_per_day": "0.79",
+      "baseline_credit_per_kwh": null,
+      "eligibility": "Requires qualifying EV, plug-in hybrid, residential battery, or electric heat-pump technology; verify directly with SCE.",
+      "seasons": {
+        "summer": {"start": "06-01", "end": "09-30"},
+        "winter": {"start": "10-01", "end": "05-31"}
+      },
+      "periods": {
+        "summer": {
+          "weekday": [[0, 960, "off-peak", "0.26"], [960, 1260, "on-peak", "0.59"], [1260, 1440, "off-peak", "0.26"]],
+          "weekend": [[0, 960, "off-peak", "0.26"], [960, 1260, "mid-peak", "0.40"], [1260, 1440, "off-peak", "0.26"]]
+        },
+        "winter": {
+          "weekday": [[0, 480, "off-peak", "0.24"], [480, 960, "super-off-peak", "0.24"], [960, 1260, "mid-peak", "0.56"], [1260, 1440, "off-peak", "0.24"]],
+          "weekend": [[0, 480, "off-peak", "0.24"], [480, 960, "super-off-peak", "0.24"], [960, 1260, "mid-peak", "0.56"], [1260, 1440, "off-peak", "0.24"]]
+        }
+      },
+      "holiday_behavior": "weekday",
+      "holiday_source": "No holiday override verified on public TOU page; editable before activation"
+    }
+  ]
+}
+

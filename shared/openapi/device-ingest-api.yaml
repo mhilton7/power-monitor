@@ -1,0 +1,48 @@
+openapi: 3.1.0
+info:
+  title: Power Monitor Server device ingest API
+  version: 1.0.0
+  description: Device-to-server half of pm-protocol/1.0.0.
+servers:
+  - url: https://power-monitor.example.com
+components:
+  securitySchemes:
+    pmHmac: {type: apiKey, in: header, name: X-PM-Signature}
+  schemas:
+    JsonObject: {type: object, additionalProperties: true}
+paths:
+  /api/v1/device-enrollment/claim:
+    post:
+      operationId: claimEnrollment
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
+      responses: {'201': {description: Permanent identity and one-time credential, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}
+  /api/v1/device-heartbeats:
+    post:
+      operationId: postHeartbeat
+      security: [{pmHmac: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
+      responses: {'200': {description: Server cursor and desired state, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}
+  /api/v1/device-readings/batch:
+    post:
+      operationId: postReadingBatch
+      security: [{pmHmac: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
+      responses: {'200': {description: Committed ingestion result, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}
+  /api/v1/device-events/batch:
+    post:
+      operationId: postEventBatch
+      security: [{pmHmac: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
+      responses: {'200': {description: Accepted event count, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}
+  /api/v1/device-config/effective:
+    get: {operationId: getEffectiveConfig, security: [{pmHmac: []}], responses: {'200': {description: Desired configuration, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}}
+  /api/v1/device-config/report:
+    post:
+      operationId: reportConfig
+      security: [{pmHmac: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
+      responses: {'200': {description: Report recorded}}
+  /api/v1/device-firmware/manifest:
+    get: {operationId: getFirmwareManifest, security: [{pmHmac: []}], responses: {'200': {description: Authorized release or no update, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}}
+  /api/v1/time:
+    get: {operationId: getTimeHint, responses: {'200': {description: Non-authoritative UTC hint, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}, '429': {description: Rate limited}}}

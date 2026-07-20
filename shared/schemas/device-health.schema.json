@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://power-monitor.local/schemas/device-health.schema.json",
+  "title": "Power Monitor device-local health",
+  "type": "object",
+  "required": ["protocol_version", "status", "pzem", "sd", "time", "latest_sequence"],
+  "properties": {
+    "protocol_version": {"const": "pm-protocol/1.0.0"},
+    "status": {"type": "string"},
+    "pzem": {"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}}, "additionalProperties": true},
+    "sd": {"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}}, "additionalProperties": true},
+    "time": {"type": "object", "required": ["trusted"], "properties": {"trusted": {"type": "boolean"}}, "additionalProperties": true},
+    "latest_sequence": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": true
+}
