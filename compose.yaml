@@ -1,0 +1,160 @@
+name: power-monitor
+
+x-service-security: &service-security
+  restart: unless-stopped
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
+services:
+  postgres:
+    image: postgres:17.5-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [database]
+    stop_grace_period: 60s
+
+  api:
+    <<: *service-security
+    build:
+      context: .
+      dockerfile: deploy/docker/backend.Dockerfile
+    image: power-monitor-api:${POWER_MONITOR_VERSION:-1.0.0}
+    command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"]
+    env_file: [.env]
+    volumes:
+      - firmware_data:/data/firmware
+      - report_data:/data/reports
+      - backup_data:/data/backups
+      - app_config:/data/config
+    tmpfs: [/tmp:size=64m,mode=1777]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: [edge, database]
+
+  worker:
+    <<: *service-security
+    image: power-monitor-api:${POWER_MONITOR_VERSION:-1.0.0}
+    command: [python, -m, worker.app.main]
+    env_file: [.env]
+    volumes:
+      - firmware_data:/data/firmware
+      - report_data:/data/reports
+      - backup_data:/data/backups
+      - app_config:/data/config
+    tmpfs: [/tmp:size=64m,mode=1777]
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, /srv/scripts/worker_health.py]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [database, device_access]
+
+  frontend:
+    <<: *service-security
+    build:
+      context: .
+      dockerfile: deploy/docker/frontend.Dockerfile
+    image: power-monitor-frontend:${POWER_MONITOR_VERSION:-1.0.0}
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/cache/nginx:size=32m,uid=101,gid=101
+      - /var/run:size=4m,uid=101,gid=101
+    healthcheck:
+      test: [CMD, wget, -qO-, http://127.0.0.1:8080/healthz]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [edge]
+
+  caddy:
+    <<: *service-security
+    image: caddy:2.10.0-alpine
+    cap_add: [NET_BIND_SERVICE]
+    ports:
+      - 80:80
+      - 443:443
+    environment:
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:?set CADDY_SITE_ADDRESS}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    tmpfs: [/tmp:size=32m,mode=1777]
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -qO-, http://127.0.0.1:2019/config/]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [edge]
+
+  backup:
+    profiles: [tools]
+    build:
+      context: .
+      dockerfile: deploy/docker/backup.Dockerfile
+    image: power-monitor-backup:${POWER_MONITOR_VERSION:-1.0.0}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:?set POSTGRES_DB}
+      PGUSER: ${POSTGRES_USER:?set POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      BACKUP_ENCRYPTION_KEY_FILE: ${BACKUP_ENCRYPTION_KEY_FILE:-}
+    volumes:
+      - backup_data:/data/backups
+      - firmware_data:/data/firmware:ro
+      - report_data:/data/reports:ro
+      - app_config:/data/config:ro
+    tmpfs: [/tmp:size=512m,mode=1777]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [database]
+
+volumes:
+  postgres_data:
+  firmware_data:
+  report_data:
+  backup_data:
+  app_config:
+  caddy_data:
+  caddy_config:
+
+networks:
+  edge:
+  database:
+    internal: true
+  device_access:

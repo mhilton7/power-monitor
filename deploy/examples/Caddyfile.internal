@@ -1,0 +1,11 @@
+{
+    local_certs
+}
+
+power-monitor.home.arpa {
+    tls internal
+    reverse_proxy /api/* api:8000
+    reverse_proxy /health/* api:8000
+    reverse_proxy /metrics api:8000
+    reverse_proxy frontend:8080
+}

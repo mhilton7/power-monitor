@@ -1,0 +1,9 @@
+[Unit]
+Description=Power Monitor verified logical backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/power-monitor
+ExecStart=/usr/bin/bash -c 'path=$$(/opt/power-monitor/scripts/backup.sh | tail -1); /opt/power-monitor/scripts/verify-backup.sh "$$path"'
