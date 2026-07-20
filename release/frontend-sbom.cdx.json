@@ -1,11 +1,11 @@
-{
+﻿{
   "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:0980f971-992c-4bc7-9b86-9cd0980fa024",
+  "serialNumber": "urn:uuid:71590d9f-505b-428e-a58b-1d0f62b02efa",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-07-20T06:34:44.536Z",
+    "timestamp": "2026-07-20T08:49:17.103Z",
     "lifecycles": [
       {
         "phase": "build"
@@ -1211,13 +1211,13 @@
       ]
     },
     {
-      "bom-ref": "@esbuild/win32-x64@0.25.12",
+      "bom-ref": "@esbuild/win32-x64@0.28.1",
       "type": "library",
       "name": "@esbuild/win32-x64",
-      "version": "0.25.12",
+      "version": "0.28.1",
       "scope": "optional",
       "description": "The Windows 64-bit binary for esbuild, a JavaScript bundler.",
-      "purl": "pkg:npm/%40esbuild/win32-x64@0.25.12",
+      "purl": "pkg:npm/%40esbuild/win32-x64@0.28.1",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -1227,7 +1227,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.25.12.tgz"
+          "url": "https://registry.npmjs.org/@esbuild/win32-x64/-/win32-x64-0.28.1.tgz"
         },
         {
           "type": "vcs",
@@ -1237,7 +1237,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "6a5242d2e099a5316b48bd020838dc8257815cf9c2ac40214c120ba5e029eccfce160a2ab407ad7c1cd7d31334d0c52c5553e956394fb8c6d112a9d90976939c"
+          "content": "6e6e0ca30aeff865cc969597fbe11c5f0fe22f2775a37f9b2640b60e4597615be0642a83fdb4a3f5cb59780302ddc2318234554760ee7da8aee183f1af9816d4"
         }
       ],
       "licenses": [
@@ -2310,14 +2310,14 @@
       ]
     },
     {
-      "bom-ref": "@playwright/test@1.54.1",
+      "bom-ref": "@playwright/test@1.61.1",
       "type": "library",
       "name": "@playwright/test",
-      "version": "1.54.1",
+      "version": "1.61.1",
       "scope": "required",
       "author": "Microsoft Corporation",
       "description": "A high-level API to automate web browsers",
-      "purl": "pkg:npm/%40playwright/test@1.54.1",
+      "purl": "pkg:npm/%40playwright/test@1.61.1",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -2327,7 +2327,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@playwright/test/-/test-1.54.1.tgz"
+          "url": "https://registry.npmjs.org/@playwright/test/-/test-1.61.1.tgz"
         },
         {
           "type": "vcs",
@@ -2341,7 +2341,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "152f21435d9a722786d9d61292c98b385ec13719d57f669f449742b8cd5e312c63e904d213a1b8227185ee80291a00dbeb9317ec0c0c565224a6bbb4c990385f"
+          "content": "f272afebed112522fd144e2360e1065e73de33f1e0d76a99a66ab3663461dea33463b737cf59ab3937c52e276cef6443418561f56a4b11f47959da4d5f87e48a"
         }
       ],
       "licenses": [
@@ -3953,13 +3953,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/expect@3.2.4",
+      "bom-ref": "@vitest/expect@3.2.7",
       "type": "library",
       "name": "@vitest/expect",
-      "version": "3.2.4",
+      "version": "3.2.7",
       "scope": "required",
       "description": "Jest's expect matchers as a Chai plugin",
-      "purl": "pkg:npm/%40vitest/expect@3.2.4",
+      "purl": "pkg:npm/%40vitest/expect@3.2.7",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -3969,7 +3969,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/expect/-/expect-3.2.4.tgz"
+          "url": "https://registry.npmjs.org/@vitest/expect/-/expect-3.2.7.tgz"
         },
         {
           "type": "vcs",
@@ -3987,7 +3987,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "228d32c8e46707ab2290596df105b92bbb256383a3a8d5fd8e6250d3640375af25c8ce81e68360556a12a0a3da73cfe4827094cee1d02ab48bb6efee3aaaab8a"
+          "content": "13c7815da2a26eebc7da949912b3a37556f9bc5e0f6ca61cae796e053631124d65fd5861c1983591942c76d8eaf82b05e4217275fd91764cfb8c31ca4a2b22df"
         }
       ],
       "licenses": [
@@ -3999,13 +3999,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/mocker@3.2.4",
+      "bom-ref": "@vitest/mocker@3.2.7",
       "type": "library",
       "name": "@vitest/mocker",
-      "version": "3.2.4",
+      "version": "3.2.7",
       "scope": "required",
       "description": "Vitest module mocker implementation",
-      "purl": "pkg:npm/%40vitest/mocker@3.2.4",
+      "purl": "pkg:npm/%40vitest/mocker@3.2.7",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -4015,7 +4015,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/mocker/-/mocker-3.2.4.tgz"
+          "url": "https://registry.npmjs.org/@vitest/mocker/-/mocker-3.2.7.tgz"
         },
         {
           "type": "vcs",
@@ -4033,7 +4033,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "e3aaf24c4f5164efeb7c377ba44a8597b7adbb2cde93312151b4d6dc1be678efc170230482ae7d04a85e9377570d68008f8a0c2ba3998bebd1af5c0f5baaa311"
+          "content": "4ebaf48583bd08cdd68fa92c5874612bd219a4863ac1330ee6efcca97bab3314f9eec58168e3c4b4fdceabad22859ba1e49b226a029fcfde4e7317443fa741ac"
         }
       ],
       "licenses": [
@@ -4091,13 +4091,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/runner@3.2.4",
+      "bom-ref": "@vitest/runner@3.2.7",
       "type": "library",
       "name": "@vitest/runner",
-      "version": "3.2.4",
+      "version": "3.2.7",
       "scope": "required",
       "description": "Vitest test runner",
-      "purl": "pkg:npm/%40vitest/runner@3.2.4",
+      "purl": "pkg:npm/%40vitest/runner@3.2.7",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -4107,7 +4107,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/runner/-/runner-3.2.4.tgz"
+          "url": "https://registry.npmjs.org/@vitest/runner/-/runner-3.2.7.tgz"
         },
         {
           "type": "vcs",
@@ -4125,7 +4125,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "a2e91f293f4c938d4bade116d3dbede397fcc31ec3a2b76859464c61d63f732024ef0e535a44d108d65817bb17ee7db007b8f218097be0ec60c213e029aa8331"
+          "content": "b01f72e28be5b6840ff966943f0992c4ef56220f4883af780e2e4f6a554fb181e4940744d36ee67a1a56176490495abe93ab0581a8af6d38d327064b4876de74"
         }
       ],
       "licenses": [
@@ -4137,13 +4137,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/snapshot@3.2.4",
+      "bom-ref": "@vitest/snapshot@3.2.7",
       "type": "library",
       "name": "@vitest/snapshot",
-      "version": "3.2.4",
+      "version": "3.2.7",
       "scope": "required",
       "description": "Vitest snapshot manager",
-      "purl": "pkg:npm/%40vitest/snapshot@3.2.4",
+      "purl": "pkg:npm/%40vitest/snapshot@3.2.7",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -4153,7 +4153,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/snapshot/-/snapshot-3.2.4.tgz"
+          "url": "https://registry.npmjs.org/@vitest/snapshot/-/snapshot-3.2.7.tgz"
         },
         {
           "type": "vcs",
@@ -4171,7 +4171,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "74462d4bba903f60a3536ed0042e6850ec4b13fbf978b906a8f13464a1080c632ce2f2967bb22380b39e6ae1ec4740f962ebb270644ee684915e7c27980efc7d"
+          "content": "ec2f8cc12870b41488e41bb0a32837b3f898d5e1cbf4f2807fe3b5c1587f4dd9e35d4b64a0bffd610b6b7bdd22e0cb4d5cce9e74fd70276cce0697c2ca1212ee"
         }
       ],
       "licenses": [
@@ -4183,59 +4183,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/pretty-format@3.2.4",
-      "type": "library",
-      "name": "@vitest/pretty-format",
-      "version": "3.2.4",
-      "scope": "required",
-      "description": "Fork of pretty-format with support for ESM",
-      "purl": "pkg:npm/%40vitest/pretty-format@3.2.4",
-      "properties": [
-        {
-          "name": "cdx:npm:package:development",
-          "value": "true"
-        }
-      ],
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/pretty-format/-/pretty-format-3.2.4.tgz"
-        },
-        {
-          "type": "vcs",
-          "url": "git+https://github.com/vitest-dev/vitest.git"
-        },
-        {
-          "type": "website",
-          "url": "https://github.com/vitest-dev/vitest/tree/main/packages/utils#readme"
-        },
-        {
-          "type": "issue-tracker",
-          "url": "https://github.com/vitest-dev/vitest/issues"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-512",
-          "content": "2153598a4f085512514ebf5fc658ad30a78979714514dd09681f4f1cf190f0d2906c6a5f8e54f1f733b845e7cdf20a7b7aa8cdcbc9f22b7359981cce3de231b4"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "id": "MIT"
-          }
-        }
-      ]
-    },
-    {
-      "bom-ref": "@vitest/spy@3.2.4",
+      "bom-ref": "@vitest/spy@3.2.7",
       "type": "library",
       "name": "@vitest/spy",
-      "version": "3.2.4",
+      "version": "3.2.7",
       "scope": "required",
       "description": "Lightweight Jest compatible spy implementation",
-      "purl": "pkg:npm/%40vitest/spy@3.2.4",
+      "purl": "pkg:npm/%40vitest/spy@3.2.7",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -4245,7 +4199,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/spy/-/spy-3.2.4.tgz"
+          "url": "https://registry.npmjs.org/@vitest/spy/-/spy-3.2.7.tgz"
         },
         {
           "type": "vcs",
@@ -4263,7 +4217,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "bc07dab0239ee8020aef488fe540f5d40738b22354349f62ffd3d9dcd2b1d3bb06eac53179a8352d674dacc59e28a6012e5cee2be1a7eb961de67c8be9db3e9f"
+          "content": "436790188e9dd8bfe106d674a8db8a7001a277af172ba72fd71b2868899ae8f6898473e8a9c109858a5767fe66c8232a90d82d3fa50ab8185b7349c72a7ae4b9"
         }
       ],
       "licenses": [
@@ -4275,13 +4229,13 @@
       ]
     },
     {
-      "bom-ref": "@vitest/utils@3.2.4",
+      "bom-ref": "@vitest/utils@3.2.7",
       "type": "library",
       "name": "@vitest/utils",
-      "version": "3.2.4",
+      "version": "3.2.7",
       "scope": "required",
       "description": "Shared Vitest utility functions",
-      "purl": "pkg:npm/%40vitest/utils@3.2.4",
+      "purl": "pkg:npm/%40vitest/utils@3.2.7",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -4291,7 +4245,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/@vitest/utils/-/utils-3.2.4.tgz"
+          "url": "https://registry.npmjs.org/@vitest/utils/-/utils-3.2.7.tgz"
         },
         {
           "type": "vcs",
@@ -4309,7 +4263,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "7c1d95d0916b41232c0a8f47892ab7133a5dbf8898697446d52c7c79d5f7330c5fc8d9fcde62a21b339c1fe164c6de0c1f1af7cb8d9f422d68780227aa05f640"
+          "content": "c7a04339deddca8dcf14b63723dfc7276e57ffa3aeae1197936fc1f6039934f17b5c35637812b8934d65404e6ebc3a5bba1784ae1f75a98b84d44d8e1232b747"
         }
       ],
       "licenses": [
@@ -5895,13 +5849,13 @@
       ]
     },
     {
-      "bom-ref": "esbuild@0.25.12",
+      "bom-ref": "esbuild@0.28.1",
       "type": "library",
       "name": "esbuild",
-      "version": "0.25.12",
+      "version": "0.28.1",
       "scope": "required",
       "description": "An extremely fast JavaScript and CSS bundler and minifier.",
-      "purl": "pkg:npm/esbuild@0.25.12",
+      "purl": "pkg:npm/esbuild@0.28.1",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -5911,7 +5865,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/esbuild/-/esbuild-0.25.12.tgz"
+          "url": "https://registry.npmjs.org/esbuild/-/esbuild-0.28.1.tgz"
         },
         {
           "type": "vcs",
@@ -5921,7 +5875,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "6db3c1618aed65b92de8eb3a1624cb093171beae2db7724a6a5975bd1c2c840ddf755cedb0b01ab45699a1b864042f3f06b3deb686b4a24b18a0a5e81b8af226"
+          "content": "1eb26bbd9bf96b2c41ccf7f0a613a837393338822589fce4d0a26b18ad9cf11e3e2caa4cb6960b41e51d8e7c235affcb665907da569993ee30efca62f7d0f857"
         }
       ],
       "licenses": [
@@ -9184,14 +9138,14 @@
       ]
     },
     {
-      "bom-ref": "playwright@1.54.1",
+      "bom-ref": "playwright@1.61.1",
       "type": "library",
       "name": "playwright",
-      "version": "1.54.1",
+      "version": "1.61.1",
       "scope": "required",
       "author": "Microsoft Corporation",
       "description": "A high-level API to automate web browsers",
-      "purl": "pkg:npm/playwright@1.54.1",
+      "purl": "pkg:npm/playwright@1.61.1",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -9201,7 +9155,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/playwright/-/playwright-1.54.1.tgz"
+          "url": "https://registry.npmjs.org/playwright/-/playwright-1.61.1.tgz"
         },
         {
           "type": "vcs",
@@ -9215,7 +9169,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "a5e5a94b02019922e2e9a5b66aebeb52d7f60ea635e9861c08c3bcad3571e3cea32a60d3260ed4021cabada3fdf0607c0683d44593fcfa7c4eed349de1c3ebe6"
+          "content": "0d69d8e68dd86cb58ae06a2fb80570a6a2fed55c0635d506ad1afefbc8fc3ed410cef01565420c8ca43dd1f63af3db042592416d9570d6b5da38a4938ad9333d"
         }
       ],
       "licenses": [
@@ -9227,14 +9181,14 @@
       ]
     },
     {
-      "bom-ref": "playwright-core@1.54.1",
+      "bom-ref": "playwright-core@1.61.1",
       "type": "library",
       "name": "playwright-core",
-      "version": "1.54.1",
+      "version": "1.61.1",
       "scope": "required",
       "author": "Microsoft Corporation",
       "description": "A high-level API to automate web browsers",
-      "purl": "pkg:npm/playwright-core@1.54.1",
+      "purl": "pkg:npm/playwright-core@1.61.1",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -9244,7 +9198,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.54.1.tgz"
+          "url": "https://registry.npmjs.org/playwright-core/-/playwright-core-1.61.1.tgz"
         },
         {
           "type": "vcs",
@@ -9258,7 +9212,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "35b8ecdb38e3d21b4d873822cb9c2efb7c34f587ad0f1e6992ba48fe4668b4394351a624d07540e71ac154f768c3848050896180a709789838191296eb11eeb0"
+          "content": "87b425b7a9b8444a76e6abc876f6c3b55983e0ba955dfa51c61391bfd2f48f3113334e69e1fb8f27774acae4974310d26d79e64bbf470208bde7cf65192a4b92"
         }
       ],
       "licenses": [
@@ -9728,19 +9682,19 @@
       ]
     },
     {
-      "bom-ref": "react-router@7.7.1",
+      "bom-ref": "react-router@7.18.1",
       "type": "library",
       "name": "react-router",
-      "version": "7.7.1",
+      "version": "7.18.1",
       "scope": "required",
       "author": "Remix Software <hello@remix.run>",
       "description": "Declarative routing for React",
-      "purl": "pkg:npm/react-router@7.7.1",
+      "purl": "pkg:npm/react-router@7.18.1",
       "properties": [],
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/react-router/-/react-router-7.7.1.tgz"
+          "url": "https://registry.npmjs.org/react-router/-/react-router-7.18.1.tgz"
         },
         {
           "type": "vcs",
@@ -9750,7 +9704,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "8d52875e859122c0ffa92ea5bc6bde724c1bf3ad847a4bdaa5d1c937f7069b3c38d0a9c91f9820e77ba3389e2a5fa10a20af4b4817c579dff1890e7279736b50"
+          "content": "1832e08378b7b8cd1a7893b7166f93092fac0d0ee0bb5d93eb1d2a753133730a847e579c8bb270ba054d205dd4fffd0558a9c94fba6d1bedb40768df0ea9d902"
         }
       ],
       "licenses": [
@@ -9762,19 +9716,19 @@
       ]
     },
     {
-      "bom-ref": "react-router-dom@7.7.1",
+      "bom-ref": "react-router-dom@7.18.1",
       "type": "library",
       "name": "react-router-dom",
-      "version": "7.7.1",
+      "version": "7.18.1",
       "scope": "required",
       "author": "Remix Software <hello@remix.run>",
       "description": "Declarative routing for React web applications",
-      "purl": "pkg:npm/react-router-dom@7.7.1",
+      "purl": "pkg:npm/react-router-dom@7.18.1",
       "properties": [],
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/react-router-dom/-/react-router-dom-7.7.1.tgz"
+          "url": "https://registry.npmjs.org/react-router-dom/-/react-router-dom-7.18.1.tgz"
         },
         {
           "type": "vcs",
@@ -9784,7 +9738,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "6dabdd936040e6bdcc61a946299d35bbc3c6b83065a109b3a416558432eb38ebf537de375aae9d70cf46841df1f1bec06ea3cc11ecdabafe0f78690025fcbb15"
+          "content": "29a661f97ffa52d129dbcc79d40518643320f4d1a8cf68daddd3476beb5afed938d2f0b32a143f472a4258130b6e60ebebffc4db856fe6e3ecaea5c5a3376402"
         }
       ],
       "licenses": [
@@ -11574,14 +11528,14 @@
       ]
     },
     {
-      "bom-ref": "vite@7.0.6",
+      "bom-ref": "vite@7.3.6",
       "type": "library",
       "name": "vite",
-      "version": "7.0.6",
+      "version": "7.3.6",
       "scope": "required",
       "author": "Evan You",
       "description": "Native-ESM powered web dev build tool",
-      "purl": "pkg:npm/vite@7.0.6",
+      "purl": "pkg:npm/vite@7.3.6",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -11591,7 +11545,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/vite/-/vite-7.0.6.tgz"
+          "url": "https://registry.npmjs.org/vite/-/vite-7.3.6.tgz"
         },
         {
           "type": "vcs",
@@ -11609,7 +11563,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "30716238434d05df8177dbaf73c184b08cdd927d49c4c9847985f7e6d2377efd2c2415137d6e6d42ca1a3b0b98e0a841234f40ddd509fc35dfdb2c4f54f51c7a"
+          "content": "e173fad2ca511a349915fd6a607f9d24890adb39cbdf341f97d2a4395f4c924451ff70e5b34771681b103d396811ce412d758f2fdbec3b1a29c722a83260ee7a"
         }
       ],
       "licenses": [
@@ -11668,14 +11622,14 @@
       ]
     },
     {
-      "bom-ref": "vitest@3.2.4",
+      "bom-ref": "vitest@3.2.7",
       "type": "library",
       "name": "vitest",
-      "version": "3.2.4",
+      "version": "3.2.7",
       "scope": "required",
       "author": "Anthony Fu <anthonyfu117@hotmail.com>",
       "description": "Next generation testing framework powered by Vite",
-      "purl": "pkg:npm/vitest@3.2.4",
+      "purl": "pkg:npm/vitest@3.2.7",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -11685,7 +11639,7 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/vitest/-/vitest-3.2.4.tgz"
+          "url": "https://registry.npmjs.org/vitest/-/vitest-3.2.7.tgz"
         },
         {
           "type": "vcs",
@@ -11703,7 +11657,7 @@
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "2d408fe5ebf7194443cac4d688fe3bc11454a4b28c39f3e1fb2293c779152048aee4a38c7aace99d836c2b23a856b50b8af47cb4b724b38fa581adf75a19fdd0"
+          "content": "2abc4827ad8577cf607f2b11e16a2d960640062cf676a14f82a1b35fbb3e0b0b2a2c5a26447efbefb65cace0faf9654087b9213d03f8d40f8129ba5c245add12"
         }
       ],
       "licenses": [
@@ -12215,9 +12169,9 @@
         "react@19.1.0",
         "react-chartjs-2@5.3.0",
         "react-dom@19.1.0",
-        "react-router-dom@7.7.1",
+        "react-router-dom@7.18.1",
         "@eslint/js@9.31.0",
-        "@playwright/test@1.54.1",
+        "@playwright/test@1.61.1",
         "@testing-library/jest-dom@6.6.4",
         "@testing-library/react@16.3.0",
         "@testing-library/user-event@14.6.1",
@@ -12232,8 +12186,8 @@
         "jsdom@26.1.0",
         "typescript@5.8.3",
         "typescript-eslint@8.38.0",
-        "vite@7.0.6",
-        "vitest@3.2.4"
+        "vite@7.3.6",
+        "vitest@3.2.7"
       ]
     },
     {
@@ -12431,7 +12385,7 @@
       "dependsOn": []
     },
     {
-      "ref": "@esbuild/win32-x64@0.25.12",
+      "ref": "@esbuild/win32-x64@0.28.1",
       "dependsOn": []
     },
     {
@@ -12578,9 +12532,9 @@
       ]
     },
     {
-      "ref": "@playwright/test@1.54.1",
+      "ref": "@playwright/test@1.61.1",
       "dependsOn": [
-        "playwright@1.54.1"
+        "playwright@1.61.1"
       ]
     },
     {
@@ -12846,7 +12800,7 @@
     {
       "ref": "@vitejs/plugin-react@4.6.0",
       "dependsOn": [
-        "vite@7.0.6",
+        "vite@7.3.6",
         "@babel/core@7.29.7",
         "@babel/plugin-transform-react-jsx-self@7.29.7",
         "@babel/plugin-transform-react-jsx-source@7.29.7",
@@ -12856,22 +12810,22 @@
       ]
     },
     {
-      "ref": "@vitest/expect@3.2.4",
+      "ref": "@vitest/expect@3.2.7",
       "dependsOn": [
         "@types/chai@5.2.3",
         "chai@5.3.3",
         "tinyrainbow@2.0.0",
-        "@vitest/spy@3.2.4",
-        "@vitest/utils@3.2.4"
+        "@vitest/spy@3.2.7",
+        "@vitest/utils@3.2.7"
       ]
     },
     {
-      "ref": "@vitest/mocker@3.2.4",
+      "ref": "@vitest/mocker@3.2.7",
       "dependsOn": [
-        "vite@7.0.6",
+        "vite@7.3.6",
         "estree-walker@3.0.3",
         "magic-string@0.30.21",
-        "@vitest/spy@3.2.4"
+        "@vitest/spy@3.2.7"
       ]
     },
     {
@@ -12881,39 +12835,33 @@
       ]
     },
     {
-      "ref": "@vitest/runner@3.2.4",
+      "ref": "@vitest/runner@3.2.7",
       "dependsOn": [
         "pathe@2.0.3",
         "strip-literal@3.1.0",
-        "@vitest/utils@3.2.4"
+        "@vitest/utils@3.2.7"
       ]
     },
     {
-      "ref": "@vitest/snapshot@3.2.4",
+      "ref": "@vitest/snapshot@3.2.7",
       "dependsOn": [
         "magic-string@0.30.21",
         "pathe@2.0.3",
-        "@vitest/pretty-format@3.2.4"
+        "@vitest/pretty-format@3.2.7"
       ]
     },
     {
-      "ref": "@vitest/pretty-format@3.2.4",
-      "dependsOn": [
-        "tinyrainbow@2.0.0"
-      ]
-    },
-    {
-      "ref": "@vitest/spy@3.2.4",
+      "ref": "@vitest/spy@3.2.7",
       "dependsOn": [
         "tinyspy@4.0.4"
       ]
     },
     {
-      "ref": "@vitest/utils@3.2.4",
+      "ref": "@vitest/utils@3.2.7",
       "dependsOn": [
         "loupe@3.2.1",
         "tinyrainbow@2.0.0",
-        "@vitest/pretty-format@3.2.4"
+        "@vitest/pretty-format@3.2.7"
       ]
     },
     {
@@ -13124,9 +13072,9 @@
       "dependsOn": []
     },
     {
-      "ref": "esbuild@0.25.12",
+      "ref": "esbuild@0.28.1",
       "dependsOn": [
-        "@esbuild/win32-x64@0.25.12"
+        "@esbuild/win32-x64@0.28.1"
       ]
     },
     {
@@ -13600,13 +13548,13 @@
       "dependsOn": []
     },
     {
-      "ref": "playwright@1.54.1",
+      "ref": "playwright@1.61.1",
       "dependsOn": [
-        "playwright-core@1.54.1"
+        "playwright-core@1.61.1"
       ]
     },
     {
-      "ref": "playwright-core@1.54.1",
+      "ref": "playwright-core@1.61.1",
       "dependsOn": []
     },
     {
@@ -13668,7 +13616,7 @@
       "dependsOn": []
     },
     {
-      "ref": "react-router@7.7.1",
+      "ref": "react-router@7.18.1",
       "dependsOn": [
         "react@19.1.0",
         "react-dom@19.1.0",
@@ -13677,11 +13625,11 @@
       ]
     },
     {
-      "ref": "react-router-dom@7.7.1",
+      "ref": "react-router-dom@7.18.1",
       "dependsOn": [
         "react@19.1.0",
         "react-dom@19.1.0",
-        "react-router@7.7.1"
+        "react-router@7.18.1"
       ]
     },
     {
@@ -13906,10 +13854,10 @@
       ]
     },
     {
-      "ref": "vite@7.0.6",
+      "ref": "vite@7.3.6",
       "dependsOn": [
         "@types/node@24.1.0",
-        "esbuild@0.25.12",
+        "esbuild@0.28.1",
         "fdir@6.5.0",
         "picomatch@4.0.5",
         "postcss@8.5.20",
@@ -13924,11 +13872,11 @@
         "debug@4.4.3",
         "es-module-lexer@1.7.0",
         "pathe@2.0.3",
-        "vite@7.0.6"
+        "vite@7.3.6"
       ]
     },
     {
-      "ref": "vitest@3.2.4",
+      "ref": "vitest@3.2.7",
       "dependsOn": [
         "@types/node@24.1.0",
         "jsdom@26.1.0",
@@ -13945,16 +13893,16 @@
         "tinyglobby@0.2.17",
         "tinypool@1.1.1",
         "tinyrainbow@2.0.0",
-        "vite@7.0.6",
-        "why-is-node-running@2.3.0",
-        "@vitest/expect@3.2.4",
-        "@vitest/mocker@3.2.4",
-        "@vitest/snapshot@3.2.4",
-        "@vitest/runner@3.2.4",
-        "@vitest/pretty-format@3.2.7",
-        "@vitest/spy@3.2.4",
+        "vite@7.3.6",
         "vite-node@3.2.4",
-        "@vitest/utils@3.2.4"
+        "why-is-node-running@2.3.0",
+        "@vitest/expect@3.2.7",
+        "@vitest/runner@3.2.7",
+        "@vitest/spy@3.2.7",
+        "@vitest/mocker@3.2.7",
+        "@vitest/utils@3.2.7",
+        "@vitest/snapshot@3.2.7",
+        "@vitest/pretty-format@3.2.7"
       ]
     },
     {

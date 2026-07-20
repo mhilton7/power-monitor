@@ -6,12 +6,18 @@
   "python": "3.13.14",
   "node": "v26.0.0",
   "npm": "11.12.1",
-  "git_commit": "ecf86ac2ca23cb8159d91fd3557dc0cbd7f653ac",
+  "git_commit": "0a207a4059d1af1b8658305543db41227f719e4f",
   "images": {
     "api": "power-monitor-api:1.0.0",
     "frontend": "power-monitor-frontend:1.0.0",
     "backup": "power-monitor-backup:1.0.0",
-    "postgres": "postgres:17.5-alpine",
-    "caddy": "caddy:2.10.0-alpine"
+    "postgres": "docker.io/library/postgres:17.5-bookworm",
+    "caddy": "docker.io/library/caddy:2.10.0-alpine"
+  },
+  "truenas": {
+    "target": "TrueNAS Community Edition 25.10 Apps / Install via YAML",
+    "template": "deploy/truenas/compose.yaml",
+    "required_platform": "linux/amd64",
+    "image_policy": "version tag plus sha256 digest"
   }
 }
