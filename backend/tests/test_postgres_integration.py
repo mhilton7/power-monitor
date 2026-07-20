@@ -43,6 +43,6 @@ async def test_postgres_17_migrates_from_empty_database() -> None:
                 "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
             )
             assert revision == "20260720_0001"
-            assert table_count == 53
+            assert table_count == 54
         finally:
             await connection.close()

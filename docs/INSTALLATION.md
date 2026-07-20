@@ -1,5 +1,12 @@
 # Production installation
 
+For TrueNAS Community Edition 25.10, use the dedicated
+[TrueNAS Install via YAML guide](../deploy/truenas/installation.md). Its production
+Compose file pulls only versioned digest-pinned images, publishes only the TLS
+gateway, uses file-backed secrets, and includes TrueNAS dataset/ACL, upgrade,
+backup, and rollback procedures. The generic instructions below are for a
+maintained standalone Docker host, not TrueNAS Apps.
+
 ## Host
 
 Use a maintained 64-bit Linux distribution on x86_64 or ARM64 with Docker Engine 27+ and Compose v2. PostgreSQL and application images are pinned in `compose.yaml`. Start with 2 CPU cores, 4 GiB RAM, and SSD storage. Capacity is workload-dependent: at one 60-second row per device, 100 devices create about 52.6 million rows per year before indexes and rollups. Monitor real growth and reserve at least twice the database size for maintenance and verified backups.

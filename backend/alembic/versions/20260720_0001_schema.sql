@@ -1,4 +1,4 @@
--- Generated immutable initial schema. sha256(body)=9506ce5ede0bb1bfb8064e4b754bba0af8f896f243ef0f6ed1a19ab0cff86681
+-- Generated immutable initial schema. sha256(body)=155234a6a938d0f2c8a3b46f45ce9f9df261de962a38a8a3848599c273c4318d
 CREATE TABLE roles (
 	name VARCHAR(32) NOT NULL, 
 	description VARCHAR(255) NOT NULL, 
@@ -33,11 +33,11 @@ CREATE TABLE audit_events (
 	CONSTRAINT pk_audit_events PRIMARY KEY (id)
 );
 
-CREATE INDEX ix_audit_events_actor_id ON audit_events (actor_id);
-
 CREATE INDEX ix_audit_events_action ON audit_events (action);
 
 CREATE INDEX ix_audit_events_occurred_at ON audit_events (occurred_at);
+
+CREATE INDEX ix_audit_events_actor_id ON audit_events (actor_id);
 
 CREATE TABLE sites (
 	id VARCHAR(36) NOT NULL, 
@@ -308,9 +308,9 @@ CREATE TABLE devices (
 	CONSTRAINT uq_devices_hardware_id UNIQUE (hardware_id)
 );
 
-CREATE INDEX ix_devices_last_seen_at ON devices (last_seen_at);
-
 CREATE INDEX ix_devices_site_id ON devices (site_id);
+
+CREATE INDEX ix_devices_last_seen_at ON devices (last_seen_at);
 
 CREATE INDEX ix_devices_status ON devices (status);
 
@@ -395,9 +395,9 @@ CREATE TABLE device_credentials (
 	CONSTRAINT fk_device_credentials_device_id_devices FOREIGN KEY(device_id) REFERENCES devices (id) ON DELETE CASCADE
 );
 
-CREATE INDEX ix_device_credentials_device_id ON device_credentials (device_id);
-
 CREATE INDEX ix_device_credentials_fingerprint ON device_credentials (fingerprint);
+
+CREATE INDEX ix_device_credentials_device_id ON device_credentials (device_id);
 
 CREATE TABLE device_addresses (
 	id VARCHAR(36) NOT NULL, 
@@ -479,9 +479,9 @@ CREATE TABLE device_heartbeats (
 	CONSTRAINT fk_device_heartbeats_device_id_devices FOREIGN KEY(device_id) REFERENCES devices (id) ON DELETE CASCADE
 );
 
-CREATE INDEX ix_device_heartbeats_received_at ON device_heartbeats (received_at);
-
 CREATE INDEX ix_device_heartbeats_device_id ON device_heartbeats (device_id);
+
+CREATE INDEX ix_device_heartbeats_received_at ON device_heartbeats (received_at);
 
 CREATE TABLE device_events (
 	id VARCHAR(36) NOT NULL, 
@@ -497,11 +497,11 @@ CREATE TABLE device_events (
 	CONSTRAINT fk_device_events_device_id_devices FOREIGN KEY(device_id) REFERENCES devices (id) ON DELETE CASCADE
 );
 
+CREATE INDEX ix_device_events_category ON device_events (category);
+
 CREATE INDEX ix_device_events_occurred_at ON device_events (occurred_at);
 
 CREATE INDEX ix_device_events_device_id ON device_events (device_id);
-
-CREATE INDEX ix_device_events_category ON device_events (category);
 
 CREATE TABLE sync_cursors (
 	device_id VARCHAR(36) NOT NULL, 
@@ -802,9 +802,9 @@ CREATE TABLE normalized_intervals (
 	CONSTRAINT fk_normalized_intervals_device_id_devices FOREIGN KEY(device_id) REFERENCES devices (id) ON DELETE RESTRICT
 );
 
-CREATE INDEX ix_normalized_intervals_device_id ON normalized_intervals (device_id);
-
 CREATE INDEX ix_normalized_intervals_interval_start ON normalized_intervals (interval_start);
+
+CREATE INDEX ix_normalized_intervals_device_id ON normalized_intervals (device_id);
 
 CREATE TABLE daily_cost_rollups (
 	run_id VARCHAR(36) NOT NULL, 
@@ -837,9 +837,9 @@ CREATE TABLE alert_instances (
 	CONSTRAINT fk_alert_instances_acknowledged_by_users FOREIGN KEY(acknowledged_by) REFERENCES users (id) ON DELETE SET NULL
 );
 
-CREATE INDEX ix_alert_instances_rule_id ON alert_instances (rule_id);
-
 CREATE INDEX ix_alert_instances_status ON alert_instances (status);
+
+CREATE INDEX ix_alert_instances_rule_id ON alert_instances (rule_id);
 
 CREATE INDEX ix_alert_instances_device_id ON alert_instances (device_id);
 

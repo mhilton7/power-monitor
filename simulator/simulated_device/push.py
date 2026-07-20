@@ -4,9 +4,9 @@ import json
 from typing import Any
 
 import httpx
-from simulator.simulated_device.model import SimulatedDevice
 
 from app.security.protocol import PROTOCOL, sign_headers
+from simulator.simulated_device.model import SimulatedDevice
 
 
 def heartbeat_payload(device: SimulatedDevice) -> dict[str, Any]:

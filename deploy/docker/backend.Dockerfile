@@ -24,6 +24,7 @@ COPY --chown=power-monitor:power-monitor backend/alembic.ini ./alembic.ini
 COPY --chown=power-monitor:power-monitor backend/alembic ./alembic
 COPY --chown=power-monitor:power-monitor backend/app ./app
 COPY --chown=power-monitor:power-monitor worker /srv/worker
+COPY --chown=power-monitor:power-monitor shared /srv/shared
 COPY --chown=power-monitor:power-monitor scripts/worker_health.py /srv/scripts/worker_health.py
 USER power-monitor
 EXPOSE 8000

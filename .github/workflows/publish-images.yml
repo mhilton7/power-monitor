@@ -1,0 +1,61 @@
+name: Publish immutable production images
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semver without a leading v
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - component: api
+            dockerfile: deploy/docker/backend.Dockerfile
+          - component: frontend
+            dockerfile: deploy/docker/frontend.Dockerfile
+          - component: backup
+            dockerfile: deploy/docker/backup.Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: version
+        shell: bash
+        run: |
+          version="${{ inputs.version || github.ref_name }}"
+          version="${version#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version must be strict semver" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          provenance: mode=max
+          sbom: true
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/power-monitor-${{ matrix.component }}:${{ steps.version.outputs.value }}
+      - shell: bash
+        run: |
+          echo '${{ matrix.component }}=ghcr.io/${{ github.repository_owner }}/power-monitor-${{ matrix.component }}:${{ steps.version.outputs.value }}@${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+

@@ -9,9 +9,9 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from simulator.simulated_device.model import SimulatedDevice
 
 from app.security.protocol import PROTOCOL, calculate_signature, sha256_hex
+from simulator.simulated_device.model import SimulatedDevice
 
 
 def create_device_app(device: SimulatedDevice) -> FastAPI:

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import httpx
 import uvicorn
+
 from simulator.simulated_device.api import create_device_app
 from simulator.simulated_device.model import SimulatedDevice
 from simulator.simulated_device.push import push_once
@@ -31,6 +32,7 @@ async def apply_scenario(
     devices: list[SimulatedDevice], scenario: dict[str, object]
 ) -> None:
     started = time.monotonic()
+    clear_tasks: list[asyncio.Task[None]] = []
     raw_faults = scenario.get("faults", [])
     if not isinstance(raw_faults, list):
         return
@@ -49,11 +51,12 @@ async def apply_scenario(
         fault_type = str(fault.get("type", ""))
         if fault_type == "offline":
             device.fault.offline = True
-            asyncio.create_task(
+            clear_task = asyncio.create_task(
                 clear_after(
                     device, "offline", False, int(fault.get("duration_seconds", 60))
                 )
             )
+            clear_tasks.append(clear_task)
         elif fault_type == "ip_change":
             device.address_epoch += 1
         elif fault_type == "pzem_failure":
@@ -80,6 +83,8 @@ async def apply_scenario(
             device.fault.ota_result = "failure"
         elif fault_type == "slow_response":
             device.fault.response_delay_seconds = float(fault.get("delay_seconds", 8))
+    if clear_tasks:
+        await asyncio.gather(*clear_tasks)
 
 
 async def run(count: int, base_port: int, server_url: str, scenario_path: Path) -> None:

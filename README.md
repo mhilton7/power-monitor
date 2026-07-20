@@ -27,7 +27,13 @@ cd backend && alembic upgrade head && uvicorn app.main:app --reload
 
 In separate terminals run `python -m worker.app.main` and `cd frontend && npm run dev`. Run all portable gates with `make lint typecheck test contract frontend`.
 
-For production use [Installation](docs/INSTALLATION.md), then [First run](docs/FIRST_RUN.md). Protocol and deployment details are in [Architecture](docs/ARCHITECTURE.md), [Device protocol](docs/DEVICE_PROTOCOL.md), [Security](docs/SECURITY.md), and [Operations](docs/OPERATIONS.md).
+For production use [Installation](docs/INSTALLATION.md), then [First run](docs/FIRST_RUN.md).
+TrueNAS Community Edition 25.10 has a first-class, immutable-image deployment
+through [Apps > Install via YAML](deploy/truenas/installation.md), including exact
+dataset ACLs, three TLS modes, nightly encrypted/restore-tested backups, and an
+automated multi-device release gate. Protocol and deployment details are in
+[Architecture](docs/ARCHITECTURE.md), [Device protocol](docs/DEVICE_PROTOCOL.md),
+[Security](docs/SECURITY.md), and [Operations](docs/OPERATIONS.md).
 
 Verification evidence is recorded in [Testing](docs/TESTING.md) and [Load test results](docs/LOAD_TEST_RESULTS.md).
 

@@ -81,7 +81,7 @@ def frontend_licenses() -> None:
 
 def command_version(command: list[str]) -> str:
     try:
-        return subprocess.check_output(
+        return subprocess.check_output(  # noqa: S603 - fixed release metadata commands
             command, text=True, stderr=subprocess.STDOUT
         ).strip()
     except (FileNotFoundError, subprocess.CalledProcessError):
@@ -103,8 +103,14 @@ def versions() -> None:
             "api": "power-monitor-api:1.0.0",
             "frontend": "power-monitor-frontend:1.0.0",
             "backup": "power-monitor-backup:1.0.0",
-            "postgres": "postgres:17.5-alpine",
-            "caddy": "caddy:2.10.0-alpine",
+            "postgres": "docker.io/library/postgres:17.5-bookworm",
+            "caddy": "docker.io/library/caddy:2.10.0-alpine",
+        },
+        "truenas": {
+            "target": "TrueNAS Community Edition 25.10 Apps / Install via YAML",
+            "template": "deploy/truenas/compose.yaml",
+            "required_platform": "linux/amd64",
+            "image_policy": "version tag plus sha256 digest",
         },
     }
     (RELEASE / "versions.json").write_text(
@@ -115,7 +121,11 @@ def versions() -> None:
 def checksums() -> None:
     lines = []
     for path in sorted(RELEASE.iterdir()):
-        if not path.is_file() or path.name == "checksums.sha256":
+        if (
+            not path.is_file()
+            or path.name == "checksums.sha256"
+            or path.name.endswith((".tar.gz", ".zip"))
+        ):
             continue
         lines.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
     (RELEASE / "checksums.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")

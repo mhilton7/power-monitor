@@ -23,9 +23,7 @@ def canonical_target(target: str) -> str:
 
 
 def main() -> None:
-    secret_hex = (  # noqa: S105 - public deterministic interoperability fixture
-        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-    )
+    fixture_key_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
     body = b'{"device_id":"123e4567-e89b-12d3-a456-426614174000","sequence":42}'
     target = canonical_target(
         "/api/v1/device-readings/batch?z=last&a=hello%20world&a=&slash=%2F"
@@ -36,7 +34,7 @@ def main() -> None:
     canonical = "\n".join(
         ("PM-HMAC-SHA256-V1", "POST", target, timestamp, nonce, digest)
     )
-    key = hkdf(bytes.fromhex(secret_hex), b"pm-device-to-server-v1")
+    key = hkdf(bytes.fromhex(fixture_key_hex), b"pm-device-to-server-v1")
     signature = hmac.new(key, canonical.encode(), hashlib.sha256).hexdigest()
     print(
         json.dumps(
@@ -46,12 +44,11 @@ def main() -> None:
                     {
                         "name": "device push with duplicate and escaped query values",
                         "secret_encoding": "hex",
-                        "secret": secret_hex,
+                        "secret": fixture_key_hex,
                         "direction": "device-to-server",
                         "method": "POST",
                         "target_input": (
-                            "/api/v1/device-readings/batch?"
-                            "z=last&a=hello%20world&a=&slash=%2F"
+                            "/api/v1/device-readings/batch?z=last&a=hello%20world&a=&slash=%2F"
                         ),
                         "canonical_target": target,
                         "timestamp": timestamp,

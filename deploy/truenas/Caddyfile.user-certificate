@@ -1,20 +1,17 @@
 {
-	admin 0.0.0.0:2019
-	metrics
+	admin 127.0.0.1:2019
 }
 
-{$CADDY_SITE_ADDRESS:localhost} {
+{$POWER_MONITOR_SITE_ADDRESS:https://power-monitor.example.net} {
+	tls /run/secrets/tls_certificate /run/secrets/tls_private_key
 	encode zstd gzip
-
 	@backend path /api/* /health/* /metrics
 	handle @backend {
 		reverse_proxy api:8000
 	}
-
 	handle {
 		reverse_proxy frontend:8080
 	}
-
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
@@ -22,7 +19,6 @@
 		X-Frame-Options "DENY"
 		-Server
 	}
-
 	log {
 		output stdout
 		format json

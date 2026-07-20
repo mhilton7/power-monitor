@@ -8,6 +8,11 @@ from typing import Any
 
 import structlog
 from sqlalchemy import text
+
+from app.config import get_settings
+from app.db.models import WorkerState
+from app.db.session import session_factory
+from app.logging import configure_logging
 from worker.app.polling import poll_due_devices
 from worker.app.tasks import (
     evaluate_alerts,
@@ -17,11 +22,6 @@ from worker.app.tasks import (
     process_report_jobs,
     recompute_recent_rollups,
 )
-
-from app.config import get_settings
-from app.db.models import WorkerState
-from app.db.session import session_factory
-from app.logging import configure_logging
 
 LOCK_ID = 73473281
 

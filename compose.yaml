@@ -39,7 +39,7 @@ services:
       - report_data:/data/reports
       - backup_data:/data/backups
       - app_config:/data/config
-    tmpfs: [/tmp:size=64m,mode=1777]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,7 +61,7 @@ services:
       - report_data:/data/reports
       - backup_data:/data/backups
       - app_config:/data/config
-    tmpfs: [/tmp:size=64m,mode=1777]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
     depends_on:
       api:
         condition: service_healthy
@@ -103,7 +103,7 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    tmpfs: [/tmp:size=32m,mode=1777]
+    tmpfs: ["/tmp:size=32m,mode=1777"]
     depends_on:
       api:
         condition: service_healthy
@@ -138,7 +138,7 @@ services:
       - firmware_data:/data/firmware:ro
       - report_data:/data/reports:ro
       - app_config:/data/config:ro
-    tmpfs: [/tmp:size=512m,mode=1777]
+    tmpfs: ["/tmp:size=512m,mode=1777"]
     depends_on:
       postgres:
         condition: service_healthy

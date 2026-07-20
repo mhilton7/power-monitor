@@ -1,0 +1,5 @@
+# Optional Compose overlay. It changes only the worker capability set.
+# Core operation uses signed HTTPS heartbeats and TCP/API probes; ICMP is optional.
+services:
+  worker:
+    cap_add: [NET_RAW]

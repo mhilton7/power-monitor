@@ -1,0 +1,90 @@
+name: TrueNAS Compose release gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_image:
+        description: Versioned API image with sha256 digest
+        required: true
+        type: string
+      frontend_image:
+        description: Versioned frontend image with sha256 digest
+        required: true
+        type: string
+      backup_image:
+        description: Versioned backup image with sha256 digest
+        required: true
+        type: string
+      postgres_image:
+        description: Versioned PostgreSQL image with sha256 digest
+        required: true
+        type: string
+      gateway_image:
+        description: Versioned Caddy image with sha256 digest
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  full-workflow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install locked test dependencies
+        run: python -m pip install --require-hashes --requirement backend/requirements.lock
+      - name: Prepare TrueNAS-shaped bind mounts and secrets
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes acl
+          sudo mkdir -p /mnt/pmci/apps/power-monitor/{postgres,backups,firmware,config/reports,secrets,caddy-data,caddy-config}
+          python tools/generate-secrets.py --output /tmp/power-monitor-secrets
+          sudo cp /tmp/power-monitor-secrets/* /mnt/pmci/apps/power-monitor/secrets/
+          sudo cp deploy/truenas/Caddyfile /mnt/pmci/apps/power-monitor/config/Caddyfile
+          sudo chown -R 999:999 /mnt/pmci/apps/power-monitor/postgres
+          sudo chown -R 10003:10003 /mnt/pmci/apps/power-monitor/backups
+          sudo chown -R 10001:10001 /mnt/pmci/apps/power-monitor/firmware /mnt/pmci/apps/power-monitor/config
+          sudo chown -R 10002:10002 /mnt/pmci/apps/power-monitor/caddy-data /mnt/pmci/apps/power-monitor/caddy-config
+          sudo chmod 0750 /mnt/pmci/apps/power-monitor/{postgres,backups,firmware,config,secrets,caddy-data,caddy-config}
+          sudo setfacl -m u:10001:rX,u:10002:rX,u:10003:rX /mnt/pmci/apps/power-monitor/secrets
+          sudo setfacl -m u:999:r /mnt/pmci/apps/power-monitor/secrets/postgres_password
+          sudo setfacl -m u:10003:r /mnt/pmci/apps/power-monitor/secrets/postgres_password /mnt/pmci/apps/power-monitor/secrets/backup_encryption_key
+          sudo setfacl -m u:10001:r /mnt/pmci/apps/power-monitor/secrets/database_url /mnt/pmci/apps/power-monitor/secrets/app_master_key /mnt/pmci/apps/power-monitor/secrets/session_pepper /mnt/pmci/apps/power-monitor/secrets/admin_setup_token
+          sudo setfacl -m u:10002:r /mnt/pmci/apps/power-monitor/secrets/tls.crt /mnt/pmci/apps/power-monitor/secrets/tls.key
+          sudo setfacl -Rm u:10002:rX,u:10003:rX /mnt/pmci/apps/power-monitor/config
+          sudo setfacl -Rm u:10003:rX /mnt/pmci/apps/power-monitor/firmware
+          sudo setfacl -Rm u:10001:rX /mnt/pmci/apps/power-monitor/backups
+          sudo setfacl -m u:$(id -u):rwx,d:u:$(id -u):rX /mnt/pmci/apps/power-monitor/caddy-data
+      - name: Render and validate deployment YAML
+        shell: bash
+        run: |
+          python tools/render-truenas-compose.py \
+            --pool pmci \
+            --gateway-port 18443 \
+            --site-address https://localhost \
+            --public-origin https://localhost:18443 \
+            --api-image '${{ inputs.api_image }}' \
+            --frontend-image '${{ inputs.frontend_image }}' \
+            --backup-image '${{ inputs.backup_image }}' \
+            --postgres-image '${{ inputs.postgres_image }}' \
+            --gateway-image '${{ inputs.gateway_image }}' \
+            --output /tmp/power-monitor-truenas-compose.yaml
+          python tools/validate-truenas-compose.py \
+            --deployment --pool pmci --gateway-port 18443 \
+            /tmp/power-monitor-truenas-compose.yaml
+          docker compose -f /tmp/power-monitor-truenas-compose.yaml config --quiet
+      - name: Run deployed multi-device, rate, backup, restore, and port workflow
+        run: |
+          python tools/test-truenas-workflow.py \
+            --compose /tmp/power-monitor-truenas-compose.yaml \
+            --base-url https://localhost:18443 \
+            --ca-certificate /mnt/pmci/apps/power-monitor/caddy-data/caddy/pki/authorities/local/root.crt \
+            --setup-token-file /mnt/pmci/apps/power-monitor/secrets/admin_setup_token \
+            --gateway-port 18443 \
+            --device-count 3

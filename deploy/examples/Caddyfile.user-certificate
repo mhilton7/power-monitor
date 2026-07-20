@@ -1,7 +1,7 @@
 power-monitor.example.internal {
-    tls /run/secrets/tls_certificate /run/secrets/tls_private_key
-    reverse_proxy /api/* api:8000
-    reverse_proxy /health/* api:8000
-    reverse_proxy /metrics api:8000
-    reverse_proxy frontend:8080
+	tls /run/secrets/tls_certificate /run/secrets/tls_private_key
+	reverse_proxy /api/* api:8000
+	reverse_proxy /health/* api:8000
+	reverse_proxy /metrics api:8000
+	reverse_proxy frontend:8080
 }
