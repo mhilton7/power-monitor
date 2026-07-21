@@ -9,7 +9,7 @@ path=$(./scripts/backup.sh | tail -1)
 ./scripts/verify-backup.sh "$path"
 ```
 
-The verifier rechecks every hash, creates a uniquely named temporary database, restores with `--exit-on-error`, confirms the Alembic revision and table inventory, records verification, and drops only that temporary database. A dump is not called verified merely because `pg_dump` succeeded.
+The verifier rechecks every hash, creates a uniquely named temporary database, restores with `--exit-on-error`, confirms the Alembic revision and table inventory, validates the current Status Indicators & Layout pointer against its immutable revision history when that schema is present, records verification, and drops only that temporary database. A dump is not called verified merely because `pg_dump` succeeded.
 
 For disaster recovery, preserve `.env`/master key separately, provision a clean host, stop API/worker, inspect and verify the backup, then run `./scripts/restore.sh BACKUP_DIR TARGET_DATABASE` (PowerShell requires `-ConfirmDestructiveRestore`). Restore firmware/config/report and `rate-source-artifacts.tar.gz` archives into their named volumes, apply migrations, start services, inspect readiness and audit, then allow each device's microSD backlog to fill records beyond the restored contiguous cursor.
 

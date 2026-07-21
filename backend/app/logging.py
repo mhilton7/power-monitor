@@ -10,7 +10,7 @@ import threading
 from contextlib import suppress
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import structlog
 
@@ -58,7 +58,7 @@ def sanitize_log_value(value: Any) -> Any:
 
 
 def redact(_logger: Any, _method: str, event: dict[str, Any]) -> dict[str, Any]:
-    return sanitize_log_value(event)
+    return cast(dict[str, Any], sanitize_log_value(event))
 
 
 def redact_log_line(line: str) -> bytes:
@@ -155,7 +155,7 @@ class DailyJsonLogWriter:
         event["service"] = self.service
         event["category"] = _category_for_event(self.service, event)
         event["log_format_version"] = LOG_FORMAT_VERSION
-        sanitized = sanitize_log_value(event)
+        sanitized = cast(dict[str, Any], sanitize_log_value(event))
         try:
             with self._lock:
                 if self._maintained_on != now.date():
@@ -166,9 +166,16 @@ class DailyJsonLogWriter:
                 destination = self.log_path / (
                     f"{sanitized['category']}-{now.date().isoformat()}.jsonl"
                 )
+                # API, worker, and backup use separate UIDs but intentionally share
+                # the log dataset. Normalize an existing file before opening it so
+                # the directory's shared group/ACL remains effective across writers.
+                with suppress(OSError):
+                    destination.chmod(0o660)
                 with destination.open("a", encoding="utf-8", newline="\n") as stream:
                     stream.write(json.dumps(sanitized, separators=(",", ":"), default=str))
                     stream.write("\n")
+                with suppress(OSError):
+                    destination.chmod(0o660)
         except OSError:
             # Durable logging must never take down the API or worker. Container stdout
             # remains available for diagnosing a mount or permissions failure.

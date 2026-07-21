@@ -18,6 +18,14 @@ draft, responsive preview, immutable publish, defaults, and rollback. See
 [user management](docs/USER_MANAGEMENT.md), [permissions](docs/PERMISSIONS.md),
 [site access](docs/SITE_ACCESS.md), and [interface text](docs/INTERFACE_TEXT.md).
 
+**Status Indicators & Layout** adds a server-owned inventory of compact status
+surfaces with permission-aware global/page/role/breakpoint placement, responsive
+gap-free rendering, keyboard ordering, drafts, preview, immutable publishing,
+and rollback. Hiding an indicator never disables monitoring or alerts. See the
+[registry](docs/STATUS_INDICATORS.md), [zones and precedence](docs/STATUS_LAYOUT_ZONES.md),
+[administration guide](docs/STATUS_LAYOUT_ADMINISTRATION.md), and
+[accessibility notes](docs/STATUS_LAYOUT_ACCESSIBILITY.md).
+
 The normative interoperability identifier is `pm-protocol/1.0.0`. The browser talks only to this server; device credentials never reach browser code.
 
 The canonical source repository is

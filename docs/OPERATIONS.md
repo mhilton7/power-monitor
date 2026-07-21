@@ -40,12 +40,29 @@ TrueNAS administrators must grant the documented API, worker, and backup UIDs
 write access to the dedicated logs dataset.
 
 For the standard named-volume deployment, the API image initializes the logs
-directory group-writable by GID `10001` and the backup container receives that
-supplementary group only for this shared append-only logging path. Its primary
+directory setgid and group-writable by GID `10001`. Log writers normalize daily
+files to mode `0660`, and the backup container receives GID `10001` only as a
+supplementary group for this shared append-only logging path. Its primary
 runtime identity remains UID/GID `10003`; other application-data mounts remain
-read-only in the backup service.
+read-only in the backup service. The TrueNAS deployment declares the same
+supplementary group in addition to the required inherited UID ACLs.
 
 No ICMP capability is granted by default. Enable it only after a documented diagnostic need; TCP/API evidence remains primary.
+
+## Status-layout operations
+
+The status layout is presentation metadata in PostgreSQL, not a second status
+engine. The browser fetches the published revision on a bounded cache interval
+and obtains visible values through one batched server request. Publishing or
+restoring invalidates the client query and applies the new immutable revision;
+restart, port, secret, dataset, or worker changes are not required.
+
+Review `status_layout.*` audit events after material shell changes. A hidden
+health indicator must never be used to infer that monitoring or alerts stopped:
+inspect the owning Devices, Alerts, Rates, Backups, or Administration surface
+and its audit evidence. Before upgrading a release that adds registry keys,
+open **Status Indicators & Layout**, review the new-indicator notice, preview
+desktop/tablet/mobile, and publish only intentional overrides.
 
 ## Sensor lifecycle
 

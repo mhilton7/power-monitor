@@ -7,7 +7,7 @@ also enforced by `tools/validate-truenas-compose.py`.
 |---|---:|---:|
 | API, migration, worker | 10001 | 10001 |
 | Caddy gateway | 10002 | 10002 |
-| backup scheduler/restore tool | 10003 | 10003 |
+| backup scheduler/restore tool | 10003 | 10003 (supplementary shared-log GID 10001) |
 | frontend (`nginx-unprivileged`) | 101 | 101 |
 | PostgreSQL (`bookworm` image) | 999 | 999 |
 

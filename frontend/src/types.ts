@@ -299,3 +299,131 @@ export interface InterfaceTextRevisionSummary {
   restored_from_id?: string
   changed_key_count: number
 }
+
+export type StatusBreakpoint = 'desktop' | 'tablet' | 'mobile'
+export type StatusDensity = 'compact' | 'standard' | 'detailed'
+
+export interface StatusIndicatorDefinition {
+  key: string
+  default_label: string
+  description: string
+  category: string
+  data_source: string
+  current_value_schema: Record<string, string>
+  severity_capability: string[]
+  default_enabled: boolean
+  default_zone: string
+  allowed_zones: string[]
+  default_order: number
+  supported_pages: string[]
+  global_shell_support: boolean
+  minimum_display_width: number
+  preferred_display_width: number
+  presentations: StatusDensity[]
+  icon_supported: boolean
+  label_supported: boolean
+  value_supported: boolean
+  freshness_supported: boolean
+  role_visibility_supported: boolean
+  permission_required: string
+  configurable: boolean
+  critical_fallback?: string
+  renderer: string
+  icon: string
+  registry_version: string
+}
+
+export interface StatusLayoutItem {
+  indicator_key: string
+  page: string
+  role: string
+  breakpoint: 'default' | StatusBreakpoint
+  visible?: boolean
+  zone?: string
+  order?: number
+  density?: StatusDensity
+  show_icon?: boolean
+  show_label?: boolean
+  show_value?: boolean
+  show_freshness?: boolean
+  show_severity?: boolean
+  show_tooltip?: boolean
+  definition?: StatusIndicatorDefinition
+}
+
+export interface StatusLayoutConfiguration {
+  schema_version: 'power-monitor-status-layout/1.0'
+  registry_version: string
+  personalization_enabled: false
+  items: StatusLayoutItem[]
+}
+
+export interface StatusRegistryResponse {
+  registry_version: string
+  indicators: StatusIndicatorDefinition[]
+  zones: string[]
+  pages: string[]
+  breakpoints: StatusBreakpoint[]
+}
+
+export interface StatusResolvedLayout {
+  schema_version: string
+  registry_version: string
+  published_revision: number
+  page: string
+  roles: string[]
+  breakpoint: StatusBreakpoint
+  zones: Array<{ key: string; items: StatusLayoutItem[] }>
+  warnings: Array<{ code: string; indicator_key?: string; message: string }>
+  personalization_enabled: false
+}
+
+export interface StatusIndicatorValue {
+  status: string
+  severity: 'info' | 'success' | 'warning' | 'critical' | 'unknown'
+  display_value: string
+  detail?: string
+  freshness_at?: string
+}
+
+export interface StatusValuesResponse {
+  registry_version: string
+  generated_at: string
+  values: Record<string, StatusIndicatorValue>
+}
+
+export interface StatusAdminCatalog extends StatusRegistryResponse {
+  schema_version: string
+  published_revision: number
+  roles: Array<{ id: string; label: string }>
+  new_indicator_keys: string[]
+  excluded_status_surfaces: Array<{ surface: string; reason: string }>
+}
+
+export interface StatusLayoutDraftResponse {
+  exists: boolean
+  base_revision: number
+  draft_revision: number
+  previewed_revision?: number
+  configuration: StatusLayoutConfiguration
+  edited_by?: string
+  reason?: string
+  updated_at?: string
+  critical_hidden: Array<{ indicator_key: string; fallback: string }>
+}
+
+export interface StatusLayoutRevisionSummary {
+  id: string
+  revision: number
+  registry_version: string
+  created_by?: string
+  created_at: string
+  reason?: string
+  restored_from_id?: string
+}
+
+export interface StatusPreviewResponse {
+  layout: StatusResolvedLayout
+  values: Record<string, StatusIndicatorValue>
+  warnings: Array<{ code: string; indicator_key?: string; message: string }>
+}

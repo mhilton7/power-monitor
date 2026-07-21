@@ -203,6 +203,48 @@ class InterfaceTextState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class StatusLayoutRevision(Base):
+    __tablename__ = "status_layout_revisions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    revision: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    registry_version: Mapped[str] = mapped_column(String(64))
+    configuration: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    reason: Mapped[str | None] = mapped_column(String(500))
+    restored_from_id: Mapped[str | None] = mapped_column(
+        ForeignKey("status_layout_revisions.id", ondelete="SET NULL")
+    )
+
+
+class StatusLayoutDraft(Base):
+    __tablename__ = "status_layout_drafts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default="current")
+    base_revision: Mapped[int] = mapped_column(Integer, default=1)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    previewed_revision: Mapped[int | None] = mapped_column(Integer)
+    registry_version: Mapped[str] = mapped_column(String(64))
+    configuration: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    edited_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    reason: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class StatusLayoutState(Base):
+    __tablename__ = "status_layout_state"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default="current")
+    current_revision_id: Mapped[str | None] = mapped_column(
+        ForeignKey("status_layout_revisions.id", ondelete="RESTRICT")
+    )
+    current_revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class Site(TimestampMixin, Base):
     __tablename__ = "sites"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)

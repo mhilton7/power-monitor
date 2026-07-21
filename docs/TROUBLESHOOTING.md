@@ -51,3 +51,18 @@
   including parser warnings, missing dates, source conflicts, rate-change
   threshold, retroactivity, or provider-assumption changes. Keep the current
   verified version active and use manual approval only after verifying evidence.
+- **An indicator disappeared:** check the active page, role, breakpoint, site,
+  and the user's underlying data permission in **Status Indicators & Layout**.
+  Disabled items appear in the tray. Monitoring and alert rules continue even
+  when their summary indicator is hidden.
+- **A blank status row remains:** hard-refresh the published revision and inspect
+  the resolved `/api/v1/status-indicators/layout` response. A valid empty zone
+  has no `data-status-zone` wrapper; an old frontend image may still contain a
+  fixed page summary and should be upgraded by immutable digest.
+- **Publish reports a conflict:** another administrator published after this
+  draft's base revision. Export the draft if needed, reload the current revision,
+  reapply the intended changes, preview, and publish. Do not bypass the stale
+  revision check.
+- **A saved layout references a retired indicator:** the server ignores the
+  retired key and reports a warning so existing pages remain usable. Remove the
+  old override in a new draft; imports reject unknown keys.

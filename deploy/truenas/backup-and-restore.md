@@ -9,9 +9,10 @@ completed directory, and removes backups older than 30 days.
 
 Immediately after creation, the scheduler verifies checksums, decrypts the dump
 in tmpfs, restores it into a newly created temporary PostgreSQL database, checks
-the Alembic revision and table inventory, records verification in `backup_runs`,
-and drops the temporary database. A backup is not operationally accepted until
-its status is `verified`.
+the Alembic revision and table inventory, verifies that the published status-layout
+pointer resolves to one of the restored immutable revisions, records verification
+in `backup_runs`, and drops the temporary database. A backup is not operationally
+accepted until its status is `verified`.
 
 ## On-demand verified backup
 

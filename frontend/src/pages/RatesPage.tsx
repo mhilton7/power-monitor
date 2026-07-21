@@ -3,14 +3,8 @@ import { CheckCircle2, ClipboardCheck, Copy, Download, FileJson, Plus, RefreshCw
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import { EmptyState, ErrorState, LoadingState, PageTitle, Panel, StatusPill, formatTime } from '../components/UI'
+import { EmptyState, ErrorState, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
 import type { ManagedRatePlan } from '../rates'
-
-interface SourceSummary {
-  configuration: { enabled: boolean; schedule_cron: string; timezone: string; approval_mode: string; next_scheduled_run?: string } | null
-  last_successful_check?: string
-  sources: Array<{ id: string; enabled: boolean; last_success_at?: string; consecutive_failures: number }>
-}
 
 interface CandidateSummary { id: string; status: string; summary: { plan_code?: string; material_differences?: number }; created_at: string }
 
@@ -28,14 +22,12 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
   const importInput = useRef<HTMLInputElement>(null)
   const [jobId, setJobId] = useState<string>()
   const query = useQuery({ queryKey: ['managed-rates'], queryFn: () => api<ManagedRatePlan[]>('/api/v1/rates/plans') })
-  const sourceQuery = useQuery({ queryKey: ['rate-sources'], queryFn: () => api<SourceSummary>('/api/v1/admin/rate-sources'), enabled: canManage })
   const candidateQuery = useQuery({ queryKey: ['rate-candidates'], queryFn: () => api<CandidateSummary[]>('/api/v1/admin/rate-candidates'), enabled: canManage })
   const check = useMutation({ mutationFn: () => api<{ job_id: string }>('/api/v1/admin/rate-sources/check-now', { method: 'POST' }), onSuccess: (job) => { setJobId(job.job_id) } })
   const syncJob = useQuery({ queryKey: ['rate-sync-job', jobId], queryFn: () => api<{ status: string; progress: { completed?: number; source_ids?: string[] }; result?: { candidate_count?: number } }>(`/api/v1/jobs/${jobId}`), enabled: Boolean(jobId), refetchInterval: (result) => ['queued', 'running'].includes(result.state.data?.status ?? 'queued') ? 1500 : false })
   const clone = useMutation({ mutationFn: (id: string) => api<{ editor_url: string }>(`/api/v1/rates/plans/${id}/clone`, { method: 'POST' }), onSuccess: (result) => navigate(result.editor_url) })
   const activate = useMutation({ mutationFn: (id: string) => api<{ status: string }>(`/api/v1/rates/versions/${id}/activate`, { method: 'POST' }), onSuccess: () => void query.refetch() })
   const pending = candidateQuery.data?.filter((item) => item.status === 'pending_review') ?? []
-  const healthySources = sourceQuery.data?.sources.filter((item) => item.enabled && item.consecutive_failures === 0).length ?? 0
 
   async function exportVersion(id: string, code: string) {
     const result = await api<{ document: unknown; integrity_sha256: string }>(`/api/v1/rates/versions/${id}/export`)
@@ -62,14 +54,6 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
           <button className="button primary" onClick={() => navigate('/rates/new')}><Plus size={17} /> Custom plan</button>
         </>}
       />
-
-      {canManage && <div className="rate-sync-strip" aria-label="SCE synchronization status">
-        <div><span>Last successful check</span><strong>{formatTime(sourceQuery.data?.last_successful_check)}</strong></div>
-        <div><span>Approved sources</span><strong>{healthySources}/{sourceQuery.data?.sources.filter((item) => item.enabled).length ?? 0} healthy</strong></div>
-        <div><span>Next scheduled check</span><strong>{formatTime(sourceQuery.data?.configuration?.next_scheduled_run)}</strong></div>
-        <div><span>Review queue</span><button className="link-button" onClick={() => navigate('/rates/sources')}>{pending.length} candidate{pending.length === 1 ? '' : 's'}</button></div>
-        <div><span>Activation policy</span><strong>{sourceQuery.data?.configuration?.approval_mode.replaceAll('_', ' ') ?? 'Loading'}</strong></div>
-      </div>}
 
       {check.isSuccess && <p className="form-success" role="status">SCE source check {syncJob.data?.status ?? 'queued'} · {syncJob.data?.progress.completed ?? 0}/{syncJob.data?.progress.source_ids?.length ?? 4} sources · {syncJob.data?.result?.candidate_count ?? 0} candidates.</p>}
       {check.error && <ErrorState error={check.error} />}

@@ -301,6 +301,14 @@ TEXT_DEFINITIONS = (
         max_length=80,
     ),
     _text(
+        "navigation.status_indicators",
+        "Navigation",
+        "Status Indicators & Layout",
+        "Status Indicators & Layout",
+        "Status-indicator layout navigation label.",
+        max_length=80,
+    ),
+    _text(
         "pages.overview.title",
         "Page Titles & Subtitles",
         "Power Dashboard",
@@ -495,6 +503,22 @@ TEXT_DEFINITIONS = (
         "or security behavior.",
         "Dashboard & Login Text subtitle",
         "Interface text page subtitle.",
+        max_length=300,
+    ),
+    _text(
+        "pages.status_indicators.title",
+        "Page Titles & Subtitles",
+        "Status Indicators & Layout",
+        "Status Indicators & Layout title",
+        "Status indicator administration page title.",
+    ),
+    _text(
+        "pages.status_indicators.subtitle",
+        "Page Titles & Subtitles",
+        "Choose which status indicators are visible, where they appear, and how the dashboard "
+        "reorganizes them across screen sizes.",
+        "Status Indicators & Layout subtitle",
+        "Status indicator administration page subtitle.",
         max_length=300,
     ),
     _text(

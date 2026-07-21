@@ -19,6 +19,7 @@ const accessPermissions = [
   ['users.view', 'Administration', 'View users', true], ['users.manage', 'Administration', 'Manage users', true],
   ['roles.view', 'Administration', 'View roles', true], ['roles.manage', 'Administration', 'Manage roles', true],
   ['interface_text.view', 'Administration', 'View interface text', true], ['interface_text.manage', 'Administration', 'Manage interface text', true],
+  ['status_indicators.view', 'Administration', 'View status layouts', false], ['status_indicators.manage', 'Administration', 'Manage status layouts', true],
 ].map(([code, group, label, highRisk]) => ({ code, group, label, description: `${String(label)} permission`, high_risk: Boolean(highRisk) }))
 const textDefinitions = [
   ['general.application_name', 'General', 'Power Monitor', 'Application display name', 'public', 160],
@@ -36,6 +37,51 @@ const textDefinitions = [
   ['footer.dashboard', 'Footer & Support', 'Power Monitor Server', 'Dashboard footer text', 'authenticated', 160],
 ].map(([key, section, defaultValue, label, visibility, maxLength]) => ({ key, section, default: defaultValue, label, description: `${String(label)} description`, field_type: 'text', required: true, visibility, max_length: Number(maxLength), min_length: 1, line_breaks: false, url_companion: false, markdown: false, blank_allowed: false, preview_location: 'dashboard', current_value: defaultValue, published_revision: 0 }))
 
+const statusZones = ['global_header_left', 'global_header_center', 'global_header_right', 'global_status_row', 'sidebar_upper', 'sidebar_lower', 'global_footer', 'page_header_primary', 'page_header_secondary', 'page_status_row', 'page_summary_strip', 'page_footer', 'mobile_header', 'mobile_status_strip', 'mobile_status_drawer']
+const statusPages = ['overview', 'devices', 'device_detail', 'topology', 'history', 'rates', 'rate_sources', 'alerts', 'enrollment', 'administration', 'backups']
+const statusDefinition = (key: string, label: string, category: string, zone: string, order: number, pages = statusPages, permission = 'overview.view', criticalFallback?: string) => ({
+  key, default_label: label, description: `${label} status from existing server data.`, category, data_source: key, current_value_schema: { status: 'string', display_value: 'string' }, severity_capability: ['info', 'success', 'warning', 'critical', 'unknown'], default_enabled: true, default_zone: zone, allowed_zones: zone.startsWith('global') ? [...statusZones.filter((item) => item.startsWith('global')), ...statusZones.filter((item) => item.startsWith('mobile'))] : [...statusZones.filter((item) => item.startsWith('page')), ...statusZones.filter((item) => item.startsWith('mobile'))], default_order: order, supported_pages: pages, global_shell_support: zone.startsWith('global'), minimum_display_width: 140, preferred_display_width: 220, presentations: ['compact', 'standard', 'detailed'], icon_supported: true, label_supported: true, value_supported: true, freshness_supported: true, role_visibility_supported: true, permission_required: permission, configurable: true, critical_fallback: criticalFallback, renderer: key.includes('power') || key.includes('peak') ? 'power' : key.includes('count') || key.includes('online') || key.includes('offline') ? 'count' : 'health', icon: key.includes('alert') ? 'bell' : key.includes('power') ? 'zap' : 'activity', registry_version: 'status-indicators/1.0',
+})
+const statusDefinitions = [
+  statusDefinition('data.live_connection', 'Live data', 'Live data', 'global_header_center', 10, statusPages, 'overview.view', 'Device disconnect alerts remain active.'),
+  statusDefinition('data.current_power', 'Current load', 'Live data', 'global_header_center', 20),
+  statusDefinition('alerts.active_count', 'Active alerts', 'Alerts', 'global_header_right', 10, statusPages, 'alerts.view', 'Alerts remain on Alerts & Notifications.'),
+  statusDefinition('alerts.critical_count', 'Critical alerts', 'Alerts', 'page_summary_strip', 10, ['alerts'], 'alerts.view', 'Critical alerts remain in the timeline.'),
+  statusDefinition('alerts.warning_count', 'Warning alerts', 'Alerts', 'page_summary_strip', 20, ['alerts'], 'alerts.view'),
+  statusDefinition('alerts.enabled_rule_count', 'Rules enabled', 'Alerts', 'page_summary_strip', 30, ['alerts'], 'alerts.view'),
+  statusDefinition('alerts.disconnect_rule_state', 'Disconnect alerts', 'Alerts', 'page_summary_strip', 40, ['alerts'], 'alerts.view', 'Heartbeat monitoring remains active.'),
+  statusDefinition('device.online_count', 'Devices online', 'Devices', 'page_status_row', 10, ['overview', 'devices'], 'devices.view', 'Device status remains on Devices.'),
+  statusDefinition('device.offline_count', 'Offline or stale', 'Devices', 'page_status_row', 20, ['overview', 'devices'], 'devices.view', 'Disconnect alerts remain active.'),
+  statusDefinition('data.energy_today', 'Energy today', 'Energy', 'page_summary_strip', 10, ['overview']),
+  statusDefinition('rate.current_period', 'Current rate period', 'Rates', 'page_summary_strip', 20, ['overview', 'rates', 'history'], 'rates.view'),
+  statusDefinition('rate.source_health', 'Rate source health', 'Rates', 'page_status_row', 10, ['rates', 'rate_sources'], 'rates.view'),
+  statusDefinition('rate.update_pending', 'Rate update pending', 'Rates', 'page_status_row', 20, ['rates', 'rate_sources'], 'rates.view'),
+  statusDefinition('rate.last_successful_check', 'Last source check', 'Rates', 'page_summary_strip', 10, ['rates', 'rate_sources'], 'rates.manage_sources'),
+  statusDefinition('rate.next_scheduled_check', 'Next source check', 'Rates', 'page_summary_strip', 20, ['rates', 'rate_sources'], 'rates.manage_sources'),
+  statusDefinition('rate.review_policy', 'Review policy', 'Rates', 'page_summary_strip', 30, ['rates', 'rate_sources'], 'rates.manage_sources'),
+  statusDefinition('data.recent_peak', 'Recent peak', 'Energy', 'page_summary_strip', 30, ['overview', 'history']),
+  statusDefinition('system.worker_health', 'Worker', 'System', 'global_status_row', 10, statusPages, 'settings.view', 'Worker alerts and diagnostics remain active.'),
+]
+const defaultStatusConfiguration = () => ({
+  schema_version: 'power-monitor-status-layout/1.0' as const,
+  registry_version: 'status-indicators/1.0', personalization_enabled: false as const,
+  items: statusDefinitions.map((definition) => ({ indicator_key: definition.key, page: '*', role: '*', breakpoint: 'default', visible: true, zone: definition.default_zone, order: definition.default_order, density: 'standard', show_icon: true, show_label: true, show_value: true, show_freshness: true, show_severity: true, show_tooltip: true })),
+})
+const statusValues = Object.fromEntries(statusDefinitions.map((definition) => [definition.key, { status: 'healthy', severity: 'success', display_value: definition.key === 'data.current_power' ? '960 W' : definition.key === 'alerts.active_count' ? '1' : definition.key === 'device.online_count' ? '1' : definition.key === 'device.offline_count' ? '0' : definition.key === 'data.energy_today' ? '12.50 kWh' : definition.key === 'rate.current_period' ? 'On-peak' : definition.key === 'data.recent_peak' ? '1,800 W' : 'Healthy', detail: `${definition.default_label} detail`, freshness_at: '2026-07-20T19:05:00Z' }]))
+
+function resolveMockStatus(configuration: ReturnType<typeof defaultStatusConfiguration>, pageName: string, breakpoint: string, role = 'admin') {
+  const items = statusDefinitions.flatMap((definition) => {
+    if (!definition.global_shell_support && !definition.supported_pages.includes(pageName)) return []
+    const matches = configuration.items.filter((item) => item.indicator_key === definition.key && (item.page === '*' || item.page === pageName) && (item.role === '*' || item.role === role) && (item.breakpoint === 'default' || item.breakpoint === breakpoint))
+    const state = matches.reduce((value, item) => ({ ...value, ...item }), configuration.items.find((item) => item.indicator_key === definition.key) ?? { visible: definition.default_enabled, zone: definition.default_zone, order: definition.default_order })
+    if (!state.visible) return []
+    let zone = state.zone
+    if (breakpoint === 'mobile' && !matches.some((item) => item.breakpoint === 'mobile' && item.zone)) zone = zone.startsWith('global_header') ? 'mobile_header' : zone === 'global_status_row' || zone === 'page_status_row' ? 'mobile_status_strip' : 'mobile_status_drawer'
+    return [{ ...state, indicator_key: definition.key, zone, definition }]
+  })
+  return { schema_version: 'power-monitor-status-layout/1.0', registry_version: 'status-indicators/1.0', published_revision: 1, page: pageName, roles: [role], breakpoint, zones: statusZones.map((key) => ({ key, items: items.filter((item) => item.zone === key).sort((a, b) => Number(a.order) - Number(b.order)) })).filter((zone) => zone.items.length), warnings: [], personalization_enabled: false }
+}
+
 async function mockApplication(page: Page, roles: string[] = ['admin']) {
   let enrollmentCounter = 0
   let sensorRemoved = false
@@ -52,6 +98,12 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
   let publishedText: Record<string, string> = {}
   let rateConfiguration = { enabled: true, schedule_cron: '15 3 * * 0', timezone: 'America/Los_Angeles', jitter_minutes: 20, approval_mode: 'manual_review', auto_activate_verified: false, next_scheduled_run: '2026-07-26T10:15:00Z' }
   let rateSources: Array<{ id: string; name: string; url: string; parser_id: string; effective_from?: string; enabled: boolean; last_success_at?: string; consecutive_failures: number }> = [{ id: 'source-1', name: 'SCE public TOU page', url: 'https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans', parser_id: 'sce_public_tou_html_v1', effective_from: '2026-06-01', enabled: true, last_success_at: '2026-07-19T10:15:00Z', consecutive_failures: 0 }]
+  let statusRevision = 1
+  let statusPublished = defaultStatusConfiguration()
+  let statusDraft = structuredClone(statusPublished)
+  let statusDraftRevision = 0
+  let statusPreviewedRevision = 0
+  const statusRevisions = [{ id: 'status-revision-1', revision: 1, registry_version: 'status-indicators/1.0', created_by: 'user-1', created_at: '2026-07-20T10:00:00Z', reason: 'Compiled current layout' }]
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -60,6 +112,38 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     if (path === '/api/v1/auth/session') body = session(roles)
     else if (path === '/api/v1/auth/reauthenticate') body = { reauthenticated: true, valid_for_seconds: 300 }
     else if (path === '/api/v1/interface-text') body = { revision: textRevision, values: publishedText }
+    else if (path === '/api/v1/status-indicators/registry') body = { registry_version: 'status-indicators/1.0', indicators: statusDefinitions, zones: statusZones, pages: statusPages, breakpoints: ['desktop', 'tablet', 'mobile'] }
+    else if (path === '/api/v1/status-indicators/layout') body = resolveMockStatus(statusPublished, url.searchParams.get('page') ?? 'overview', url.searchParams.get('breakpoint') ?? 'desktop', roles[0] ?? 'viewer')
+    else if (path === '/api/v1/status-indicators/values') body = { registry_version: 'status-indicators/1.0', generated_at: '2026-07-20T19:05:00Z', values: statusValues }
+    else if (path === '/api/v1/admin/status-indicators/catalog') body = { registry_version: 'status-indicators/1.0', schema_version: 'power-monitor-status-layout/1.0', published_revision: statusRevision, indicators: statusDefinitions, zones: statusZones, pages: statusPages, breakpoints: ['desktop', 'tablet', 'mobile'], roles: [{ id: 'admin', label: 'Administrator' }, { id: 'operator', label: 'Operator' }, { id: 'viewer', label: 'Read-Only Viewer' }], new_indicator_keys: [], excluded_status_surfaces: [{ surface: 'record_row_status', reason: 'Record states stay attached to their records.' }, { surface: 'functional_feedback', reason: 'Validation and operation errors remain mandatory.' }, { surface: 'site_selector', reason: 'The site selector remains an authorization scope control.' }] }
+    else if (path === '/api/v1/admin/status-indicators/draft' && request.method() === 'GET') body = { exists: statusDraftRevision > 0, base_revision: statusRevision, draft_revision: statusDraftRevision, previewed_revision: statusPreviewedRevision || undefined, configuration: statusDraft, critical_hidden: statusDraft.items.filter((item) => !item.visible && statusDefinitions.find((definition) => definition.key === item.indicator_key)?.critical_fallback).map((item) => ({ indicator_key: item.indicator_key, fallback: 'Related workflow remains active.' })) }
+    else if (path === '/api/v1/admin/status-indicators/draft' && request.method() === 'PUT') { const update = JSON.parse(request.postData() ?? '{}') as { configuration: ReturnType<typeof defaultStatusConfiguration> }; statusDraft = update.configuration; statusDraftRevision += 1; statusPreviewedRevision = 0; body = { exists: true, base_revision: statusRevision, draft_revision: statusDraftRevision, configuration: statusDraft, critical_hidden: [] } }
+    else if (path === '/api/v1/admin/status-indicators/draft' && request.method() === 'DELETE') { statusDraft = structuredClone(statusPublished); statusDraftRevision = 0; statusPreviewedRevision = 0; await route.fulfill({ status: 204, body: '' }); return }
+    else if (path === '/api/v1/admin/status-indicators/validate') body = { valid: true, registry_version: 'status-indicators/1.0', item_count: statusDraft.items.length, warnings: [], critical_hidden: [] }
+    else if (path === '/api/v1/admin/status-indicators/preview') {
+      const previewRequest = JSON.parse(request.postData() ?? '{}') as { configuration?: ReturnType<typeof defaultStatusConfiguration>; page: string; role: string; breakpoint: string; scenario?: string }
+      const previewConfiguration = structuredClone(previewRequest.configuration ?? statusDraft)
+      const firstItem = previewConfiguration.items[0]
+      const secondItem = previewConfiguration.items[1]
+      if (previewRequest.scenario === 'one_disabled' && firstItem) firstItem.visible = false
+      if (previewRequest.scenario === 'two_disabled') {
+        if (firstItem) firstItem.visible = false
+        if (secondItem) secondItem.visible = false
+      }
+      if (previewRequest.scenario === 'one_only') previewConfiguration.items.forEach((item, index) => { item.visible = index === 0 })
+      if (previewRequest.scenario === 'empty_zone' && firstItem) previewConfiguration.items.filter((item) => item.zone === firstItem.zone).forEach((item) => { item.visible = false })
+      statusPreviewedRevision = statusDraftRevision
+      const previewLayout = resolveMockStatus(previewConfiguration, previewRequest.page, previewRequest.breakpoint, previewRequest.role)
+      const firstPreviewItem = previewLayout.zones[0]?.items[0]
+      if (previewRequest.scenario === 'long_label' && firstPreviewItem) firstPreviewItem.definition = { ...firstPreviewItem.definition, default_label: 'A deliberately long translated indicator label that wraps safely' }
+      body = { layout: previewLayout, values: statusValues, warnings: [] }
+    }
+    else if (path === '/api/v1/admin/status-indicators/publish') { statusPublished = structuredClone(statusDraft); statusRevision += 1; statusRevisions.unshift({ id: `status-revision-${statusRevision}`, revision: statusRevision, registry_version: 'status-indicators/1.0', created_by: 'user-1', created_at: '2026-07-20T19:10:00Z', reason: 'Published layout' }); statusDraftRevision = 0; statusPreviewedRevision = 0; body = { ...statusRevisions[0], configuration: statusPublished } }
+    else if (path === '/api/v1/admin/status-indicators/revisions') body = { revisions: statusRevisions }
+    else if (path.match(/^\/api\/v1\/admin\/status-indicators\/revisions\/[^/]+\/restore$/)) { statusRevision += 1; statusPublished = defaultStatusConfiguration(); statusDraft = structuredClone(statusPublished); body = { id: `status-revision-${statusRevision}`, revision: statusRevision, restored_from_id: path.split('/').at(-2), configuration: statusPublished } }
+    else if (path === '/api/v1/admin/status-indicators/reset') { statusDraft = defaultStatusConfiguration(); statusDraftRevision += 1; statusPreviewedRevision = 0; body = { exists: true, base_revision: statusRevision, draft_revision: statusDraftRevision, configuration: statusDraft, critical_hidden: [] } }
+    else if (path === '/api/v1/admin/status-indicators/export') body = { schema_version: 'power-monitor-status-layout/1.0', registry_version: 'status-indicators/1.0', published_revision: statusRevision, configuration: url.searchParams.get('draft') === 'true' ? statusDraft : statusPublished }
+    else if (path === '/api/v1/admin/status-indicators/import') { const document = JSON.parse(request.postData() ?? '{}') as { configuration: ReturnType<typeof defaultStatusConfiguration> }; statusDraft = document.configuration; statusDraftRevision += 1; statusPreviewedRevision = 0; body = { exists: true, base_revision: statusRevision, draft_revision: statusDraftRevision, configuration: statusDraft, critical_hidden: [], requires_preview: true, difference_summary: [] } }
     else if (path === '/api/v1/public/interface-text') body = { revision: textRevision, values: Object.fromEntries(Object.entries(publishedText).filter(([key]) => textDefinitions.some((definition) => definition.key === key && definition.visibility === 'public'))) }
     else if (path === '/api/v1/admin/permissions') body = { permissions: accessPermissions, dependencies: { 'users.manage': ['users.view'], 'roles.manage': ['roles.view'], 'interface_text.manage': ['interface_text.view'] } }
     else if (path === '/api/v1/admin/roles') body = { roles: [
@@ -220,6 +304,15 @@ async function captureDashboardCorrection(page: Page, filename: string) {
   await page.screenshot({
     path: `../docs/screenshots/dashboard-corrections/${filename}`,
     fullPage: false,
+  })
+}
+
+async function captureStatusLayout(page: Page, filename: string) {
+  if (process.env.CAPTURE_STATUS_LAYOUT_SCREENSHOTS !== '1') return
+  await page.evaluate(() => { window.scrollTo(0, 0) })
+  await page.screenshot({
+    path: `../docs/screenshots/status-indicators/${filename}`,
+    fullPage: true,
   })
 }
 
@@ -617,7 +710,7 @@ test('search and dropdown controls keep compact pointer focus and visible keyboa
   await page.keyboard.type('Garage')
   await expect(search).toHaveValue('Garage')
 
-  const status = page.getByLabel('Status')
+  const status = page.getByRole('combobox', { name: /^Status/ })
   await status.focus()
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
@@ -655,4 +748,85 @@ test('mobile navigation opens with keyboard-operable controls', async ({ page })
   await page.keyboard.press('Enter')
   await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Devices' })).toBeVisible()
+})
+
+test('administrator configures, previews, publishes, and restores a self-correcting status layout', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/administration/status-indicators')
+  await expect(page.getByRole('heading', { name: 'Status Indicators & Layout' })).toBeVisible()
+  await expect(page.getByText('Monitoring remains active', { exact: true })).toBeVisible()
+  await captureStatusLayout(page, 'default-desktop.png')
+
+  const energy = page.locator('.status-config-list > article[data-indicator-key="data.energy_today"]')
+  await energy.getByRole('checkbox', { name: 'Show Energy today' }).click()
+  await expect(page.getByRole('heading', { name: 'Disabled indicators' })).toBeVisible()
+  await expect(page.locator('.disabled-indicators [data-indicator-key="data.energy_today"]')).toHaveCount(0)
+  await expect(page.locator('.disabled-indicator-grid').getByText('Energy today', { exact: true })).toBeVisible()
+
+  const offline = page.locator('.status-config-list > article[data-indicator-key="device.offline_count"]')
+  await offline.getByLabel('Zone').selectOption('page_summary_strip')
+  await offline.getByRole('button', { name: 'Move to beginning' }).click()
+  await expect(page.getByText('Offline or stale moved first.')).toBeAttached()
+
+  await page.getByLabel('Viewport').selectOption('tablet')
+  await expect(page.getByTestId('status-layout-preview')).toHaveClass(/preview-tablet/)
+  await captureStatusLayout(page, 'default-tablet.png')
+  await page.getByLabel('Viewport').selectOption('mobile')
+  await expect(page.getByTestId('status-layout-preview')).toHaveClass(/preview-mobile/)
+  await captureStatusLayout(page, 'default-mobile-preview.png')
+  await page.getByLabel('Scenario').selectOption('empty_zone')
+  expect(
+    await page
+      .getByTestId('status-layout-preview')
+      .locator('[data-status-zone]')
+      .evaluateAll((zones) => zones.every((zone) => zone.children.length > 0)),
+  ).toBe(true)
+  await captureStatusLayout(page, 'empty-zone-mobile.png')
+  await page.getByLabel('Viewport').selectOption('desktop')
+  await page.getByLabel('Scenario').selectOption('long_label')
+  await expect(page.getByText(/deliberately long translated indicator label/i)).toBeVisible()
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const zoomOverflow = await page.locator('body *').evaluateAll((elements) => elements
+    .filter((element) => element.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
+    .slice(0, 10)
+    .map((element) => `${element.tagName.toLowerCase()}.${element.getAttribute('class') ?? ''}: ${element.textContent?.trim().slice(0, 60)}`))
+  expect(zoomOverflow).toEqual([])
+  await page.evaluate(() => { document.documentElement.style.fontSize = '' })
+  await captureStatusLayout(page, 'long-label-desktop.png')
+
+  await page.getByRole('button', { name: 'Save draft' }).first().click()
+  await expect(page.getByText(/Draft revision 1 saved/)).toBeVisible()
+  await page.getByLabel('Scenario').selectOption('all_defaults')
+  await page.getByRole('button', { name: 'Refresh preview' }).click()
+  await expect(page.getByText('Current draft previewed')).toBeVisible()
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Publish layout' }).click()
+  await expect(page.getByText(/Published layout is active/)).toBeVisible()
+
+  await page.goto('/')
+  await expect(page.locator('[data-indicator-key="data.energy_today"]')).toHaveCount(0)
+  await expect(page.locator('[data-indicator-key="device.offline_count"]')).toBeVisible()
+  expect(
+    await page
+      .locator('[data-status-zone]')
+      .evaluateAll((zones) => zones.every((zone) => zone.children.length > 0)),
+  ).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  await page.goto('/alerts')
+  await expect(page.getByText('Synchronization backlog')).toBeVisible()
+
+  await page.goto('/administration/status-indicators')
+  const revisionOne = page.locator('.revision-list article').filter({ hasText: 'Revision 1' })
+  page.once('dialog', (dialog) => dialog.accept())
+  await revisionOne.getByRole('button', { name: 'Restore' }).click()
+  await expect(page.getByText(/restored as a new immutable revision/)).toBeVisible()
+  await page.goto('/')
+  await expect(page.locator('[data-indicator-key="data.energy_today"]')).toBeVisible()
+
+  await page.setViewportSize({ width: 375, height: 760 })
+  await page.reload()
+  await expect(page.locator('[data-status-zone="mobile_header"]')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  await captureStatusLayout(page, 'published-mobile.png')
 })

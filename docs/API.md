@@ -28,6 +28,17 @@ public keys with revision/ETag caching. Draft, preview, publish, reset,
 revision/restore, import, and export endpoints are under
 `/api/v1/admin/interface-text`. See [Interface text](INTERFACE_TEXT.md).
 
+Status presentation uses authenticated `GET /api/v1/status-indicators/registry`,
+`/layout`, and `/values`. The layout route resolves page, role, breakpoint,
+permission, and optional site scope on the server; values are collected in one
+bounded batch from the existing status sources. Administrator catalog, draft,
+validation, preview, publish, reset, immutable revisions/restore, import, and
+export routes are under `/api/v1/admin/status-indicators`. Writes require the
+existing CSRF proof and `status_indicators.manage`; reads require
+`status_indicators.view` plus the definition's underlying data permission. See
+[Status indicator registry](STATUS_INDICATORS.md) and
+[layout administration](STATUS_LAYOUT_ADMINISTRATION.md).
+
 Rate-plan lifecycle endpoints live under `/api/v1/rates/plans`,
 `/api/v1/rates/versions`, and `/api/v1/rates/assignments`. Approved-source,
 check, artifact, and candidate-review endpoints live under

@@ -47,7 +47,16 @@ tables=$(psql --dbname="$test_db" --tuples-only --no-align -v ON_ERROR_STOP=1 -c
   echo "restored database integrity checks failed" >&2
   exit 66
 }
+status_layout_revisions=0
+if [[ -n $(psql --dbname="$test_db" --tuples-only --no-align -v ON_ERROR_STOP=1 -c "SELECT to_regclass('public.status_layout_state')") ]]; then
+  status_layout_state=$(psql --dbname="$test_db" --tuples-only --no-align -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM status_layout_state AS state JOIN status_layout_revisions AS revision ON revision.id = state.current_revision_id WHERE state.id='current' AND state.current_revision = revision.revision")
+  status_layout_revisions=$(psql --dbname="$test_db" --tuples-only --no-align -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM status_layout_revisions")
+  [[ "$status_layout_state" -eq 1 && "$status_layout_revisions" -gt 0 ]] || {
+    echo "restored status-layout revision integrity check failed" >&2
+    exit 66
+  }
+fi
 manifest_hash=$(sha256sum "$resolved/manifest.json" | cut -d' ' -f1)
-psql -v ON_ERROR_STOP=1 -c "UPDATE backup_runs SET status='verified', verified_at=now(), verification_details=jsonb_build_object('migration_revision', '${revision}', 'table_count', ${tables}) WHERE manifest_hash='${manifest_hash}'"
-printf 'verified backup=%s migration=%s tables=%s\n' "$resolved" "$revision" "$tables"
+psql -v ON_ERROR_STOP=1 -c "UPDATE backup_runs SET status='verified', verified_at=now(), verification_details=jsonb_build_object('migration_revision', '${revision}', 'table_count', ${tables}, 'status_layout_revisions', ${status_layout_revisions}) WHERE manifest_hash='${manifest_hash}'"
+printf 'verified backup=%s migration=%s tables=%s status_layout_revisions=%s\n' "$resolved" "$revision" "$tables" "$status_layout_revisions"
 write_application_log backup.verified info

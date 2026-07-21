@@ -1295,7 +1295,7 @@ async def unclaim_device(
         .where(Device.id == device_id, Device.lifecycle_status == "active")
         .values(lifecycle_status="decommissioning")
     )
-    if claimed.rowcount != 1:  # type: ignore[attr-defined]
+    if claimed.rowcount != 1:
         await session.rollback()
         current = await session.get(Device, device_id)
         if current:

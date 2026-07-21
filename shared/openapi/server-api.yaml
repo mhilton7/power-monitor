@@ -6123,6 +6123,645 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/status-indicators/registry:
+    get:
+      tags:
+      - status indicators
+      summary: Get Registry
+      operationId: get_registry_api_v1_status_indicators_registry_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Registry Api V1 Status Indicators Registry Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/status-indicators/layout:
+    get:
+      tags:
+      - status indicators
+      summary: Get Resolved Layout
+      operationId: get_resolved_layout_api_v1_status_indicators_layout_get
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: string
+          default: overview
+          title: Page
+      - name: breakpoint
+        in: query
+        required: false
+        schema:
+          type: string
+          default: desktop
+          title: Breakpoint
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Resolved Layout Api V1 Status Indicators Layout
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/status-indicators/values:
+    get:
+      tags:
+      - status indicators
+      summary: Get Status Values
+      operationId: get_status_values_api_v1_status_indicators_values_get
+      parameters:
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+      - name: device_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Device Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Status Values Api V1 Status Indicators Values
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/catalog:
+    get:
+      tags:
+      - status indicators
+      summary: Get Admin Catalog
+      operationId: get_admin_catalog_api_v1_admin_status_indicators_catalog_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Admin Catalog Api V1 Admin Status Indicators Catalog
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/draft:
+    get:
+      tags:
+      - status indicators
+      summary: Get Draft
+      operationId: get_draft_api_v1_admin_status_indicators_draft_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Draft Api V1 Admin Status Indicators Draft Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - status indicators
+      summary: Save Draft
+      operationId: save_draft_api_v1_admin_status_indicators_draft_put
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutDraftWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Save Draft Api V1 Admin Status Indicators Draft Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - status indicators
+      summary: Discard Draft
+      operationId: discard_draft_api_v1_admin_status_indicators_draft_delete
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/validate:
+    post:
+      tags:
+      - status indicators
+      summary: Validate Layout
+      operationId: validate_layout_api_v1_admin_status_indicators_validate_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutValidate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Validate Layout Api V1 Admin Status Indicators Validate
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/preview:
+    post:
+      tags:
+      - status indicators
+      summary: Preview Layout
+      operationId: preview_layout_api_v1_admin_status_indicators_preview_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutPreview'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Preview Layout Api V1 Admin Status Indicators Preview
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/publish:
+    post:
+      tags:
+      - status indicators
+      summary: Publish Layout
+      operationId: publish_layout_api_v1_admin_status_indicators_publish_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutPublish'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Publish Layout Api V1 Admin Status Indicators Publish
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/reset:
+    post:
+      tags:
+      - status indicators
+      summary: Reset Layout
+      operationId: reset_layout_api_v1_admin_status_indicators_reset_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutReset'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Reset Layout Api V1 Admin Status Indicators Reset
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/revisions:
+    get:
+      tags:
+      - status indicators
+      summary: List Revisions
+      operationId: list_revisions_api_v1_admin_status_indicators_revisions_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Revisions Api V1 Admin Status Indicators Revisions
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/revisions/{revision_id}:
+    get:
+      tags:
+      - status indicators
+      summary: Get Revision
+      operationId: get_revision_api_v1_admin_status_indicators_revisions__revision_id__get
+      parameters:
+      - name: revision_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Revision Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Revision Api V1 Admin Status Indicators Revisions  Revision
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/revisions/{revision_id}/restore:
+    post:
+      tags:
+      - status indicators
+      summary: Restore Revision
+      operationId: restore_revision_api_v1_admin_status_indicators_revisions__revision_id__restore_post
+      parameters:
+      - name: revision_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Revision Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutRestore'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Restore Revision Api V1 Admin Status Indicators Revisions  Revision
+                  Id  Restore Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/export:
+    get:
+      tags:
+      - status indicators
+      summary: Export Layout
+      operationId: export_layout_api_v1_admin_status_indicators_export_get
+      parameters:
+      - name: draft
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Draft
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Export Layout Api V1 Admin Status Indicators Export
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/import:
+    post:
+      tags:
+      - status indicators
+      summary: Import Layout
+      operationId: import_layout_api_v1_admin_status_indicators_import_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutImport'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Import Layout Api V1 Admin Status Indicators Import
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/firmware-releases:
     get:
       tags:
@@ -9245,6 +9884,225 @@ components:
       - name
       - id
       title: SiteView
+    StatusLayoutDraftWrite:
+      properties:
+        base_revision:
+          type: integer
+          minimum: 0.0
+          title: Base Revision
+        draft_revision:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Draft Revision
+        configuration:
+          additionalProperties: true
+          type: object
+          title: Configuration
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - base_revision
+      - configuration
+      title: StatusLayoutDraftWrite
+    StatusLayoutImport:
+      properties:
+        schema_version:
+          type: string
+          const: power-monitor-status-layout/1.0
+          title: Schema Version
+        registry_version:
+          type: string
+          maxLength: 64
+          title: Registry Version
+        base_revision:
+          type: integer
+          minimum: 0.0
+          title: Base Revision
+        configuration:
+          additionalProperties: true
+          type: object
+          title: Configuration
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - schema_version
+      - registry_version
+      - base_revision
+      - configuration
+      title: StatusLayoutImport
+    StatusLayoutPreview:
+      properties:
+        configuration:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Configuration
+        page:
+          type: string
+          maxLength: 64
+          title: Page
+          default: overview
+        role:
+          type: string
+          maxLength: 32
+          title: Role
+          default: admin
+        breakpoint:
+          type: string
+          enum:
+          - desktop
+          - tablet
+          - mobile
+          title: Breakpoint
+          default: desktop
+        scenario:
+          type: string
+          enum:
+          - all_defaults
+          - one_disabled
+          - two_disabled
+          - one_only
+          - empty_zone
+          - many
+          - warning
+          - critical
+          - long_label
+          title: Scenario
+          default: all_defaults
+      additionalProperties: false
+      type: object
+      title: StatusLayoutPreview
+    StatusLayoutPublish:
+      properties:
+        base_revision:
+          type: integer
+          minimum: 0.0
+          title: Base Revision
+        draft_revision:
+          type: integer
+          minimum: 1.0
+          title: Draft Revision
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Reason
+        confirm:
+          type: boolean
+          title: Confirm
+          default: false
+        confirm_critical:
+          type: boolean
+          title: Confirm Critical
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - base_revision
+      - draft_revision
+      title: StatusLayoutPublish
+    StatusLayoutReset:
+      properties:
+        base_revision:
+          type: integer
+          minimum: 0.0
+          title: Base Revision
+        draft_revision:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Draft Revision
+        scope:
+          type: string
+          enum:
+          - indicator
+          - zone
+          - page
+          - all
+          title: Scope
+        indicator_key:
+          anyOf:
+          - type: string
+            maxLength: 120
+          - type: 'null'
+          title: Indicator Key
+        zone:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Zone
+        page:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Page
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - base_revision
+      - scope
+      title: StatusLayoutReset
+    StatusLayoutRestore:
+      properties:
+        base_revision:
+          type: integer
+          minimum: 0.0
+          title: Base Revision
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Reason
+        confirm:
+          type: boolean
+          title: Confirm
+          default: false
+        confirm_critical:
+          type: boolean
+          title: Confirm Critical
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - base_revision
+      title: StatusLayoutRestore
+    StatusLayoutValidate:
+      properties:
+        configuration:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Configuration
+      additionalProperties: false
+      type: object
+      title: StatusLayoutValidate
     SubsystemHealth:
       properties:
         ok:

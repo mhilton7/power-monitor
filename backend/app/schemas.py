@@ -538,6 +538,68 @@ class InterfaceTextImport(ApiModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
+class StatusLayoutDraftWrite(ApiModel):
+    base_revision: int = Field(ge=0)
+    draft_revision: int | None = Field(default=None, ge=0)
+    configuration: dict[str, Any]
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class StatusLayoutValidate(ApiModel):
+    configuration: dict[str, Any] | None = None
+
+
+class StatusLayoutPreview(ApiModel):
+    configuration: dict[str, Any] | None = None
+    page: str = Field(default="overview", max_length=64)
+    role: str = Field(default="admin", max_length=32)
+    breakpoint: Literal["desktop", "tablet", "mobile"] = "desktop"
+    scenario: Literal[
+        "all_defaults",
+        "one_disabled",
+        "two_disabled",
+        "one_only",
+        "empty_zone",
+        "many",
+        "warning",
+        "critical",
+        "long_label",
+    ] = "all_defaults"
+
+
+class StatusLayoutPublish(ApiModel):
+    base_revision: int = Field(ge=0)
+    draft_revision: int = Field(ge=1)
+    reason: str | None = Field(default=None, max_length=500)
+    confirm: bool = False
+    confirm_critical: bool = False
+
+
+class StatusLayoutReset(ApiModel):
+    base_revision: int = Field(ge=0)
+    draft_revision: int | None = Field(default=None, ge=0)
+    scope: Literal["indicator", "zone", "page", "all"]
+    indicator_key: str | None = Field(default=None, max_length=120)
+    zone: str | None = Field(default=None, max_length=64)
+    page: str | None = Field(default=None, max_length=64)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class StatusLayoutRestore(ApiModel):
+    base_revision: int = Field(ge=0)
+    reason: str | None = Field(default=None, max_length=500)
+    confirm: bool = False
+    confirm_critical: bool = False
+
+
+class StatusLayoutImport(ApiModel):
+    schema_version: Literal["power-monitor-status-layout/1.0"]
+    registry_version: str = Field(max_length=64)
+    base_revision: int = Field(ge=0)
+    configuration: dict[str, Any]
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class PasswordReset(ApiModel):
     new_password: str = Field(min_length=14, max_length=1024)
 

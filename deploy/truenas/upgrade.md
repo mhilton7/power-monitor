@@ -44,6 +44,15 @@ and existing built-in role identifiers remain unchanged. After upgrade, verify
 that at least one Administrator opens both new Administration pages before
 narrowing any user's site scope.
 
+For the Status Indicators & Layout release, migration `20260720_0006` adds
+append-only status-layout revision and draft tables, the current-revision
+pointer, and `status_indicators.view` / `status_indicators.manage` grants. It
+does not add a Compose service, image, dataset, mount, secret, port, capability,
+or environment variable. After the migration succeeds, sign in as an
+Administrator, open **Administration > Status Indicators & Layout**, preview
+the default desktop/tablet/mobile layouts, and verify that hiding a test
+indicator does not suppress its alert before publishing intentional changes.
+
 If migration fails, do not bypass its dependency or point the old application at
 a partly migrated database. Preserve logs and follow the rollback path.
 

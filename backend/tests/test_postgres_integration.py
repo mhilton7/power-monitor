@@ -80,8 +80,8 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 FROM devices WHERE id = 'device-migration'
                 """
             )
-            assert revision == "20260720_0005"
-            assert table_count == 74
+            assert revision == "20260720_0006"
+            assert table_count == 77
             assert dict(migrated) == {
                 "lifecycle_status": "decommissioned",
                 "lifecycle_generation": 1,
@@ -95,7 +95,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260720_0005"
+                "20260720_0006"
             )
 
             await connection.execute("DROP SCHEMA public CASCADE")
@@ -127,20 +127,35 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 await connection.fetchval(
                     "SELECT count(*) FROM role_permissions WHERE role_name = 'admin'"
                 )
-                == 42
+                == 44
             )
+            status_state = await connection.fetchrow(
+                """
+                SELECT state.current_revision, revision.registry_version,
+                       revision.configuration->>'schema_version' AS schema_version
+                FROM status_layout_state AS state
+                JOIN status_layout_revisions AS revision
+                  ON revision.id = state.current_revision_id
+                WHERE state.id = 'current'
+                """
+            )
+            assert dict(status_state) == {
+                "current_revision": 1,
+                "registry_version": "status-indicators/1.0",
+                "schema_version": "power-monitor-status-layout/1.0",
+            }
 
             await connection.execute("DROP SCHEMA public CASCADE")
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260720_0005"
+                "20260720_0006"
             )
             assert (
                 await connection.fetchval(
                     "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
                 )
-                == 74
+                == 77
             )
         finally:
             await connection.close()
