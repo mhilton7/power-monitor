@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Archive, CalendarRange, CheckCircle2, Download, FileClock, HardDrive, LoaderCircle } from 'lucide-react'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError } from '../api'
 import type { ApiProblem } from '../types'
 import { EmptyState, ErrorState, formatTime, LoadingState, Panel } from './UI'
@@ -45,6 +45,11 @@ const daysBefore = (days: number) => {
   date.setUTCDate(date.getUTCDate() - days)
   return isoDate(date)
 }
+const daysBeforeDate = (value: string, days: number) => {
+  const date = new Date(`${value}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() - days)
+  return isoDate(date)
+}
 const formatBytes = (value: number) => {
   if (value < 1024) return `${value} B`
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KiB`
@@ -80,10 +85,22 @@ export function ApplicationLogs() {
   const [endDate, setEndDate] = useState(daysBefore(0))
   const [service, setService] = useState('all')
   const [success, setSuccess] = useState<string>()
+  const initializedFromAvailability = useRef(false)
   const availability = useQuery({
     queryKey: ['log-availability'],
     queryFn: () => api<LogAvailability>('/api/v1/admin/logs/availability'),
   })
+  useEffect(() => {
+    const data = availability.data
+    const latest = data?.latest_date
+    if (!data || !latest || initializedFromAvailability.current) return
+    const requestedStart = daysBeforeDate(latest, 6)
+    setStartDate(data.earliest_date && data.earliest_date > requestedStart
+      ? data.earliest_date
+      : requestedStart)
+    setEndDate(latest)
+    initializedFromAvailability.current = true
+  }, [availability.data])
   const earliestSelectable = useMemo(() => {
     const boundary = daysBefore(89)
     return availability.data?.earliest_date && availability.data.earliest_date > boundary

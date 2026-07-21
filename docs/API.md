@@ -4,7 +4,16 @@
 
 Browser routes use an opaque `pm_session` cookie and `X-CSRF-Token` on mutations. Device routes use the HMAC headers in [Device protocol](DEVICE_PROTOCOL.md). Errors are `application/problem+json` with type, title, status, detail, instance, stable code, and request ID. Time series uses bounded ranges/cursors; large CSV/JSON output is an asynchronous export job with expiring authorized download.
 
-Key groups are `/api/v1/auth`, `/sites`, `/utility-accounts`, `/circuits`, `/aggregate-sets`, `/devices`, `/readings/history`, `/rates`, `/billing`, `/alerts`, `/exports`, `/firmware-*`, `/reports`, `/backups`, `/audit-events`, `/system/info`, and `/events/stream`. Administrator log discovery and export use `/api/v1/admin/logs/availability`, `POST /api/v1/admin/logs/exports`, export status, and the short-lived authorized download route. Safe sensor removal uses `POST /api/v1/admin/devices/{device_id}/unclaim`; it requires CSRF, an administrator, and exact name-or-ID confirmation. Health endpoints are outside `/api/v1`. Metrics are authenticated.
+Key groups are `/api/v1/auth`, `/sites`, `/utility-accounts`, `/circuits`, `/aggregate-sets`, `/devices`, `/readings/history`, `/history/query`, `/history/export`, `/rates`, `/billing`, `/alerts`, `/exports`, `/firmware-*`, `/reports`, `/backups`, `/audit-events`, `/system/info`, and `/events/stream`. Administrator log discovery and export use `/api/v1/admin/logs/availability`, `POST /api/v1/admin/logs/exports`, export status, and the short-lived authorized download route. Safe sensor removal uses `POST /api/v1/admin/devices/{device_id}/unclaim`; it requires CSRF, an administrator, and exact name-or-ID confirmation. Health endpoints are outside `/api/v1`. Metrics are authenticated.
+
+`GET /api/v1/readings/history` remains backward compatible for one device,
+circuit, site, or aggregate selector. `POST /api/v1/history/query` is the bounded
+scope-aware interface for aligned multi-sensor series and historically effective
+energy cost. It accepts one scope, display mode, metric list, UTC range, bucket,
+optional strict coverage, optional selected subrange, and page controls. Every
+resolved sensor is authorized server-side and cross-site ad hoc selections are
+rejected. `POST /api/v1/history/export` applies the same query and permissions
+and returns an audited provenance-rich CSV. See [History](HISTORY.md).
 
 Human access administration uses `/api/v1/admin/users`,
 `/api/v1/admin/roles`, and `/api/v1/admin/permissions`, including user-access

@@ -8,6 +8,17 @@ Daily: inspect device backlog, active alerts, worker progress, last verified bac
 
 Rate changes create new effective versions, preview tests, and explicit activation. Used versions remain immutable. Monitor named-volume free space and keep backup headroom.
 
+## History administration
+
+Before enabling site or saved-aggregate totals, assign every participating
+sensor to an accurate circuit and explicitly configure site-total inclusion or
+aggregate membership. Resolve parent/child warnings instead of confirming a
+known double count. Assign rate versions through the utility account with the
+correct effective timestamp; History deliberately leaves cost unavailable for
+assignment gaps. Review `history.exported` audit records as part of normal data
+export oversight. History adds no service, volume, port, secret, migration, or
+TrueNAS permission requirement.
+
 ## Application logs
 
 The API, worker, enrollment/device synchronization paths, and backup tooling

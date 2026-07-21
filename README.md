@@ -61,6 +61,11 @@ and [versioning](docs/RATE_VERSIONING.md). See the consolidated
 [TrueNAS deployment notes](docs/TRUE_NAS_DEPLOYMENT.md) before installing an
 upgrade.
 
+Historical analysis is covered by the [History guide](docs/HISTORY.md),
+[historical cost calculation](docs/HISTORY_COSTS.md),
+[multi-sensor aggregation](docs/MULTI_SENSOR_AGGREGATION.md), and
+[History exports](docs/HISTORY_EXPORTS.md).
+
 Verification evidence is recorded in [Testing](docs/TESTING.md) and [Load test results](docs/LOAD_TEST_RESULTS.md).
 
 ## Safety and scope

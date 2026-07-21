@@ -56,6 +56,7 @@ from app.db.models import (
     Utility,
     UtilityAccount,
 )
+from app.history import MAX_HISTORY_BUCKETS, history_csv, query_history
 from app.problem import ProblemError
 from app.schemas import (
     AggregateSetCreate,
@@ -71,6 +72,8 @@ from app.schemas import (
     EnrollmentTokenView,
     FleetSummary,
     HistoryPoint,
+    HistoryQueryRequest,
+    HistoryQueryResponse,
     HistoryResponse,
     MaintenanceWindow,
     NotificationChannelWrite,
@@ -1642,6 +1645,54 @@ async def history(
         ],
         coverage_percent=coverage,
         next_cursor=next_cursor,
+    )
+
+
+@router.post("/history/query", response_model=HistoryQueryResponse)
+async def query_history_api(
+    payload: HistoryQueryRequest,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> HistoryQueryResponse:
+    """Query aligned, topology-safe electrical and estimated energy-cost history."""
+    _permission(principal, "history.view")
+    return await query_history(session, principal, payload)
+
+
+@router.post("/history/export")
+async def export_history_api(
+    payload: HistoryQueryRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> Response:
+    """Export the bounded server-authoritative history result with provenance."""
+    _permission(principal, "history.export")
+    export_payload = payload.model_copy(update={"page": 1, "page_size": MAX_HISTORY_BUCKETS})
+    result = await query_history(session, principal, export_payload)
+    session.add(
+        audit_event(
+            action="history.exported",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="site",
+            object_id=result.scope.site_id,
+            details={
+                "scope_type": result.scope.type,
+                "included_sensor_count": len(result.scope.included_device_ids),
+                "bucket": result.bucket,
+                "display_mode": result.display_mode,
+                "start_utc": payload.start_utc.isoformat(),
+                "end_utc": payload.end_utc.isoformat(),
+            },
+        )
+    )
+    await session.commit()
+    return Response(
+        content=history_csv(result),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=power-monitor-history.csv"},
     )
 
 

@@ -86,6 +86,143 @@ export interface ApiProblem {
   warnings?: string[]
 }
 
+export interface Circuit {
+  id: string
+  site_id: string
+  parent_id?: string
+  name: string
+  measurement_role: string
+  split_phase_group?: string
+}
+
+export interface AggregateSet {
+  id: string
+  site_id: string
+  name: string
+  cost_scope: string
+  is_default: boolean
+  members: Array<{ circuit_id?: string; device_id?: string; allocation_percent: string }>
+  overlap_confirmed_at?: string
+}
+
+export type HistoryScopeType = 'device' | 'devices' | 'circuit' | 'site' | 'aggregate_set'
+export type HistoryDisplayMode = 'combined' | 'individual' | 'combined_plus_individual'
+export type HistoryMetric = 'power_w' | 'energy_kwh' | 'voltage_v' | 'current_a' | 'power_factor' | 'frequency_hz' | 'energy_cost' | 'usage_cost'
+
+export interface HistoryScopeRequest {
+  type: HistoryScopeType
+  device_id?: string
+  device_ids?: string[]
+  circuit_id?: string
+  site_id?: string
+  aggregate_set_id?: string
+}
+
+export interface HistoryQueryRequest {
+  scope: HistoryScopeRequest
+  display_mode: HistoryDisplayMode
+  metrics: HistoryMetric[]
+  start_utc: string
+  end_utc: string
+  bucket: 'auto' | 'raw' | '5m' | '15m' | '1h' | '1d'
+  timezone?: string
+  strict_coverage: boolean
+  selection_start_utc?: string
+  selection_end_utc?: string
+  page: number
+  page_size: number
+}
+
+export interface HistoryRateContribution {
+  utility_account_id: string
+  rate_plan_id: string
+  rate_plan_name: string
+  rate_version_id: string
+  rate_version: number
+  rate_effective_from: string
+  tou_period: string
+  energy_kwh: string
+  rate_per_kwh: string
+  energy_cost: string
+}
+
+export interface HistoryBucket {
+  interval_start_utc: string
+  interval_end_utc: string
+  local_start: string
+  local_end: string
+  utc_offset: string
+  series_id: string
+  series_name: string
+  device_id?: string
+  included_sensor_count: number
+  contributing_sensor_count: number
+  energy_kwh?: string
+  average_power_w?: string
+  peak_power_w?: string
+  voltage_min_v?: string
+  voltage_avg_v?: string
+  voltage_max_v?: string
+  current_a?: string
+  power_factor?: string
+  frequency_hz?: string
+  tou_period?: string
+  rate_per_kwh?: string
+  energy_cost?: string
+  rate_plan_name?: string
+  rate_version_id?: string
+  rate_effective_from?: string
+  mixed_rates: boolean
+  coverage_percent: string
+  missing_sensor_ids: string[]
+  quality_flags: string[]
+  rate_contributions: HistoryRateContribution[]
+}
+
+export interface HistorySummary {
+  start_utc: string
+  end_utc: string
+  energy_kwh?: string
+  energy_cost?: string
+  blended_rate_per_kwh?: string
+  average_power_w?: string
+  peak_power_w?: string
+  highest_cost_bucket_start?: string
+  highest_cost_bucket_value?: string
+  highest_usage_bucket_start?: string
+  highest_usage_bucket_kwh?: string
+  coverage_percent: string
+  contributing_sensor_count: number
+  tou_breakdown: Record<string, { energy_kwh: string; energy_cost: string }>
+}
+
+export interface HistoryQueryResponse {
+  scope: {
+    type: HistoryScopeType
+    display_name: string
+    site_id: string
+    site_name: string
+    timezone: string
+    included_device_ids: string[]
+    included_device_names: string[]
+    excluded_device_ids: string[]
+    mixed_rates: boolean
+  }
+  display_mode: HistoryDisplayMode
+  metrics: HistoryMetric[]
+  bucket: string
+  summary: HistorySummary
+  selected_summary?: HistorySummary
+  combined: HistoryBucket[]
+  individual: Array<{ device_id: string; name: string; circuit_name?: string; status: string; points: HistoryBucket[] }>
+  rate_versions_used: Array<{ rate_plan_id: string; rate_plan_name: string; rate_version_id: string; rate_version: number; effective_from: string }>
+  warnings: Array<{ code: string; message: string; device_ids?: string[] }>
+  total_buckets: number
+  page: number
+  page_size: number
+  next_page?: number
+}
+
 export interface PermissionDefinition {
   code: string
   group: string

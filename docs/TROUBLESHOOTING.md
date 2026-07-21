@@ -8,6 +8,18 @@
 - **SD fault:** stop treating history as durable, repair/replace media on the sensor, preserve event evidence, and do not fabricate lost energy.
 - **Incorrect aggregate:** inspect parent/child and split-phase roles. Never sum a parent with its children; a single service leg is not whole-home.
 - **Unexpected cost:** confirm timezone, interval coverage, effective plan/version, cost scope, billing dates, baseline, fixed-charge count, CCA/DA, taxes, credits, and source date.
+- **History cost is unavailable:** confirm every selected sensor is assigned to
+  a utility account with a rate assignment covering the historical interval.
+  Electrical data remains valid; do not interpret unavailable cost as zero.
+- **History combined selection is rejected:** inspect the named sensors and
+  circuit tree for a parent/child or duplicate-circuit overlap. Correct topology,
+  choose only non-overlapping meters, or use Individual sensors for comparison.
+- **History total looks low:** inspect bucket coverage, missing sensor IDs, and
+  quality flags. Partial totals include only valid contributors and never assume
+  a missing sensor consumed zero. Enable strict coverage to withhold them.
+- **History chart is too large:** choose Automatic or a coarser bucket and a
+  shorter range. Raw history is limited to two days; all History queries are
+  bounded to protect ingestion and PostgreSQL.
 - **CCA mismatch:** public SCE prices include SCE generation; configure replacement/adjustment once.
 - **DST/report difference:** compare UTC instants and offsets. Spring has no fabricated hour; fall repeats local labels with different offsets.
 - **Worker unhealthy:** inspect JSON logs, PostgreSQL readiness, `worker_state`, polling timeouts, report/backup volumes, and advisory-lock ownership.

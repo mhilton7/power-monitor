@@ -10,6 +10,7 @@ const session = (roles: string[] = ['admin']) => ({
 const site = { id: 'site-1', name: 'Upland Site', timezone: 'America/Los_Angeles', allowed_cidrs: [], allowed_domains: [], allow_public_polling: false }
 const fleet = { current_load_w: '960', energy_today_kwh: '12.5', estimated_cost_today: '4.25', billing_cycle_energy_kwh: '244', estimated_billing_cycle_cost: '83.11', online_devices: 1, synchronized_devices: 1, total_devices: 1, active_alerts: 1, current_tou_bucket: 'on-peak', recent_peak_w: '1800', disclosure: 'Estimate, not utility bill.' }
 const device = { id: 'device-1', name: 'Garage HVAC', site_id: 'site-1', site_name: 'Upland Site', circuit_id: 'branch-1', circuit_name: 'Garage branch', connection_mode: 'hybrid', measurement_role: 'submeter', cost_scope: 'energy_only', included_in_default: true, ct_rating_amps: '100', status: 'online_synchronized', lifecycle_status: 'active', current_watts: '960', last_seen_at: '2026-07-20T06:00:00Z', firmware_version: '1.0.0', rssi_dbm: -52, pzem_ok: true, sd_ok: true, time_trusted: true, backlog: 0 }
+const historyDevice = { ...device, id: 'device-2', hardware_id: 'esp32-main-leg-2', name: 'Main Panel L2', circuit_id: 'leg-2', circuit_name: 'Main Panel L2', measurement_role: 'service-leg', current_watts: '1000' }
 const officialVersion = { id: 'rate-version-official', version: 1, effective_from: '2026-06-01', effective_through: null, status: 'active', source_kind: 'official_sce', source_checked_at: '2026-07-19T10:15:00Z', source_label: 'SCE archived evidence', integrity_sha256: 'a'.repeat(64), is_active: true, immutable: true, created_at: '2026-06-01T00:00:00Z' }
 const officialPlan = { id: 'rate-plan-official', code: 'TOU-D-4-9PM', name: 'TOU-D 4 PM to 9 PM', description: 'Official SCE residential time-of-use plan.', plan_kind: 'official_sce', ownership_scope: 'global', currency: 'USD', timezone: 'America/Los_Angeles', status: 'active', versions: [officialVersion] }
 const accessPermissions = [
@@ -92,6 +93,7 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     else if (path === '/api/v1/devices') {
       const lifecycle = url.searchParams.get('lifecycle')
       if (lifecycle === 'decommissioned') body = sensorRemoved ? [{ ...device, status: 'decommissioned', lifecycle_status: 'decommissioned', circuit_id: undefined, circuit_name: undefined, decommissioned_at: '2026-07-20T07:00:00Z', decommissioned_by_name: 'Fleet Owner', decommission_reason: 'replaced', retained_history: true, re_enrollment_allowed: true }] : []
+      else if (page.url().includes('/history')) body = [device, historyDevice]
       else body = sensorRemoved && lifecycle === 'active' ? [] : [device]
     }
     else if (path === '/api/v1/devices/device-1') body = { device: { ...device, hardware_id: 'esp32-garage-001' }, history: { reading_count: 1440, earliest_reading_at: '2026-06-20T06:00:00Z', latest_reading_at: '2026-07-20T06:00:00Z', retained: true }, lifecycle_events: [] }
@@ -99,9 +101,40 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     else if (path === '/api/v1/events/stream') {
       await route.fulfill({ contentType: 'text/event-stream', body: 'event: fleet\ndata: {"type":"fleet","devices":[]}\n\n' })
       return
-    } else if (path === '/api/v1/circuits') body = [{ id: 'main-1', site_id: 'site-1', name: 'Main panel', measurement_role: 'main' }, { id: 'branch-1', site_id: 'site-1', parent_id: 'main-1', name: 'Garage branch', measurement_role: 'branch' }]
-    else if (path === '/api/v1/aggregate-sets') body = [{ id: 'aggregate-1', name: 'Explicit home total', cost_scope: 'full_account', is_default: true, members: [{ circuit_id: 'main-1' }, { circuit_id: 'branch-1' }], overlap_confirmed_at: '2026-07-20T06:00:00Z' }]
+    } else if (path === '/api/v1/circuits') body = [{ id: 'main-1', site_id: 'site-1', name: 'Main panel', measurement_role: 'main' }, { id: 'branch-1', site_id: 'site-1', parent_id: 'main-1', name: 'Garage branch', measurement_role: 'branch' }, { id: 'leg-2', site_id: 'site-1', name: 'Main Panel L2', measurement_role: 'service-leg', split_phase_group: 'main-panel' }]
+    else if (path === '/api/v1/aggregate-sets') body = [{ id: 'aggregate-1', site_id: 'site-1', name: 'Explicit home total', cost_scope: 'full_account', is_default: true, members: [{ circuit_id: 'main-1' }, { circuit_id: 'branch-1' }], overlap_confirmed_at: '2026-07-20T06:00:00Z' }]
     else if (path === '/api/v1/readings/history') body = { points: [{ timestamp: '2026-07-20T05:59:00Z', power_w: '900', quality_flags: [] }, { timestamp: '2026-07-20T06:00:00Z', power_w: '960', quality_flags: [] }], missing_ranges: [{ start_sequence: 2, end_sequence: 3 }], coverage_percent: '98.5' }
+    else if (path === '/api/v1/history/query') {
+      const query = JSON.parse(request.postData() ?? '{}') as { scope: { type: string; device_id?: string; device_ids?: string[] }; display_mode: string; selection_start_utc?: string; selection_end_utc?: string }
+      const selectedIds = query.scope.type === 'devices' ? query.scope.device_ids ?? [] : [query.scope.device_id ?? 'device-1']
+      const selected = [device, historyDevice].filter((item) => selectedIds.includes(item.id))
+      const sensorCount = selected.length || 1
+      const makePoint = (index: number, seriesId: string, seriesName: string, individual = false) => ({
+        interval_start_utc: `2026-07-21T0${3 + index}:00:00Z`, interval_end_utc: `2026-07-21T0${4 + index}:00:00Z`,
+        local_start: `2026-07-20T${20 + index}:00:00-07:00`, local_end: `2026-07-20T${21 + index}:00:00-07:00`, utc_offset: '-07:00',
+        series_id: seriesId, series_name: seriesName, device_id: individual ? seriesId : undefined,
+        included_sensor_count: individual ? 1 : sensorCount, contributing_sensor_count: individual ? 1 : sensorCount,
+        energy_kwh: individual ? '1.000000' : String(sensorCount), average_power_w: individual ? '1000' : String(sensorCount * 1000), peak_power_w: individual ? '1200' : String(sensorCount * 1200),
+        voltage_min_v: '119', voltage_avg_v: '120', voltage_max_v: '121', current_a: individual ? '8.333' : undefined, power_factor: '1', frequency_hz: '60',
+        tou_period: 'on-peak', rate_per_kwh: '1.00000000', energy_cost: individual ? '1.000000' : String(sensorCount), rate_plan_name: 'Deterministic TOU plan', rate_version_id: 'rate-version-history', rate_effective_from: '2026-06-01', mixed_rates: false,
+        coverage_percent: index === 0 ? '100' : '98.5', missing_sensor_ids: [], quality_flags: index === 0 ? [] : ['partial_coverage'],
+        rate_contributions: [{ utility_account_id: 'account-1', rate_plan_id: 'rate-plan-history', rate_plan_name: 'Deterministic TOU plan', rate_version_id: 'rate-version-history', rate_version: 3, rate_effective_from: '2026-06-01', tou_period: 'on-peak', energy_kwh: individual ? '1' : String(sensorCount), rate_per_kwh: '1', energy_cost: individual ? '1' : String(sensorCount) }],
+      })
+      const combined = [0, 1].map((index) => makePoint(index, 'combined', selected.map((item) => item.name).join(' + ') || device.name))
+      const summary = { start_utc: '2026-07-21T03:00:00Z', end_utc: '2026-07-21T05:00:00Z', energy_kwh: String(sensorCount * 2), energy_cost: String(sensorCount * 2), blended_rate_per_kwh: '1', average_power_w: String(sensorCount * 1000), peak_power_w: String(sensorCount * 1200), highest_cost_bucket_start: '2026-07-21T03:00:00Z', highest_cost_bucket_value: String(sensorCount), highest_usage_bucket_start: '2026-07-21T03:00:00Z', highest_usage_bucket_kwh: String(sensorCount), coverage_percent: '99.25', contributing_sensor_count: sensorCount, tou_breakdown: { 'on-peak': { energy_kwh: String(sensorCount * 2), energy_cost: String(sensorCount * 2) } } }
+      body = {
+        scope: { type: query.scope.type, display_name: selected.map((item) => item.name).join(' + ') || device.name, site_id: 'site-1', site_name: 'Upland Site', timezone: 'America/Los_Angeles', included_device_ids: selectedIds, included_device_names: selected.map((item) => item.name), excluded_device_ids: [], mixed_rates: false },
+        display_mode: query.display_mode, metrics: ['energy_kwh', 'energy_cost'], bucket: '1h', summary,
+        selected_summary: query.selection_start_utc && query.selection_end_utc ? summary : undefined,
+        combined: query.display_mode === 'individual' ? [] : combined,
+        individual: query.display_mode === 'combined' ? [] : selected.map((item) => ({ device_id: item.id, name: item.name, circuit_name: item.circuit_name, status: item.status, points: [0, 1].map((index) => makePoint(index, item.id, item.name, true)) })),
+        rate_versions_used: [{ rate_plan_id: 'rate-plan-history', rate_plan_name: 'Deterministic TOU plan', rate_version_id: 'rate-version-history', rate_version: 3, effective_from: '2026-06-01' }], warnings: [], total_buckets: 2, page: 1, page_size: 250,
+      }
+    }
+    else if (path === '/api/v1/history/export') {
+      await route.fulfill({ contentType: 'text/csv', headers: { 'Content-Disposition': 'attachment; filename=power-monitor-history.csv' }, body: 'power-monitor-history-export/1.0\ninterval_energy_cost\n4.00\n' })
+      return
+    }
     else if (path === '/api/v1/alerts') body = [{ id: 'alert-1', name: 'Synchronization backlog', status: 'active', severity: 'warning', device_id: 'device-1', opened_at: '2026-07-20T06:00:00Z', evidence: { backlog: 42 } }]
     else if (path === '/api/v1/utility-accounts') body = [{ id: 'account-1', name: 'Home utility account' }]
     else if (path === '/api/v1/rates/plans' && request.method() === 'GET') body = [
@@ -217,13 +250,34 @@ test('viewer sees fleet evidence and an in-app denial for restricted pages', asy
   await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible()
 })
 
-test('history keeps missing-data regions visible', async ({ page }) => {
+test('history combines sensors, shows TOU cost provenance, selects a range, and exports CSV', async ({ page }) => {
   await mockApplication(page)
   await page.goto('/history')
   await expect(page.getByRole('heading', { name: 'History & comparison' })).toBeVisible()
-  await expect(page.getByText('Missing sequence regions')).toBeVisible()
-  await expect(page.getByText('2–3')).toBeVisible()
-  await expect(page.getByText('98.5%')).toBeVisible()
+  await page.getByRole('combobox', { name: 'Scope', exact: true }).selectOption('devices')
+  await page.getByRole('button', { name: 'Select all eligible sensors' }).click()
+  await expect(page.getByText('2 selected')).toBeVisible()
+  await page.getByLabel('Display mode').selectOption('combined_plus_individual')
+  await page.getByLabel('Metric').selectOption('usage_cost')
+  await expect(page.getByText(/Combined total · 2 sensors/)).toBeVisible()
+  await expect(page.getByText('$4.00', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('Deterministic TOU plan').first()).toBeVisible()
+  await expect(page.getByText('partial_coverage').first()).toBeVisible()
+  await page.getByLabel(/Include .*8:00 PM.*selected range/).first().check()
+  await expect(page.getByRole('heading', { name: 'Selected range summary' })).toBeVisible()
+  await expect(page.getByText(/server-calculated interval segments/i)).toBeVisible()
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export CSV' }).click()
+  await download
+  await expect(page.getByText('History export downloaded.')).toBeVisible()
+
+  if (process.env.CAPTURE_HISTORY_SCREENSHOT === '1') {
+    await page.screenshot({ path: '../docs/screenshots/history-cost-aggregation.png', fullPage: true })
+  }
+
+  await page.setViewportSize({ width: 375, height: 760 })
+  await expect(page.getByRole('combobox', { name: 'Scope', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
 })
 
 test('topology shows an explicitly confirmed overlap warning', async ({ page }) => {
