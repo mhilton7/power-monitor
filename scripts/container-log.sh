@@ -6,10 +6,16 @@ log_retention_days=${LOG_RETENTION_DAYS:-90}
 write_application_log() {
   local event=${1:?event required}
   local level=${2:-info}
+  local destination
   [[ "$event" =~ ^[a-z0-9_.-]+$ && "$level" =~ ^[a-z]+$ ]] || return 64
   mkdir -p "$log_root"
-  printf '{"event":"%s","level":"%s","timestamp":"%s","service":"backup","category":"backup","log_format_version":"pm-log/1.0.0"}\n' \
-    "$event" "$level" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$log_root/backup-$(date -u +%Y-%m-%d).jsonl"
+  destination="$log_root/backup-$(date -u +%Y-%m-%d).jsonl"
+  (
+    umask 0007
+    touch "$destination"
+    printf '{"event":"%s","level":"%s","timestamp":"%s","service":"backup","category":"backup","log_format_version":"pm-log/1.0.0"}\n' \
+      "$event" "$level" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$destination"
+  )
 }
 
 maintain_application_logs() {

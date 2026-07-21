@@ -35,12 +35,16 @@ def test_shared_log_volume_permissions_cover_api_worker_and_backup() -> None:
     for service_name in ("api", "worker", "backup"):
         assert "log_data:/data/logs" in services[service_name]["volumes"]
     assert services["backup"]["group_add"] == ["10001"]
-    assert "chmod 0770 /data/logs" in (root / "deploy/docker/backend.Dockerfile").read_text(
+    assert "chmod 2770 /data/logs" in (root / "deploy/docker/backend.Dockerfile").read_text(
         encoding="utf-8"
     )
-    assert "chmod 0770 /data/logs" in (root / "deploy/docker/backup.Dockerfile").read_text(
+    assert "chmod 2770 /data/logs" in (root / "deploy/docker/backup.Dockerfile").read_text(
         encoding="utf-8"
     )
+    assert 'group_add: ["10001"]' in (root / "deploy/truenas/compose.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "umask 0007" in (root / "scripts/container-log.sh").read_text(encoding="utf-8")
 
 
 def csrf(client: httpx.AsyncClient) -> dict[str, str]:

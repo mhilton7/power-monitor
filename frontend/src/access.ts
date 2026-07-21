@@ -8,10 +8,11 @@ const ADMIN_FALLBACK = new Set([
   'enrollment.manage', 'sites.view', 'sites.manage', 'backups.view', 'logs.export',
   'users.view', 'users.manage', 'roles.view', 'roles.manage', 'audit.view',
   'settings.view', 'settings.manage', 'interface_text.view', 'interface_text.manage',
+  'status_indicators.view', 'status_indicators.manage',
 ])
 
 const ROLE_FALLBACK: Record<string, Set<string>> = {
-  viewer: new Set(['overview.view', 'devices.view', 'topology.view', 'history.view', 'history.export', 'rates.view', 'alerts.view', 'sites.view']),
+  viewer: new Set(['overview.view', 'devices.view', 'topology.view', 'history.view', 'history.export', 'rates.view', 'alerts.view', 'sites.view', 'status_indicators.view']),
   operator: new Set(['overview.view', 'devices.view', 'devices.manage', 'topology.view', 'topology.manage', 'history.view', 'history.export', 'rates.view', 'alerts.view', 'alerts.acknowledge', 'alerts.manage_rules', 'enrollment.view', 'enrollment.manage', 'sites.view']),
   'rate-manager': new Set(['overview.view', 'devices.view', 'topology.view', 'history.view', 'history.export', 'rates.view', 'rates.manage_custom', 'rates.manage_sources', 'rates.check_sources', 'rates.review_candidates', 'rates.approve_candidates', 'rates.assign', 'alerts.view', 'sites.view']),
 }

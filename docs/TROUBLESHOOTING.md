@@ -1,5 +1,15 @@
 # Troubleshooting
 
+## Browser password manager does not autofill sign-in
+
+Use the exact stable HTTPS origin where the credential was saved. Changes from a
+hostname to an IP address, HTTPS to HTTP, one port to another, or production to a
+development URL create a different browser credential context. Confirm password
+saving/autofill is enabled and the site is not on the never-save list. Repair
+only the affected entry in the browser password manager and repeat the synthetic
+account procedure in [Browser compatibility](BROWSER_COMPATIBILITY.md). Never
+disable TLS verification or store the password in Power Monitor settings.
+
 - **Offline:** compare last signed heartbeat, API result, meter/SD/time evidence, and backlog. Ping alone is not proof.
 - **IP changed:** inspect address history and DHCP; identity remains the device UUID. Validate the new address against site CIDRs.
 - **Heartbeat works, pull fails:** verify push/pull mode, worker VLAN/VPN route, allowed port/CIDR/domain, TLS name, and device-local HMAC clock.
@@ -8,6 +18,18 @@
 - **SD fault:** stop treating history as durable, repair/replace media on the sensor, preserve event evidence, and do not fabricate lost energy.
 - **Incorrect aggregate:** inspect parent/child and split-phase roles. Never sum a parent with its children; a single service leg is not whole-home.
 - **Unexpected cost:** confirm timezone, interval coverage, effective plan/version, cost scope, billing dates, baseline, fixed-charge count, CCA/DA, taxes, credits, and source date.
+- **History cost is unavailable:** confirm every selected sensor is assigned to
+  a utility account with a rate assignment covering the historical interval.
+  Electrical data remains valid; do not interpret unavailable cost as zero.
+- **History combined selection is rejected:** inspect the named sensors and
+  circuit tree for a parent/child or duplicate-circuit overlap. Correct topology,
+  choose only non-overlapping meters, or use Individual sensors for comparison.
+- **History total looks low:** inspect bucket coverage, missing sensor IDs, and
+  quality flags. Partial totals include only valid contributors and never assume
+  a missing sensor consumed zero. Enable strict coverage to withhold them.
+- **History chart is too large:** choose Automatic or a coarser bucket and a
+  shorter range. Raw history is limited to two days; all History queries are
+  bounded to protect ingestion and PostgreSQL.
 - **CCA mismatch:** public SCE prices include SCE generation; configure replacement/adjustment once.
 - **DST/report difference:** compare UTC instants and offsets. Spring has no fabricated hour; fall repeats local labels with different offsets.
 - **Worker unhealthy:** inspect JSON logs, PostgreSQL readiness, `worker_state`, polling timeouts, report/backup volumes, and advisory-lock ownership.
@@ -39,3 +61,18 @@
   including parser warnings, missing dates, source conflicts, rate-change
   threshold, retroactivity, or provider-assumption changes. Keep the current
   verified version active and use manual approval only after verifying evidence.
+- **An indicator disappeared:** check the active page, role, breakpoint, site,
+  and the user's underlying data permission in **Status Indicators & Layout**.
+  Disabled items appear in the tray. Monitoring and alert rules continue even
+  when their summary indicator is hidden.
+- **A blank status row remains:** hard-refresh the published revision and inspect
+  the resolved `/api/v1/status-indicators/layout` response. A valid empty zone
+  has no `data-status-zone` wrapper; an old frontend image may still contain a
+  fixed page summary and should be upgraded by immutable digest.
+- **Publish reports a conflict:** another administrator published after this
+  draft's base revision. Export the draft if needed, reload the current revision,
+  reapply the intended changes, preview, and publish. Do not bypass the stale
+  revision check.
+- **A saved layout references a retired indicator:** the server ignores the
+  retired key and reports a warning so existing pages remain usable. Remove the
+  old override in a new draft; imports reject unknown keys.

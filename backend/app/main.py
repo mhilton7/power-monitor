@@ -22,6 +22,7 @@ from app.api.routes import (
     management,
     rate_management,
     rates,
+    status_indicators,
     system,
 )
 from app.config import get_settings
@@ -66,6 +67,7 @@ for router in (
     management.router,
     rates.router,
     rate_management.router,
+    status_indicators.router,
     firmware.router,
     exports.router,
     system.router,

@@ -538,6 +538,68 @@ class InterfaceTextImport(ApiModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
+class StatusLayoutDraftWrite(ApiModel):
+    base_revision: int = Field(ge=0)
+    draft_revision: int | None = Field(default=None, ge=0)
+    configuration: dict[str, Any]
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class StatusLayoutValidate(ApiModel):
+    configuration: dict[str, Any] | None = None
+
+
+class StatusLayoutPreview(ApiModel):
+    configuration: dict[str, Any] | None = None
+    page: str = Field(default="overview", max_length=64)
+    role: str = Field(default="admin", max_length=32)
+    breakpoint: Literal["desktop", "tablet", "mobile"] = "desktop"
+    scenario: Literal[
+        "all_defaults",
+        "one_disabled",
+        "two_disabled",
+        "one_only",
+        "empty_zone",
+        "many",
+        "warning",
+        "critical",
+        "long_label",
+    ] = "all_defaults"
+
+
+class StatusLayoutPublish(ApiModel):
+    base_revision: int = Field(ge=0)
+    draft_revision: int = Field(ge=1)
+    reason: str | None = Field(default=None, max_length=500)
+    confirm: bool = False
+    confirm_critical: bool = False
+
+
+class StatusLayoutReset(ApiModel):
+    base_revision: int = Field(ge=0)
+    draft_revision: int | None = Field(default=None, ge=0)
+    scope: Literal["indicator", "zone", "page", "all"]
+    indicator_key: str | None = Field(default=None, max_length=120)
+    zone: str | None = Field(default=None, max_length=64)
+    page: str | None = Field(default=None, max_length=64)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class StatusLayoutRestore(ApiModel):
+    base_revision: int = Field(ge=0)
+    reason: str | None = Field(default=None, max_length=500)
+    confirm: bool = False
+    confirm_critical: bool = False
+
+
+class StatusLayoutImport(ApiModel):
+    schema_version: Literal["power-monitor-status-layout/1.0"]
+    registry_version: str = Field(max_length=64)
+    base_revision: int = Field(ge=0)
+    configuration: dict[str, Any]
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class PasswordReset(ApiModel):
     new_password: str = Field(min_length=14, max_length=1024)
 
@@ -603,6 +665,197 @@ class HistoryResponse(ApiModel):
     missing_ranges: list[dict[str, Any]]
     coverage_percent: Decimal
     next_cursor: str | None = None
+
+
+class HistoryScopeQuery(ApiModel):
+    type: Literal["device", "devices", "circuit", "site", "aggregate_set"]
+    device_id: str | None = None
+    device_ids: list[str] = Field(default_factory=list, max_length=32)
+    circuit_id: str | None = None
+    site_id: str | None = None
+    aggregate_set_id: str | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_scope(self) -> HistoryScopeQuery:
+        identifiers = {
+            "device": bool(self.device_id),
+            "devices": len(self.device_ids) >= 2,
+            "circuit": bool(self.circuit_id),
+            "site": bool(self.site_id),
+            "aggregate_set": bool(self.aggregate_set_id),
+        }
+        if not identifiers[self.type]:
+            raise ValueError(f"{self.type} scope is missing its identifier")
+        supplied = (
+            int(bool(self.device_id))
+            + int(bool(self.device_ids))
+            + int(bool(self.circuit_id))
+            + int(bool(self.site_id))
+            + int(bool(self.aggregate_set_id))
+        )
+        if supplied != 1:
+            raise ValueError("provide identifiers for exactly one history scope")
+        if self.type == "devices" and len(set(self.device_ids)) != len(self.device_ids):
+            raise ValueError("device_ids cannot contain duplicates")
+        return self
+
+
+HistoryMetric = Literal[
+    "power_w",
+    "energy_kwh",
+    "voltage_v",
+    "current_a",
+    "power_factor",
+    "frequency_hz",
+    "energy_cost",
+    "usage_cost",
+]
+
+
+def default_history_metrics() -> list[HistoryMetric]:
+    return ["power_w"]
+
+
+class HistoryQueryRequest(ApiModel):
+    scope: HistoryScopeQuery
+    display_mode: Literal["combined", "individual", "combined_plus_individual"] = "combined"
+    metrics: list[HistoryMetric] = Field(
+        default_factory=default_history_metrics, min_length=1, max_length=8
+    )
+    start_utc: datetime
+    end_utc: datetime
+    bucket: Literal["auto", "raw", "5m", "15m", "1h", "1d"] = "auto"
+    timezone: str | None = Field(default=None, max_length=64)
+    strict_coverage: bool = False
+    selection_start_utc: datetime | None = None
+    selection_end_utc: datetime | None = None
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=250, ge=1, le=500)
+
+    @model_validator(mode="after")
+    def valid_range(self) -> HistoryQueryRequest:
+        for value in (
+            self.start_utc,
+            self.end_utc,
+            self.selection_start_utc,
+            self.selection_end_utc,
+        ):
+            if value is not None:
+                require_aware(value)
+        if self.end_utc <= self.start_utc:
+            raise ValueError("end_utc must be after start_utc")
+        if (self.selection_start_utc is None) != (self.selection_end_utc is None):
+            raise ValueError("selection_start_utc and selection_end_utc must be provided together")
+        if (
+            self.selection_start_utc
+            and self.selection_end_utc
+            and not (
+                self.start_utc <= self.selection_start_utc < self.selection_end_utc <= self.end_utc
+            )
+        ):
+            raise ValueError("selected range must be inside the requested history range")
+        self.metrics = list(dict.fromkeys(self.metrics))
+        return self
+
+
+class HistoryRateContribution(ApiModel):
+    utility_account_id: str
+    rate_plan_id: str
+    rate_plan_name: str
+    rate_version_id: str
+    rate_version: int
+    rate_effective_from: date
+    tou_period: str
+    energy_kwh: Decimal
+    rate_per_kwh: Decimal
+    energy_cost: Decimal
+
+
+class HistoryBucket(ApiModel):
+    interval_start_utc: datetime
+    interval_end_utc: datetime
+    local_start: str
+    local_end: str
+    utc_offset: str
+    series_id: str
+    series_name: str
+    device_id: str | None = None
+    included_sensor_count: int
+    contributing_sensor_count: int
+    energy_kwh: Decimal | None
+    average_power_w: Decimal | None
+    peak_power_w: Decimal | None
+    voltage_min_v: Decimal | None
+    voltage_avg_v: Decimal | None
+    voltage_max_v: Decimal | None
+    current_a: Decimal | None
+    power_factor: Decimal | None
+    frequency_hz: Decimal | None
+    tou_period: str | None
+    rate_per_kwh: Decimal | None
+    energy_cost: Decimal | None
+    rate_plan_name: str | None
+    rate_version_id: str | None
+    rate_effective_from: date | None
+    mixed_rates: bool = False
+    coverage_percent: Decimal
+    missing_sensor_ids: list[str] = Field(default_factory=list)
+    quality_flags: list[str] = Field(default_factory=list)
+    rate_contributions: list[HistoryRateContribution] = Field(default_factory=list)
+
+
+class HistoryIndividualSeries(ApiModel):
+    device_id: str
+    name: str
+    circuit_name: str | None = None
+    status: str
+    points: list[HistoryBucket]
+
+
+class HistoryRangeSummary(ApiModel):
+    start_utc: datetime
+    end_utc: datetime
+    energy_kwh: Decimal | None
+    energy_cost: Decimal | None
+    blended_rate_per_kwh: Decimal | None
+    average_power_w: Decimal | None
+    peak_power_w: Decimal | None
+    highest_cost_bucket_start: datetime | None
+    highest_cost_bucket_value: Decimal | None
+    highest_usage_bucket_start: datetime | None
+    highest_usage_bucket_kwh: Decimal | None
+    coverage_percent: Decimal
+    contributing_sensor_count: int
+    tou_breakdown: dict[str, dict[str, Decimal]] = Field(default_factory=dict)
+
+
+class HistoryResolvedScope(ApiModel):
+    type: Literal["device", "devices", "circuit", "site", "aggregate_set"]
+    display_name: str
+    site_id: str
+    site_name: str
+    timezone: str
+    included_device_ids: list[str]
+    included_device_names: list[str]
+    excluded_device_ids: list[str] = Field(default_factory=list)
+    mixed_rates: bool = False
+
+
+class HistoryQueryResponse(ApiModel):
+    scope: HistoryResolvedScope
+    display_mode: Literal["combined", "individual", "combined_plus_individual"]
+    metrics: list[str]
+    bucket: str
+    summary: HistoryRangeSummary
+    selected_summary: HistoryRangeSummary | None = None
+    combined: list[HistoryBucket] = Field(default_factory=list)
+    individual: list[HistoryIndividualSeries] = Field(default_factory=list)
+    rate_versions_used: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
+    total_buckets: int
+    page: int
+    page_size: int
+    next_page: int | None = None
 
 
 class FleetSummary(ApiModel):

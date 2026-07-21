@@ -9,3 +9,10 @@ The SCE seed includes summer/winter and weekday/weekend periods for TOU-D-4-9PM,
 `energy_only` applies per-kWh monitored energy and is the one-CT default. `allocated_account` applies explicitly allocated account components. `full_account` is administrator-selected only; it may apply the base service charge once per utility account and limit baseline credit to a configured allocation. CCA/Direct Access replacement, discounts, taxes/surcharges, and manual credits are separate components.
 
 Every cost view/report states: estimate, not utility bill. See [Rate sources](RATE_SOURCES.md).
+
+History queries reuse this engine for every normalized reading segment. The
+query layer additionally splits at historical `rate_assignments`, rate-version
+effective dates, provider-adjustment dates, and requested display buckets. It
+retains per-segment TOU/rate/version provenance and uses `energy_only`, so a
+multi-sensor History chart never duplicates whole-account fixed charges. See
+[Historical cost calculation](HISTORY_COSTS.md).

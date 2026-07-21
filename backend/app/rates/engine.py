@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from itertools import pairwise
 from pathlib import Path
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, cast
 from zoneinfo import ZoneInfo
 
 
@@ -149,9 +149,12 @@ class RateEngine:
     def _periods_for_date(self, local_date: date) -> list[list[Any]]:
         season = self._season(local_date)
         special = self.plan.get("special_schedules", {}).get(season, {})
-        return special.get(
-            local_date.isoformat(),
-            self.plan["periods"][season][self._day_type(local_date)],
+        return cast(
+            list[list[Any]],
+            special.get(
+                local_date.isoformat(),
+                self.plan["periods"][season][self._day_type(local_date)],
+            ),
         )
 
     def period_at(self, instant: datetime) -> tuple[str, Decimal]:

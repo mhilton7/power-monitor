@@ -1,5 +1,50 @@
 # Testing and release gates
 
+## Login autofill and browser acceptance
+
+`frontend/tests/authAutofill.test.tsx` verifies the rendered native form
+contract, direct DOM-value submission without React change events, exact
+password preservation, failed authentication behavior, same-node password
+visibility, public-text success/failure, and first-run autocomplete separation.
+The Chromium suite verifies click and Enter submission, successful removal of
+the form, stable input identity, keyboard focus, dark-theme readability, mobile
+width, and the presence of browser autofill rules.
+
+Run the automated gates with:
+
+```text
+cd frontend
+npm ci
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+npm run e2e
+```
+
+Automation cannot prove that the real Chrome Password Manager UI offered to
+save or update a credential. Complete and record the sanitized manual procedure
+in [Browser compatibility](BROWSER_COMPATIBILITY.md) on the exact deployed HTTPS
+origin. Never use a production administrator password as test evidence.
+
+The 2026-07-20 autofill release gate passed 79 portable backend tests, the
+separate 100-device/18,000-reading load gate, and the live PostgreSQL 17
+migration gate. The frontend passed lint, TypeScript, 22 unit/component tests,
+all 27 Chromium tests, and the Node 24 production build. API, frontend, and
+backup images built successfully. The normal stack reached migration
+`20260720_0006`, reported every service healthy through CA-verified HTTPS, and
+checksum/restore-verified a five-artifact logical backup with 77 tables. Both
+normal and NET_RAW-only ICMP TrueNAS deployments passed fail-closed validation.
+The final digest-pinned seven-service TrueNAS workflow passed migration,
+health/port checks, three simulated-device enrollments, signed heartbeats, 90
+historical readings, SCE calculation, backup verification, and clean restore.
+Python and npm production dependency audits reported no known vulnerabilities.
+
+Real Chrome Password Manager save/update prompting remains a manual acceptance
+gate because the automated Chromium profile does not expose a genuine password
+manager. Its exact remaining steps are maintained in
+[Browser compatibility](BROWSER_COMPATIBILITY.md).
+
 Run commands from the repository root unless a command starts with `cd`.
 
 ## Portable gates
@@ -22,6 +67,14 @@ cd frontend && npm run e2e
 .venv/Scripts/python.exe -m pip_audit -r backend/requirements.lock --no-deps
 cd frontend && npm audit --json
 ```
+
+The History gate includes deterministic two-sensor service-leg readings from
+8:00 PM–10:00 PM under a configured `$1.00/kWh` plan. It verifies 4.00 kWh and
+exact `$4.00` server-calculated energy cost, combined and individual modes,
+summed power and interval energy, non-summed voltage/current behavior,
+rate-version provenance, selected-range summary, legacy single-device
+compatibility, CSV export, partial coverage, responsive layout, and
+parent/child overlap rejection. It never depends on a live SCE page.
 
 The 2026-07-20 dashboard-corrections release run passed 42 Python tests, with the load,
 live-PostgreSQL, and deployed-TrueNAS tests explicitly gated for their required
@@ -141,10 +194,106 @@ backup verification, and clean restore at `20260720_0005` with 74 tables. The
 workflow removed its disposable containers, networks, and volumes after the
 successful run.
 
+The cost-aware History and multi-sensor release gate passed 74 portable backend
+tests, the PostgreSQL 17 prior-schema/clean-install migration integration test,
+6 frontend unit tests, and all 23 Chromium E2E tests. The current API,
+frontend, and backup images built successfully. A fresh Compose stack reached
+Alembic `20260720_0005` with every long-running service healthy. Its deployed
+History workflow verified 2 signed devices, 4 deterministic readings, the
+4 kWh/`$4.00` combined range, CSV parity, and topology rejection. A five-artifact
+logical backup passed checksums and restored 2 devices, 4 readings, and one
+Alembic head into a clean PostgreSQL database.
+
+## Cost-aware History deployed gate
+
+Run the History-specific acceptance workflow against a clean deployed stack
+through its HTTPS gateway. Export and trust the stack's internal Caddy CA; do
+not disable certificate verification.
+
+```text
+python tools/test-history-workflow.py \
+  --base-url https://power-monitor.test \
+  --ca-certificate /private/caddy-root.crt \
+  --setup-token-file /private/admin_setup_token
+```
+
+The workflow bootstraps the one-time administrator, creates an account and two
+non-overlapping service-leg circuits, enrolls two signed simulated ESP32
+sensors, backfills deterministic 8:00 PM-10:00 PM intervals, activates and
+assigns a one-dollar custom rate, and verifies single, individual, combined,
+and combined-plus-individual History modes. It requires exactly 4 kWh and
+`$4.00`, checks voltage/current semantics and rate provenance, parses the CSV
+to reproduce the same total, and finally turns one circuit into a child to
+prove the API blocks double counting.
+
+Set `CAPTURE_HISTORY_SCREENSHOT=1` when running Playwright to refresh
+`docs/screenshots/history-cost-aggregation.png`. The browser test also checks
+the interval selection, cost/rate presentation, export action, and mobile page
+width.
+
 Dashboard-correction screenshot fixtures are generated by setting
 `CAPTURE_DASHBOARD_SCREENSHOTS=1` while running the relevant Playwright cases.
 The reviewed captures are stored under
 `docs/screenshots/dashboard-corrections/`.
+
+## Status Indicators & Layout release gate
+
+The Status Indicators & Layout gate passed 79 portable backend tests (with the
+live PostgreSQL, 100-device load, and deployed TrueNAS workflows separately
+gated), strict Ruff/format/mypy, OpenAPI generation/checking, both contract
+validators, and the repository secret scan. The registry completeness contract
+checks 37 unique definitions and every required metadata field. Layout tests
+cover zero, one, two, three, four, twelve, and all eligible indicators; global,
+page, role, and mobile precedence; permission filtering; retired keys; invalid
+imports; CSRF; stale revisions; critical page-scoped hides; monitoring/alert
+independence; per-field audit evidence; immutable publish; export/import; and
+rollback.
+
+The frontend passed lint, TypeScript checking, 14 unit tests, all 24 Chromium
+E2E tests, and its Node 24 production build. Renderer tests prove empty zones
+emit no wrapper, remaining items have no spacer nodes, hidden labels retain an
+accessible name, severity is readable, density modes remain valid, and long
+labels survive. The E2E workflow exercises the disabled tray, keyboard ordering,
+responsive desktop/tablet/mobile and empty/long-label previews, 200% text
+scaling without horizontal overflow, save/preview/publish, live gap removal,
+alert persistence, and immutable restoration. The largest JavaScript chunk was
+306.29 kB (97.97 kB gzip). Python and npm dependency audits found zero known
+vulnerabilities.
+
+PostgreSQL 17 successfully upgraded a populated initial schema, downgraded and
+re-upgraded, upgraded a populated `20260720_0004` schema through the intervening
+revision, and clean-installed `20260720_0006`. The resulting schema has 77
+public tables, a valid seeded current pointer, one immutable compiled-default
+revision, and 44 Administrator permissions. Fresh API, frontend, and backup
+images built successfully. An isolated Compose stack reported every long-running
+service healthy, exposed only its gateway, and reported Alembic head
+`20260720_0006` through CA-verified HTTPS.
+
+The deployed acceptance workflow uses the actual API through that HTTPS gateway:
+
+```text
+python tools/test-status-layout-workflow.py \
+  --base-url https://power-monitor.test \
+  --ca-certificate /private/caddy-root.crt \
+  --setup-token-file /private/admin_setup_token
+```
+
+It requires at least 30 registry definitions, saves and validates a draft,
+previews an empty mobile zone, publishes visibility and placement changes,
+proves the disabled key is absent without an empty zone, restores revision 1 as
+revision 3, and verifies audit events. The post-workflow logical backup passed
+all five artifact hashes and restored into a clean 77-table database at
+`20260720_0006` with all three immutable status-layout revisions and a valid
+current pointer.
+
+Template, rendered normal, and rendered optional-ICMP TrueNAS configurations
+passed fail-closed validation and Docker Compose parsing. No Compose service,
+dataset, bind mount, secret, port, capability, or environment variable was
+added by this feature.
+
+Set `CAPTURE_STATUS_LAYOUT_SCREENSHOTS=1` while running the status-layout E2E
+case to refresh reviewed desktop, tablet, mobile, empty-zone, long-label, and
+published-mobile fixtures under `docs/screenshots/status-indicators/`.
 
 ## Hardware boundary
 

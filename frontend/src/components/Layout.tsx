@@ -9,6 +9,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  PanelsTopLeft,
   RadioTower,
   ScanLine,
   Settings,
@@ -23,8 +24,8 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import { sessionPermissions } from '../access'
 import { api } from '../api'
 import { useInterfaceText } from '../interfaceText'
-import type { FleetSummary, Session, Site } from '../types'
-import { formatNumber } from './UI'
+import type { Session, Site } from '../types'
+import { MobileStatusDrawer, StatusIndicatorZone } from './StatusIndicators'
 
 const navigation = [
   { to: '/', key: 'navigation.overview', fallback: 'Overview', icon: House, permission: 'overview.view' },
@@ -37,23 +38,19 @@ const navigation = [
   { to: '/admin', key: 'navigation.administration', fallback: 'Administration', icon: Settings, permission: 'settings.view' },
   { to: '/administration/users-access', key: 'navigation.users_access', fallback: 'Users & Access', icon: UserRoundCog, permission: 'users.view', nested: true },
   { to: '/administration/interface-text', key: 'navigation.interface_text', fallback: 'Dashboard & Login Text', icon: SlidersHorizontal, permission: 'interface_text.view', nested: true },
+  { to: '/administration/status-indicators', key: 'navigation.status_indicators', fallback: 'Status Indicators & Layout', icon: PanelsTopLeft, permission: 'status_indicators.view', nested: true },
 ]
 
 export function Layout({ session, children }: { session: Session; children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('pm-theme') ?? 'light')
-  const [siteId, setSiteId] = useState<string>()
+  const [siteId, setSiteId] = useState<string | undefined>(() => localStorage.getItem('pm-site-id') ?? undefined)
   const pointerSelectedControl = useRef<HTMLSelectElement | null>(null)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const { text } = useInterfaceText()
   const permissions = sessionPermissions(session)
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api<Site[]>('/api/v1/sites'), enabled: permissions.has('sites.view') })
-  const summary = useQuery({
-    queryKey: ['fleet', siteId],
-    queryFn: () => api<FleetSummary>(`/api/v1/fleet/summary${siteId ? `?site_id=${siteId}` : ''}`),
-    enabled: permissions.has('overview.view'),
-  })
   const logout = useMutation({
     mutationFn: () => api<void>('/api/v1/auth/logout', { method: 'POST' }),
     onSuccess: async () => {
@@ -66,10 +63,16 @@ export function Layout({ session, children }: { session: Session; children: Reac
     localStorage.setItem('pm-theme', theme)
   }, [theme])
   useEffect(() => {
-    if (!siteId && sites.data?.[0]) setSiteId(sites.data[0].id)
+    const firstSite = sites.data?.[0]
+    if (!firstSite) return
+    const nextSiteId = sites.data?.some((site) => site.id === siteId) ? siteId : firstSite.id
+    if (nextSiteId !== siteId) setSiteId(nextSiteId)
   }, [siteId, sites.data])
-  const fleetHealthy = Boolean(summary.data?.total_devices) && summary.data?.online_devices === summary.data?.total_devices
-
+  useEffect(() => {
+    if (!siteId) return
+    localStorage.setItem('pm-site-id', siteId)
+    window.dispatchEvent(new CustomEvent<string>('pm-site-scope-changed', { detail: siteId }))
+  }, [siteId])
   return (
     <div
       className="app-shell"
@@ -96,6 +99,7 @@ export function Layout({ session, children }: { session: Session; children: Reac
           </div>
           <button className="icon-button sidebar-close" onClick={() => { setMenuOpen(false) }} aria-label="Close navigation"><X /></button>
         </div>
+        <StatusIndicatorZone zone="sidebar_upper" />
         <nav aria-label="Primary">
           {navigation
             .filter((item) => permissions.has(item.permission))
@@ -106,6 +110,7 @@ export function Layout({ session, children }: { session: Session; children: Reac
               </NavLink>
             ))}
         </nav>
+        <StatusIndicatorZone zone="sidebar_lower" />
       </aside>
       {menuOpen && <button className="nav-scrim" aria-label="Close navigation" onClick={() => { setMenuOpen(false) }} />}
       <div className="app-content">
@@ -118,20 +123,13 @@ export function Layout({ session, children }: { session: Session; children: Reac
             </select>
             <ChevronDown size={15} aria-hidden="true" />
           </label>}
-          {permissions.has('overview.view') && <div className="topbar-live" aria-label="Current fleet health and aggregate load">
-            <span className="live-pulse" />
-            <span>{fleetHealthy ? 'Healthy' : 'Needs attention'}</span>
-            <small>· live</small>
-            <strong>{formatNumber(summary.data?.current_load_w)} W</strong>
-          </div>}
+          <StatusIndicatorZone zone="global_header_left" className="topbar-status-zone" />
+          <StatusIndicatorZone zone="global_header_center" className="topbar-status-zone" />
           <div className="topbar-actions">
+            <StatusIndicatorZone zone="global_header_right" className="topbar-status-zone" />
             <button className="icon-button" onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark') }} aria-label="Toggle color theme">
               {theme === 'dark' ? <Sun /> : <Moon />}
             </button>
-            {permissions.has('alerts.view') && <NavLink className="alert-button" to="/alerts" aria-label={`${summary.data?.active_alerts ?? 0} active alerts`}>
-              <Bell size={19} />
-              {(summary.data?.active_alerts ?? 0) > 0 && <span>{summary.data?.active_alerts}</span>}
-            </NavLink>}
             <div className="user-menu">
               <span>{session.user?.display_name.slice(0, 1).toUpperCase()}</span>
               <div>
@@ -142,8 +140,13 @@ export function Layout({ session, children }: { session: Session; children: Reac
             </div>
           </div>
         </header>
+        <StatusIndicatorZone zone="mobile_header" />
+        <StatusIndicatorZone zone="global_status_row" />
+        <StatusIndicatorZone zone="mobile_status_strip" />
+        <MobileStatusDrawer />
         {text('footer.banner') && <aside className="dashboard-banner" role="status">{text('footer.banner')}</aside>}
-        <main id="main">{children}</main>
+        <main id="main">{children}<StatusIndicatorZone zone="page_footer" /></main>
+        <StatusIndicatorZone zone="global_footer" />
         {(text('footer.dashboard') || text('footer.support_label') || text('footer.copyright')) && (
           <footer className="dashboard-footer">
             <span>{text('footer.dashboard')}</span>

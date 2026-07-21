@@ -362,6 +362,7 @@ async def test_custom_role_clone_revision_assignment_and_archive(
                 "devices.view",
                 "rates.view",
                 "alerts.view",
+                "status_indicators.view",
             ],
         },
     )

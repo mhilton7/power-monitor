@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { AlertTriangle, CheckCircle2, LoaderCircle, RefreshCw } from 'lucide-react'
 import { useInterfaceText } from '../interfaceText'
+import { StatusIndicatorZone } from './StatusIndicators'
 
 const PAGE_TEXT_KEYS: Record<string, string> = {
   'Power Dashboard': 'overview',
@@ -16,6 +17,7 @@ const PAGE_TEXT_KEYS: Record<string, string> = {
   Backups: 'backups',
   'Users & Access': 'users_access',
   'Dashboard & Login Text': 'interface_text',
+  'Status Indicators & Layout': 'status_indicators',
   Administration: 'administration',
 }
 
@@ -86,14 +88,20 @@ export function PageTitle({ eyebrow, title, description, actions }: { eyebrow: s
     document.title = `${visibleTitle} · ${text('general.browser_title_prefix', 'Power Monitor')}`
   }, [text, visibleTitle])
   return (
-    <header className="page-title">
-      <div>
-        <span className="eyebrow">{eyebrow}</span>
-        <h1>{visibleTitle}</h1>
-        {visibleDescription && <p>{visibleDescription}</p>}
-      </div>
-      {actions && <div className="page-actions">{actions}</div>}
-    </header>
+    <>
+      <header className="page-title">
+        <div>
+          <span className="eyebrow">{eyebrow}</span>
+          <h1>{visibleTitle}</h1>
+          {visibleDescription && <p>{visibleDescription}</p>}
+        </div>
+        <StatusIndicatorZone zone="page_header_primary" className="page-title-status" />
+        {actions && <div className="page-actions">{actions}</div>}
+      </header>
+      <StatusIndicatorZone zone="page_header_secondary" />
+      <StatusIndicatorZone zone="page_status_row" />
+      <StatusIndicatorZone zone="page_summary_strip" />
+    </>
   )
 }
 

@@ -202,6 +202,19 @@ PERMISSION_DEFINITIONS = (
         "Draft, publish, reset, and restore interface text.",
         True,
     ),
+    _permission(
+        "status_indicators.view",
+        "Administration",
+        "View status layouts",
+        "View the registered indicators and the effective published layout.",
+    ),
+    _permission(
+        "status_indicators.manage",
+        "Administration",
+        "Manage status layouts",
+        "Draft, preview, publish, import, reset, and restore status layouts.",
+        True,
+    ),
 )
 
 PERMISSION_CATALOG = {item.code: item for item in PERMISSION_DEFINITIONS}
@@ -220,6 +233,7 @@ VIEWER_PERMISSIONS = frozenset(
         "devices.view",
         "rates.view",
         "alerts.view",
+        "status_indicators.view",
     }
 )
 OPERATOR_PERMISSIONS = VIEWER_PERMISSIONS | {
@@ -265,6 +279,7 @@ PERMISSION_DEPENDENCIES: dict[str, frozenset[str]] = {
     "rates.assign": frozenset({"rates.view"}),
     "backups.restore": frozenset({"backups.view"}),
     "interface_text.manage": frozenset({"interface_text.view"}),
+    "status_indicators.manage": frozenset({"status_indicators.view"}),
     "sites.manage": frozenset({"sites.view"}),
     "topology.manage": frozenset({"topology.view"}),
     "devices.manage": frozenset({"devices.view"}),

@@ -34,6 +34,9 @@ def test_initial_migration_is_frozen_and_covers_metadata() -> None:
         "interface_text_revisions",
         "interface_text_drafts",
         "interface_text_state",
+        "status_layout_revisions",
+        "status_layout_drafts",
+        "status_layout_state",
     }
     assert "CREATE UNIQUE INDEX" in schema
     assert "ix_raw_site_time" in schema
@@ -88,5 +91,20 @@ def test_user_access_and_interface_text_migration_is_append_only() -> None:
     assert '"interface_text_drafts"' in revision
     assert '"previewed_revision"' in revision
     assert '"uq_roles_display_name_lower"' in revision
+    assert "DROP SCHEMA" not in revision
+    assert "def downgrade()" in revision
+
+
+def test_status_indicator_layout_migration_is_append_only() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260720_0006_status_indicators_layout.py"
+    ).read_text()
+    assert 'down_revision = "20260720_0005"' in revision
+    assert '"status_layout_revisions"' in revision
+    assert '"status_layout_drafts"' in revision
+    assert '"status_layout_state"' in revision
+    assert '"status_indicators.view"' in revision
+    assert '"status_indicators.manage"' in revision
     assert "DROP SCHEMA" not in revision
     assert "def downgrade()" in revision

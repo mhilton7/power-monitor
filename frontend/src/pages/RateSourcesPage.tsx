@@ -2,7 +2,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   Archive,
   CheckCircle2,
-  Clock3,
   ExternalLink,
   FileUp,
   Plus,
@@ -292,11 +291,6 @@ export function RateSourcesPage() {
           </>
         }
       />
-      <div className="source-health-grid">
-        <article><ShieldCheck /><span>Last successful check<strong>{formatTime(sourceQuery.data?.last_successful_check)}</strong></span></article>
-        <article><Clock3 /><span>Next scheduled check<strong>{formatTime(draftSettings?.next_scheduled_run)}</strong><small>{draftSettings?.schedule_cron} · {draftSettings?.timezone}</small></span></article>
-        <article><Archive /><span>Review policy<strong>{draftSettings?.approval_mode.replaceAll('_', ' ')}</strong></span></article>
-      </div>
       {jobId && <div className="job-progress" role="status"><RefreshCw className={['queued', 'running'].includes(syncJob.data?.status ?? 'queued') ? 'spin' : ''} /><div><strong>SCE check {syncJob.data?.status ?? 'queued'}</strong><small>{syncJob.data?.progress.completed ?? 0} of {syncJob.data?.progress.source_ids?.length ?? 4} sources · {syncJob.data?.result?.candidate_count ?? 0} candidates</small>{syncJob.data?.error?.detail && <small>{syncJob.data.error.detail}</small>}</div></div>}
 
       {draftSettings && (

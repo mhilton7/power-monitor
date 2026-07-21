@@ -6,6 +6,13 @@ The system assumes hostile browser traffic, replayed device traffic, compromised
 
 Passwords use Argon2id. Browser sessions are random, server-stored, expiring, revocable, HttpOnly, Secure, and SameSite; mutations require a CSRF proof. Login throttling and audit events apply. Server-defined granular permissions and site scope are recalculated on each request; hiding frontend controls is never the security boundary. Material access/role changes revoke affected sessions. Last-administrator, self-lockout, protected-administrator, actor-permission, actor-site, archived-role, dependency, and optimistic-revision checks run server-side. Optional TOTP secrets are encrypted. No default credentials exist.
 
+The semantic sign-in form permits standards-based browser password managers,
+but autofill is never an authentication boundary. Native credential values are
+read only at submit and sent in the existing POST body. Power Monitor does not
+store passwords in browser application storage, interface settings, URLs, logs,
+analytics, or telemetry. Production sign-in requires the configured HTTPS
+origin; never disable certificate verification to make autofill appear.
+
 Each device gets a unique high-entropy secret encrypted by Fernet under `APP_MASTER_KEY`. HKDF separates request directions. Exact body hashing, canonical HMAC, timestamp bounds, nonce persistence, constant-time comparison, per-device failure handling, revocation, and audit defend the device API. Logs redact secret-like fields and never print full signatures.
 
 Daily application logs are persisted for 90 days. Redaction runs both before a

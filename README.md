@@ -18,6 +18,14 @@ draft, responsive preview, immutable publish, defaults, and rollback. See
 [user management](docs/USER_MANAGEMENT.md), [permissions](docs/PERMISSIONS.md),
 [site access](docs/SITE_ACCESS.md), and [interface text](docs/INTERFACE_TEXT.md).
 
+**Status Indicators & Layout** adds a server-owned inventory of compact status
+surfaces with permission-aware global/page/role/breakpoint placement, responsive
+gap-free rendering, keyboard ordering, drafts, preview, immutable publishing,
+and rollback. Hiding an indicator never disables monitoring or alerts. See the
+[registry](docs/STATUS_INDICATORS.md), [zones and precedence](docs/STATUS_LAYOUT_ZONES.md),
+[administration guide](docs/STATUS_LAYOUT_ADMINISTRATION.md), and
+[accessibility notes](docs/STATUS_LAYOUT_ACCESSIBILITY.md).
+
 The normative interoperability identifier is `pm-protocol/1.0.0`. The browser talks only to this server; device credentials never reach browser code.
 
 The canonical source repository is
@@ -49,6 +57,8 @@ cd backend && alembic upgrade head && uvicorn app.main:app --reload
 In separate terminals run `python -m worker.app.main` and `cd frontend && npm run dev`. Run all portable gates with `make lint typecheck test contract frontend`.
 
 For production use [Installation](docs/INSTALLATION.md), then [First run](docs/FIRST_RUN.md).
+Browser sign-in behavior is documented in [Authentication](docs/AUTHENTICATION.md)
+and [Browser compatibility](docs/BROWSER_COMPATIBILITY.md).
 TrueNAS Community Edition 25.10 has a first-class, immutable-image deployment
 through [Apps > Install via YAML](deploy/truenas/installation.md), including exact
 dataset ACLs, three TLS modes, nightly encrypted/restore-tested backups, and an
@@ -60,6 +70,11 @@ Rate administration is covered by [SCE synchronization](docs/SCE_RATE_SYNC.md),
 and [versioning](docs/RATE_VERSIONING.md). See the consolidated
 [TrueNAS deployment notes](docs/TRUE_NAS_DEPLOYMENT.md) before installing an
 upgrade.
+
+Historical analysis is covered by the [History guide](docs/HISTORY.md),
+[historical cost calculation](docs/HISTORY_COSTS.md),
+[multi-sensor aggregation](docs/MULTI_SENSOR_AGGREGATION.md), and
+[History exports](docs/HISTORY_EXPORTS.md).
 
 Verification evidence is recorded in [Testing](docs/TESTING.md) and [Load test results](docs/LOAD_TEST_RESULTS.md).
 

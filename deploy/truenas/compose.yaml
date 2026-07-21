@@ -218,6 +218,7 @@ services:
     image: ghcr.io/mhilton7/power-monitor-backup:1.0.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
     platform: linux/amd64
     user: "10003:10003"
+    group_add: ["10001"]
     restart: unless-stopped
     command: [/srv/scripts/backup-scheduler.sh]
     environment:

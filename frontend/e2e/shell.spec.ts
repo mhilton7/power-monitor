@@ -10,6 +10,7 @@ const session = (roles: string[] = ['admin']) => ({
 const site = { id: 'site-1', name: 'Upland Site', timezone: 'America/Los_Angeles', allowed_cidrs: [], allowed_domains: [], allow_public_polling: false }
 const fleet = { current_load_w: '960', energy_today_kwh: '12.5', estimated_cost_today: '4.25', billing_cycle_energy_kwh: '244', estimated_billing_cycle_cost: '83.11', online_devices: 1, synchronized_devices: 1, total_devices: 1, active_alerts: 1, current_tou_bucket: 'on-peak', recent_peak_w: '1800', disclosure: 'Estimate, not utility bill.' }
 const device = { id: 'device-1', name: 'Garage HVAC', site_id: 'site-1', site_name: 'Upland Site', circuit_id: 'branch-1', circuit_name: 'Garage branch', connection_mode: 'hybrid', measurement_role: 'submeter', cost_scope: 'energy_only', included_in_default: true, ct_rating_amps: '100', status: 'online_synchronized', lifecycle_status: 'active', current_watts: '960', last_seen_at: '2026-07-20T06:00:00Z', firmware_version: '1.0.0', rssi_dbm: -52, pzem_ok: true, sd_ok: true, time_trusted: true, backlog: 0 }
+const historyDevice = { ...device, id: 'device-2', hardware_id: 'esp32-main-leg-2', name: 'Main Panel L2', circuit_id: 'leg-2', circuit_name: 'Main Panel L2', measurement_role: 'service-leg', current_watts: '1000' }
 const officialVersion = { id: 'rate-version-official', version: 1, effective_from: '2026-06-01', effective_through: null, status: 'active', source_kind: 'official_sce', source_checked_at: '2026-07-19T10:15:00Z', source_label: 'SCE archived evidence', integrity_sha256: 'a'.repeat(64), is_active: true, immutable: true, created_at: '2026-06-01T00:00:00Z' }
 const officialPlan = { id: 'rate-plan-official', code: 'TOU-D-4-9PM', name: 'TOU-D 4 PM to 9 PM', description: 'Official SCE residential time-of-use plan.', plan_kind: 'official_sce', ownership_scope: 'global', currency: 'USD', timezone: 'America/Los_Angeles', status: 'active', versions: [officialVersion] }
 const accessPermissions = [
@@ -18,6 +19,7 @@ const accessPermissions = [
   ['users.view', 'Administration', 'View users', true], ['users.manage', 'Administration', 'Manage users', true],
   ['roles.view', 'Administration', 'View roles', true], ['roles.manage', 'Administration', 'Manage roles', true],
   ['interface_text.view', 'Administration', 'View interface text', true], ['interface_text.manage', 'Administration', 'Manage interface text', true],
+  ['status_indicators.view', 'Administration', 'View status layouts', false], ['status_indicators.manage', 'Administration', 'Manage status layouts', true],
 ].map(([code, group, label, highRisk]) => ({ code, group, label, description: `${String(label)} permission`, high_risk: Boolean(highRisk) }))
 const textDefinitions = [
   ['general.application_name', 'General', 'Power Monitor', 'Application display name', 'public', 160],
@@ -35,7 +37,53 @@ const textDefinitions = [
   ['footer.dashboard', 'Footer & Support', 'Power Monitor Server', 'Dashboard footer text', 'authenticated', 160],
 ].map(([key, section, defaultValue, label, visibility, maxLength]) => ({ key, section, default: defaultValue, label, description: `${String(label)} description`, field_type: 'text', required: true, visibility, max_length: Number(maxLength), min_length: 1, line_breaks: false, url_companion: false, markdown: false, blank_allowed: false, preview_location: 'dashboard', current_value: defaultValue, published_revision: 0 }))
 
-async function mockApplication(page: Page, roles: string[] = ['admin']) {
+const statusZones = ['global_header_left', 'global_header_center', 'global_header_right', 'global_status_row', 'sidebar_upper', 'sidebar_lower', 'global_footer', 'page_header_primary', 'page_header_secondary', 'page_status_row', 'page_summary_strip', 'page_footer', 'mobile_header', 'mobile_status_strip', 'mobile_status_drawer']
+const statusPages = ['overview', 'devices', 'device_detail', 'topology', 'history', 'rates', 'rate_sources', 'alerts', 'enrollment', 'administration', 'backups']
+const statusDefinition = (key: string, label: string, category: string, zone: string, order: number, pages = statusPages, permission = 'overview.view', criticalFallback?: string) => ({
+  key, default_label: label, description: `${label} status from existing server data.`, category, data_source: key, current_value_schema: { status: 'string', display_value: 'string' }, severity_capability: ['info', 'success', 'warning', 'critical', 'unknown'], default_enabled: true, default_zone: zone, allowed_zones: zone.startsWith('global') ? [...statusZones.filter((item) => item.startsWith('global')), ...statusZones.filter((item) => item.startsWith('mobile'))] : [...statusZones.filter((item) => item.startsWith('page')), ...statusZones.filter((item) => item.startsWith('mobile'))], default_order: order, supported_pages: pages, global_shell_support: zone.startsWith('global'), minimum_display_width: 140, preferred_display_width: 220, presentations: ['compact', 'standard', 'detailed'], icon_supported: true, label_supported: true, value_supported: true, freshness_supported: true, role_visibility_supported: true, permission_required: permission, configurable: true, critical_fallback: criticalFallback, renderer: key.includes('power') || key.includes('peak') ? 'power' : key.includes('count') || key.includes('online') || key.includes('offline') ? 'count' : 'health', icon: key.includes('alert') ? 'bell' : key.includes('power') ? 'zap' : 'activity', registry_version: 'status-indicators/1.0',
+})
+const statusDefinitions = [
+  statusDefinition('data.live_connection', 'Live data', 'Live data', 'global_header_center', 10, statusPages, 'overview.view', 'Device disconnect alerts remain active.'),
+  statusDefinition('data.current_power', 'Current load', 'Live data', 'global_header_center', 20),
+  statusDefinition('alerts.active_count', 'Active alerts', 'Alerts', 'global_header_right', 10, statusPages, 'alerts.view', 'Alerts remain on Alerts & Notifications.'),
+  statusDefinition('alerts.critical_count', 'Critical alerts', 'Alerts', 'page_summary_strip', 10, ['alerts'], 'alerts.view', 'Critical alerts remain in the timeline.'),
+  statusDefinition('alerts.warning_count', 'Warning alerts', 'Alerts', 'page_summary_strip', 20, ['alerts'], 'alerts.view'),
+  statusDefinition('alerts.enabled_rule_count', 'Rules enabled', 'Alerts', 'page_summary_strip', 30, ['alerts'], 'alerts.view'),
+  statusDefinition('alerts.disconnect_rule_state', 'Disconnect alerts', 'Alerts', 'page_summary_strip', 40, ['alerts'], 'alerts.view', 'Heartbeat monitoring remains active.'),
+  statusDefinition('device.online_count', 'Devices online', 'Devices', 'page_status_row', 10, ['overview', 'devices'], 'devices.view', 'Device status remains on Devices.'),
+  statusDefinition('device.offline_count', 'Offline or stale', 'Devices', 'page_status_row', 20, ['overview', 'devices'], 'devices.view', 'Disconnect alerts remain active.'),
+  statusDefinition('data.energy_today', 'Energy today', 'Energy', 'page_summary_strip', 10, ['overview']),
+  statusDefinition('rate.current_period', 'Current rate period', 'Rates', 'page_summary_strip', 20, ['overview', 'rates', 'history'], 'rates.view'),
+  statusDefinition('rate.source_health', 'Rate source health', 'Rates', 'page_status_row', 10, ['rates', 'rate_sources'], 'rates.view'),
+  statusDefinition('rate.update_pending', 'Rate update pending', 'Rates', 'page_status_row', 20, ['rates', 'rate_sources'], 'rates.view'),
+  statusDefinition('rate.last_successful_check', 'Last source check', 'Rates', 'page_summary_strip', 10, ['rates', 'rate_sources'], 'rates.manage_sources'),
+  statusDefinition('rate.next_scheduled_check', 'Next source check', 'Rates', 'page_summary_strip', 20, ['rates', 'rate_sources'], 'rates.manage_sources'),
+  statusDefinition('rate.review_policy', 'Review policy', 'Rates', 'page_summary_strip', 30, ['rates', 'rate_sources'], 'rates.manage_sources'),
+  statusDefinition('data.recent_peak', 'Recent peak', 'Energy', 'page_summary_strip', 30, ['overview', 'history']),
+  statusDefinition('system.worker_health', 'Worker', 'System', 'global_status_row', 10, statusPages, 'settings.view', 'Worker alerts and diagnostics remain active.'),
+]
+const defaultStatusConfiguration = () => ({
+  schema_version: 'power-monitor-status-layout/1.0' as const,
+  registry_version: 'status-indicators/1.0', personalization_enabled: false as const,
+  items: statusDefinitions.map((definition) => ({ indicator_key: definition.key, page: '*', role: '*', breakpoint: 'default', visible: true, zone: definition.default_zone, order: definition.default_order, density: 'standard', show_icon: true, show_label: true, show_value: true, show_freshness: true, show_severity: true, show_tooltip: true })),
+})
+const statusValues = Object.fromEntries(statusDefinitions.map((definition) => [definition.key, { status: 'healthy', severity: 'success', display_value: definition.key === 'data.current_power' ? '960 W' : definition.key === 'alerts.active_count' ? '1' : definition.key === 'device.online_count' ? '1' : definition.key === 'device.offline_count' ? '0' : definition.key === 'data.energy_today' ? '12.50 kWh' : definition.key === 'rate.current_period' ? 'On-peak' : definition.key === 'data.recent_peak' ? '1,800 W' : 'Healthy', detail: `${definition.default_label} detail`, freshness_at: '2026-07-20T19:05:00Z' }]))
+
+function resolveMockStatus(configuration: ReturnType<typeof defaultStatusConfiguration>, pageName: string, breakpoint: string, role = 'admin') {
+  const items = statusDefinitions.flatMap((definition) => {
+    if (!definition.global_shell_support && !definition.supported_pages.includes(pageName)) return []
+    const matches = configuration.items.filter((item) => item.indicator_key === definition.key && (item.page === '*' || item.page === pageName) && (item.role === '*' || item.role === role) && (item.breakpoint === 'default' || item.breakpoint === breakpoint))
+    const state = matches.reduce((value, item) => ({ ...value, ...item }), configuration.items.find((item) => item.indicator_key === definition.key) ?? { visible: definition.default_enabled, zone: definition.default_zone, order: definition.default_order })
+    if (!state.visible) return []
+    let zone = state.zone
+    if (breakpoint === 'mobile' && !matches.some((item) => item.breakpoint === 'mobile' && item.zone)) zone = zone.startsWith('global_header') ? 'mobile_header' : zone === 'global_status_row' || zone === 'page_status_row' ? 'mobile_status_strip' : 'mobile_status_drawer'
+    return [{ ...state, indicator_key: definition.key, zone, definition }]
+  })
+  return { schema_version: 'power-monitor-status-layout/1.0', registry_version: 'status-indicators/1.0', published_revision: 1, page: pageName, roles: [role], breakpoint, zones: statusZones.map((key) => ({ key, items: items.filter((item) => item.zone === key).sort((a, b) => Number(a.order) - Number(b.order)) })).filter((zone) => zone.items.length), warnings: [], personalization_enabled: false }
+}
+
+async function mockApplication(page: Page, roles: string[] = ['admin'], initiallyAuthenticated = true) {
+  let authenticated = initiallyAuthenticated
   let enrollmentCounter = 0
   let sensorRemoved = false
   let customDocument: Record<string, unknown> | undefined
@@ -51,14 +99,53 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
   let publishedText: Record<string, string> = {}
   let rateConfiguration = { enabled: true, schedule_cron: '15 3 * * 0', timezone: 'America/Los_Angeles', jitter_minutes: 20, approval_mode: 'manual_review', auto_activate_verified: false, next_scheduled_run: '2026-07-26T10:15:00Z' }
   let rateSources: Array<{ id: string; name: string; url: string; parser_id: string; effective_from?: string; enabled: boolean; last_success_at?: string; consecutive_failures: number }> = [{ id: 'source-1', name: 'SCE public TOU page', url: 'https://www.sce.com/save-money/rates-financing/residential-rate-plans/time-of-use-plans', parser_id: 'sce_public_tou_html_v1', effective_from: '2026-06-01', enabled: true, last_success_at: '2026-07-19T10:15:00Z', consecutive_failures: 0 }]
+  let statusRevision = 1
+  let statusPublished = defaultStatusConfiguration()
+  let statusDraft = structuredClone(statusPublished)
+  let statusDraftRevision = 0
+  let statusPreviewedRevision = 0
+  const statusRevisions = [{ id: 'status-revision-1', revision: 1, registry_version: 'status-indicators/1.0', created_by: 'user-1', created_at: '2026-07-20T10:00:00Z', reason: 'Compiled current layout' }]
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
     const path = url.pathname
     let body: unknown = []
-    if (path === '/api/v1/auth/session') body = session(roles)
+    if (path === '/api/v1/auth/session') body = authenticated ? session(roles) : { authenticated: false, bootstrap_required: false }
+    else if (path === '/api/v1/auth/login') { authenticated = true; body = session(roles) }
     else if (path === '/api/v1/auth/reauthenticate') body = { reauthenticated: true, valid_for_seconds: 300 }
     else if (path === '/api/v1/interface-text') body = { revision: textRevision, values: publishedText }
+    else if (path === '/api/v1/status-indicators/registry') body = { registry_version: 'status-indicators/1.0', indicators: statusDefinitions, zones: statusZones, pages: statusPages, breakpoints: ['desktop', 'tablet', 'mobile'] }
+    else if (path === '/api/v1/status-indicators/layout') body = resolveMockStatus(statusPublished, url.searchParams.get('page') ?? 'overview', url.searchParams.get('breakpoint') ?? 'desktop', roles[0] ?? 'viewer')
+    else if (path === '/api/v1/status-indicators/values') body = { registry_version: 'status-indicators/1.0', generated_at: '2026-07-20T19:05:00Z', values: statusValues }
+    else if (path === '/api/v1/admin/status-indicators/catalog') body = { registry_version: 'status-indicators/1.0', schema_version: 'power-monitor-status-layout/1.0', published_revision: statusRevision, indicators: statusDefinitions, zones: statusZones, pages: statusPages, breakpoints: ['desktop', 'tablet', 'mobile'], roles: [{ id: 'admin', label: 'Administrator' }, { id: 'operator', label: 'Operator' }, { id: 'viewer', label: 'Read-Only Viewer' }], new_indicator_keys: [], excluded_status_surfaces: [{ surface: 'record_row_status', reason: 'Record states stay attached to their records.' }, { surface: 'functional_feedback', reason: 'Validation and operation errors remain mandatory.' }, { surface: 'site_selector', reason: 'The site selector remains an authorization scope control.' }] }
+    else if (path === '/api/v1/admin/status-indicators/draft' && request.method() === 'GET') body = { exists: statusDraftRevision > 0, base_revision: statusRevision, draft_revision: statusDraftRevision, previewed_revision: statusPreviewedRevision || undefined, configuration: statusDraft, critical_hidden: statusDraft.items.filter((item) => !item.visible && statusDefinitions.find((definition) => definition.key === item.indicator_key)?.critical_fallback).map((item) => ({ indicator_key: item.indicator_key, fallback: 'Related workflow remains active.' })) }
+    else if (path === '/api/v1/admin/status-indicators/draft' && request.method() === 'PUT') { const update = JSON.parse(request.postData() ?? '{}') as { configuration: ReturnType<typeof defaultStatusConfiguration> }; statusDraft = update.configuration; statusDraftRevision += 1; statusPreviewedRevision = 0; body = { exists: true, base_revision: statusRevision, draft_revision: statusDraftRevision, configuration: statusDraft, critical_hidden: [] } }
+    else if (path === '/api/v1/admin/status-indicators/draft' && request.method() === 'DELETE') { statusDraft = structuredClone(statusPublished); statusDraftRevision = 0; statusPreviewedRevision = 0; await route.fulfill({ status: 204, body: '' }); return }
+    else if (path === '/api/v1/admin/status-indicators/validate') body = { valid: true, registry_version: 'status-indicators/1.0', item_count: statusDraft.items.length, warnings: [], critical_hidden: [] }
+    else if (path === '/api/v1/admin/status-indicators/preview') {
+      const previewRequest = JSON.parse(request.postData() ?? '{}') as { configuration?: ReturnType<typeof defaultStatusConfiguration>; page: string; role: string; breakpoint: string; scenario?: string }
+      const previewConfiguration = structuredClone(previewRequest.configuration ?? statusDraft)
+      const firstItem = previewConfiguration.items[0]
+      const secondItem = previewConfiguration.items[1]
+      if (previewRequest.scenario === 'one_disabled' && firstItem) firstItem.visible = false
+      if (previewRequest.scenario === 'two_disabled') {
+        if (firstItem) firstItem.visible = false
+        if (secondItem) secondItem.visible = false
+      }
+      if (previewRequest.scenario === 'one_only') previewConfiguration.items.forEach((item, index) => { item.visible = index === 0 })
+      if (previewRequest.scenario === 'empty_zone' && firstItem) previewConfiguration.items.filter((item) => item.zone === firstItem.zone).forEach((item) => { item.visible = false })
+      statusPreviewedRevision = statusDraftRevision
+      const previewLayout = resolveMockStatus(previewConfiguration, previewRequest.page, previewRequest.breakpoint, previewRequest.role)
+      const firstPreviewItem = previewLayout.zones[0]?.items[0]
+      if (previewRequest.scenario === 'long_label' && firstPreviewItem) firstPreviewItem.definition = { ...firstPreviewItem.definition, default_label: 'A deliberately long translated indicator label that wraps safely' }
+      body = { layout: previewLayout, values: statusValues, warnings: [] }
+    }
+    else if (path === '/api/v1/admin/status-indicators/publish') { statusPublished = structuredClone(statusDraft); statusRevision += 1; statusRevisions.unshift({ id: `status-revision-${statusRevision}`, revision: statusRevision, registry_version: 'status-indicators/1.0', created_by: 'user-1', created_at: '2026-07-20T19:10:00Z', reason: 'Published layout' }); statusDraftRevision = 0; statusPreviewedRevision = 0; body = { ...statusRevisions[0], configuration: statusPublished } }
+    else if (path === '/api/v1/admin/status-indicators/revisions') body = { revisions: statusRevisions }
+    else if (path.match(/^\/api\/v1\/admin\/status-indicators\/revisions\/[^/]+\/restore$/)) { statusRevision += 1; statusPublished = defaultStatusConfiguration(); statusDraft = structuredClone(statusPublished); body = { id: `status-revision-${statusRevision}`, revision: statusRevision, restored_from_id: path.split('/').at(-2), configuration: statusPublished } }
+    else if (path === '/api/v1/admin/status-indicators/reset') { statusDraft = defaultStatusConfiguration(); statusDraftRevision += 1; statusPreviewedRevision = 0; body = { exists: true, base_revision: statusRevision, draft_revision: statusDraftRevision, configuration: statusDraft, critical_hidden: [] } }
+    else if (path === '/api/v1/admin/status-indicators/export') body = { schema_version: 'power-monitor-status-layout/1.0', registry_version: 'status-indicators/1.0', published_revision: statusRevision, configuration: url.searchParams.get('draft') === 'true' ? statusDraft : statusPublished }
+    else if (path === '/api/v1/admin/status-indicators/import') { const document = JSON.parse(request.postData() ?? '{}') as { configuration: ReturnType<typeof defaultStatusConfiguration> }; statusDraft = document.configuration; statusDraftRevision += 1; statusPreviewedRevision = 0; body = { exists: true, base_revision: statusRevision, draft_revision: statusDraftRevision, configuration: statusDraft, critical_hidden: [], requires_preview: true, difference_summary: [] } }
     else if (path === '/api/v1/public/interface-text') body = { revision: textRevision, values: Object.fromEntries(Object.entries(publishedText).filter(([key]) => textDefinitions.some((definition) => definition.key === key && definition.visibility === 'public'))) }
     else if (path === '/api/v1/admin/permissions') body = { permissions: accessPermissions, dependencies: { 'users.manage': ['users.view'], 'roles.manage': ['roles.view'], 'interface_text.manage': ['interface_text.view'] } }
     else if (path === '/api/v1/admin/roles') body = { roles: [
@@ -92,6 +179,7 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     else if (path === '/api/v1/devices') {
       const lifecycle = url.searchParams.get('lifecycle')
       if (lifecycle === 'decommissioned') body = sensorRemoved ? [{ ...device, status: 'decommissioned', lifecycle_status: 'decommissioned', circuit_id: undefined, circuit_name: undefined, decommissioned_at: '2026-07-20T07:00:00Z', decommissioned_by_name: 'Fleet Owner', decommission_reason: 'replaced', retained_history: true, re_enrollment_allowed: true }] : []
+      else if (page.url().includes('/history')) body = [device, historyDevice]
       else body = sensorRemoved && lifecycle === 'active' ? [] : [device]
     }
     else if (path === '/api/v1/devices/device-1') body = { device: { ...device, hardware_id: 'esp32-garage-001' }, history: { reading_count: 1440, earliest_reading_at: '2026-06-20T06:00:00Z', latest_reading_at: '2026-07-20T06:00:00Z', retained: true }, lifecycle_events: [] }
@@ -99,9 +187,40 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     else if (path === '/api/v1/events/stream') {
       await route.fulfill({ contentType: 'text/event-stream', body: 'event: fleet\ndata: {"type":"fleet","devices":[]}\n\n' })
       return
-    } else if (path === '/api/v1/circuits') body = [{ id: 'main-1', site_id: 'site-1', name: 'Main panel', measurement_role: 'main' }, { id: 'branch-1', site_id: 'site-1', parent_id: 'main-1', name: 'Garage branch', measurement_role: 'branch' }]
-    else if (path === '/api/v1/aggregate-sets') body = [{ id: 'aggregate-1', name: 'Explicit home total', cost_scope: 'full_account', is_default: true, members: [{ circuit_id: 'main-1' }, { circuit_id: 'branch-1' }], overlap_confirmed_at: '2026-07-20T06:00:00Z' }]
+    } else if (path === '/api/v1/circuits') body = [{ id: 'main-1', site_id: 'site-1', name: 'Main panel', measurement_role: 'main' }, { id: 'branch-1', site_id: 'site-1', parent_id: 'main-1', name: 'Garage branch', measurement_role: 'branch' }, { id: 'leg-2', site_id: 'site-1', name: 'Main Panel L2', measurement_role: 'service-leg', split_phase_group: 'main-panel' }]
+    else if (path === '/api/v1/aggregate-sets') body = [{ id: 'aggregate-1', site_id: 'site-1', name: 'Explicit home total', cost_scope: 'full_account', is_default: true, members: [{ circuit_id: 'main-1' }, { circuit_id: 'branch-1' }], overlap_confirmed_at: '2026-07-20T06:00:00Z' }]
     else if (path === '/api/v1/readings/history') body = { points: [{ timestamp: '2026-07-20T05:59:00Z', power_w: '900', quality_flags: [] }, { timestamp: '2026-07-20T06:00:00Z', power_w: '960', quality_flags: [] }], missing_ranges: [{ start_sequence: 2, end_sequence: 3 }], coverage_percent: '98.5' }
+    else if (path === '/api/v1/history/query') {
+      const query = JSON.parse(request.postData() ?? '{}') as { scope: { type: string; device_id?: string; device_ids?: string[] }; display_mode: string; selection_start_utc?: string; selection_end_utc?: string }
+      const selectedIds = query.scope.type === 'devices' ? query.scope.device_ids ?? [] : [query.scope.device_id ?? 'device-1']
+      const selected = [device, historyDevice].filter((item) => selectedIds.includes(item.id))
+      const sensorCount = selected.length || 1
+      const makePoint = (index: number, seriesId: string, seriesName: string, individual = false) => ({
+        interval_start_utc: `2026-07-21T0${3 + index}:00:00Z`, interval_end_utc: `2026-07-21T0${4 + index}:00:00Z`,
+        local_start: `2026-07-20T${20 + index}:00:00-07:00`, local_end: `2026-07-20T${21 + index}:00:00-07:00`, utc_offset: '-07:00',
+        series_id: seriesId, series_name: seriesName, device_id: individual ? seriesId : undefined,
+        included_sensor_count: individual ? 1 : sensorCount, contributing_sensor_count: individual ? 1 : sensorCount,
+        energy_kwh: individual ? '1.000000' : String(sensorCount), average_power_w: individual ? '1000' : String(sensorCount * 1000), peak_power_w: individual ? '1200' : String(sensorCount * 1200),
+        voltage_min_v: '119', voltage_avg_v: '120', voltage_max_v: '121', current_a: individual ? '8.333' : undefined, power_factor: '1', frequency_hz: '60',
+        tou_period: 'on-peak', rate_per_kwh: '1.00000000', energy_cost: individual ? '1.000000' : String(sensorCount), rate_plan_name: 'Deterministic TOU plan', rate_version_id: 'rate-version-history', rate_effective_from: '2026-06-01', mixed_rates: false,
+        coverage_percent: index === 0 ? '100' : '98.5', missing_sensor_ids: [], quality_flags: index === 0 ? [] : ['partial_coverage'],
+        rate_contributions: [{ utility_account_id: 'account-1', rate_plan_id: 'rate-plan-history', rate_plan_name: 'Deterministic TOU plan', rate_version_id: 'rate-version-history', rate_version: 3, rate_effective_from: '2026-06-01', tou_period: 'on-peak', energy_kwh: individual ? '1' : String(sensorCount), rate_per_kwh: '1', energy_cost: individual ? '1' : String(sensorCount) }],
+      })
+      const combined = [0, 1].map((index) => makePoint(index, 'combined', selected.map((item) => item.name).join(' + ') || device.name))
+      const summary = { start_utc: '2026-07-21T03:00:00Z', end_utc: '2026-07-21T05:00:00Z', energy_kwh: String(sensorCount * 2), energy_cost: String(sensorCount * 2), blended_rate_per_kwh: '1', average_power_w: String(sensorCount * 1000), peak_power_w: String(sensorCount * 1200), highest_cost_bucket_start: '2026-07-21T03:00:00Z', highest_cost_bucket_value: String(sensorCount), highest_usage_bucket_start: '2026-07-21T03:00:00Z', highest_usage_bucket_kwh: String(sensorCount), coverage_percent: '99.25', contributing_sensor_count: sensorCount, tou_breakdown: { 'on-peak': { energy_kwh: String(sensorCount * 2), energy_cost: String(sensorCount * 2) } } }
+      body = {
+        scope: { type: query.scope.type, display_name: selected.map((item) => item.name).join(' + ') || device.name, site_id: 'site-1', site_name: 'Upland Site', timezone: 'America/Los_Angeles', included_device_ids: selectedIds, included_device_names: selected.map((item) => item.name), excluded_device_ids: [], mixed_rates: false },
+        display_mode: query.display_mode, metrics: ['energy_kwh', 'energy_cost'], bucket: '1h', summary,
+        selected_summary: query.selection_start_utc && query.selection_end_utc ? summary : undefined,
+        combined: query.display_mode === 'individual' ? [] : combined,
+        individual: query.display_mode === 'combined' ? [] : selected.map((item) => ({ device_id: item.id, name: item.name, circuit_name: item.circuit_name, status: item.status, points: [0, 1].map((index) => makePoint(index, item.id, item.name, true)) })),
+        rate_versions_used: [{ rate_plan_id: 'rate-plan-history', rate_plan_name: 'Deterministic TOU plan', rate_version_id: 'rate-version-history', rate_version: 3, effective_from: '2026-06-01' }], warnings: [], total_buckets: 2, page: 1, page_size: 250,
+      }
+    }
+    else if (path === '/api/v1/history/export') {
+      await route.fulfill({ contentType: 'text/csv', headers: { 'Content-Disposition': 'attachment; filename=power-monitor-history.csv' }, body: 'power-monitor-history-export/1.0\ninterval_energy_cost\n4.00\n' })
+      return
+    }
     else if (path === '/api/v1/alerts') body = [{ id: 'alert-1', name: 'Synchronization backlog', status: 'active', severity: 'warning', device_id: 'device-1', opened_at: '2026-07-20T06:00:00Z', evidence: { backlog: 42 } }]
     else if (path === '/api/v1/utility-accounts') body = [{ id: 'account-1', name: 'Home utility account' }]
     else if (path === '/api/v1/rates/plans' && request.method() === 'GET') body = [
@@ -190,6 +309,15 @@ async function captureDashboardCorrection(page: Page, filename: string) {
   })
 }
 
+async function captureStatusLayout(page: Page, filename: string) {
+  if (process.env.CAPTURE_STATUS_LAYOUT_SCREENSHOTS !== '1') return
+  await page.evaluate(() => { window.scrollTo(0, 0) })
+  await page.screenshot({
+    path: `../docs/screenshots/status-indicators/${filename}`,
+    fullPage: true,
+  })
+}
+
 test('unauthenticated users see a secure sign-in surface', async ({ page }) => {
   await page.route('**/api/v1/auth/session', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ authenticated: false, bootstrap_required: false }) }))
   await page.goto('/')
@@ -205,6 +333,82 @@ test('first run creates an administrator without a default password', async ({ p
   await expect(page.getByText('There is no default password.')).toBeVisible()
 })
 
+test('Chrome-compatible native credential values submit by click and leave the login form', async ({ page }) => {
+  await mockApplication(page, ['admin'], false)
+  await page.goto('/sign-in')
+  const form = page.locator('#login-form')
+  const username = page.locator('#login-username')
+  const password = page.locator('#current-password')
+  await expect(form).toHaveAttribute('method', 'post')
+  await expect(form).toHaveAttribute('autocomplete', 'on')
+  await expect(username).toHaveAttribute('name', 'username')
+  await expect(username).toHaveAttribute('type', 'email')
+  await expect(username).toHaveAttribute('inputmode', 'email')
+  await expect(username).toHaveAttribute('autocomplete', 'username')
+  await expect(username).toHaveAttribute('autocapitalize', 'none')
+  await expect(username).toHaveAttribute('spellcheck', 'false')
+  await expect(password).toHaveAttribute('name', 'password')
+  await expect(password).toHaveAttribute('type', 'password')
+  await expect(password).toHaveAttribute('autocomplete', 'current-password')
+  await expect(form.locator('input[name="username"]')).toHaveCount(1)
+  await expect(form.locator('input[name="password"]')).toHaveCount(1)
+  await expect(form.locator('input[type="hidden"]')).toHaveCount(0)
+
+  const credentialValue = ['  Chrome Autofill', ' 42!  '].join('')
+  await username.evaluate((input, value) => { (input as HTMLInputElement).value = value }, 'chrome.autofill@example.test')
+  await password.evaluate((input, value) => { (input as HTMLInputElement).value = value }, credentialValue)
+  const loginRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/auth/login') && request.method() === 'POST')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  const payload = JSON.parse((await loginRequest).postData() ?? '{}') as Record<string, unknown>
+  expect(payload).toMatchObject({ email: 'chrome.autofill@example.test', password: credentialValue })
+  await expect(form).toHaveCount(0)
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
+})
+
+test('Enter submits login and password visibility keeps the same native input', async ({ page }) => {
+  await mockApplication(page, ['admin'], false)
+  await page.goto('/sign-in')
+  const password = page.locator('#current-password')
+  const originalNode = await password.evaluateHandle((node) => node)
+  await page.locator('#login-username').fill('keyboard@example.test')
+  await password.fill('Keyboard Password 42!')
+  await password.evaluate((input) => { (input as HTMLInputElement).setSelectionRange(2, 8, 'forward') })
+  await page.getByRole('button', { name: 'Show password' }).click()
+  expect(await password.evaluate((node, original) => node === original, originalNode)).toBe(true)
+  await expect(password).toHaveAttribute('type', 'text')
+  await expect(password).toHaveAttribute('autocomplete', 'current-password')
+  await expect(password).toHaveValue('Keyboard Password 42!')
+  expect(await password.evaluate((input) => [(input as HTMLInputElement).selectionStart, (input as HTMLInputElement).selectionEnd])).toEqual([2, 8])
+  await page.getByRole('button', { name: 'Hide password' }).click()
+  await expect(password).toHaveAttribute('type', 'password')
+
+  const loginRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/auth/login') && request.method() === 'POST')
+  await password.press('Enter')
+  await loginRequest
+  await expect(page.locator('#login-form')).toHaveCount(0)
+})
+
+test('login focus, dark theme, mobile layout, and autofill rules remain accessible', async ({ page }) => {
+  await mockApplication(page, ['admin'], false)
+  await page.setViewportSize({ width: 375, height: 760 })
+  await page.goto('/sign-in')
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+  const username = page.locator('#login-username')
+  await username.focus()
+  await expect(username).toBeFocused()
+  const styles = await username.evaluate((input) => {
+    const computed = getComputedStyle(input)
+    return { color: computed.color, backgroundColor: computed.backgroundColor, caretColor: computed.caretColor, outlineStyle: computed.outlineStyle }
+  })
+  expect(styles.color).not.toBe(styles.backgroundColor)
+  expect(styles.caretColor).not.toBe('transparent')
+  expect(styles.outlineStyle).not.toBe('none')
+  expect(await page.evaluate(() => Array.from(document.styleSheets).some((sheet) => Array.from(sheet.cssRules).some((rule) => rule.cssText.includes(':-webkit-autofill'))))).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
+})
+
 test('viewer sees fleet evidence and an in-app denial for restricted pages', async ({ page }) => {
   await mockApplication(page, ['viewer'])
   await page.goto('/')
@@ -217,13 +421,34 @@ test('viewer sees fleet evidence and an in-app denial for restricted pages', asy
   await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible()
 })
 
-test('history keeps missing-data regions visible', async ({ page }) => {
+test('history combines sensors, shows TOU cost provenance, selects a range, and exports CSV', async ({ page }) => {
   await mockApplication(page)
   await page.goto('/history')
   await expect(page.getByRole('heading', { name: 'History & comparison' })).toBeVisible()
-  await expect(page.getByText('Missing sequence regions')).toBeVisible()
-  await expect(page.getByText('2–3')).toBeVisible()
-  await expect(page.getByText('98.5%')).toBeVisible()
+  await page.getByRole('combobox', { name: 'Scope', exact: true }).selectOption('devices')
+  await page.getByRole('button', { name: 'Select all eligible sensors' }).click()
+  await expect(page.getByText('2 selected')).toBeVisible()
+  await page.getByLabel('Display mode').selectOption('combined_plus_individual')
+  await page.getByLabel('Metric').selectOption('usage_cost')
+  await expect(page.getByText(/Combined total · 2 sensors/)).toBeVisible()
+  await expect(page.getByText('$4.00', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('Deterministic TOU plan').first()).toBeVisible()
+  await expect(page.getByText('partial_coverage').first()).toBeVisible()
+  await page.getByLabel(/Include .*8:00 PM.*selected range/).first().check()
+  await expect(page.getByRole('heading', { name: 'Selected range summary' })).toBeVisible()
+  await expect(page.getByText(/server-calculated interval segments/i)).toBeVisible()
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export CSV' }).click()
+  await download
+  await expect(page.getByText('History export downloaded.')).toBeVisible()
+
+  if (process.env.CAPTURE_HISTORY_SCREENSHOT === '1') {
+    await page.screenshot({ path: '../docs/screenshots/history-cost-aggregation.png', fullPage: true })
+  }
+
+  await page.setViewportSize({ width: 375, height: 760 })
+  await expect(page.getByRole('combobox', { name: 'Scope', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false)
 })
 
 test('topology shows an explicitly confirmed overlap warning', async ({ page }) => {
@@ -563,7 +788,7 @@ test('search and dropdown controls keep compact pointer focus and visible keyboa
   await page.keyboard.type('Garage')
   await expect(search).toHaveValue('Garage')
 
-  const status = page.getByLabel('Status')
+  const status = page.getByRole('combobox', { name: /^Status/ })
   await status.focus()
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
@@ -601,4 +826,85 @@ test('mobile navigation opens with keyboard-operable controls', async ({ page })
   await page.keyboard.press('Enter')
   await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Devices' })).toBeVisible()
+})
+
+test('administrator configures, previews, publishes, and restores a self-correcting status layout', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/administration/status-indicators')
+  await expect(page.getByRole('heading', { name: 'Status Indicators & Layout' })).toBeVisible()
+  await expect(page.getByText('Monitoring remains active', { exact: true })).toBeVisible()
+  await captureStatusLayout(page, 'default-desktop.png')
+
+  const energy = page.locator('.status-config-list > article[data-indicator-key="data.energy_today"]')
+  await energy.getByRole('checkbox', { name: 'Show Energy today' }).click()
+  await expect(page.getByRole('heading', { name: 'Disabled indicators' })).toBeVisible()
+  await expect(page.locator('.disabled-indicators [data-indicator-key="data.energy_today"]')).toHaveCount(0)
+  await expect(page.locator('.disabled-indicator-grid').getByText('Energy today', { exact: true })).toBeVisible()
+
+  const offline = page.locator('.status-config-list > article[data-indicator-key="device.offline_count"]')
+  await offline.getByLabel('Zone').selectOption('page_summary_strip')
+  await offline.getByRole('button', { name: 'Move to beginning' }).click()
+  await expect(page.getByText('Offline or stale moved first.')).toBeAttached()
+
+  await page.getByLabel('Viewport').selectOption('tablet')
+  await expect(page.getByTestId('status-layout-preview')).toHaveClass(/preview-tablet/)
+  await captureStatusLayout(page, 'default-tablet.png')
+  await page.getByLabel('Viewport').selectOption('mobile')
+  await expect(page.getByTestId('status-layout-preview')).toHaveClass(/preview-mobile/)
+  await captureStatusLayout(page, 'default-mobile-preview.png')
+  await page.getByLabel('Scenario').selectOption('empty_zone')
+  expect(
+    await page
+      .getByTestId('status-layout-preview')
+      .locator('[data-status-zone]')
+      .evaluateAll((zones) => zones.every((zone) => zone.children.length > 0)),
+  ).toBe(true)
+  await captureStatusLayout(page, 'empty-zone-mobile.png')
+  await page.getByLabel('Viewport').selectOption('desktop')
+  await page.getByLabel('Scenario').selectOption('long_label')
+  await expect(page.getByText(/deliberately long translated indicator label/i)).toBeVisible()
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const zoomOverflow = await page.locator('body *').evaluateAll((elements) => elements
+    .filter((element) => element.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
+    .slice(0, 10)
+    .map((element) => `${element.tagName.toLowerCase()}.${element.getAttribute('class') ?? ''}: ${element.textContent?.trim().slice(0, 60)}`))
+  expect(zoomOverflow).toEqual([])
+  await page.evaluate(() => { document.documentElement.style.fontSize = '' })
+  await captureStatusLayout(page, 'long-label-desktop.png')
+
+  await page.getByRole('button', { name: 'Save draft' }).first().click()
+  await expect(page.getByText(/Draft revision 1 saved/)).toBeVisible()
+  await page.getByLabel('Scenario').selectOption('all_defaults')
+  await page.getByRole('button', { name: 'Refresh preview' }).click()
+  await expect(page.getByText('Current draft previewed')).toBeVisible()
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Publish layout' }).click()
+  await expect(page.getByText(/Published layout is active/)).toBeVisible()
+
+  await page.goto('/')
+  await expect(page.locator('[data-indicator-key="data.energy_today"]')).toHaveCount(0)
+  await expect(page.locator('[data-indicator-key="device.offline_count"]')).toBeVisible()
+  expect(
+    await page
+      .locator('[data-status-zone]')
+      .evaluateAll((zones) => zones.every((zone) => zone.children.length > 0)),
+  ).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  await page.goto('/alerts')
+  await expect(page.getByText('Synchronization backlog')).toBeVisible()
+
+  await page.goto('/administration/status-indicators')
+  const revisionOne = page.locator('.revision-list article').filter({ hasText: 'Revision 1' })
+  page.once('dialog', (dialog) => dialog.accept())
+  await revisionOne.getByRole('button', { name: 'Restore' }).click()
+  await expect(page.getByText(/restored as a new immutable revision/)).toBeVisible()
+  await page.goto('/')
+  await expect(page.locator('[data-indicator-key="data.energy_today"]')).toBeVisible()
+
+  await page.setViewportSize({ width: 375, height: 760 })
+  await page.reload()
+  await expect(page.locator('[data-status-zone="mobile_header"]')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  await captureStatusLayout(page, 'published-mobile.png')
 })

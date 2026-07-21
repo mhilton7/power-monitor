@@ -37,8 +37,28 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T
 }
 
+export async function apiDownload(path: string, init: RequestInit = {}): Promise<Blob> {
+  const method = (init.method ?? 'GET').toUpperCase()
+  const headers = new Headers(init.headers)
+  if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const csrf = cookie('pm_csrf')
+    if (csrf) headers.set('X-CSRF-Token', decodeURIComponent(csrf))
+  }
+  const response = await fetch(path, { ...init, headers, credentials: 'same-origin' })
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => ({
+      title: 'Download failed',
+      detail: `The server returned ${response.status}.`,
+      status: response.status,
+      code: 'download_failed',
+    }))) as ApiProblem
+    throw new ApiError(problem)
+  }
+  return response.blob()
+}
+
 export const jsonBody = (value: unknown): RequestInit => ({
   method: 'POST',
   body: JSON.stringify(value),
 })
-

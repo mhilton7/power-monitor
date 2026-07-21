@@ -3000,6 +3000,92 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/history/query:
+    post:
+      tags:
+      - management
+      summary: Query History Api
+      description: Query aligned, topology-safe electrical and estimated energy-cost
+        history.
+      operationId: query_history_api_api_v1_history_query_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HistoryQueryRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryQueryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/history/export:
+    post:
+      tags:
+      - management
+      summary: Export History Api
+      description: Export the bounded server-authoritative history result with provenance.
+      operationId: export_history_api_api_v1_history_export_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HistoryQueryRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/fleet/summary:
     get:
       tags:
@@ -6037,6 +6123,645 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/status-indicators/registry:
+    get:
+      tags:
+      - status indicators
+      summary: Get Registry
+      operationId: get_registry_api_v1_status_indicators_registry_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Registry Api V1 Status Indicators Registry Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/status-indicators/layout:
+    get:
+      tags:
+      - status indicators
+      summary: Get Resolved Layout
+      operationId: get_resolved_layout_api_v1_status_indicators_layout_get
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: string
+          default: overview
+          title: Page
+      - name: breakpoint
+        in: query
+        required: false
+        schema:
+          type: string
+          default: desktop
+          title: Breakpoint
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Resolved Layout Api V1 Status Indicators Layout
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/status-indicators/values:
+    get:
+      tags:
+      - status indicators
+      summary: Get Status Values
+      operationId: get_status_values_api_v1_status_indicators_values_get
+      parameters:
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+      - name: device_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Device Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Status Values Api V1 Status Indicators Values
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/catalog:
+    get:
+      tags:
+      - status indicators
+      summary: Get Admin Catalog
+      operationId: get_admin_catalog_api_v1_admin_status_indicators_catalog_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Admin Catalog Api V1 Admin Status Indicators Catalog
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/draft:
+    get:
+      tags:
+      - status indicators
+      summary: Get Draft
+      operationId: get_draft_api_v1_admin_status_indicators_draft_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Draft Api V1 Admin Status Indicators Draft Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - status indicators
+      summary: Save Draft
+      operationId: save_draft_api_v1_admin_status_indicators_draft_put
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutDraftWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Save Draft Api V1 Admin Status Indicators Draft Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - status indicators
+      summary: Discard Draft
+      operationId: discard_draft_api_v1_admin_status_indicators_draft_delete
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/validate:
+    post:
+      tags:
+      - status indicators
+      summary: Validate Layout
+      operationId: validate_layout_api_v1_admin_status_indicators_validate_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutValidate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Validate Layout Api V1 Admin Status Indicators Validate
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/preview:
+    post:
+      tags:
+      - status indicators
+      summary: Preview Layout
+      operationId: preview_layout_api_v1_admin_status_indicators_preview_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutPreview'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Preview Layout Api V1 Admin Status Indicators Preview
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/publish:
+    post:
+      tags:
+      - status indicators
+      summary: Publish Layout
+      operationId: publish_layout_api_v1_admin_status_indicators_publish_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutPublish'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Publish Layout Api V1 Admin Status Indicators Publish
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/reset:
+    post:
+      tags:
+      - status indicators
+      summary: Reset Layout
+      operationId: reset_layout_api_v1_admin_status_indicators_reset_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutReset'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Reset Layout Api V1 Admin Status Indicators Reset
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/revisions:
+    get:
+      tags:
+      - status indicators
+      summary: List Revisions
+      operationId: list_revisions_api_v1_admin_status_indicators_revisions_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Revisions Api V1 Admin Status Indicators Revisions
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/revisions/{revision_id}:
+    get:
+      tags:
+      - status indicators
+      summary: Get Revision
+      operationId: get_revision_api_v1_admin_status_indicators_revisions__revision_id__get
+      parameters:
+      - name: revision_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Revision Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Revision Api V1 Admin Status Indicators Revisions  Revision
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/revisions/{revision_id}/restore:
+    post:
+      tags:
+      - status indicators
+      summary: Restore Revision
+      operationId: restore_revision_api_v1_admin_status_indicators_revisions__revision_id__restore_post
+      parameters:
+      - name: revision_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Revision Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutRestore'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Restore Revision Api V1 Admin Status Indicators Revisions  Revision
+                  Id  Restore Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/export:
+    get:
+      tags:
+      - status indicators
+      summary: Export Layout
+      operationId: export_layout_api_v1_admin_status_indicators_export_get
+      parameters:
+      - name: draft
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Draft
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Export Layout Api V1 Admin Status Indicators Export
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/import:
+    post:
+      tags:
+      - status indicators
+      summary: Import Layout
+      operationId: import_layout_api_v1_admin_status_indicators_import_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutImport'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Import Layout Api V1 Admin Status Indicators Import
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/firmware-releases:
     get:
       tags:
@@ -7408,6 +8133,198 @@ components:
       - recommended_heartbeat_interval_seconds
       - immediate_sync_requested
       title: HeartbeatResponse
+    HistoryBucket:
+      properties:
+        interval_start_utc:
+          type: string
+          format: date-time
+          title: Interval Start Utc
+        interval_end_utc:
+          type: string
+          format: date-time
+          title: Interval End Utc
+        local_start:
+          type: string
+          title: Local Start
+        local_end:
+          type: string
+          title: Local End
+        utc_offset:
+          type: string
+          title: Utc Offset
+        series_id:
+          type: string
+          title: Series Id
+        series_name:
+          type: string
+          title: Series Name
+        device_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Device Id
+        included_sensor_count:
+          type: integer
+          title: Included Sensor Count
+        contributing_sensor_count:
+          type: integer
+          title: Contributing Sensor Count
+        energy_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Energy Kwh
+        average_power_w:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Average Power W
+        peak_power_w:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Peak Power W
+        voltage_min_v:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Voltage Min V
+        voltage_avg_v:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Voltage Avg V
+        voltage_max_v:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Voltage Max V
+        current_a:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current A
+        power_factor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Power Factor
+        frequency_hz:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Frequency Hz
+        tou_period:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tou Period
+        rate_per_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rate Per Kwh
+        energy_cost:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Energy Cost
+        rate_plan_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rate Plan Name
+        rate_version_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rate Version Id
+        rate_effective_from:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Rate Effective From
+        mixed_rates:
+          type: boolean
+          title: Mixed Rates
+          default: false
+        coverage_percent:
+          type: string
+          title: Coverage Percent
+        missing_sensor_ids:
+          items:
+            type: string
+          type: array
+          title: Missing Sensor Ids
+        quality_flags:
+          items:
+            type: string
+          type: array
+          title: Quality Flags
+        rate_contributions:
+          items:
+            $ref: '#/components/schemas/HistoryRateContribution'
+          type: array
+          title: Rate Contributions
+      additionalProperties: false
+      type: object
+      required:
+      - interval_start_utc
+      - interval_end_utc
+      - local_start
+      - local_end
+      - utc_offset
+      - series_id
+      - series_name
+      - included_sensor_count
+      - contributing_sensor_count
+      - energy_kwh
+      - average_power_w
+      - peak_power_w
+      - voltage_min_v
+      - voltage_avg_v
+      - voltage_max_v
+      - current_a
+      - power_factor
+      - frequency_hz
+      - tou_period
+      - rate_per_kwh
+      - energy_cost
+      - rate_plan_name
+      - rate_version_id
+      - rate_effective_from
+      - coverage_percent
+      title: HistoryBucket
+    HistoryIndividualSeries:
+      properties:
+        device_id:
+          type: string
+          title: Device Id
+        name:
+          type: string
+          title: Name
+        circuit_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Circuit Name
+        status:
+          type: string
+          title: Status
+        points:
+          items:
+            $ref: '#/components/schemas/HistoryBucket'
+          type: array
+          title: Points
+      additionalProperties: false
+      type: object
+      required:
+      - device_id
+      - name
+      - status
+      - points
+      title: HistoryIndividualSeries
     HistoryPoint:
       properties:
         timestamp:
@@ -7461,6 +8378,353 @@ components:
       - frequency_hz
       - quality_flags
       title: HistoryPoint
+    HistoryQueryRequest:
+      properties:
+        scope:
+          $ref: '#/components/schemas/HistoryScopeQuery'
+        display_mode:
+          type: string
+          enum:
+          - combined
+          - individual
+          - combined_plus_individual
+          title: Display Mode
+          default: combined
+        metrics:
+          items:
+            type: string
+            enum:
+            - power_w
+            - energy_kwh
+            - voltage_v
+            - current_a
+            - power_factor
+            - frequency_hz
+            - energy_cost
+            - usage_cost
+          type: array
+          maxItems: 8
+          minItems: 1
+          title: Metrics
+        start_utc:
+          type: string
+          format: date-time
+          title: Start Utc
+        end_utc:
+          type: string
+          format: date-time
+          title: End Utc
+        bucket:
+          type: string
+          enum:
+          - auto
+          - raw
+          - 5m
+          - 15m
+          - 1h
+          - 1d
+          title: Bucket
+          default: auto
+        timezone:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Timezone
+        strict_coverage:
+          type: boolean
+          title: Strict Coverage
+          default: false
+        selection_start_utc:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Selection Start Utc
+        selection_end_utc:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Selection End Utc
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+          default: 1
+        page_size:
+          type: integer
+          maximum: 500.0
+          minimum: 1.0
+          title: Page Size
+          default: 250
+      additionalProperties: false
+      type: object
+      required:
+      - scope
+      - start_utc
+      - end_utc
+      title: HistoryQueryRequest
+    HistoryQueryResponse:
+      properties:
+        scope:
+          $ref: '#/components/schemas/HistoryResolvedScope'
+        display_mode:
+          type: string
+          enum:
+          - combined
+          - individual
+          - combined_plus_individual
+          title: Display Mode
+        metrics:
+          items:
+            type: string
+          type: array
+          title: Metrics
+        bucket:
+          type: string
+          title: Bucket
+        summary:
+          $ref: '#/components/schemas/HistoryRangeSummary'
+        selected_summary:
+          anyOf:
+          - $ref: '#/components/schemas/HistoryRangeSummary'
+          - type: 'null'
+        combined:
+          items:
+            $ref: '#/components/schemas/HistoryBucket'
+          type: array
+          title: Combined
+        individual:
+          items:
+            $ref: '#/components/schemas/HistoryIndividualSeries'
+          type: array
+          title: Individual
+        rate_versions_used:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Rate Versions Used
+        warnings:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Warnings
+        total_buckets:
+          type: integer
+          title: Total Buckets
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        next_page:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Page
+      additionalProperties: false
+      type: object
+      required:
+      - scope
+      - display_mode
+      - metrics
+      - bucket
+      - summary
+      - total_buckets
+      - page
+      - page_size
+      title: HistoryQueryResponse
+    HistoryRangeSummary:
+      properties:
+        start_utc:
+          type: string
+          format: date-time
+          title: Start Utc
+        end_utc:
+          type: string
+          format: date-time
+          title: End Utc
+        energy_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Energy Kwh
+        energy_cost:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Energy Cost
+        blended_rate_per_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Blended Rate Per Kwh
+        average_power_w:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Average Power W
+        peak_power_w:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Peak Power W
+        highest_cost_bucket_start:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Highest Cost Bucket Start
+        highest_cost_bucket_value:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Highest Cost Bucket Value
+        highest_usage_bucket_start:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Highest Usage Bucket Start
+        highest_usage_bucket_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Highest Usage Bucket Kwh
+        coverage_percent:
+          type: string
+          title: Coverage Percent
+        contributing_sensor_count:
+          type: integer
+          title: Contributing Sensor Count
+        tou_breakdown:
+          additionalProperties:
+            additionalProperties:
+              type: string
+            type: object
+          type: object
+          title: Tou Breakdown
+      additionalProperties: false
+      type: object
+      required:
+      - start_utc
+      - end_utc
+      - energy_kwh
+      - energy_cost
+      - blended_rate_per_kwh
+      - average_power_w
+      - peak_power_w
+      - highest_cost_bucket_start
+      - highest_cost_bucket_value
+      - highest_usage_bucket_start
+      - highest_usage_bucket_kwh
+      - coverage_percent
+      - contributing_sensor_count
+      title: HistoryRangeSummary
+    HistoryRateContribution:
+      properties:
+        utility_account_id:
+          type: string
+          title: Utility Account Id
+        rate_plan_id:
+          type: string
+          title: Rate Plan Id
+        rate_plan_name:
+          type: string
+          title: Rate Plan Name
+        rate_version_id:
+          type: string
+          title: Rate Version Id
+        rate_version:
+          type: integer
+          title: Rate Version
+        rate_effective_from:
+          type: string
+          format: date
+          title: Rate Effective From
+        tou_period:
+          type: string
+          title: Tou Period
+        energy_kwh:
+          type: string
+          title: Energy Kwh
+        rate_per_kwh:
+          type: string
+          title: Rate Per Kwh
+        energy_cost:
+          type: string
+          title: Energy Cost
+      additionalProperties: false
+      type: object
+      required:
+      - utility_account_id
+      - rate_plan_id
+      - rate_plan_name
+      - rate_version_id
+      - rate_version
+      - rate_effective_from
+      - tou_period
+      - energy_kwh
+      - rate_per_kwh
+      - energy_cost
+      title: HistoryRateContribution
+    HistoryResolvedScope:
+      properties:
+        type:
+          type: string
+          enum:
+          - device
+          - devices
+          - circuit
+          - site
+          - aggregate_set
+          title: Type
+        display_name:
+          type: string
+          title: Display Name
+        site_id:
+          type: string
+          title: Site Id
+        site_name:
+          type: string
+          title: Site Name
+        timezone:
+          type: string
+          title: Timezone
+        included_device_ids:
+          items:
+            type: string
+          type: array
+          title: Included Device Ids
+        included_device_names:
+          items:
+            type: string
+          type: array
+          title: Included Device Names
+        excluded_device_ids:
+          items:
+            type: string
+          type: array
+          title: Excluded Device Ids
+        mixed_rates:
+          type: boolean
+          title: Mixed Rates
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - type
+      - display_name
+      - site_id
+      - site_name
+      - timezone
+      - included_device_ids
+      - included_device_names
+      title: HistoryResolvedScope
     HistoryResponse:
       properties:
         points:
@@ -7489,6 +8753,48 @@ components:
       - missing_ranges
       - coverage_percent
       title: HistoryResponse
+    HistoryScopeQuery:
+      properties:
+        type:
+          type: string
+          enum:
+          - device
+          - devices
+          - circuit
+          - site
+          - aggregate_set
+          title: Type
+        device_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Device Id
+        device_ids:
+          items:
+            type: string
+          type: array
+          maxItems: 32
+          title: Device Ids
+        circuit_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Circuit Id
+        site_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+        aggregate_set_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Aggregate Set Id
+      additionalProperties: false
+      type: object
+      required:
+      - type
+      title: HistoryScopeQuery
     InterfaceTextDraftWrite:
       properties:
         base_revision:
@@ -8578,6 +9884,225 @@ components:
       - name
       - id
       title: SiteView
+    StatusLayoutDraftWrite:
+      properties:
+        base_revision:
+          type: integer
+          minimum: 0.0
+          title: Base Revision
+        draft_revision:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Draft Revision
+        configuration:
+          additionalProperties: true
+          type: object
+          title: Configuration
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - base_revision
+      - configuration
+      title: StatusLayoutDraftWrite
+    StatusLayoutImport:
+      properties:
+        schema_version:
+          type: string
+          const: power-monitor-status-layout/1.0
+          title: Schema Version
+        registry_version:
+          type: string
+          maxLength: 64
+          title: Registry Version
+        base_revision:
+          type: integer
+          minimum: 0.0
+          title: Base Revision
+        configuration:
+          additionalProperties: true
+          type: object
+          title: Configuration
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - schema_version
+      - registry_version
+      - base_revision
+      - configuration
+      title: StatusLayoutImport
+    StatusLayoutPreview:
+      properties:
+        configuration:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Configuration
+        page:
+          type: string
+          maxLength: 64
+          title: Page
+          default: overview
+        role:
+          type: string
+          maxLength: 32
+          title: Role
+          default: admin
+        breakpoint:
+          type: string
+          enum:
+          - desktop
+          - tablet
+          - mobile
+          title: Breakpoint
+          default: desktop
+        scenario:
+          type: string
+          enum:
+          - all_defaults
+          - one_disabled
+          - two_disabled
+          - one_only
+          - empty_zone
+          - many
+          - warning
+          - critical
+          - long_label
+          title: Scenario
+          default: all_defaults
+      additionalProperties: false
+      type: object
+      title: StatusLayoutPreview
+    StatusLayoutPublish:
+      properties:
+        base_revision:
+          type: integer
+          minimum: 0.0
+          title: Base Revision
+        draft_revision:
+          type: integer
+          minimum: 1.0
+          title: Draft Revision
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Reason
+        confirm:
+          type: boolean
+          title: Confirm
+          default: false
+        confirm_critical:
+          type: boolean
+          title: Confirm Critical
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - base_revision
+      - draft_revision
+      title: StatusLayoutPublish
+    StatusLayoutReset:
+      properties:
+        base_revision:
+          type: integer
+          minimum: 0.0
+          title: Base Revision
+        draft_revision:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Draft Revision
+        scope:
+          type: string
+          enum:
+          - indicator
+          - zone
+          - page
+          - all
+          title: Scope
+        indicator_key:
+          anyOf:
+          - type: string
+            maxLength: 120
+          - type: 'null'
+          title: Indicator Key
+        zone:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Zone
+        page:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Page
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - base_revision
+      - scope
+      title: StatusLayoutReset
+    StatusLayoutRestore:
+      properties:
+        base_revision:
+          type: integer
+          minimum: 0.0
+          title: Base Revision
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Reason
+        confirm:
+          type: boolean
+          title: Confirm
+          default: false
+        confirm_critical:
+          type: boolean
+          title: Confirm Critical
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - base_revision
+      title: StatusLayoutRestore
+    StatusLayoutValidate:
+      properties:
+        configuration:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Configuration
+      additionalProperties: false
+      type: object
+      title: StatusLayoutValidate
     SubsystemHealth:
       properties:
         ok:
