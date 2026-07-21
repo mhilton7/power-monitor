@@ -45,6 +45,7 @@ from app.db.models import (
     Site,
     SiteRollup,
     UtilityAccount,
+    WorkerState,
 )
 from app.polling.ssrf import validate_poll_target
 from app.rates.documents import engine_plan
@@ -789,7 +790,74 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
                 if observed <= now - timedelta(seconds=rule.resolve_seconds):
                     instance.status = "resolved"
                     instance.resolved_at = now
+                    resolved += 1
+
+    async def set_system_condition(
+        rule: AlertRule, active: bool, evidence: dict[str, Any]
+    ) -> None:
+        """Apply debounce/resolve semantics to a server-level alert rule."""
+
+        nonlocal opened, resolved
+        instance = await session.scalar(
+            select(AlertInstance).where(
+                AlertInstance.rule_id == rule.id,
+                AlertInstance.device_id.is_(None),
+                AlertInstance.status.in_(
+                    ["debouncing", "active", "acknowledged", "resolving"]
+                ),
+            )
+        )
+        if active and instance is None:
+            session.add(
+                AlertInstance(
+                    rule_id=rule.id,
+                    device_id=None,
+                    site_id=rule.site_id,
+                    status="debouncing" if rule.debounce_seconds else "active",
+                    severity=rule.severity,
+                    opened_at=now,
+                    evidence=evidence,
+                )
+            )
+            if not rule.debounce_seconds:
+                opened += 1
+        elif active and instance is not None:
+            if instance.status == "debouncing":
+                opened_at = instance.opened_at
+                if opened_at.tzinfo is None:
+                    opened_at = opened_at.replace(tzinfo=UTC)
+                if opened_at <= now - timedelta(seconds=rule.debounce_seconds):
+                    instance.status = "active"
+                    instance.evidence = evidence
+                    opened += 1
+            elif instance.status == "resolving":
+                prior = instance.evidence.get("status_before_resolve", "active")
+                instance.status = (
+                    str(prior) if prior in {"active", "acknowledged"} else "active"
+                )
+                instance.evidence = evidence
+        elif not active and instance is not None:
+            if instance.status == "debouncing":
+                await session.delete(instance)
+            elif not rule.resolve_seconds:
+                instance.status = "resolved"
+                instance.resolved_at = now
                 resolved += 1
+            elif instance.status != "resolving":
+                instance.evidence = {
+                    **instance.evidence,
+                    "resolve_observed_at": now.isoformat(),
+                    "status_before_resolve": instance.status,
+                }
+                instance.status = "resolving"
+            else:
+                observed = datetime.fromisoformat(
+                    str(instance.evidence.get("resolve_observed_at"))
+                )
+                if observed <= now - timedelta(seconds=rule.resolve_seconds):
+                    instance.status = "resolved"
+                    instance.resolved_at = now
+                    resolved += 1
 
     def matching_rules(device: Device, rule_type: str) -> list[AlertRule]:
         return [
@@ -798,6 +866,31 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
             if (rule.device_id is None or rule.device_id == device.id)
             and (rule.site_id is None or rule.site_id == device.site_id)
         ]
+
+    worker = await session.get(WorkerState, "main")
+    worker_last_success = worker.last_success_at if worker else None
+    if worker_last_success is not None and worker_last_success.tzinfo is None:
+        worker_last_success = worker_last_success.replace(tzinfo=UTC)
+    for rule in rules.get("worker_failure", []):
+        stale_seconds = int(rule.configuration.get("stale_seconds", 45))
+        unhealthy = (
+            worker is None
+            or worker.status != "healthy"
+            or worker_last_success is None
+            or worker_last_success < now - timedelta(seconds=stale_seconds)
+        )
+        await set_system_condition(
+            rule,
+            unhealthy,
+            {
+                "worker_name": worker.worker_name if worker else "main",
+                "worker_status": worker.status if worker else "missing",
+                "last_success_at": (
+                    worker_last_success.isoformat() if worker_last_success else None
+                ),
+                "stale_after_seconds": stale_seconds,
+            },
+        )
 
     for device in devices:
         if device.maintenance_until:

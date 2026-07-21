@@ -6221,6 +6221,14 @@ paths:
           - type: string
           - type: 'null'
           title: Device Id
+      - name: keys
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Keys
       - name: pm_session
         in: cookie
         required: false
@@ -6418,6 +6426,52 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Validate Layout Api V1 Admin Status Indicators Validate
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/status-indicators/repair:
+    post:
+      tags:
+      - status indicators
+      summary: Repair Layout
+      description: Return a reviewable, deterministic repair without publishing it.
+      operationId: repair_layout_api_v1_admin_status_indicators_repair_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusLayoutValidate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Repair Layout Api V1 Admin Status Indicators Repair
                   Post
         '422':
           description: Validation Error
@@ -7953,6 +8007,29 @@ components:
         recent_peak_w:
           type: string
           title: Recent Peak W
+        has_live_data:
+          type: boolean
+          title: Has Live Data
+        has_energy_data:
+          type: boolean
+          title: Has Energy Data
+        has_cost_data:
+          type: boolean
+          title: Has Cost Data
+        reporting_devices:
+          type: integer
+          title: Reporting Devices
+        latest_heartbeat_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Latest Heartbeat At
+        coverage_percent:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Coverage Percent
         disclosure:
           type: string
           title: Disclosure
@@ -7971,6 +8048,12 @@ components:
       - active_alerts
       - current_tou_bucket
       - recent_peak_w
+      - has_live_data
+      - has_energy_data
+      - has_cost_data
+      - reporting_devices
+      - latest_heartbeat_at
+      - coverage_percent
       - disclosure
       title: FleetSummary
     HTTPValidationError:

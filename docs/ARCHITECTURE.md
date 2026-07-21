@@ -15,6 +15,13 @@ Push and pull records enter the same transactional ingestion service. `raw_readi
 
 Status is evidence-based: signed heartbeat age, device API result, meter, storage, trusted time, and synchronization state. ICMP/TCP diagnostics never determine application health alone.
 
+Dashboard presentation is also server-resolved. Status and summary definitions
+carry stable metric identities; the resolver enforces one canonical instance
+per page, role, and breakpoint. Normal pages do not carry infrastructure-health
+cards. Those diagnostics are restricted to Administration > System Health while
+readiness probes and alert evaluation remain part of the existing health and
+worker paths.
+
 ## Scale and failure behavior
 
 Polling has bounded global/site concurrency, short timeouts, jitter, exponential backoff, and per-device circuit breaking. Devices retain durable records on microSD and resume after the server cursor. Raw data is the source for recomputable rollups and pricing. PostgreSQL timestamps are UTC; rate evaluation converts interval boundaries in the utility-account timezone.

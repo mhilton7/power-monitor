@@ -36,6 +36,12 @@ function definition(key: string, label: string): StatusIndicatorDefinition {
     configurable: true,
     renderer: 'summary',
     icon: 'activity',
+    metric_identity: key,
+    canonical_priority: 300,
+    allow_duplicate: false,
+    suppress_when_empty: true,
+    hide_in_zero_data_state: false,
+    diagnostics_only: false,
     registry_version: 'status-indicators/1.0',
   }
 }
@@ -106,6 +112,7 @@ describe('status indicator renderer', () => {
     const zone = container.querySelector('[data-status-zone="page_summary_strip"]')
     expect(zone?.childElementCount).toBe(count)
     expect(zone?.querySelectorAll('[data-indicator-key]')).toHaveLength(count)
+    expect(zone?.querySelectorAll('[data-metric-identity]')).toHaveLength(count)
   })
 
   it('keeps an accessible name when the visible label is disabled', () => {
@@ -141,5 +148,6 @@ describe('status route mapping', () => {
     expect(pageFromPath('/devices/8d53')).toBe('device_detail')
     expect(pageFromPath('/rates/sources')).toBe('rate_sources')
     expect(pageFromPath('/administration/status-indicators')).toBe('administration')
+    expect(pageFromPath('/administration/system-health')).toBe('system_health')
   })
 })

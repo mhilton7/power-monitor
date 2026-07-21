@@ -1,5 +1,32 @@
 # Testing and release gates
 
+## Dashboard information architecture acceptance (2026-07-21)
+
+The cleanup release passed Ruff lint/format, strict mypy, 83 portable backend
+tests, the Docker-backed PostgreSQL 17 migration test, and the bounded
+100-device resilience gate. PostgreSQL upgraded populated legacy schemas and a
+clean database to `20260721_0007`; the new revision also downgraded to
+`20260720_0006` and reapplied successfully. The resulting schema has 77 public
+tables and a preserved prior layout plus the corrected immutable revision.
+
+The frontend passed a clean `npm ci`, lint, TypeScript, 22 unit/component tests,
+30 Chromium end-to-end and accessibility scenarios, and the production build.
+Those tests assert that API, database, and worker health render only on
+**Administration > System Health**; normal pages have no duplicate
+`metric_identity`; Overview and History have one honest no-data state; measured
+zero remains distinct from unavailable data; and desktop/mobile layouts do not
+overflow.
+
+Fresh API, frontend, and backup images built successfully. The normal isolated
+Compose stack reached healthy state and generated a checksum-verified
+five-artifact logical backup that restored at `20260721_0007`. The immutable,
+deployment-mode TrueNAS Compose render for pool `Apps` passed the repository
+validator and Docker Compose parsing. Its seven-service Docker Desktop workflow
+then enrolled two simulated devices, processed signed heartbeats and 60
+historical readings, calculated the SCE rate, verified that only TCP 8443 was
+published, encrypted and verified a backup, and restored it into a clean
+database. The official pytest wrapper repeated that workflow successfully.
+
 ## Login autofill and browser acceptance
 
 `frontend/tests/authAutofill.test.tsx` verifies the rendered native form

@@ -26,6 +26,7 @@ const TopologyPage = lazy(() => import('./pages/TopologyPage').then((module) => 
 const UsersAccessPage = lazy(() => import('./pages/UsersAccessPage').then((module) => ({ default: module.UsersAccessPage })))
 const InterfaceTextPage = lazy(() => import('./pages/InterfaceTextPage').then((module) => ({ default: module.InterfaceTextPage })))
 const StatusIndicatorsPage = lazy(() => import('./pages/StatusIndicatorsPage').then((module) => ({ default: module.StatusIndicatorsPage })))
+const SystemHealthPage = lazy(() => import('./pages/SystemHealthPage').then((module) => ({ default: module.SystemHealthPage })))
 
 function Guard({ session, permission, children }: { session: Session; permission: string; children: ReactNode }) {
   return hasPermission(session, permission) ? children : <AccessDeniedPage permission={permission} />
@@ -57,6 +58,7 @@ function ProtectedApp({ session }: { session: Session }) {
         <Route path="/administration/users-access" element={<Guard session={session} permission="users.view"><UsersAccessPage session={session} /></Guard>} />
         <Route path="/administration/interface-text" element={<Guard session={session} permission="interface_text.view"><InterfaceTextPage canManage={hasPermission(session, 'interface_text.manage')} /></Guard>} />
         <Route path="/administration/status-indicators" element={<Guard session={session} permission="status_indicators.view"><StatusIndicatorsPage canManage={hasPermission(session, 'status_indicators.manage')} /></Guard>} />
+        <Route path="/administration/system-health" element={<Guard session={session} permission="settings.view"><SystemHealthPage /></Guard>} />
         <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </Suspense>

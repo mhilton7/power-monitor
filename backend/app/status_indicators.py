@@ -3,31 +3,42 @@ from __future__ import annotations
 import copy
 import json
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
+    AggregateSet,
     AlertInstance,
     AlertRule,
     BackupRun,
+    CostCalculationRun,
+    CostIntervalResult,
     Device,
     DeviceHeartbeat,
     EnrollmentToken,
     FirmwareDeployment,
+    NormalizedInterval,
     NotificationAttempt,
+    RateAssignment,
     RateChangeCandidate,
     RateSource,
     RateSyncConfiguration,
+    RateVersion,
     Site,
     StatusLayoutRevision,
     StatusLayoutState,
+    UtilityAccount,
     WorkerState,
 )
 from app.problem import ProblemError
+from app.rates.documents import engine_plan
+from app.rates.engine import RateEngine
+from app.rates.service import version_document
 
 REGISTRY_VERSION = "status-indicators/1.0"
 LAYOUT_SCHEMA_VERSION = "power-monitor-status-layout/1.0"
@@ -43,13 +54,13 @@ PAGES = (
     "alerts",
     "enrollment",
     "administration",
+    "system_health",
     "backups",
 )
 GLOBAL_ZONES = (
     "global_header_left",
     "global_header_center",
     "global_header_right",
-    "global_status_row",
     "sidebar_upper",
     "sidebar_lower",
     "global_footer",
@@ -60,6 +71,10 @@ PAGE_ZONES = (
     "page_status_row",
     "page_summary_strip",
     "page_footer",
+    "overview_site_state",
+    "overview_site_summary",
+    "history_context",
+    "diagnostics_summary",
 )
 MOBILE_ZONES = ("mobile_header", "mobile_status_strip", "mobile_status_drawer")
 ZONES = GLOBAL_ZONES + PAGE_ZONES + MOBILE_ZONES
@@ -93,6 +108,12 @@ class IndicatorDefinition:
     critical_fallback: str | None
     renderer: str
     icon: str
+    metric_identity: str
+    canonical_priority: int
+    allow_duplicate: bool
+    suppress_when_empty: bool
+    hide_in_zero_data_state: bool
+    diagnostics_only: bool
     registry_version: str = REGISTRY_VERSION
 
 
@@ -114,6 +135,12 @@ def _definition(
     freshness: bool = True,
     critical_fallback: str | None = None,
     global_shell: bool | None = None,
+    metric_identity: str | None = None,
+    canonical_priority: int = 300,
+    allow_duplicate: bool = False,
+    suppress_when_empty: bool = True,
+    hide_in_zero_data_state: bool = False,
+    diagnostics_only: bool = False,
 ) -> IndicatorDefinition:
     return IndicatorDefinition(
         key=key,
@@ -149,6 +176,12 @@ def _definition(
         critical_fallback=critical_fallback,
         renderer=renderer,
         icon=icon,
+        metric_identity=metric_identity or key,
+        canonical_priority=canonical_priority,
+        allow_duplicate=allow_duplicate,
+        suppress_when_empty=suppress_when_empty,
+        hide_in_zero_data_state=hide_in_zero_data_state,
+        diagnostics_only=diagnostics_only,
     )
 
 
@@ -160,10 +193,16 @@ INDICATOR_DEFINITIONS = (
         "System",
         "health.ready",
         "settings.view",
-        "global_status_row",
+        "diagnostics_summary",
         10,
+        pages=("system_health",),
+        allowed=("diagnostics_summary",),
         renderer="health",
         icon="server",
+        metric_identity="system.api_health",
+        canonical_priority=1000,
+        diagnostics_only=True,
+        global_shell=False,
         critical_fallback="API failures remain on the affected page and in TrueNAS health checks.",
     ),
     _definition(
@@ -173,10 +212,16 @@ INDICATOR_DEFINITIONS = (
         "System",
         "health.ready.database",
         "settings.view",
-        "global_status_row",
+        "diagnostics_summary",
         20,
+        pages=("system_health",),
+        allowed=("diagnostics_summary",),
         renderer="health",
         icon="database",
+        metric_identity="system.database_health",
+        canonical_priority=1000,
+        diagnostics_only=True,
+        global_shell=False,
         critical_fallback=(
             "Database failures remain in API readiness and TrueNAS application health."
         ),
@@ -188,10 +233,16 @@ INDICATOR_DEFINITIONS = (
         "System",
         "worker_state",
         "settings.view",
-        "global_status_row",
+        "diagnostics_summary",
         30,
+        pages=("system_health",),
+        allowed=("diagnostics_summary",),
         renderer="health",
         icon="cpu",
+        metric_identity="system.worker_health",
+        canonical_priority=1000,
+        diagnostics_only=True,
+        global_shell=False,
         critical_fallback=(
             "Worker failures continue generating alerts and remain under "
             "Administration diagnostics."
@@ -206,8 +257,10 @@ INDICATOR_DEFINITIONS = (
         "overview.view",
         "global_header_center",
         10,
+        allowed=(*GLOBAL_ZONES, "overview_site_state", *MOBILE_ZONES),
         renderer="health",
         icon="radio",
+        metric_identity="data.live_state",
         critical_fallback="Stale-device alerts and device details remain available.",
     ),
     _definition(
@@ -222,6 +275,7 @@ INDICATOR_DEFINITIONS = (
         renderer="power",
         icon="zap",
         freshness=False,
+        metric_identity="power.current",
     ),
     _definition(
         "site.current",
@@ -232,9 +286,11 @@ INDICATOR_DEFINITIONS = (
         "sites.view",
         "global_header_left",
         10,
+        enabled=False,
         renderer="text",
         icon="map-pin",
         freshness=False,
+        metric_identity="site.current",
     ),
     _definition(
         "alerts.active_count",
@@ -245,8 +301,10 @@ INDICATOR_DEFINITIONS = (
         "alerts.view",
         "global_header_right",
         10,
+        allowed=(*GLOBAL_ZONES, "overview_site_summary", *MOBILE_ZONES),
         renderer="count",
         icon="bell",
+        metric_identity="alerts.active_count",
         critical_fallback="Alert records remain on Alerts & Notifications and delivery continues.",
     ),
     _definition(
@@ -317,6 +375,7 @@ INDICATOR_DEFINITIONS = (
         pages=("overview", "devices"),
         renderer="count",
         icon="radio",
+        metric_identity="devices.online",
         critical_fallback="Device state remains on Devices and device detail pages.",
     ),
     _definition(
@@ -331,6 +390,7 @@ INDICATOR_DEFINITIONS = (
         pages=("overview", "devices"),
         renderer="count",
         icon="unplug",
+        metric_identity="devices.offline",
         critical_fallback="Disconnect alerts and device state remain active.",
     ),
     _definition(
@@ -345,6 +405,7 @@ INDICATOR_DEFINITIONS = (
         pages=("overview", "devices"),
         renderer="fraction",
         icon="refresh-cw",
+        metric_identity="data.synchronization",
     ),
     _definition(
         "data.energy_today",
@@ -353,12 +414,15 @@ INDICATOR_DEFINITIONS = (
         "Energy",
         "readings",
         "overview.view",
-        "page_summary_strip",
+        "overview_site_summary",
         10,
         pages=("overview",),
+        allowed=("overview_site_summary", "mobile_status_drawer"),
         renderer="energy",
         icon="battery-charging",
         freshness=False,
+        metric_identity="energy.today",
+        hide_in_zero_data_state=True,
     ),
     _definition(
         "data.recent_peak",
@@ -367,12 +431,16 @@ INDICATOR_DEFINITIONS = (
         "Energy",
         "readings",
         "overview.view",
-        "page_summary_strip",
+        "overview_site_summary",
         30,
-        pages=("overview", "history"),
+        pages=("overview",),
+        allowed=("overview_site_summary", "page_summary_strip", "mobile_status_drawer"),
+        enabled=False,
         renderer="power",
         icon="gauge",
         freshness=False,
+        metric_identity="power.recent_peak",
+        hide_in_zero_data_state=True,
     ),
     _definition(
         "data.aggregate_coverage",
@@ -383,9 +451,12 @@ INDICATOR_DEFINITIONS = (
         "history.view",
         "page_status_row",
         10,
-        pages=("history",),
+        pages=("overview", "history"),
+        enabled=False,
         renderer="percent",
         icon="chart-no-axes-combined",
+        metric_identity="data.coverage",
+        hide_in_zero_data_state=True,
     ),
     _definition(
         "rate.current_plan",
@@ -396,10 +467,11 @@ INDICATOR_DEFINITIONS = (
         "rates.view",
         "page_status_row",
         30,
-        pages=("overview", "rates", "history"),
+        pages=("rates",),
         renderer="text",
         icon="badge-dollar-sign",
         freshness=False,
+        metric_identity="rate.current_plan",
     ),
     _definition(
         "rate.current_period",
@@ -410,10 +482,11 @@ INDICATOR_DEFINITIONS = (
         "rates.view",
         "page_summary_strip",
         20,
-        pages=("overview", "rates", "history"),
+        pages=("rates",),
         renderer="text",
         icon="clock-3",
         freshness=False,
+        metric_identity="rate.current_period",
     ),
     _definition(
         "rate.current_price",
@@ -424,10 +497,82 @@ INDICATOR_DEFINITIONS = (
         "rates.view",
         "page_summary_strip",
         25,
-        pages=("overview", "rates"),
+        pages=("rates",),
         renderer="money-rate",
         icon="circle-dollar-sign",
         freshness=False,
+        metric_identity="rate.current_price",
+    ),
+    _definition(
+        "cost.today",
+        "Estimated today",
+        "Estimated energy cost since the local-day boundary.",
+        "Costs",
+        "cost_interval_results",
+        "overview.view",
+        "overview_site_summary",
+        20,
+        pages=("overview",),
+        allowed=("overview_site_summary", "mobile_status_drawer"),
+        renderer="money",
+        icon="circle-dollar-sign",
+        freshness=False,
+        metric_identity="cost.today",
+        canonical_priority=500,
+        hide_in_zero_data_state=True,
+    ),
+    _definition(
+        "energy.billing_cycle",
+        "Billing-cycle energy",
+        "Monitored energy in the current calculation cycle.",
+        "Energy",
+        "cost_interval_results",
+        "overview.view",
+        "overview_site_summary",
+        30,
+        pages=("overview",),
+        allowed=("overview_site_summary", "mobile_status_drawer"),
+        renderer="energy",
+        icon="battery-charging",
+        freshness=False,
+        metric_identity="energy.billing_cycle",
+        canonical_priority=500,
+        hide_in_zero_data_state=True,
+    ),
+    _definition(
+        "cost.billing_cycle_estimate",
+        "Cycle estimate",
+        "Estimated monitored energy cost in the current calculation cycle.",
+        "Costs",
+        "cost_interval_results",
+        "overview.view",
+        "overview_site_summary",
+        40,
+        pages=("overview",),
+        allowed=("overview_site_summary", "mobile_status_drawer"),
+        renderer="money",
+        icon="circle-dollar-sign",
+        freshness=False,
+        metric_identity="cost.billing_cycle_estimate",
+        canonical_priority=500,
+        hide_in_zero_data_state=True,
+    ),
+    _definition(
+        "rate.current_context",
+        "Rate context",
+        "Effective plan, current time-of-use period, and energy price.",
+        "Rates",
+        "rate_engine",
+        "rates.view",
+        "history_context",
+        20,
+        pages=("overview", "history"),
+        allowed=("history_context", "overview_site_summary", "mobile_status_drawer"),
+        renderer="text",
+        icon="badge-dollar-sign",
+        freshness=False,
+        metric_identity="rate.current_context",
+        canonical_priority=550,
     ),
     _definition(
         "rate.source_health",
@@ -655,7 +800,7 @@ INDICATOR_DEFINITIONS = (
         "topology.view",
         "page_status_row",
         10,
-        pages=("topology", "history"),
+        pages=("topology",),
         renderer="count",
         icon="triangle-alert",
         critical_fallback=(
@@ -665,6 +810,72 @@ INDICATOR_DEFINITIONS = (
     ),
 )
 INDICATOR_REGISTRY = {item.key: item for item in INDICATOR_DEFINITIONS}
+
+
+# Page-specific defaults move a global indicator into its canonical location without
+# changing that indicator's placement on other pages. Exact-scope administrator
+# settings replace these defaults during materialization.
+DEFAULT_OVERRIDES: tuple[dict[str, Any], ...] = (
+    {
+        "indicator_key": "data.live_connection",
+        "page": "overview",
+        "role": "*",
+        "breakpoint": "default",
+        "zone": "overview_site_state",
+        "order": 20,
+        "density": "compact",
+    },
+    {
+        "indicator_key": "data.current_power",
+        "page": "overview",
+        "role": "*",
+        "breakpoint": "default",
+        "visible": False,
+    },
+    {
+        "indicator_key": "device.online_count",
+        "page": "overview",
+        "role": "*",
+        "breakpoint": "default",
+        "zone": "overview_site_state",
+        "order": 10,
+        "density": "compact",
+    },
+    {
+        "indicator_key": "device.offline_count",
+        "page": "overview",
+        "role": "*",
+        "breakpoint": "default",
+        "zone": "overview_site_state",
+        "order": 30,
+        "density": "compact",
+    },
+    {
+        "indicator_key": "device.synchronized_count",
+        "page": "overview",
+        "role": "*",
+        "breakpoint": "default",
+        "zone": "overview_site_summary",
+        "order": 50,
+    },
+    {
+        "indicator_key": "alerts.active_count",
+        "page": "overview",
+        "role": "*",
+        "breakpoint": "default",
+        "zone": "overview_site_summary",
+        "order": 60,
+    },
+    {
+        "indicator_key": "rate.current_context",
+        "page": "overview",
+        "role": "*",
+        "breakpoint": "default",
+        "visible": False,
+        "zone": "overview_site_summary",
+        "order": 70,
+    },
+)
 
 
 def registry_payload(
@@ -700,7 +911,8 @@ def compiled_configuration() -> dict[str, Any]:
         "schema_version": LAYOUT_SCHEMA_VERSION,
         "registry_version": REGISTRY_VERSION,
         "personalization_enabled": False,
-        "items": [default_item(item) for item in INDICATOR_DEFINITIONS],
+        "items": [default_item(item) for item in INDICATOR_DEFINITIONS]
+        + copy.deepcopy(list(DEFAULT_OVERRIDES)),
     }
 
 
@@ -712,22 +924,272 @@ def materialize_configuration(configuration: dict[str, Any] | None) -> dict[str,
     configured = configuration.get("items", [])
     if not isinstance(configured, list):
         return result
-    explicit_globals = {
-        item.get("indicator_key")
+    explicit_scopes = {
+        (
+            item.get("indicator_key"),
+            item.get("page", "*"),
+            item.get("role", "*"),
+            item.get("breakpoint", "default"),
+        )
         for item in configured
         if isinstance(item, dict)
-        and item.get("page", "*") == "*"
-        and item.get("role", "*") == "*"
-        and item.get("breakpoint", "default") == "default"
     }
     result["items"] = [
-        item for item in result["items"] if item["indicator_key"] not in explicit_globals
+        item
+        for item in result["items"]
+        if (
+            item.get("indicator_key"),
+            item.get("page", "*"),
+            item.get("role", "*"),
+            item.get("breakpoint", "default"),
+        )
+        not in explicit_scopes
     ] + copy.deepcopy(configured)
     return result
 
 
 def _problem(code: str, detail: str, **extra: Any) -> ProblemError:
     return ProblemError(422, "Invalid status layout", detail, code, extra=extra or None)
+
+
+FIXED_PAGE_METRICS: dict[str, dict[str, str]] = {
+    "overview": {
+        "site.current": "the site selector",
+        "power.current": "the Live Power hero",
+    },
+    "history": {
+        "data.coverage": "the History result summary",
+        "power.recent_peak": "the History result summary",
+    },
+}
+for _page in PAGES:
+    FIXED_PAGE_METRICS.setdefault(_page, {}).setdefault("site.current", "the site selector")
+
+ZONE_PRIORITY = {
+    "diagnostics_summary": 1000,
+    "overview_site_state": 900,
+    "overview_site_summary": 800,
+    "history_context": 750,
+    "page_header_primary": 700,
+    "page_header_secondary": 690,
+    "page_status_row": 680,
+    "page_summary_strip": 670,
+    "global_header_left": 500,
+    "global_header_center": 500,
+    "global_header_right": 500,
+    "mobile_header": 490,
+    "mobile_status_strip": 480,
+    "page_footer": 300,
+    "global_footer": 200,
+    "sidebar_upper": 150,
+    "sidebar_lower": 140,
+    "mobile_status_drawer": 100,
+    "global_status_row": 0,
+}
+
+
+def _effective_states(
+    configuration: dict[str, Any], *, page: str, role: str, breakpoint: str
+) -> list[tuple[IndicatorDefinition, dict[str, Any]]]:
+    states: list[tuple[IndicatorDefinition, dict[str, Any]]] = []
+    roles = {role} if role != "*" else set()
+    for definition in INDICATOR_DEFINITIONS:
+        if definition.diagnostics_only and page != "system_health":
+            continue
+        if not definition.global_shell_support and page not in definition.supported_pages:
+            continue
+        candidates: list[tuple[int, str, dict[str, Any]]] = []
+        for item in configuration.get("items", []):
+            if not isinstance(item, dict) or item.get("indicator_key") != definition.key:
+                continue
+            score = _scope_score(item, page, roles, breakpoint)
+            if score is not None:
+                candidates.append((score, str(item.get("role", "*")), item))
+        state = default_item(definition)
+        for _score, _role, candidate in sorted(candidates, key=lambda value: (value[0], value[1])):
+            state.update(
+                {
+                    key: value
+                    for key, value in candidate.items()
+                    if key not in {"indicator_key", "page", "role", "breakpoint"}
+                }
+            )
+        if state.get("visible", True):
+            states.append((definition, state))
+    return states
+
+
+def duplicate_metric_conflicts(
+    configuration: dict[str, Any], *, roles: set[str] | None = None
+) -> list[dict[str, Any]]:
+    conflicts: list[dict[str, Any]] = []
+    role_ids = sorted(roles or {"*"})
+    for page in PAGES:
+        for role in role_ids:
+            for breakpoint in ("desktop", "tablet", "mobile"):
+                groups: dict[str, list[tuple[IndicatorDefinition, dict[str, Any]]]] = {}
+                for definition, state in _effective_states(
+                    configuration, page=page, role=role, breakpoint=breakpoint
+                ):
+                    if definition.allow_duplicate:
+                        continue
+                    groups.setdefault(definition.metric_identity, []).append((definition, state))
+                for metric_identity, candidates in groups.items():
+                    fixed_surface = FIXED_PAGE_METRICS.get(page, {}).get(metric_identity)
+                    if len(candidates) < 2 and fixed_surface is None:
+                        continue
+                    ordered = sorted(
+                        candidates,
+                        key=lambda value: (
+                            value[0].canonical_priority,
+                            ZONE_PRIORITY.get(str(value[1].get("zone")), 0),
+                            -int(value[1].get("order", 0)),
+                            value[0].key,
+                        ),
+                        reverse=True,
+                    )
+                    recommended = (
+                        fixed_surface
+                        if fixed_surface is not None
+                        else f"{ordered[0][0].default_label} in {ordered[0][1].get('zone')}"
+                    )
+                    conflicts.append(
+                        {
+                            "metric_identity": metric_identity,
+                            "page": page,
+                            "role": role,
+                            "breakpoint": breakpoint,
+                            "indicator_keys": [item[0].key for item in ordered],
+                            "recommended_placement": recommended,
+                            "message": (
+                                f"{ordered[0][0].default_label} is already displayed in "
+                                f"{recommended}. Choose one location or keep the "
+                                "recommended placement."
+                            ),
+                        }
+                    )
+    unique: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for conflict in conflicts:
+        identity = (
+            conflict["metric_identity"],
+            conflict["page"],
+            conflict["role"],
+            conflict["breakpoint"],
+        )
+        unique.setdefault(identity, conflict)
+    return list(unique.values())
+
+
+def repair_configuration(
+    configuration: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Repair legacy placements without changing unrelated layout choices."""
+
+    repaired = materialize_configuration(configuration)
+    repairs: list[dict[str, Any]] = []
+    for item in repaired["items"]:
+        if not isinstance(item, dict):
+            continue
+        definition = INDICATOR_REGISTRY.get(str(item.get("indicator_key")))
+        if definition is None:
+            continue
+        if definition.diagnostics_only and (
+            item.get("page", "*") != "system_health" or item.get("zone") != "diagnostics_summary"
+        ):
+            repairs.append(
+                {
+                    "indicator_key": definition.key,
+                    "action": "moved_to_system_health",
+                    "from_zone": item.get("zone"),
+                }
+            )
+            item.update({"page": "system_health", "zone": "diagnostics_summary"})
+        elif item.get("zone") not in definition.allowed_zones:
+            repairs.append(
+                {
+                    "indicator_key": definition.key,
+                    "action": "moved_to_registered_default",
+                    "from_zone": item.get("zone"),
+                    "to_zone": definition.default_zone,
+                }
+            )
+            item["zone"] = definition.default_zone
+
+    def disable_for_page(indicator_key: str, page: str, reason: str) -> None:
+        exact = next(
+            (
+                item
+                for item in repaired["items"]
+                if item.get("indicator_key") == indicator_key
+                and item.get("page", "*") == page
+                and item.get("role", "*") == "*"
+                and item.get("breakpoint", "default") == "default"
+            ),
+            None,
+        )
+        if exact is None:
+            exact = {
+                "indicator_key": indicator_key,
+                "page": page,
+                "role": "*",
+                "breakpoint": "default",
+            }
+            repaired["items"].append(exact)
+        exact["visible"] = False
+        repairs.append(
+            {
+                "indicator_key": indicator_key,
+                "action": "suppressed_duplicate",
+                "reason": reason,
+            }
+        )
+
+    # These facts are rendered by required functional controls/result summaries.
+    disable_for_page("site.current", "overview", "site selector is canonical")
+    disable_for_page("data.current_power", "overview", "Live Power hero is canonical")
+    disable_for_page("data.aggregate_coverage", "history", "History result summary is canonical")
+
+    # If two registry items represent one fact in an identical saved scope, retain
+    # the item with the strongest registered placement priority.
+    groups: dict[tuple[str, str, str, str], list[dict[str, Any]]] = {}
+    for item in repaired["items"]:
+        if not isinstance(item, dict) or item.get("visible", True) is False:
+            continue
+        definition = INDICATOR_REGISTRY.get(str(item.get("indicator_key")))
+        if definition is None or definition.allow_duplicate:
+            continue
+        scope = (
+            definition.metric_identity,
+            str(item.get("page", "*")),
+            str(item.get("role", "*")),
+            str(item.get("breakpoint", "default")),
+        )
+        groups.setdefault(scope, []).append(item)
+    for scope, items in groups.items():
+        if len(items) < 2:
+            continue
+        keep = max(
+            items,
+            key=lambda item: (
+                INDICATOR_REGISTRY[str(item["indicator_key"])].canonical_priority,
+                ZONE_PRIORITY.get(str(item.get("zone")), 0),
+                -int(item.get("order", 0)),
+                str(item["indicator_key"]),
+            ),
+        )
+        for item in items:
+            if item is keep:
+                continue
+            item["visible"] = False
+            repairs.append(
+                {
+                    "indicator_key": item["indicator_key"],
+                    "metric_identity": scope[0],
+                    "action": "suppressed_duplicate",
+                    "kept_indicator_key": keep["indicator_key"],
+                }
+            )
+    return repaired, repairs
 
 
 def validate_configuration(
@@ -906,12 +1368,24 @@ def validate_configuration(
                 }
             )
         normalized.append(item)
-    return {
+    normalized_configuration = {
         "schema_version": LAYOUT_SCHEMA_VERSION,
         "registry_version": REGISTRY_VERSION,
         "personalization_enabled": False,
         "items": normalized,
-    }, warnings
+    }
+    conflicts = duplicate_metric_conflicts(normalized_configuration, roles=roles)
+    if conflicts:
+        first = conflicts[0]
+        raise _problem(
+            "status_metric_duplicate",
+            first["message"],
+            metric_identity=first["metric_identity"],
+            page=first["page"],
+            duplicates=conflicts,
+            repair_action="Keep recommended placement",
+        )
+    return normalized_configuration, warnings
 
 
 async def current_layout(
@@ -946,6 +1420,9 @@ def _mobile_zone(zone: str) -> str:
         "page_header_primary",
         "page_header_secondary",
         "page_status_row",
+        "overview_site_state",
+        "history_context",
+        "diagnostics_summary",
     }:
         return "mobile_status_strip"
     if zone in {
@@ -954,6 +1431,7 @@ def _mobile_zone(zone: str) -> str:
         "global_footer",
         "sidebar_upper",
         "sidebar_lower",
+        "overview_site_summary",
     }:
         return "mobile_status_drawer"
     return zone
@@ -989,6 +1467,8 @@ def resolve_layout(
     resolved_items: list[dict[str, Any]] = []
     for definition in INDICATOR_DEFINITIONS:
         if definition.permission_required not in permissions:
+            continue
+        if definition.diagnostics_only and page != "system_health":
             continue
         if not definition.global_shell_support and page not in definition.supported_pages:
             continue
@@ -1048,10 +1528,57 @@ def resolve_layout(
                     "message": "A newly registered indicator is using its compiled default.",
                 }
             )
+    canonical_items: list[dict[str, Any]] = []
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in resolved_items:
+        definition = INDICATOR_REGISTRY[item["indicator_key"]]
+        if definition.allow_duplicate:
+            canonical_items.append(item)
+        else:
+            grouped.setdefault(definition.metric_identity, []).append(item)
+    for metric_identity, metric_candidates in grouped.items():
+        fixed_surface = FIXED_PAGE_METRICS.get(page, {}).get(metric_identity)
+        if fixed_surface is not None:
+            for duplicate in metric_candidates:
+                warnings.append(
+                    {
+                        "code": "duplicate_metric_suppressed",
+                        "indicator_key": duplicate["indicator_key"],
+                        "metric_identity": metric_identity,
+                        "canonical_surface": fixed_surface,
+                        "message": (
+                            f"{duplicate['definition']['default_label']} was suppressed because "
+                            f"{fixed_surface} is the canonical page placement."
+                        ),
+                    }
+                )
+            continue
+        ordered = sorted(
+            metric_candidates,
+            key=lambda item: (
+                int(item["definition"]["canonical_priority"]),
+                ZONE_PRIORITY.get(str(item.get("zone")), 0),
+                -int(item.get("order", 0)),
+                item["indicator_key"],
+            ),
+            reverse=True,
+        )
+        canonical_items.append(ordered[0])
+        for duplicate in ordered[1:]:
+            warnings.append(
+                {
+                    "code": "duplicate_metric_suppressed",
+                    "indicator_key": duplicate["indicator_key"],
+                    "metric_identity": metric_identity,
+                    "kept_indicator_key": ordered[0]["indicator_key"],
+                    "message": "A lower-priority duplicate metric placement was suppressed.",
+                }
+            )
+
     zones = []
     for zone in ZONES:
         items = sorted(
-            (item for item in resolved_items if item["zone"] == zone),
+            (item for item in canonical_items if item["zone"] == zone),
             key=lambda item: (int(item.get("order", 0)), item["indicator_key"]),
         )
         if items:
@@ -1086,6 +1613,270 @@ def _value(
     }
 
 
+@dataclass(frozen=True)
+class CurrentRateSnapshot:
+    account_name: str
+    plan_name: str
+    version: int
+    period: str
+    price_per_kwh: Decimal
+    currency: str
+    local_time: str
+
+
+def _period_label(value: str) -> str:
+    return value.replace("_", " ").capitalize()
+
+
+def _money_rate(value: Decimal, currency: str) -> str:
+    rendered = format(value, "f").rstrip("0").rstrip(".")
+    if "." not in rendered:
+        rendered = f"{rendered}.00"
+    else:
+        whole, fraction = rendered.split(".", 1)
+        rendered = f"{whole}.{fraction.ljust(2, '0')}"
+    prefix = "$" if currency.upper() == "USD" else f"{currency.upper()} "
+    return f"{prefix}{rendered}/kWh"
+
+
+def _local_rate_time(instant: datetime, engine: RateEngine) -> str:
+    local = instant.astimezone(engine.zone)
+    clock = local.strftime("%I:%M %p")
+    if clock.startswith("0"):
+        clock = clock[1:]
+    zone = local.tzname() or str(engine.zone)
+    return f"{local:%b} {local.day}, {local.year} at {clock} {zone}"
+
+
+def _account_label(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else f"{names[0]} + {len(names) - 1} more"
+
+
+async def _current_rate_values(
+    session: AsyncSession,
+    *,
+    selected_site_ids: set[str],
+    devices: list[Device],
+    now: datetime,
+) -> dict[str, dict[str, Any]]:
+    if not selected_site_ids:
+        return {
+            "rate.current_plan": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="No permitted site is available",
+            ),
+            "rate.current_period": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="Assign an active rate to a utility account",
+            ),
+            "rate.current_price": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="Assign an active rate to a utility account",
+            ),
+        }
+
+    all_accounts = list(
+        await session.scalars(
+            select(UtilityAccount)
+            .where(UtilityAccount.site_id.in_(selected_site_ids))
+            .order_by(UtilityAccount.name, UtilityAccount.id)
+        )
+    )
+    accounts_by_site: dict[str, list[UtilityAccount]] = {}
+    for account in all_accounts:
+        accounts_by_site.setdefault(account.site_id, []).append(account)
+
+    selected_account_ids = {
+        device.utility_account_id for device in devices if device.utility_account_id
+    }
+    for device in devices:
+        site_accounts = accounts_by_site.get(device.site_id, [])
+        if device.utility_account_id is None and len(site_accounts) == 1:
+            selected_account_ids.add(site_accounts[0].id)
+    if not selected_account_ids:
+        selected_account_ids = {account.id for account in all_accounts}
+    accounts = [account for account in all_accounts if account.id in selected_account_ids]
+
+    if not accounts:
+        return {
+            "rate.current_plan": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="Create a utility account and assign an active rate",
+            ),
+            "rate.current_period": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="No utility account is available for the selected scope",
+            ),
+            "rate.current_price": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="No utility account is available for the selected scope",
+            ),
+        }
+
+    account_ids = [account.id for account in accounts]
+    assignments = list(
+        await session.scalars(
+            select(RateAssignment)
+            .where(
+                RateAssignment.utility_account_id.in_(account_ids),
+                RateAssignment.effective_from <= now,
+                or_(RateAssignment.effective_to.is_(None), RateAssignment.effective_to > now),
+            )
+            .order_by(
+                RateAssignment.utility_account_id,
+                RateAssignment.effective_from.desc(),
+                RateAssignment.created_at.desc(),
+            )
+        )
+    )
+    assignment_by_account: dict[str, RateAssignment] = {}
+    for assignment in assignments:
+        assignment_by_account.setdefault(assignment.utility_account_id, assignment)
+
+    version_ids = {assignment.rate_version_id for assignment in assignment_by_account.values()}
+    version_ids.update(
+        account.active_rate_version_id for account in accounts if account.active_rate_version_id
+    )
+    versions = {
+        version.id: version
+        for version in (
+            list(await session.scalars(select(RateVersion).where(RateVersion.id.in_(version_ids))))
+            if version_ids
+            else []
+        )
+    }
+
+    snapshots: list[CurrentRateSnapshot] = []
+    unavailable: list[str] = []
+    for account in accounts:
+        current_assignment = assignment_by_account.get(account.id)
+        version_id = (
+            current_assignment.rate_version_id
+            if current_assignment
+            else account.active_rate_version_id
+        )
+        version = versions.get(version_id) if version_id else None
+        if version is None:
+            unavailable.append(f"{account.name}: no active rate")
+            continue
+        try:
+            document = await version_document(session, version)
+            engine = RateEngine(engine_plan(document))
+            local_date = now.astimezone(engine.zone).date()
+            if local_date < version.effective_from or (
+                version.effective_to is not None and local_date > version.effective_to
+            ):
+                unavailable.append(f"{account.name}: rate is outside its effective dates")
+                continue
+            period, price = engine.period_at(now)
+        except (KeyError, RuntimeError, ValueError) as error:
+            unavailable.append(f"{account.name}: rate cannot be evaluated ({type(error).__name__})")
+            continue
+        snapshots.append(
+            CurrentRateSnapshot(
+                account_name=account.name,
+                plan_name=document.plan_name,
+                version=version.version,
+                period=_period_label(period),
+                price_per_kwh=price,
+                currency=document.currency,
+                local_time=_local_rate_time(now, engine),
+            )
+        )
+
+    account_names = [account.name for account in accounts]
+    if not snapshots:
+        unavailable_detail = "; ".join(unavailable) or "No effective rate assignment"
+        return {
+            "rate.current_plan": _value(
+                "unconfigured",
+                _account_label(account_names),
+                severity="warning",
+                detail=unavailable_detail,
+            ),
+            "rate.current_period": _value(
+                "unavailable", "Unavailable", severity="warning", detail=unavailable_detail
+            ),
+            "rate.current_price": _value(
+                "unavailable", "Unavailable", severity="warning", detail=unavailable_detail
+            ),
+        }
+
+    snapshot_names = [snapshot.account_name for snapshot in snapshots]
+    plan_detail = "; ".join(
+        f"{snapshot.account_name}: {snapshot.plan_name} v{snapshot.version}"
+        for snapshot in snapshots
+    )
+    if unavailable:
+        plan_detail = f"{plan_detail}; {'; '.join(unavailable)}"
+
+    period_values = {snapshot.period for snapshot in snapshots}
+    period_display = next(iter(period_values)) if len(period_values) == 1 else "Multiple periods"
+    period_detail = "; ".join(
+        f"{snapshot.account_name}: {snapshot.period} ({snapshot.local_time})"
+        for snapshot in snapshots
+    )
+
+    price_values = {(snapshot.price_per_kwh, snapshot.currency.upper()) for snapshot in snapshots}
+    price_display = (
+        _money_rate(snapshots[0].price_per_kwh, snapshots[0].currency)
+        if len(price_values) == 1
+        else "Multiple rates"
+    )
+    price_detail = "; ".join(
+        f"{snapshot.account_name}: "
+        f"{_money_rate(snapshot.price_per_kwh, snapshot.currency)} "
+        f"during {snapshot.period} ({snapshot.local_time})"
+        for snapshot in snapshots
+    )
+    plan_values = {snapshot.plan_name for snapshot in snapshots}
+    plan_display = next(iter(plan_values)) if len(plan_values) == 1 else "Multiple plans"
+    context_display = f"{plan_display} · {period_display} · {price_display}"
+
+    return {
+        "rate.current_plan": _value(
+            "configured",
+            _account_label(snapshot_names),
+            severity="success" if not unavailable else "warning",
+            detail=plan_detail,
+            freshness_at=now,
+        ),
+        "rate.current_period": _value(
+            "current",
+            period_display,
+            severity="success" if not unavailable else "warning",
+            detail=period_detail,
+            freshness_at=now,
+        ),
+        "rate.current_price": _value(
+            "current",
+            price_display,
+            severity="success" if not unavailable else "warning",
+            detail=price_detail,
+            freshness_at=now,
+        ),
+        "rate.current_context": _value(
+            "current",
+            context_display,
+            severity="success" if not unavailable else "warning",
+            detail=f"{plan_detail}; {period_detail}; {price_detail}",
+            freshness_at=now,
+        ),
+    }
+
+
 async def status_values(
     session: AsyncSession,
     *,
@@ -1094,27 +1885,32 @@ async def status_values(
     all_sites: bool,
     site_id: str | None = None,
     device_id: str | None = None,
+    requested_keys: set[str] | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     values: dict[str, Any] = {}
 
     def permitted(key: str) -> bool:
-        return INDICATOR_REGISTRY[key].permission_required in permissions
+        return INDICATOR_REGISTRY[key].permission_required in permissions and (
+            requested_keys is None or key in requested_keys
+        )
 
-    values["system.api_health"] = _value(
-        "healthy",
-        "Healthy",
-        severity="success",
-        detail="Authenticated API request succeeded",
-        freshness_at=now,
-    )
-    values["system.database_health"] = _value(
-        "healthy",
-        "Healthy",
-        severity="success",
-        detail="PostgreSQL query succeeded",
-        freshness_at=now,
-    )
+    if permitted("system.api_health"):
+        values["system.api_health"] = _value(
+            "healthy",
+            "Healthy",
+            severity="success",
+            detail="Authenticated API request succeeded",
+            freshness_at=now,
+        )
+    if permitted("system.database_health"):
+        values["system.database_health"] = _value(
+            "healthy",
+            "Healthy",
+            severity="success",
+            detail="PostgreSQL query succeeded",
+            freshness_at=now,
+        )
 
     site_query = select(Site)
     if site_id:
@@ -1190,17 +1986,18 @@ async def status_values(
     rssi = [item.rssi_dbm for item in latest.values() if item.rssi_dbm is not None]
     if permitted("data.live_connection"):
         values["data.live_connection"] = _value(
-            "healthy" if online == total and total else "attention",
-            "Live" if online else "Waiting",
-            severity="success" if online == total and total else "warning",
+            "healthy" if online == total and total else "attention" if total else "unavailable",
+            "Live" if online else "Waiting" if total else "No sensors",
+            severity="success" if online == total and total else "warning" if total else "unknown",
             detail=f"{online} of {total} devices reporting",
             freshness_at=newest,
         )
     if permitted("data.current_power"):
         values["data.current_power"] = _value(
-            "current",
-            f"{watts.quantize(Decimal('1'))} W",
-            detail="Latest signed heartbeats",
+            "current" if latest else "unavailable",
+            f"{watts.quantize(Decimal('1'))} W" if latest else "Unavailable",
+            severity="info" if latest else "unknown",
+            detail="Latest signed heartbeats" if latest else "Waiting for a valid heartbeat",
             freshness_at=newest,
         )
     device_value_map = {
@@ -1265,9 +2062,11 @@ async def status_values(
             freshness_at=newest,
         ),
         "data.aggregate_coverage": _value(
-            "healthy" if synchronized == total and total else "partial",
-            f"{round((synchronized / total) * 100) if total else 0}%",
-            severity="success" if synchronized == total and total else "warning",
+            "healthy" if synchronized == total and total else "partial" if total else "unavailable",
+            f"{round((synchronized / total) * 100)}%" if total else "Unavailable",
+            severity=(
+                "success" if synchronized == total and total else "warning" if total else "unknown"
+            ),
             detail=f"{synchronized} of {total} synchronized",
             freshness_at=newest,
         ),
@@ -1275,6 +2074,92 @@ async def status_values(
     for key, value in device_value_map.items():
         if permitted(key):
             values[key] = value
+
+    included_device_ids = [item.id for item in devices if item.include_in_default_site_total]
+    summary_zone = ZoneInfo(sites[0].timezone) if len(sites) == 1 else UTC
+    local_start = datetime.combine(
+        now.astimezone(summary_zone).date(), datetime.min.time(), summary_zone
+    ).astimezone(UTC)
+    energy_wh: Decimal | None = None
+    if included_device_ids and permitted("data.energy_today"):
+        energy_wh = await session.scalar(
+            select(func.sum(NormalizedInterval.selected_energy_wh)).where(
+                NormalizedInterval.device_id.in_(included_device_ids),
+                NormalizedInterval.interval_start >= local_start,
+            )
+        )
+    if permitted("data.energy_today"):
+        values["data.energy_today"] = _value(
+            "current" if energy_wh is not None else "unavailable",
+            f"{(Decimal(str(energy_wh)) / Decimal('1000')).quantize(Decimal('0.001'))} kWh"
+            if energy_wh is not None
+            else "Unavailable",
+            severity="info" if energy_wh is not None else "unknown",
+            detail="Since local midnight" if energy_wh is not None else "No readings today",
+            freshness_at=newest,
+        )
+    if permitted("data.recent_peak"):
+        values["data.recent_peak"] = _value(
+            "current" if latest else "unavailable",
+            f"{watts.quantize(Decimal('1'))} W" if latest else "Unavailable",
+            severity="info" if latest else "unknown",
+            detail="Most recent aggregate live measurement",
+            freshness_at=newest,
+        )
+
+    cost_keys = {"cost.today", "energy.billing_cycle", "cost.billing_cycle_estimate"}
+    if any(permitted(key) for key in cost_keys):
+        run_query = select(CostCalculationRun).where(CostCalculationRun.status == "completed")
+        if selected_site_ids:
+            run_query = run_query.join(
+                AggregateSet, AggregateSet.id == CostCalculationRun.aggregate_set_id
+            ).where(AggregateSet.site_id.in_(selected_site_ids))
+        latest_run = await session.scalar(
+            run_query.order_by(CostCalculationRun.completed_at.desc()).limit(1)
+        )
+        result_rows = (
+            list(
+                await session.scalars(
+                    select(CostIntervalResult).where(CostIntervalResult.run_id == latest_run.id)
+                )
+            )
+            if latest_run
+            else []
+        )
+        energy_rows = [row for row in result_rows if row.component == "energy"]
+        today_cost = sum(
+            (row.unrounded_cost for row in energy_rows if row.interval_start >= local_start),
+            Decimal("0"),
+        )
+        cycle_energy = sum((row.energy_kwh for row in energy_rows), Decimal("0"))
+        cycle_cost = sum((row.unrounded_cost for row in result_rows), Decimal("0"))
+        calculated_at = latest_run.completed_at if latest_run else None
+        cost_values = {
+            "cost.today": _value(
+                "current" if latest_run else "unavailable",
+                f"${today_cost.quantize(Decimal('0.01'))}" if latest_run else "Unavailable",
+                severity="info" if latest_run else "unknown",
+                detail="Estimated monitored energy cost; not a utility bill",
+                freshness_at=calculated_at,
+            ),
+            "energy.billing_cycle": _value(
+                "current" if latest_run else "unavailable",
+                f"{cycle_energy.quantize(Decimal('0.001'))} kWh" if latest_run else "Unavailable",
+                severity="info" if latest_run else "unknown",
+                detail="Current calculation cycle",
+                freshness_at=calculated_at,
+            ),
+            "cost.billing_cycle_estimate": _value(
+                "current" if latest_run else "unavailable",
+                f"${cycle_cost.quantize(Decimal('0.01'))}" if latest_run else "Unavailable",
+                severity="info" if latest_run else "unknown",
+                detail="Estimated monitored cost; not a utility bill",
+                freshness_at=calculated_at,
+            ),
+        }
+        for key, value in cost_values.items():
+            if permitted(key):
+                values[key] = value
 
     alert_value_keys = {
         "alerts.active_count",
@@ -1357,10 +2242,18 @@ async def status_values(
         select(WorkerState).order_by(WorkerState.last_loop_at.desc()).limit(1)
     )
     if permitted("system.worker_health"):
+        worker_last_success = worker.last_success_at if worker else None
+        if worker_last_success is not None and worker_last_success.tzinfo is None:
+            worker_last_success = worker_last_success.replace(tzinfo=UTC)
+        worker_stale = worker_last_success is None or worker_last_success < now - timedelta(
+            seconds=45
+        )
+        worker_healthy = bool(worker and worker.status == "healthy" and not worker_stale)
+        worker_status = "unknown" if worker is None else "stale" if worker_stale else worker.status
         values["system.worker_health"] = _value(
-            worker.status if worker else "unknown",
-            (worker.status.replace("_", " ").title() if worker else "Unavailable"),
-            severity="success" if worker and worker.status == "healthy" else "warning",
+            worker_status,
+            worker_status.replace("_", " ").title() if worker else "Unavailable",
+            severity=("success" if worker_healthy else "critical" if worker else "warning"),
             detail="Background device and notification worker",
             freshness_at=worker.last_loop_at if worker else None,
         )
@@ -1377,16 +2270,28 @@ async def status_values(
         )
         or 0
     )
+    current_rate_values = await _current_rate_values(
+        session,
+        selected_site_ids=selected_site_ids,
+        devices=devices,
+        now=now,
+    )
+    if "rate.current_context" not in current_rate_values:
+        plan_value = current_rate_values["rate.current_plan"]
+        period_value = current_rate_values["rate.current_period"]
+        price_value = current_rate_values["rate.current_price"]
+        current_rate_values["rate.current_context"] = _value(
+            "unconfigured",
+            "Not configured",
+            severity="warning",
+            detail="; ".join(
+                str(value.get("detail"))
+                for value in (plan_value, period_value, price_value)
+                if value.get("detail")
+            ),
+        )
     rate_values = {
-        "rate.current_plan": _value(
-            "configured", "Configured accounts", detail="Open Rates for assignment detail"
-        ),
-        "rate.current_period": _value(
-            "current", "See active plan", detail="Evaluated precisely for each reading"
-        ),
-        "rate.current_price": _value(
-            "current", "Rate dependent", detail="Varies by account and TOU period"
-        ),
+        **current_rate_values,
         "rate.source_health": _value(
             (
                 "healthy"
@@ -1529,7 +2434,10 @@ async def status_values(
         )
 
     allowed_keys = {
-        item.key for item in INDICATOR_DEFINITIONS if item.permission_required in permissions
+        item.key
+        for item in INDICATOR_DEFINITIONS
+        if item.permission_required in permissions
+        and (requested_keys is None or item.key in requested_keys)
     }
     return {
         "registry_version": REGISTRY_VERSION,

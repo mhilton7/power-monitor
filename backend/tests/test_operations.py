@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -20,6 +20,7 @@ from app.db.models import (
     NotificationAttempt,
     NotificationChannel,
     Site,
+    WorkerState,
 )
 from app.security.protocol import SecretCipher
 
@@ -261,6 +262,50 @@ async def test_power_surge_rule_opens_and_resolves_from_signed_heartbeat_power(
                 payload={},
             )
         )
+        await session.commit()
+        result = await evaluate_alerts(session, test_settings)
+        await session.refresh(alert)
+        assert result["resolved"] == 1
+        assert alert.status == "resolved"
+
+
+@pytest.mark.asyncio
+async def test_worker_failure_opens_and_resolves_server_alert(
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    test_settings: Settings,
+) -> None:
+    now = datetime.now(UTC)
+    async with session_factory_fixture() as session:
+        rule = AlertRule(
+            name="Server worker unhealthy",
+            rule_type="worker_failure",
+            severity="critical",
+            enabled=True,
+            debounce_seconds=0,
+            resolve_seconds=0,
+            configuration={"stale_seconds": 45},
+        )
+        worker = WorkerState(
+            worker_name="main",
+            instance_id="worker-test",
+            last_loop_at=now - timedelta(seconds=120),
+            last_success_at=now - timedelta(seconds=120),
+            status="failed",
+            details={"error_type": "PermissionError"},
+        )
+        session.add_all([rule, worker])
+        await session.commit()
+
+        result = await evaluate_alerts(session, test_settings)
+        alert = await session.scalar(select(AlertInstance).where(AlertInstance.rule_id == rule.id))
+        assert result["opened"] == 1
+        assert alert is not None and alert.status == "active"
+        assert alert.device_id is None
+        assert alert.evidence["worker_status"] == "failed"
+
+        worker.last_loop_at = datetime.now(UTC)
+        worker.last_success_at = datetime.now(UTC)
+        worker.status = "healthy"
         await session.commit()
         result = await evaluate_alerts(session, test_settings)
         await session.refresh(alert)

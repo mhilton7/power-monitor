@@ -1716,12 +1716,19 @@ async def fleet_summary(
         now.astimezone(summary_zone).date(), datetime.min.time(), summary_zone
     ).astimezone(UTC)
     current_load = Decimal("0")
+    reporting_devices = 0
+    latest_heartbeat_at: datetime | None = None
     for device in devices:
         heartbeat = await _latest_heartbeat(session, device.id)
-        if heartbeat and device.include_in_default_site_total and heartbeat.current_watts:
-            current_load += heartbeat.current_watts
+        if heartbeat and device.include_in_default_site_total:
+            reporting_devices += 1
+            latest_heartbeat_at = max(
+                (value for value in (latest_heartbeat_at, heartbeat.received_at) if value),
+                default=None,
+            )
+            current_load += heartbeat.current_watts or Decimal("0")
     energy_wh = await session.scalar(
-        select(func.coalesce(func.sum(NormalizedInterval.selected_energy_wh), 0)).where(
+        select(func.sum(NormalizedInterval.selected_energy_wh)).where(
             NormalizedInterval.device_id.in_(included_device_ids)
             if included_device_ids
             else false(),
@@ -1744,6 +1751,7 @@ async def fleet_summary(
     billing_energy = Decimal("0")
     billing_cost = Decimal("0")
     current_bucket: str | None = None
+    has_cost_data = False
     if latest_run:
         result_rows = list(
             await session.scalars(
@@ -1762,6 +1770,7 @@ async def fleet_summary(
             default=None,
         )
         current_bucket = recent_energy.bucket if recent_energy else None
+        has_cost_data = bool(result_rows)
     alert_query = (
         select(func.count()).select_from(AlertInstance).where(AlertInstance.status == "active")
     )
@@ -1782,7 +1791,13 @@ async def fleet_summary(
     }
     online = sum(device.status in online_states for device in devices)
     synchronized = sum(device.status == "online_synchronized" for device in devices)
+    has_energy_data = energy_wh is not None
     kwh = Decimal(str(energy_wh or 0)) / Decimal("1000")
+    coverage_percent = (
+        (Decimal(reporting_devices) / Decimal(len(included_device_ids)) * Decimal("100"))
+        if included_device_ids
+        else None
+    )
     return FleetSummary(
         site_id=site_id,
         current_load_w=current_load,
@@ -1796,6 +1811,12 @@ async def fleet_summary(
         active_alerts=int(alerts or 0),
         current_tou_bucket=current_bucket,
         recent_peak_w=current_load,
+        has_live_data=reporting_devices > 0,
+        has_energy_data=has_energy_data,
+        has_cost_data=has_cost_data,
+        reporting_devices=reporting_devices,
+        latest_heartbeat_at=latest_heartbeat_at,
+        coverage_percent=coverage_percent,
         disclosure=ESTIMATE_DISCLOSURE,
     )
 

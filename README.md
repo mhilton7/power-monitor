@@ -24,7 +24,10 @@ gap-free rendering, keyboard ordering, drafts, preview, immutable publishing,
 and rollback. Hiding an indicator never disables monitoring or alerts. See the
 [registry](docs/STATUS_INDICATORS.md), [zones and precedence](docs/STATUS_LAYOUT_ZONES.md),
 [administration guide](docs/STATUS_LAYOUT_ADMINISTRATION.md), and
-[accessibility notes](docs/STATUS_LAYOUT_ACCESSIBILITY.md).
+[accessibility notes](docs/STATUS_LAYOUT_ACCESSIBILITY.md). The cleaned
+[Overview](docs/OVERVIEW.md) provides one configurable Site Summary, while
+[System Health](docs/SYSTEM_HEALTH.md) is the administrator-only home for API,
+database, and worker diagnostics.
 
 The normative interoperability identifier is `pm-protocol/1.0.0`. The browser talks only to this server; device credentials never reach browser code.
 

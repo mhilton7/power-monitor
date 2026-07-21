@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Save,
   Search,
+  ShieldCheck,
   Upload,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -301,6 +302,17 @@ export function StatusIndicatorsPage({ canManage }: { canManage: boolean }) {
       await queryClient.invalidateQueries({ queryKey: ['status-indicators', 'draft'] })
     },
   })
+  const repair = useMutation({
+    mutationFn: () => api<{ configuration: StatusLayoutConfiguration; repairs: Array<{ indicator_key: string; action: string }>; message: string }>('/api/v1/admin/status-indicators/repair', {
+      method: 'POST',
+      body: JSON.stringify({ configuration }),
+    }),
+    onSuccess: (result) => {
+      setConfiguration(safeConfiguration(result.configuration))
+      setMessage(`${result.message} ${result.repairs.length} placement ${result.repairs.length === 1 ? 'change' : 'changes'} prepared.`)
+      setAnnouncement('Recommended metric placements applied to the local draft.')
+    },
+  })
 
   const exportLayout = async () => {
     const blob = await apiDownload(`/api/v1/admin/status-indicators/export?draft=${draft.data?.exists ? 'true' : 'false'}`)
@@ -326,7 +338,7 @@ export function StatusIndicatorsPage({ canManage }: { canManage: boolean }) {
   if (catalog.isLoading || draft.isLoading) return <LoadingState label="Loading the registered status indicator catalog…" />
   if (catalog.error || draft.error) return <ErrorState error={catalog.error ?? draft.error} />
   if (!catalog.data || !draft.data || !configuration) return <ErrorState error={new Error('Status layout catalog was unavailable')} />
-  const mutationError = save.error ?? previewMutation.error ?? publish.error ?? restore.error ?? reset.error
+  const mutationError = save.error ?? previewMutation.error ?? publish.error ?? restore.error ?? reset.error ?? repair.error
 
   return (
     <>
@@ -408,15 +420,15 @@ export function StatusIndicatorsPage({ canManage }: { canManage: boolean }) {
 
       <Panel eyebrow="Real values · safe sample fallbacks" title="Responsive preview" actions={<button className="button secondary" disabled={!canManage || previewMutation.isPending} onClick={() => { previewMutation.mutate() }}><Eye size={16} /> Refresh preview</button>}>
         <div className="preview-controls"><label>Page<select value={previewPage} onChange={(event) => { setPreviewPage(event.target.value) }}>{catalog.data.pages.map((page) => <option key={page} value={page}>{zoneLabel(page)}</option>)}</select></label><label>Role<select value={previewRole} onChange={(event) => { setPreviewRole(event.target.value) }}>{catalog.data.roles.map((role) => <option key={role.id} value={role.id}>{role.label}</option>)}</select></label><label>Viewport<select value={previewBreakpoint} onChange={(event) => { setPreviewBreakpoint(event.target.value as StatusBreakpoint) }}>{catalog.data.breakpoints.map((item) => <option key={item} value={item}>{zoneLabel(item)}</option>)}</select></label><label>Scenario<select value={previewScenario} onChange={(event) => { setPreviewScenario(event.target.value as PreviewScenario) }}><option value="all_defaults">Current draft</option><option value="one_disabled">One disabled</option><option value="two_disabled">Two disabled</option><option value="one_only">One only</option><option value="empty_zone">Empty zone</option><option value="many">Many indicators</option><option value="warning">Warning value</option><option value="critical">Critical value</option><option value="long_label">Long label</option></select></label></div>
+        {preview?.layout.warnings.map((warning) => <p className="history-inline-warning" key={`${warning.code}-${warning.indicator_key ?? warning.metric_identity ?? 'layout'}`}><ShieldCheck size={16} /> {warning.message}</p>)}
         <div className={`status-layout-preview preview-${previewBreakpoint}`} data-testid="status-layout-preview">
           <header><span /><strong>Power Monitor preview</strong><small>{zoneLabel(previewPage)} · {zoneLabel(previewRole)}</small></header>
           <StatusIndicatorZone zone="global_header_left" layout={preview?.layout} values={preview?.values} />
           <StatusIndicatorZone zone="global_header_center" layout={preview?.layout} values={preview?.values} />
           <StatusIndicatorZone zone="global_header_right" layout={preview?.layout} values={preview?.values} />
-          <StatusIndicatorZone zone="global_status_row" layout={preview?.layout} values={preview?.values} />
           <StatusIndicatorZone zone="mobile_header" layout={preview?.layout} values={preview?.values} />
           <StatusIndicatorZone zone="mobile_status_strip" layout={preview?.layout} values={preview?.values} />
-          <main><h3>{zoneLabel(previewPage)}</h3><StatusIndicatorZone zone="page_header_primary" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="page_header_secondary" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="page_status_row" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="page_summary_strip" layout={preview?.layout} values={preview?.values} /><div className="preview-content-placeholder"><span /><span /><span /></div><StatusIndicatorZone zone="page_footer" layout={preview?.layout} values={preview?.values} /></main>
+          <main><h3>{zoneLabel(previewPage)}</h3><StatusIndicatorZone zone="page_header_primary" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="page_header_secondary" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="page_status_row" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="page_summary_strip" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="overview_site_state" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="overview_site_summary" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="history_context" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="diagnostics_summary" layout={preview?.layout} values={preview?.values} /><div className="preview-content-placeholder"><span /><span /><span /></div><StatusIndicatorZone zone="page_footer" layout={preview?.layout} values={preview?.values} /></main>
           <StatusIndicatorZone zone="mobile_status_drawer" layout={preview?.layout} values={preview?.values} />
           <StatusIndicatorZone zone="global_footer" layout={preview?.layout} values={preview?.values} />
         </div>
@@ -427,7 +439,7 @@ export function StatusIndicatorsPage({ canManage }: { canManage: boolean }) {
           {revisions.data?.revisions.length ? <div className="revision-list">{revisions.data.revisions.map((revision) => <article key={revision.id}><div><strong>Revision {revision.revision}</strong><small>{formatTime(revision.created_at)}{revision.reason ? ` · ${revision.reason}` : ''}</small></div>{revision.revision === catalog.data.published_revision ? <StatusPill status="healthy" label="Current" /> : canManage && <button className="button ghost" onClick={() => { if (window.confirm(`Restore revision ${revision.revision} as a new revision?`)) restore.mutate(revision) }}><History size={14} /> Restore</button>}</article>)}</div> : <p className="empty-inline">The compiled default is active.</p>}
         </Panel>
         <Panel eyebrow="Safe JSON profile" title="Import, export & defaults">
-          <div className="layout-utility-actions"><button className="button secondary" onClick={() => { void exportLayout() }}><Download size={16} /> Export {draft.data.exists ? 'draft' : 'published'}</button>{canManage && <><input ref={importRef} className="sr-only" type="file" accept="application/json,.json" onChange={(event) => { void importLayout(event.target.files?.[0]) }} /><button className="button secondary" onClick={() => { importRef.current?.click() }}><Upload size={16} /> Import to draft</button><button className="button secondary" disabled={scopePage === '*'} onClick={() => { reset.mutate('page') }}><RotateCcw size={16} /> Reset page</button><button className="button ghost danger-text" onClick={() => { if (window.confirm('Restore the complete compiled layout into the draft?')) reset.mutate('all') }}><RotateCcw size={16} /> Reset all</button></>}</div>
+          <div className="layout-utility-actions"><button className="button secondary" onClick={() => { void exportLayout() }}><Download size={16} /> Export {draft.data.exists ? 'draft' : 'published'}</button>{canManage && <><input ref={importRef} className="sr-only" type="file" accept="application/json,.json" onChange={(event) => { void importLayout(event.target.files?.[0]) }} /><button className="button secondary" onClick={() => { importRef.current?.click() }}><Upload size={16} /> Import to draft</button><button className="button secondary" disabled={repair.isPending} onClick={() => { repair.mutate() }}><ShieldCheck size={16} /> Keep recommended placement</button><button className="button secondary" disabled={scopePage === '*'} onClick={() => { reset.mutate('page') }}><RotateCcw size={16} /> Reset page</button><button className="button ghost danger-text" onClick={() => { if (window.confirm('Restore the complete compiled layout into the draft?')) reset.mutate('all') }}><RotateCcw size={16} /> Reset all</button></>}</div>
           {catalog.data.excluded_status_surfaces.map((item) => <p key={item.surface}><strong>{zoneLabel(item.surface)}:</strong> {item.reason}</p>)}
         </Panel>
       </div>

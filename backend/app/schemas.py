@@ -871,4 +871,10 @@ class FleetSummary(ApiModel):
     active_alerts: int
     current_tou_bucket: str | None
     recent_peak_w: Decimal
+    has_live_data: bool
+    has_energy_data: bool
+    has_cost_data: bool
+    reporting_devices: int
+    latest_heartbeat_at: datetime | None
+    coverage_percent: Decimal | None
     disclosure: str

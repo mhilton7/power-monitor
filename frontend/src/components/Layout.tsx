@@ -13,6 +13,7 @@ import {
   RadioTower,
   ScanLine,
   Settings,
+  ServerCog,
   SlidersHorizontal,
   Sun,
   UserRoundCog,
@@ -39,6 +40,7 @@ const navigation = [
   { to: '/administration/users-access', key: 'navigation.users_access', fallback: 'Users & Access', icon: UserRoundCog, permission: 'users.view', nested: true },
   { to: '/administration/interface-text', key: 'navigation.interface_text', fallback: 'Dashboard & Login Text', icon: SlidersHorizontal, permission: 'interface_text.view', nested: true },
   { to: '/administration/status-indicators', key: 'navigation.status_indicators', fallback: 'Status Indicators & Layout', icon: PanelsTopLeft, permission: 'status_indicators.view', nested: true },
+  { to: '/administration/system-health', key: 'navigation.system_health', fallback: 'System Health', icon: ServerCog, permission: 'settings.view', nested: true },
 ]
 
 export function Layout({ session, children }: { session: Session; children: ReactNode }) {
@@ -141,7 +143,6 @@ export function Layout({ session, children }: { session: Session; children: Reac
           </div>
         </header>
         <StatusIndicatorZone zone="mobile_header" />
-        <StatusIndicatorZone zone="global_status_row" />
         <StatusIndicatorZone zone="mobile_status_strip" />
         <MobileStatusDrawer />
         {text('footer.banner') && <aside className="dashboard-banner" role="status">{text('footer.banner')}</aside>}

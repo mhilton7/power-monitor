@@ -53,6 +53,18 @@ Administrator, open **Administration > Status Indicators & Layout**, preview
 the default desktop/tablet/mobile layouts, and verify that hiding a test
 indicator does not suppress its alert before publishing intentional changes.
 
+For the dashboard information-architecture release, migration
+`20260721_0007` preserves the previous published status-layout revision and
+creates a new system-authored revision. It moves API/database/worker indicators
+to the diagnostics-only System Health zone, disables legacy duplicate fixed
+placements, updates the current-revision pointer, and records an audit event.
+It does not add a dataset, secret, mount, service, port, capability, or Compose
+variable. After upgrade, verify **Administration > System Health**, then open
+Overview and History and confirm the Site Summary and single coverage/rate
+context placements. The prior revision remains available for review; restoring
+it through the dashboard creates another immutable revision and the resolver
+still enforces diagnostics and deduplication safeguards.
+
 If migration fails, do not bypass its dependency or point the old application at
 a partly migrated database. Preserve logs and follow the rollback path.
 

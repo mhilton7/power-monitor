@@ -18,6 +18,7 @@ const PAGE_TEXT_KEYS: Record<string, string> = {
   'Users & Access': 'users_access',
   'Dashboard & Login Text': 'interface_text',
   'Status Indicators & Layout': 'status_indicators',
+  'System Health': 'system_health',
   Administration: 'administration',
 }
 

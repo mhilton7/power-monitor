@@ -1,14 +1,28 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AlertInstance, AlertRule, Device, DeviceHeartbeat
+from app.db.models import (
+    AlertInstance,
+    AlertRule,
+    Device,
+    DeviceHeartbeat,
+    RateAssignment,
+    RatePlan,
+    RateVersion,
+    Site,
+    Utility,
+    UtilityAccount,
+    WorkerState,
+)
+from app.problem import ProblemError
 from app.status_indicators import (
     INDICATOR_DEFINITIONS,
     INDICATOR_REGISTRY,
@@ -17,6 +31,7 @@ from app.status_indicators import (
     ZONES,
     compiled_configuration,
     materialize_configuration,
+    repair_configuration,
     resolve_layout,
     validate_configuration,
 )
@@ -29,6 +44,8 @@ KNOWN_CONFIGURABLE_SURFACES = {
     "alerts.warning_count",
     "backup.last_result",
     "backup.verification",
+    "cost.billing_cycle_estimate",
+    "cost.today",
     "data.aggregate_coverage",
     "data.current_power",
     "data.energy_today",
@@ -44,11 +61,13 @@ KNOWN_CONFIGURABLE_SURFACES = {
     "device.time_sync",
     "device.wifi_signal",
     "enrollment.availability",
+    "energy.billing_cycle",
     "firmware.update_state",
     "notifications.delivery_health",
     "rate.current_period",
     "rate.current_plan",
     "rate.current_price",
+    "rate.current_context",
     "rate.last_successful_check",
     "rate.next_scheduled_check",
     "rate.review_policy",
@@ -93,6 +112,56 @@ def global_item(configuration: dict[str, Any], key: str) -> dict[str, Any]:
     )
 
 
+def current_rate_document() -> dict[str, Any]:
+    return {
+        "schema_version": "power-monitor-rate-plan/1.0",
+        "plan_name": "Live homepage rate plan",
+        "plan_code": "STATUS-LIVE-RATE",
+        "utility": "Status test utility",
+        "description": "Deterministic current-rate indicator fixture",
+        "currency": "USD",
+        "timezone": "UTC",
+        "ownership_scope": "global",
+        "owner_id": None,
+        "effective_from": "2020-01-01",
+        "effective_through": None,
+        "cost_scope_default": "energy_only",
+        "source_label": "Status indicator fixture",
+        "source_note": "Not a production rate source",
+        "provider_mode": "custom_combined",
+        "seasons": [
+            {
+                "name": "all-year",
+                "start": "01-01",
+                "end": "12-31",
+                "priority": 0,
+                "leap_day_behavior": "include",
+                "schedules": [
+                    {
+                        "day_type": "all-days",
+                        "dates": [],
+                        "periods": [
+                            {
+                                "label": "on-peak",
+                                "start_minute": 0,
+                                "end_minute": 1440,
+                                "price_per_kwh": "0.58347000",
+                                "delivery_per_kwh": "0",
+                                "generation_per_kwh": "0",
+                                "adjustment_per_kwh": "0",
+                                "display_order": 0,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+        "adjustments": [],
+        "custom_notes": "",
+        "cloned_from_rate_version_id": None,
+    }
+
+
 def test_registry_is_complete_unique_and_self_consistent() -> None:
     assert set(INDICATOR_REGISTRY) == KNOWN_CONFIGURABLE_SURFACES
     assert len(INDICATOR_DEFINITIONS) >= 30
@@ -110,6 +179,7 @@ def test_registry_is_complete_unique_and_self_consistent() -> None:
             "fraction",
             "freshness",
             "health",
+            "money",
             "money-rate",
             "percent",
             "power",
@@ -117,24 +187,40 @@ def test_registry_is_complete_unique_and_self_consistent() -> None:
             "text",
         }
         assert definition.presentations == ("compact", "standard", "detailed")
+        assert definition.metric_identity
+        assert definition.canonical_priority >= 0
+        assert definition.allow_duplicate is False
     config = compiled_configuration()
     normalized, warnings = validate_configuration(config)
-    assert len(normalized["items"]) == len(INDICATOR_DEFINITIONS)
+    assert len(normalized["items"]) >= len(INDICATOR_DEFINITIONS)
     assert not warnings
 
 
 def test_layout_engine_collapses_empty_zones_and_handles_responsive_counts() -> None:
     permissions = {definition.permission_required for definition in INDICATOR_DEFINITIONS}
-    for visible_count in (0, 1, 2, 3, 4, 12, len(INDICATOR_DEFINITIONS)):
+    eligible_definitions = [
+        definition
+        for definition in INDICATOR_DEFINITIONS
+        if "overview" in definition.supported_pages
+        and not definition.diagnostics_only
+        and definition.metric_identity not in {"site.current", "power.current"}
+    ]
+    for visible_count in (0, 1, 2, 3, 4, 12, len(eligible_definitions)):
         configuration = compiled_configuration()
-        eligible = [
-            item
-            for item in configuration["items"]
-            if INDICATOR_REGISTRY[item["indicator_key"]].global_shell_support
-            or "overview" in INDICATOR_REGISTRY[item["indicator_key"]].supported_pages
-        ]
-        for index, item in enumerate(eligible):
-            item["visible"] = index < visible_count
+        for item in configuration["items"]:
+            item["visible"] = False
+        for definition in eligible_definitions[:visible_count]:
+            configuration["items"].append(
+                {
+                    "indicator_key": definition.key,
+                    "page": "overview",
+                    "role": "*",
+                    "breakpoint": "default",
+                    "visible": True,
+                    "zone": definition.default_zone,
+                    "order": definition.default_order,
+                }
+            )
         layout = resolve_layout(
             configuration,
             page="overview",
@@ -147,8 +233,14 @@ def test_layout_engine_collapses_empty_zones_and_handles_responsive_counts() -> 
         rendered_keys = [
             item["indicator_key"] for zone in layout["zones"] for item in zone["items"]
         ]
-        assert len(rendered_keys) == min(visible_count, len(eligible))
+        assert len(rendered_keys) == min(visible_count, len(eligible_definitions))
         assert len(rendered_keys) == len(set(rendered_keys))
+        rendered_metrics = [
+            item["definition"]["metric_identity"]
+            for zone in layout["zones"]
+            for item in zone["items"]
+        ]
+        assert len(rendered_metrics) == len(set(rendered_metrics))
 
     configuration = compiled_configuration()
     mobile = resolve_layout(
@@ -189,6 +281,72 @@ def test_layout_engine_collapses_empty_zones_and_handles_responsive_counts() -> 
         item["indicator_key"] for zone in resolved["zones"] for item in zone["items"]
     }
     assert any(warning["code"] == "retired_indicator" for warning in resolved["warnings"])
+
+
+def test_system_health_is_diagnostics_only_and_duplicate_metrics_repair() -> None:
+    permissions = {definition.permission_required for definition in INDICATOR_DEFINITIONS}
+    normal = resolve_layout(
+        compiled_configuration(),
+        page="enrollment",
+        roles={"admin"},
+        permissions=permissions,
+        breakpoint="desktop",
+        revision=2,
+    )
+    normal_keys = {item["indicator_key"] for zone in normal["zones"] for item in zone["items"]}
+    assert not {"system.api_health", "system.database_health", "system.worker_health"} & normal_keys
+    assert "global_status_row" not in {zone["key"] for zone in normal["zones"]}
+
+    diagnostics = resolve_layout(
+        compiled_configuration(),
+        page="system_health",
+        roles={"admin"},
+        permissions=permissions,
+        breakpoint="desktop",
+        revision=2,
+    )
+    diagnostic_zone = next(
+        zone for zone in diagnostics["zones"] if zone["key"] == "diagnostics_summary"
+    )
+    assert {item["indicator_key"] for item in diagnostic_zone["items"]} == {
+        "system.api_health",
+        "system.database_health",
+        "system.worker_health",
+    }
+
+    duplicate = compiled_configuration()
+    duplicate["items"].append(
+        {
+            "indicator_key": "data.aggregate_coverage",
+            "page": "history",
+            "role": "*",
+            "breakpoint": "default",
+            "visible": True,
+            "zone": "page_status_row",
+            "order": 10,
+        }
+    )
+    with pytest.raises(ProblemError) as error:
+        validate_configuration(duplicate)
+    assert error.value.code == "status_metric_duplicate"
+    assert error.value.extra and error.value.extra["metric_identity"] == "data.coverage"
+
+    repaired, repairs = repair_configuration(duplicate)
+    normalized, _warnings = validate_configuration(repaired)
+    assert repairs
+    history = resolve_layout(
+        normalized,
+        page="history",
+        roles={"admin"},
+        permissions=permissions,
+        breakpoint="desktop",
+        revision=2,
+    )
+    history_metrics = [
+        item["definition"]["metric_identity"] for zone in history["zones"] for item in zone["items"]
+    ]
+    assert "data.coverage" not in history_metrics
+    assert len(history_metrics) == len(set(history_metrics))
 
 
 @pytest.mark.asyncio
@@ -273,6 +431,16 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
             evidence={"source": "deterministic-test"},
         )
     )
+    session.add(
+        WorkerState(
+            worker_name="main",
+            instance_id="status-layout-worker",
+            last_loop_at=datetime.now(UTC) - timedelta(minutes=2),
+            last_success_at=datetime.now(UTC) - timedelta(minutes=2),
+            status="failed",
+            details={"error_type": "PermissionError"},
+        )
+    )
     await session.commit()
 
     registry = await api_client.get("/api/v1/status-indicators/registry")
@@ -285,6 +453,11 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
     assert values.json()["values"]["alerts.warning_count"]["display_value"] == "1"
     assert int(values.json()["values"]["alerts.enabled_rule_count"]["display_value"]) >= 1
     assert values.json()["values"]["alerts.disconnect_rule_state"]["display_value"] == "On"
+    assert values.json()["values"]["rate.current_plan"]["display_value"] == "Not configured"
+    assert values.json()["values"]["rate.current_period"]["display_value"] == "Not configured"
+    assert values.json()["values"]["rate.current_price"]["display_value"] == "Not configured"
+    assert values.json()["values"]["system.worker_health"]["display_value"] == "Stale"
+    assert values.json()["values"]["system.worker_health"]["severity"] == "critical"
     selected_values = await api_client.get(
         f"/api/v1/status-indicators/values?site_id={site_id}&device_id={selected_device.id}"
     )
@@ -362,7 +535,9 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
         for item in zone["items"]
     }
     assert "data.energy_today" not in rendered
-    assert rendered["device.offline_count"][0] == "page_summary_strip"
+    # The recommended page-specific site-state placement takes precedence over a
+    # global legacy move, preserving the canonical Overview information hierarchy.
+    assert rendered["device.offline_count"][0] == "overview_site_state"
     assert all(zone["items"] for zone in resolved["zones"])
     # Hiding is presentation-only: the simulated alert remains queryable and counted.
     alerts = await api_client.get("/api/v1/alerts")
@@ -380,6 +555,179 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
         "status_layout.indicator_moved",
         "status_layout.draft_published",
     } <= actions
+
+
+@pytest.mark.asyncio
+async def test_current_rate_indicators_use_effective_account_plan_period_price_and_time(
+    api_client: httpx.AsyncClient,
+    session: AsyncSession,
+) -> None:
+    await bootstrap_admin(api_client)
+    site = await session.scalar(select(Site).order_by(Site.name))
+    utility = await session.scalar(select(Utility).order_by(Utility.name))
+    assert site and utility
+
+    account = UtilityAccount(
+        site_id=site.id,
+        utility_id=utility.id,
+        name="Home SCE account",
+        timezone="UTC",
+        currency="USD",
+    )
+    plan = RatePlan(
+        utility_id=utility.id,
+        code="STATUS-LIVE-RATE",
+        name="Live homepage rate plan",
+        description="Current status indicator fixture",
+        plan_kind="custom",
+        ownership_scope="global",
+        currency="USD",
+        timezone="UTC",
+        status="active",
+    )
+    session.add_all([account, plan])
+    await session.flush()
+    version = RateVersion(
+        rate_plan_id=plan.id,
+        version=1,
+        effective_from=date(2020, 1, 1),
+        effective_to=None,
+        timezone="UTC",
+        currency="USD",
+        source_url="https://example.test/status-live-rate",
+        source_checked_on=date(2026, 7, 20),
+        source_notes="Deterministic current-rate fixture",
+        content_hash="9" * 64,
+        immutable_after_use=True,
+        is_active=True,
+        status="active",
+        source_kind="custom",
+        normalized_payload=current_rate_document(),
+        created_at=datetime(2020, 1, 1, tzinfo=UTC),
+    )
+    session.add(version)
+    await session.flush()
+    account.active_rate_version_id = version.id
+    sensor = Device(
+        site_id=site.id,
+        utility_account_id=account.id,
+        hardware_id="status-current-rate-sensor",
+        name="Current rate sensor",
+        lifecycle_status="active",
+    )
+    session.add_all(
+        [
+            sensor,
+            RateAssignment(
+                utility_account_id=account.id,
+                rate_version_id=version.id,
+                effective_from=datetime(2020, 1, 1, tzinfo=UTC),
+                effective_to=None,
+                created_at=datetime(2020, 1, 1, tzinfo=UTC),
+            ),
+        ]
+    )
+    await session.commit()
+
+    response = await api_client.get(f"/api/v1/status-indicators/values?site_id={site.id}")
+    assert response.status_code == 200, response.text
+    values = response.json()["values"]
+    assert values["rate.current_plan"]["display_value"] == "Home SCE account"
+    assert "Live homepage rate plan v1" in values["rate.current_plan"]["detail"]
+    assert values["rate.current_period"]["display_value"] == "On-peak"
+    assert "Home SCE account: On-peak" in values["rate.current_period"]["detail"]
+    assert " UTC)" in values["rate.current_period"]["detail"]
+    assert values["rate.current_price"]["display_value"] == "$0.58347/kWh"
+    assert "during On-peak" in values["rate.current_price"]["detail"]
+    assert values["rate.current_price"]["freshness_at"] is not None
+
+    device_response = await api_client.get(
+        f"/api/v1/status-indicators/values?site_id={site.id}&device_id={sensor.id}"
+    )
+    assert device_response.status_code == 200, device_response.text
+    assert (
+        device_response.json()["values"]["rate.current_plan"]["display_value"] == "Home SCE account"
+    )
+
+    second_document = current_rate_document()
+    second_document["plan_name"] = "Second live rate plan"
+    second_document["plan_code"] = "STATUS-SECOND-LIVE-RATE"
+    second_period = second_document["seasons"][0]["schedules"][0]["periods"][0]
+    second_period["label"] = "off-peak"
+    second_period["price_per_kwh"] = "0.21000000"
+    second_account = UtilityAccount(
+        site_id=site.id,
+        utility_id=utility.id,
+        name="Second utility account",
+        timezone="UTC",
+        currency="USD",
+    )
+    second_plan = RatePlan(
+        utility_id=utility.id,
+        code="STATUS-SECOND-LIVE-RATE",
+        name="Second live rate plan",
+        description="Second current status indicator fixture",
+        plan_kind="custom",
+        ownership_scope="global",
+        currency="USD",
+        timezone="UTC",
+        status="active",
+    )
+    session.add_all([second_account, second_plan])
+    await session.flush()
+    second_version = RateVersion(
+        rate_plan_id=second_plan.id,
+        version=1,
+        effective_from=date(2020, 1, 1),
+        effective_to=None,
+        timezone="UTC",
+        currency="USD",
+        source_url="https://example.test/status-second-live-rate",
+        source_checked_on=date(2026, 7, 20),
+        source_notes="Second deterministic current-rate fixture",
+        content_hash="8" * 64,
+        immutable_after_use=True,
+        is_active=True,
+        status="active",
+        source_kind="custom",
+        normalized_payload=second_document,
+        created_at=datetime(2020, 1, 1, tzinfo=UTC),
+    )
+    session.add(second_version)
+    await session.flush()
+    second_account.active_rate_version_id = second_version.id
+    session.add_all(
+        [
+            Device(
+                site_id=site.id,
+                utility_account_id=second_account.id,
+                hardware_id="status-second-current-rate-sensor",
+                name="Second current rate sensor",
+                lifecycle_status="active",
+            ),
+            RateAssignment(
+                utility_account_id=second_account.id,
+                rate_version_id=second_version.id,
+                effective_from=datetime(2020, 1, 1, tzinfo=UTC),
+                effective_to=None,
+                created_at=datetime(2020, 1, 1, tzinfo=UTC),
+            ),
+        ]
+    )
+    await session.commit()
+
+    multi_response = await api_client.get(f"/api/v1/status-indicators/values?site_id={site.id}")
+    assert multi_response.status_code == 200, multi_response.text
+    multi_values = multi_response.json()["values"]
+    assert multi_values["rate.current_plan"]["display_value"] == "Home SCE account + 1 more"
+    assert (
+        "Second utility account: Second live rate plan v1"
+        in multi_values["rate.current_plan"]["detail"]
+    )
+    assert multi_values["rate.current_period"]["display_value"] == "Multiple periods"
+    assert "Second utility account: Off-peak" in multi_values["rate.current_period"]["detail"]
+    assert multi_values["rate.current_price"]["display_value"] == "Multiple rates"
+    assert "Second utility account: $0.21/kWh" in multi_values["rate.current_price"]["detail"]
 
 
 @pytest.mark.asyncio
