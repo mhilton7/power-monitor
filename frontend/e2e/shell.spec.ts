@@ -8,7 +8,7 @@ const session = (roles: string[] = ['admin']) => ({
 })
 
 const site = { id: 'site-1', name: 'Upland Site', timezone: 'America/Los_Angeles', allowed_cidrs: [], allowed_domains: [], allow_public_polling: false }
-const fleet = { current_load_w: '960', energy_today_kwh: '12.5', estimated_cost_today: '4.25', billing_cycle_energy_kwh: '244', estimated_billing_cycle_cost: '83.11', online_devices: 1, synchronized_devices: 1, total_devices: 1, active_alerts: 1, current_tou_bucket: 'on-peak', recent_peak_w: '1800', disclosure: 'Estimate, not utility bill.' }
+const fleet = { current_load_w: '960', energy_today_kwh: '12.5', estimated_cost_today: '4.25', billing_cycle_energy_kwh: '244', estimated_billing_cycle_cost: '83.11', online_devices: 1, synchronized_devices: 1, total_devices: 1, active_alerts: 1, current_tou_bucket: 'on-peak', recent_peak_w: '1800', has_live_data: true, has_energy_data: true, has_cost_data: true, reporting_devices: 1, latest_heartbeat_at: '2026-07-20T19:05:00Z', coverage_percent: '100', disclosure: 'Estimate, not utility bill.' }
 const device = { id: 'device-1', name: 'Garage HVAC', site_id: 'site-1', site_name: 'Upland Site', circuit_id: 'branch-1', circuit_name: 'Garage branch', connection_mode: 'hybrid', measurement_role: 'submeter', cost_scope: 'energy_only', included_in_default: true, ct_rating_amps: '100', status: 'online_synchronized', lifecycle_status: 'active', current_watts: '960', last_seen_at: '2026-07-20T06:00:00Z', firmware_version: '1.0.0', rssi_dbm: -52, pzem_ok: true, sd_ok: true, time_trusted: true, backlog: 0 }
 const historyDevice = { ...device, id: 'device-2', hardware_id: 'esp32-main-leg-2', name: 'Main Panel L2', circuit_id: 'leg-2', circuit_name: 'Main Panel L2', measurement_role: 'service-leg', current_watts: '1000' }
 const officialVersion = { id: 'rate-version-official', version: 1, effective_from: '2026-06-01', effective_through: null, status: 'active', source_kind: 'official_sce', source_checked_at: '2026-07-19T10:15:00Z', source_label: 'SCE archived evidence', integrity_sha256: 'a'.repeat(64), is_active: true, immutable: true, created_at: '2026-06-01T00:00:00Z' }
@@ -37,10 +37,10 @@ const textDefinitions = [
   ['footer.dashboard', 'Footer & Support', 'Power Monitor Server', 'Dashboard footer text', 'authenticated', 160],
 ].map(([key, section, defaultValue, label, visibility, maxLength]) => ({ key, section, default: defaultValue, label, description: `${String(label)} description`, field_type: 'text', required: true, visibility, max_length: Number(maxLength), min_length: 1, line_breaks: false, url_companion: false, markdown: false, blank_allowed: false, preview_location: 'dashboard', current_value: defaultValue, published_revision: 0 }))
 
-const statusZones = ['global_header_left', 'global_header_center', 'global_header_right', 'global_status_row', 'sidebar_upper', 'sidebar_lower', 'global_footer', 'page_header_primary', 'page_header_secondary', 'page_status_row', 'page_summary_strip', 'page_footer', 'mobile_header', 'mobile_status_strip', 'mobile_status_drawer']
-const statusPages = ['overview', 'devices', 'device_detail', 'topology', 'history', 'rates', 'rate_sources', 'alerts', 'enrollment', 'administration', 'backups']
+const statusZones = ['global_header_left', 'global_header_center', 'global_header_right', 'sidebar_upper', 'sidebar_lower', 'global_footer', 'page_header_primary', 'page_header_secondary', 'page_status_row', 'page_summary_strip', 'page_footer', 'overview_site_state', 'overview_site_summary', 'history_context', 'diagnostics_summary', 'mobile_header', 'mobile_status_strip', 'mobile_status_drawer']
+const statusPages = ['overview', 'devices', 'device_detail', 'topology', 'history', 'rates', 'rate_sources', 'alerts', 'enrollment', 'administration', 'system_health', 'backups']
 const statusDefinition = (key: string, label: string, category: string, zone: string, order: number, pages = statusPages, permission = 'overview.view', criticalFallback?: string) => ({
-  key, default_label: label, description: `${label} status from existing server data.`, category, data_source: key, current_value_schema: { status: 'string', display_value: 'string' }, severity_capability: ['info', 'success', 'warning', 'critical', 'unknown'], default_enabled: true, default_zone: zone, allowed_zones: zone.startsWith('global') ? [...statusZones.filter((item) => item.startsWith('global')), ...statusZones.filter((item) => item.startsWith('mobile'))] : [...statusZones.filter((item) => item.startsWith('page')), ...statusZones.filter((item) => item.startsWith('mobile'))], default_order: order, supported_pages: pages, global_shell_support: zone.startsWith('global'), minimum_display_width: 140, preferred_display_width: 220, presentations: ['compact', 'standard', 'detailed'], icon_supported: true, label_supported: true, value_supported: true, freshness_supported: true, role_visibility_supported: true, permission_required: permission, configurable: true, critical_fallback: criticalFallback, renderer: key.includes('power') || key.includes('peak') ? 'power' : key.includes('count') || key.includes('online') || key.includes('offline') ? 'count' : 'health', icon: key.includes('alert') ? 'bell' : key.includes('power') ? 'zap' : 'activity', registry_version: 'status-indicators/1.0',
+  key, default_label: label, description: `${label} status from existing server data.`, category, data_source: key, current_value_schema: { status: 'string', display_value: 'string' }, severity_capability: ['info', 'success', 'warning', 'critical', 'unknown'], default_enabled: true, default_zone: zone, allowed_zones: statusZones, default_order: order, supported_pages: pages, global_shell_support: zone.startsWith('global'), minimum_display_width: 140, preferred_display_width: 220, presentations: ['compact', 'standard', 'detailed'], icon_supported: true, label_supported: true, value_supported: true, freshness_supported: true, role_visibility_supported: true, permission_required: permission, configurable: true, critical_fallback: criticalFallback, renderer: key.includes('power') || key.includes('peak') ? 'power' : key.includes('count') || key.includes('online') || key.includes('offline') ? 'count' : 'health', icon: key.includes('alert') ? 'bell' : key.includes('power') ? 'zap' : 'activity', metric_identity: ({ 'data.live_connection': 'data.live_state', 'data.current_power': 'power.current', 'alerts.active_count': 'alerts.active_count', 'device.online_count': 'devices.online', 'device.offline_count': 'devices.offline', 'device.synchronized_count': 'data.synchronization', 'data.energy_today': 'energy.today', 'data.recent_peak': 'power.recent_peak', 'data.aggregate_coverage': 'data.coverage' } as Record<string, string>)[key] ?? key, canonical_priority: 300, allow_duplicate: false, suppress_when_empty: true, hide_in_zero_data_state: false, diagnostics_only: key.startsWith('system.'), registry_version: 'status-indicators/1.0',
 })
 const statusDefinitions = [
   statusDefinition('data.live_connection', 'Live data', 'Live data', 'global_header_center', 10, statusPages, 'overview.view', 'Device disconnect alerts remain active.'),
@@ -52,22 +52,38 @@ const statusDefinitions = [
   statusDefinition('alerts.disconnect_rule_state', 'Disconnect alerts', 'Alerts', 'page_summary_strip', 40, ['alerts'], 'alerts.view', 'Heartbeat monitoring remains active.'),
   statusDefinition('device.online_count', 'Devices online', 'Devices', 'page_status_row', 10, ['overview', 'devices'], 'devices.view', 'Device status remains on Devices.'),
   statusDefinition('device.offline_count', 'Offline or stale', 'Devices', 'page_status_row', 20, ['overview', 'devices'], 'devices.view', 'Disconnect alerts remain active.'),
-  statusDefinition('data.energy_today', 'Energy today', 'Energy', 'page_summary_strip', 10, ['overview']),
-  statusDefinition('rate.current_plan', 'Current rate plan', 'Rates', 'page_status_row', 30, ['overview', 'rates', 'history'], 'rates.view'),
-  statusDefinition('rate.current_period', 'Current rate period', 'Rates', 'page_summary_strip', 20, ['overview', 'rates', 'history'], 'rates.view'),
-  statusDefinition('rate.current_price', 'Current energy price', 'Rates', 'page_summary_strip', 25, ['overview', 'rates'], 'rates.view'),
+  statusDefinition('device.synchronized_count', 'Synchronized', 'Devices', 'page_summary_strip', 50, ['overview', 'devices'], 'devices.view'),
+  statusDefinition('data.energy_today', 'Energy today', 'Energy', 'overview_site_summary', 10, ['overview']),
+  statusDefinition('cost.today', 'Estimated today', 'Costs', 'overview_site_summary', 20, ['overview']),
+  statusDefinition('energy.billing_cycle', 'Billing-cycle energy', 'Energy', 'overview_site_summary', 30, ['overview']),
+  statusDefinition('cost.billing_cycle_estimate', 'Cycle estimate', 'Costs', 'overview_site_summary', 40, ['overview']),
+  statusDefinition('rate.current_plan', 'Current rate plan', 'Rates', 'page_status_row', 30, ['rates'], 'rates.view'),
+  statusDefinition('rate.current_period', 'Current rate period', 'Rates', 'page_summary_strip', 20, ['rates'], 'rates.view'),
+  statusDefinition('rate.current_price', 'Current energy price', 'Rates', 'page_summary_strip', 25, ['rates'], 'rates.view'),
   statusDefinition('rate.source_health', 'Rate source health', 'Rates', 'page_status_row', 10, ['rates', 'rate_sources'], 'rates.view'),
   statusDefinition('rate.update_pending', 'Rate update pending', 'Rates', 'page_status_row', 20, ['rates', 'rate_sources'], 'rates.view'),
   statusDefinition('rate.last_successful_check', 'Last source check', 'Rates', 'page_summary_strip', 10, ['rates', 'rate_sources'], 'rates.manage_sources'),
   statusDefinition('rate.next_scheduled_check', 'Next source check', 'Rates', 'page_summary_strip', 20, ['rates', 'rate_sources'], 'rates.manage_sources'),
   statusDefinition('rate.review_policy', 'Review policy', 'Rates', 'page_summary_strip', 30, ['rates', 'rate_sources'], 'rates.manage_sources'),
   statusDefinition('data.recent_peak', 'Recent peak', 'Energy', 'page_summary_strip', 30, ['overview', 'history']),
-  statusDefinition('system.worker_health', 'Worker', 'System', 'global_status_row', 10, statusPages, 'settings.view', 'Worker alerts and diagnostics remain active.'),
+  statusDefinition('rate.current_context', 'Rate context', 'Rates', 'history_context', 20, ['overview', 'history'], 'rates.view'),
+  statusDefinition('system.api_health', 'API', 'System', 'diagnostics_summary', 10, ['system_health'], 'settings.view'),
+  statusDefinition('system.database_health', 'Database', 'System', 'diagnostics_summary', 20, ['system_health'], 'settings.view'),
+  statusDefinition('system.worker_health', 'Worker', 'System', 'diagnostics_summary', 30, ['system_health'], 'settings.view', 'Worker alerts and diagnostics remain active.'),
 ]
 const defaultStatusConfiguration = () => ({
   schema_version: 'power-monitor-status-layout/1.0' as const,
   registry_version: 'status-indicators/1.0', personalization_enabled: false as const,
-  items: statusDefinitions.map((definition) => ({ indicator_key: definition.key, page: '*', role: '*', breakpoint: 'default', visible: true, zone: definition.default_zone, order: definition.default_order, density: 'standard', show_icon: true, show_label: true, show_value: true, show_freshness: true, show_severity: true, show_tooltip: true })),
+  items: [
+    ...statusDefinitions.map((definition) => ({ indicator_key: definition.key, page: '*', role: '*', breakpoint: 'default', visible: !['data.recent_peak'].includes(definition.key), zone: definition.default_zone, order: definition.default_order, density: 'standard', show_icon: true, show_label: true, show_value: true, show_freshness: true, show_severity: true, show_tooltip: true })),
+    { indicator_key: 'data.live_connection', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_site_state', order: 20, density: 'compact' },
+    { indicator_key: 'data.current_power', page: 'overview', role: '*', breakpoint: 'default', visible: false, zone: 'global_header_center', order: 20, density: 'standard' },
+    { indicator_key: 'device.online_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_site_state', order: 10, density: 'compact' },
+    { indicator_key: 'device.offline_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_site_state', order: 30, density: 'compact' },
+    { indicator_key: 'device.synchronized_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_site_summary', order: 50, density: 'standard' },
+    { indicator_key: 'alerts.active_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_site_summary', order: 60, density: 'standard' },
+    { indicator_key: 'rate.current_context', page: 'overview', role: '*', breakpoint: 'default', visible: false, zone: 'overview_site_summary', order: 70, density: 'standard' },
+  ],
 })
 
 function statusDisplayValue(key: string): string {
@@ -77,10 +93,15 @@ function statusDisplayValue(key: string): string {
     'device.online_count': '1',
     'device.offline_count': '0',
     'data.energy_today': '12.50 kWh',
+    'cost.today': '$4.25',
+    'energy.billing_cycle': '244 kWh',
+    'cost.billing_cycle_estimate': '$83.11',
+    'device.synchronized_count': '1/1',
     'rate.current_plan': 'Upland SCE account',
     'rate.current_period': 'On-peak',
     'rate.current_price': '$0.58/kWh',
     'data.recent_peak': '1,800 W',
+    'rate.current_context': 'TOU-D-4-9PM · On-peak · $0.58/kWh',
   }[key] ?? 'Healthy'
 }
 
@@ -88,12 +109,13 @@ const statusValues = Object.fromEntries(statusDefinitions.map((definition) => [d
 
 function resolveMockStatus(configuration: ReturnType<typeof defaultStatusConfiguration>, pageName: string, breakpoint: string, role = 'admin') {
   const items = statusDefinitions.flatMap((definition) => {
+    if (definition.diagnostics_only && pageName !== 'system_health') return []
     if (!definition.global_shell_support && !definition.supported_pages.includes(pageName)) return []
     const matches = configuration.items.filter((item) => item.indicator_key === definition.key && (item.page === '*' || item.page === pageName) && (item.role === '*' || item.role === role) && (item.breakpoint === 'default' || item.breakpoint === breakpoint))
     const state = matches.reduce((value, item) => ({ ...value, ...item }), configuration.items.find((item) => item.indicator_key === definition.key) ?? { visible: definition.default_enabled, zone: definition.default_zone, order: definition.default_order })
     if (!state.visible) return []
     let zone = state.zone
-    if (breakpoint === 'mobile' && !matches.some((item) => item.breakpoint === 'mobile' && item.zone)) zone = zone.startsWith('global_header') ? 'mobile_header' : zone === 'global_status_row' || zone === 'page_status_row' ? 'mobile_status_strip' : 'mobile_status_drawer'
+    if (breakpoint === 'mobile' && !matches.some((item) => item.breakpoint === 'mobile' && item.zone)) zone = zone.startsWith('global_header') ? 'mobile_header' : ['page_status_row', 'overview_site_state', 'history_context', 'diagnostics_summary'].includes(zone) ? 'mobile_status_strip' : 'mobile_status_drawer'
     return [{ ...state, indicator_key: definition.key, zone, definition }]
   })
   return { schema_version: 'power-monitor-status-layout/1.0', registry_version: 'status-indicators/1.0', published_revision: 1, page: pageName, roles: [role], breakpoint, zones: statusZones.map((key) => ({ key, items: items.filter((item) => item.zone === key).sort((a, b) => Number(a.order) - Number(b.order)) })).filter((zone) => zone.items.length), warnings: [], personalization_enabled: false }
@@ -139,6 +161,7 @@ async function mockApplication(page: Page, roles: string[] = ['admin'], initiall
     else if (path === '/api/v1/admin/status-indicators/draft' && request.method() === 'PUT') { const update = JSON.parse(request.postData() ?? '{}') as { configuration: ReturnType<typeof defaultStatusConfiguration> }; statusDraft = update.configuration; statusDraftRevision += 1; statusPreviewedRevision = 0; body = { exists: true, base_revision: statusRevision, draft_revision: statusDraftRevision, configuration: statusDraft, critical_hidden: [] } }
     else if (path === '/api/v1/admin/status-indicators/draft' && request.method() === 'DELETE') { statusDraft = structuredClone(statusPublished); statusDraftRevision = 0; statusPreviewedRevision = 0; await route.fulfill({ status: 204, body: '' }); return }
     else if (path === '/api/v1/admin/status-indicators/validate') body = { valid: true, registry_version: 'status-indicators/1.0', item_count: statusDraft.items.length, warnings: [], critical_hidden: [] }
+    else if (path === '/api/v1/admin/status-indicators/repair') body = { configuration: statusDraft, repairs: [], warnings: [], message: 'Recommended placements are ready to review.' }
     else if (path === '/api/v1/admin/status-indicators/preview') {
       const previewRequest = JSON.parse(request.postData() ?? '{}') as { configuration?: ReturnType<typeof defaultStatusConfiguration>; page: string; role: string; breakpoint: string; scenario?: string }
       const previewConfiguration = structuredClone(previewRequest.configuration ?? statusDraft)
@@ -154,7 +177,13 @@ async function mockApplication(page: Page, roles: string[] = ['admin'], initiall
       statusPreviewedRevision = statusDraftRevision
       const previewLayout = resolveMockStatus(previewConfiguration, previewRequest.page, previewRequest.breakpoint, previewRequest.role)
       const firstPreviewItem = previewLayout.zones[0]?.items[0]
-      if (previewRequest.scenario === 'long_label' && firstPreviewItem) firstPreviewItem.definition = { ...firstPreviewItem.definition, default_label: 'A deliberately long translated indicator label that wraps safely' }
+      if (previewRequest.scenario === 'long_label' && firstPreviewItem) {
+        Object.assign(firstPreviewItem, {
+          show_label: true,
+          density: 'standard',
+          definition: { ...firstPreviewItem.definition, default_label: 'A deliberately long translated indicator label that wraps safely' },
+        })
+      }
       body = { layout: previewLayout, values: statusValues, warnings: [] }
     }
     else if (path === '/api/v1/admin/status-indicators/publish') { statusPublished = structuredClone(statusDraft); statusRevision += 1; statusRevisions.unshift({ id: `status-revision-${statusRevision}`, revision: statusRevision, registry_version: 'status-indicators/1.0', created_by: 'user-1', created_at: '2026-07-20T19:10:00Z', reason: 'Published layout' }); statusDraftRevision = 0; statusPreviewedRevision = 0; body = { ...statusRevisions[0], configuration: statusPublished } }
@@ -718,15 +747,19 @@ test('administration cards and status pills stay inside settings panels', async 
   expect((siteCardBox?.x ?? 0) + (siteCardBox?.width ?? 0)).toBeLessThanOrEqual((sitePanelBox?.x ?? 0) + (sitePanelBox?.width ?? 0))
   expect((siteStatusBox?.x ?? 0) + (siteStatusBox?.width ?? 0)).toBeLessThanOrEqual((siteCardBox?.x ?? 0) + (siteCardBox?.width ?? 0))
 
-  await page.getByRole('tab', { name: 'Diagnostics' }).click()
-  const diagnostic = page.locator('.diagnostic-hero')
-  const [diagnosticBox, diagnosticPanelBox, diagnosticStatusBox] = await Promise.all([
+  await page.goto('/administration/system-health')
+  const diagnostic = page.locator('[data-status-zone="diagnostics_summary"]')
+  const diagnosticCard = diagnostic.locator('.status-indicator').first()
+  const [diagnosticBox, diagnosticCardBox, diagnosticStatusBox] = await Promise.all([
     diagnostic.boundingBox(),
-    diagnostic.locator('xpath=ancestor::section[1]').boundingBox(),
-    diagnostic.locator('.status').boundingBox(),
+    diagnosticCard.boundingBox(),
+    diagnosticCard.locator('.status-severity-text').boundingBox(),
   ])
-  expect((diagnosticBox?.x ?? 0) + (diagnosticBox?.width ?? 0)).toBeLessThanOrEqual((diagnosticPanelBox?.x ?? 0) + (diagnosticPanelBox?.width ?? 0))
-  expect((diagnosticStatusBox?.x ?? 0) + (diagnosticStatusBox?.width ?? 0)).toBeLessThanOrEqual((diagnosticBox?.x ?? 0) + (diagnosticBox?.width ?? 0))
+  expect(diagnosticBox).not.toBeNull()
+  expect(diagnosticCardBox).not.toBeNull()
+  expect(diagnosticStatusBox).not.toBeNull()
+  expect((diagnosticCardBox?.x ?? 0) + (diagnosticCardBox?.width ?? 0)).toBeLessThanOrEqual((diagnosticBox?.x ?? 0) + (diagnosticBox?.width ?? 0))
+  expect((diagnosticStatusBox?.x ?? 0) + (diagnosticStatusBox?.width ?? 0)).toBeLessThanOrEqual((diagnosticCardBox?.x ?? 0) + (diagnosticCardBox?.width ?? 0))
   const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
   expect(horizontalOverflow).toBe(false)
 })
@@ -769,6 +802,9 @@ test('dashboard copy is corrected without exposing protocol or footer status tex
   await page.goto('/')
   await expect(page.getByText('Fleet availability')).toHaveCount(0)
   await expect(page.getByText('100%', { exact: true })).toBeVisible()
+  await expect(page.locator('[data-indicator-key="rate.current_plan"]')).toHaveCount(0)
+  await expect(page.locator('[data-indicator-key="rate.current_period"]')).toHaveCount(0)
+  await page.goto('/rates')
   await expect(page.locator('[data-indicator-key="rate.current_plan"]')).toContainText('Upland SCE account')
   await expect(page.locator('[data-indicator-key="rate.current_period"]')).toContainText('On-peak')
   await expect(page.locator('[data-indicator-key="rate.current_price"]')).toContainText('$0.58/kWh')
@@ -923,8 +959,115 @@ test('administrator configures, previews, publishes, and restores a self-correct
 
   await page.setViewportSize({ width: 375, height: 760 })
   await page.reload()
-  await expect(page.locator('[data-status-zone="mobile_header"]')).toBeVisible()
+  await expect(page.locator('[data-status-zone="mobile_status_strip"]')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   await captureStatusLayout(page, 'published-mobile.png')
+})
+
+test('normal pages stay compact, metrics are unique, and System Health owns diagnostics', async ({ page }) => {
+  await mockApplication(page)
+  const normalRoutes = ['/', '/devices', '/topology', '/history', '/rates', '/alerts', '/enrollment', '/admin', '/administration/users-access', '/administration/interface-text', '/administration/status-indicators']
+  for (const route of normalRoutes) {
+    await page.goto(route)
+    await expect(page.locator('[data-status-zone="global_status_row"]')).toHaveCount(0)
+    await expect(page.locator('[data-status-zone] [data-indicator-key="system.api_health"]')).toHaveCount(0)
+    await expect(page.locator('[data-status-zone] [data-indicator-key="system.database_health"]')).toHaveCount(0)
+    await expect(page.locator('[data-status-zone] [data-indicator-key="system.worker_health"]')).toHaveCount(0)
+    const metricIdentities = await page.locator('[data-metric-identity]').evaluateAll((elements) => elements.map((element) => element.getAttribute('data-metric-identity')).filter(Boolean))
+    expect(metricIdentities).toEqual([...new Set(metricIdentities)])
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  }
+
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Site Summary' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Device contribution' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Operational status' })).toBeVisible()
+  await captureStatusLayout(page, 'overview-reporting-desktop.png')
+
+  await page.goto('/history')
+  await expect(page.locator('[data-metric-identity="data.coverage"]')).toHaveCount(1)
+  await expect(page.locator('[data-metric-identity="power.recent_peak"]')).toHaveCount(1)
+  await expect(page.locator('[data-indicator-key="rate.current_context"]')).toHaveCount(1)
+  await captureStatusLayout(page, 'history-data-desktop.png')
+
+  await page.goto('/enrollment')
+  await expect(page.getByRole('heading', { name: 'Multi-device enrollment' })).toBeVisible()
+  await captureStatusLayout(page, 'enrollment-desktop.png')
+
+  await page.goto('/administration/system-health')
+  await expect(page.getByRole('heading', { name: 'System Health' })).toBeVisible()
+  await expect(page.locator('[data-status-zone="diagnostics_summary"]')).toBeVisible()
+  await expect(page.locator('[data-indicator-key="system.api_health"]')).toBeVisible()
+  await expect(page.locator('[data-indicator-key="system.database_health"]')).toBeVisible()
+  await expect(page.locator('[data-indicator-key="system.worker_health"]')).toBeVisible()
+  await captureStatusLayout(page, 'system-health-desktop.png')
+})
+
+test('System Health makes an operational failure visible without restoring the global health row', async ({ page }) => {
+  await mockApplication(page)
+  await page.route('**/api/v1/status-indicators/values*', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        registry_version: 'status-indicators/1.0',
+        generated_at: '2026-07-20T19:05:00Z',
+        values: {
+          ...statusValues,
+          'system.worker_health': {
+            status: 'failed',
+            severity: 'critical',
+            display_value: 'Failed',
+            detail: 'The most recent worker loop failed.',
+            freshness_at: '2026-07-20T19:05:00Z',
+          },
+        },
+      }),
+    })
+  })
+  await page.goto('/administration/system-health')
+  const worker = page.locator('[data-indicator-key="system.worker_health"]')
+  await expect(worker).toContainText('Failed')
+  await expect(worker).toHaveClass(/severity-critical/)
+  await expect(page.getByRole('link', { name: /Open alerts/ })).toBeVisible()
+  await expect(page.locator('[data-status-zone="global_status_row"]')).toHaveCount(0)
+  await captureStatusLayout(page, 'system-health-failure.png')
+})
+
+test('Overview and History use one clear no-data state and preserve measured zero', async ({ page }) => {
+  await mockApplication(page)
+  await page.route('**/api/v1/fleet/summary*', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ...fleet, current_load_w: '0', recent_peak_w: '0', energy_today_kwh: '0', estimated_cost_today: '0', billing_cycle_energy_kwh: '0', estimated_billing_cycle_cost: '0', online_devices: 0, synchronized_devices: 0, total_devices: 0, active_alerts: 0, current_tou_bucket: null, has_live_data: false, has_energy_data: false, has_cost_data: false, reporting_devices: 0, latest_heartbeat_at: null, coverage_percent: null }) })
+  })
+  await page.route('**/api/v1/devices', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: '[]' })
+  })
+  await page.goto('/')
+  await expect(page.getByText('No sensors enrolled', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Site Summary' })).toHaveCount(0)
+  await expect(page.getByText('$0.00')).toHaveCount(0)
+  await expect(page.locator('.overview-onboarding .state-card')).toHaveCount(1)
+  await captureStatusLayout(page, 'overview-no-sensors.png')
+
+  await page.unroute('**/api/v1/fleet/summary*')
+  await page.unroute('**/api/v1/devices')
+  await page.route('**/api/v1/fleet/summary*', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ...fleet, current_load_w: '0', recent_peak_w: '0', has_live_data: true, reporting_devices: 1 }) })
+  })
+  await page.route('**/api/v1/devices', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify([{ ...device, current_watts: '0' }]) })
+  })
+  await page.goto('/')
+  await expect(page.locator('.power-hero')).toContainText('0')
+  await expect(page.locator('.power-hero')).not.toContainText('Unavailable')
+
+  await page.route('**/api/v1/history/query', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ scope: { type: 'device', display_name: 'Garage HVAC', site_id: 'site-1', site_name: 'Upland Site', timezone: 'America/Los_Angeles', included_device_ids: ['device-1'], included_device_names: ['Garage HVAC'], excluded_device_ids: [], mixed_rates: false }, display_mode: 'combined', metrics: ['energy_kwh', 'energy_cost'], bucket: '1h', summary: { start_utc: '2026-07-21T03:00:00Z', end_utc: '2026-07-21T05:00:00Z', coverage_percent: '0', contributing_sensor_count: 0, tou_breakdown: {} }, combined: [], individual: [], rate_versions_used: [], warnings: [], total_buckets: 0, page: 1, page_size: 100 }) })
+  })
+  await page.goto('/history')
+  await expect(page.getByText('No readings in this range', { exact: true })).toBeVisible()
+  await expect(page.locator('.history-summary-grid')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Interval details' })).toHaveCount(0)
+  await expect(page.getByText('$0.00')).toHaveCount(0)
+  await captureStatusLayout(page, 'history-no-data.png')
 })

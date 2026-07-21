@@ -108,3 +108,17 @@ def test_status_indicator_layout_migration_is_append_only() -> None:
     assert '"status_indicators.manage"' in revision
     assert "DROP SCHEMA" not in revision
     assert "def downgrade()" in revision
+
+
+def test_dashboard_information_architecture_migration_preserves_layout_history() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260721_0007_dashboard_information_architecture.py"
+    ).read_text()
+    assert 'down_revision = "20260720_0006"' in revision
+    assert "INSERT INTO status_layout_revisions" in revision
+    assert "restored_from_id" in revision
+    assert "diagnostics_summary" in revision
+    assert "status_layout.information_architecture_migrated" in revision
+    assert "DELETE FROM status_layout_revisions" in revision
+    assert "DROP TABLE" not in revision

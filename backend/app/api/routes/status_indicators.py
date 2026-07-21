@@ -40,6 +40,7 @@ from app.status_indicators import (
     default_item,
     materialize_configuration,
     registry_payload,
+    repair_configuration,
     resolve_layout,
     status_values,
     validate_configuration,
@@ -430,6 +431,7 @@ async def get_status_values(
     session: DbSession,
     site_id: str | None = None,
     device_id: str | None = None,
+    keys: str | None = None,
 ) -> dict[str, Any]:
     _require(principal, "status_indicators.view")
     return await status_values(
@@ -439,6 +441,9 @@ async def get_status_values(
         all_sites=principal.all_sites,
         site_id=site_id,
         device_id=device_id,
+        requested_keys={key for key in (keys or "").split(",") if key}
+        if keys is not None
+        else None,
     )
 
 
@@ -573,6 +578,52 @@ async def validate_layout(
     }
 
 
+@router.post("/api/v1/admin/status-indicators/repair")
+async def repair_layout(
+    payload: StatusLayoutValidate,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    """Return a reviewable, deterministic repair without publishing it."""
+
+    _require(principal, "status_indicators.manage")
+    draft = await session.get(StatusLayoutDraft, "current")
+    configuration = payload.configuration or (
+        dict(draft.configuration) if draft else (await current_layout(session))[1]
+    )
+    repaired, repairs = repair_configuration(configuration)
+    normalized, warnings = await _validate(session, repaired)
+    session.add(
+        audit_event(
+            action="status_layout.repair_generated",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="status_layout",
+            details={
+                "repair_count": len(repairs),
+                "metric_identities": sorted(
+                    {
+                        str(item["metric_identity"])
+                        for item in repairs
+                        if item.get("metric_identity")
+                    }
+                ),
+            },
+        )
+    )
+    await session.commit()
+    return {
+        "configuration": normalized,
+        "repairs": repairs,
+        "warnings": warnings,
+        "message": (
+            "Recommended placements are ready to review. Save and preview before publishing."
+        ),
+    }
+
+
 def _scenario(configuration: dict[str, Any], scenario: str, page: str) -> dict[str, Any]:
     result = copy.deepcopy(materialize_configuration(configuration))
     globals_for_page = [
@@ -657,7 +708,10 @@ async def preview_layout(
     if payload.scenario == "long_label":
         for zone in resolved["zones"]:
             if zone["items"]:
-                zone["items"][0]["definition"]["default_label"] = (
+                preview_item = zone["items"][0]
+                preview_item["show_label"] = True
+                preview_item["density"] = "standard"
+                preview_item["definition"]["default_label"] = (
                     "A deliberately long translated indicator label that must wrap without overflow"
                 )
                 break

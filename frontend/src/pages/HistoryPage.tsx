@@ -29,6 +29,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ApiError, api, apiDownload, jsonBody } from '../api'
+import { StatusIndicatorZone } from '../components/StatusIndicators'
 import type {
   AggregateSet,
   Circuit,
@@ -470,6 +471,7 @@ export function HistoryPage() {
           <Download size={17} /> {exportHistory.isPending ? 'Preparing…' : 'Export CSV'}
         </button>}
       />
+      <StatusIndicatorZone zone="history_context" />
       {downloadMessage && <p className="success-message" role="status"><Check size={16} /> {downloadMessage}</p>}
       {exportHistory.error && <p className="field-error" role="alert">{exportHistory.error instanceof ApiError ? exportHistory.error.problem.detail : 'The export could not be created.'}</p>}
 
@@ -509,25 +511,23 @@ export function HistoryPage() {
       {queryData && <>
         <section className="history-scope-summary" aria-label="Selected history scope">
           <div><strong>{queryData.display_mode === 'individual' ? 'Individual sensors' : 'Combined total'} · {queryData.scope.included_device_ids.length} {queryData.scope.included_device_ids.length === 1 ? 'sensor' : 'sensors'} · {queryData.scope.included_device_names.join(' + ')}</strong><small>{queryData.scope.site_name} · {rangeHours < 48 ? `${rangeHours} hours` : `${Math.round(rangeHours / 24)} days`} · {queryData.bucket} buckets · {queryData.scope.mixed_rates ? 'Mixed rates' : queryData.rate_versions_used[0]?.rate_plan_name ?? 'No active rate'}</small></div>
-          <StatusPill status={Number(queryData.summary.coverage_percent) >= 99 ? 'healthy' : 'pending'} label={`${formatNumber(queryData.summary.coverage_percent, 1)}% coverage`} />
+          {basePoints.length > 0 && <span data-metric-identity="data.coverage"><StatusPill status={Number(queryData.summary.coverage_percent) >= 99 ? 'healthy' : 'pending'} label={`${formatNumber(queryData.summary.coverage_percent, 1)}% coverage`} /></span>}
         </section>
-        {queryData.warnings.map((warning) => <aside className="history-warning" key={`${warning.code}-${warning.device_ids?.join('-') ?? ''}`} role="status"><AlertTriangle size={18} /><p><strong>{warning.code.replaceAll('_', ' ')}</strong><span>{warning.message}</span>{warning.code === 'rate_unavailable' && <Link to="/rates">Open Rates</Link>}</p></aside>)}
+        {basePoints.length > 0 && queryData.warnings.map((warning) => <aside className="history-warning" key={`${warning.code}-${warning.device_ids?.join('-') ?? ''}`} role="status"><AlertTriangle size={18} /><p><strong>{warning.code.replaceAll('_', ' ')}</strong><span>{warning.message}</span>{warning.code === 'rate_unavailable' && <Link to="/rates">Open Rates</Link>}</p></aside>)}
 
-        <div className="history-summary-grid">
+        {basePoints.length > 0 && <div className="history-summary-grid">
           <article><span>Total energy</span><strong>{unavailableNumber(rangeSummary?.energy_kwh, 4)} kWh</strong></article>
           <article><span>Estimated energy cost</span><strong>{unavailableMoney(rangeSummary?.energy_cost)}</strong><small>Selected sensors; account-level fixed charges excluded</small></article>
           <article><span>Blended energy rate</span><strong>{rangeSummary?.blended_rate_per_kwh ? `${formatMoney(rangeSummary.blended_rate_per_kwh)}/kWh` : 'Unavailable'}</strong></article>
           <article><span>Highest-cost bucket</span><strong>{unavailableMoney(rangeSummary?.highest_cost_bucket_value)}</strong><small>{rangeSummary?.highest_cost_bucket_start ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(rangeSummary.highest_cost_bucket_start)) : 'No cost data'}</small></article>
-          <article><span>Highest-usage bucket</span><strong>{unavailableNumber(rangeSummary?.highest_usage_bucket_kwh, 4)} kWh</strong></article>
-          <article><span>Data coverage</span><strong>{formatNumber(rangeSummary?.coverage_percent, 2)}%</strong><small>{rangeSummary?.contributing_sensor_count ?? 0} contributing sensors</small></article>
-        </div>
+          <article data-metric-identity="power.recent_peak"><span>Recent peak</span><strong>{unavailableNumber(rangeSummary?.peak_power_w, 2)} W</strong></article>
+        </div>}
 
         <Panel className="history-panel" title="Historical measurements" eyebrow="Aligned intervals and rate provenance" actions={selection ? <button className="button secondary compact" onClick={() => { setSelection(undefined) }}><X size={15} /> Clear selected range</button> : undefined}>
           {basePoints.length ? <>
             <p className="sr-only" role="img" aria-label={`History chart for ${queryData.scope.display_name}. ${unavailableNumber(queryData.summary.energy_kwh, 4)} kilowatt-hours and ${unavailableMoney(queryData.summary.energy_cost)} estimated energy cost with ${formatNumber(queryData.summary.coverage_percent, 2)} percent coverage.`} />
             <div className="history-chart"><Chart type="line" data={chartData} options={chartOptions} /></div>
-            <div className="coverage-row"><span><Info size={15} /> Data coverage</span><strong>{formatNumber(queryData.summary.coverage_percent, 2)}%</strong><div className="coverage-bar"><span style={{ width: `${Math.min(100, Number(queryData.summary.coverage_percent))}%` }} /></div></div>
-          </> : <EmptyState title="No readings in this range" message="History appears after durable records have synchronized from device microSD storage." />}
+          </> : <EmptyState title={queryData.scope.included_device_ids.length ? 'No readings in this range' : 'No sensors in this scope'} message={queryData.scope.included_device_ids.length ? 'History appears after durable readings synchronize from sensor storage. Try a wider range or review device connectivity.' : 'Choose another scope or enroll a sensor before requesting historical measurements.'} action={<Link className="button secondary" to={queryData.scope.included_device_ids.length ? '/devices' : '/enrollment'}>{queryData.scope.included_device_ids.length ? 'Review devices' : 'Open enrollment'}</Link>} />}
         </Panel>
 
         {selection && queryData.selected_summary && <Panel title="Selected range summary" eyebrow="Server-calculated interval segments">
@@ -536,7 +536,7 @@ export function HistoryPage() {
           <div className="tou-breakdown">{Object.entries(queryData.selected_summary.tou_breakdown).map(([period, values]) => <span key={period}><strong>{period}</strong><small>{formatNumber(values.energy_kwh, 4)} kWh · {formatMoney(values.energy_cost)}</small></span>)}</div>
         </Panel>}
 
-        <Panel title="Interval details" eyebrow="Accessible chart alternative" actions={<span className="count-badge">{queryData.total_buckets} buckets</span>}>
+        {basePoints.length > 0 && <Panel title="Interval details" eyebrow="Accessible chart alternative" actions={<span className="count-badge">{queryData.total_buckets} buckets</span>}>
           <p className="history-table-help">Select any interval checkbox to start or extend a server-calculated range summary. Missing data remains unavailable and is never replaced with zero.</p>
           <div className="responsive-table history-table"><table>
             <thead><tr><th scope="col">Select</th><th scope="col">Series</th><th scope="col">Interval</th><th scope="col">Energy</th><th scope="col">Average / peak power</th><th scope="col">TOU period</th><th scope="col">Rate</th><th scope="col">Estimated energy cost</th><th scope="col">Rate plan / version</th><th scope="col">Coverage / quality</th></tr></thead>
@@ -554,9 +554,9 @@ export function HistoryPage() {
             </tr>))}</tbody>
           </table></div>
           <nav className="history-pagination" aria-label="History table pages"><button className="button secondary compact" disabled={page <= 1} onClick={() => { setPage((current) => Math.max(1, current - 1)) }}><ChevronLeft size={16} /> Previous</button><span>Page {queryData.page} · {queryData.total_buckets} total buckets</span><button className="button secondary compact" disabled={!queryData.next_page} onClick={() => { setPage(queryData.next_page ?? page) }} >Next <ChevronRight size={16} /></button></nav>
-        </Panel>
-        {costUnavailable && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost is unavailable for intervals without a historically effective rate. Electrical measurements remain visible; the server never guesses a price.</p>}
-        <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost covers interval energy charges for the selected sensors. It excludes account-level service charges, taxes, credits, and other whole-bill items by default.</p>
+        </Panel>}
+        {basePoints.length > 0 && costUnavailable && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost is unavailable for intervals without a historically effective rate. Electrical measurements remain visible; the server never guesses a price.</p>}
+        {basePoints.length > 0 && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost covers interval energy charges for the selected sensors. It excludes account-level service charges, taxes, credits, and other whole-bill items by default.</p>}
       </>}
     </>
   )

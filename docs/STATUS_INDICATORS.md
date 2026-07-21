@@ -9,9 +9,9 @@ registry version `status-indicators/1.0`.
 | Category | Registered keys |
 |---|---|
 | System | `system.api_health`, `system.database_health`, `system.worker_health` |
-| Live data and site | `data.live_connection`, `data.current_power`, `site.current`, `data.energy_today`, `data.recent_peak`, `data.aggregate_coverage` |
+| Live data and site | `data.live_connection`, `data.current_power`, `site.current`, `data.energy_today`, `data.recent_peak`, `data.aggregate_coverage`, `energy.billing_cycle`, `cost.today`, `cost.billing_cycle_estimate` |
 | Alerts and fleet | `alerts.active_count`, `alerts.critical_count`, `alerts.warning_count`, `alerts.enabled_rule_count`, `alerts.disconnect_rule_state`, `device.online_count`, `device.offline_count`, `device.synchronized_count` |
-| Rates and source automation | `rate.current_plan`, `rate.current_period`, `rate.current_price`, `rate.source_health`, `rate.update_pending`, `rate.last_successful_check`, `rate.next_scheduled_check`, `rate.review_policy` |
+| Rates and source automation | `rate.current_plan`, `rate.current_period`, `rate.current_price`, `rate.current_context`, `rate.source_health`, `rate.update_pending`, `rate.last_successful_check`, `rate.next_scheduled_check`, `rate.review_policy` |
 | Device health | `device.pzem_health`, `device.sd_health`, `device.sync_backlog`, `device.time_sync`, `device.wifi_signal`, `device.heartbeat_freshness` |
 | Operations | `firmware.update_state`, `backup.last_result`, `backup.verification`, `notifications.delivery_health`, `enrollment.availability`, `topology.aggregate_overlap` |
 
@@ -21,6 +21,20 @@ zones and pages, minimum/preferred width, supported density modes, configurable
 content, required permission, renderer, icon, and critical fallback. The API
 returns only indicators whose underlying data permission the current user
 holds.
+
+Every definition also declares `metric_identity`, deterministic
+`canonical_priority`, `allow_duplicate`, empty/zero-data behavior, and whether
+it is diagnostics-only. The resolver groups visible candidates by metric
+identity for the requested page, role, and breakpoint. It keeps the required or
+highest-priority canonical placement, reports suppressed legacy duplicates, and
+never returns an empty zone. Validation blocks a duplicate before draft save or
+publication. **Keep recommended placement** creates a reviewable repaired draft;
+it never publishes automatically.
+
+`overview_site_state`, `overview_site_summary`, `history_context`, and
+`diagnostics_summary` are semantic zones. The retired full-width global status
+row is not a valid target. API, database, and worker indicators are
+diagnostics-only and render at **Administration > System Health**.
 
 The following surfaces are deliberately excluded:
 
@@ -50,6 +64,9 @@ every 15 seconds, so a tariff boundary is reflected without waiting for another
 sensor reading. If the selected scope genuinely contains accounts with
 different current periods or prices, the summary reports multiple values rather
 than presenting one account's rate as universal; the tooltip lists each account.
+History uses `rate.current_context` to combine plan, current period, and current
+price into one item. Rates can retain the individual values where the separate
+facts support rate administration.
 
 Hiding an indicator is presentation-only. Collection, signed heartbeat
 processing, status calculation, persistence, synchronization, alert rules,

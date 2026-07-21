@@ -33,3 +33,18 @@ combined bucket unless every expected sensor contributed.
 See [Historical cost calculation](HISTORY_COSTS.md),
 [multi-sensor aggregation](MULTI_SENSOR_AGGREGATION.md), and
 [History exports](HISTORY_EXPORTS.md).
+
+## Page information hierarchy
+
+History begins with its page identity, one consolidated **Rate context** item,
+and the server-authoritative scope controls. Current plan, TOU period, and unit
+price are presented together. The selected result summary is the one canonical
+Data coverage placement, and Recent peak appears once in the result cards.
+API, database, and worker cards are available only under **Administration >
+System Health**.
+
+If a scope contains no sensors or no readings, History shows one result empty
+state with an appropriate Devices or Enrollment action. The energy, cost,
+blended-rate, peak, chart, and interval-table sections remain suppressed until
+valid records exist, so unavailable values are never presented as `$0.00`,
+`0 kWh`, or `0%`.

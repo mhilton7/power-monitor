@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -20,7 +20,9 @@ from app.db.models import (
     Site,
     Utility,
     UtilityAccount,
+    WorkerState,
 )
+from app.problem import ProblemError
 from app.status_indicators import (
     INDICATOR_DEFINITIONS,
     INDICATOR_REGISTRY,
@@ -29,6 +31,7 @@ from app.status_indicators import (
     ZONES,
     compiled_configuration,
     materialize_configuration,
+    repair_configuration,
     resolve_layout,
     validate_configuration,
 )
@@ -41,6 +44,8 @@ KNOWN_CONFIGURABLE_SURFACES = {
     "alerts.warning_count",
     "backup.last_result",
     "backup.verification",
+    "cost.billing_cycle_estimate",
+    "cost.today",
     "data.aggregate_coverage",
     "data.current_power",
     "data.energy_today",
@@ -56,11 +61,13 @@ KNOWN_CONFIGURABLE_SURFACES = {
     "device.time_sync",
     "device.wifi_signal",
     "enrollment.availability",
+    "energy.billing_cycle",
     "firmware.update_state",
     "notifications.delivery_health",
     "rate.current_period",
     "rate.current_plan",
     "rate.current_price",
+    "rate.current_context",
     "rate.last_successful_check",
     "rate.next_scheduled_check",
     "rate.review_policy",
@@ -172,6 +179,7 @@ def test_registry_is_complete_unique_and_self_consistent() -> None:
             "fraction",
             "freshness",
             "health",
+            "money",
             "money-rate",
             "percent",
             "power",
@@ -179,24 +187,40 @@ def test_registry_is_complete_unique_and_self_consistent() -> None:
             "text",
         }
         assert definition.presentations == ("compact", "standard", "detailed")
+        assert definition.metric_identity
+        assert definition.canonical_priority >= 0
+        assert definition.allow_duplicate is False
     config = compiled_configuration()
     normalized, warnings = validate_configuration(config)
-    assert len(normalized["items"]) == len(INDICATOR_DEFINITIONS)
+    assert len(normalized["items"]) >= len(INDICATOR_DEFINITIONS)
     assert not warnings
 
 
 def test_layout_engine_collapses_empty_zones_and_handles_responsive_counts() -> None:
     permissions = {definition.permission_required for definition in INDICATOR_DEFINITIONS}
-    for visible_count in (0, 1, 2, 3, 4, 12, len(INDICATOR_DEFINITIONS)):
+    eligible_definitions = [
+        definition
+        for definition in INDICATOR_DEFINITIONS
+        if "overview" in definition.supported_pages
+        and not definition.diagnostics_only
+        and definition.metric_identity not in {"site.current", "power.current"}
+    ]
+    for visible_count in (0, 1, 2, 3, 4, 12, len(eligible_definitions)):
         configuration = compiled_configuration()
-        eligible = [
-            item
-            for item in configuration["items"]
-            if INDICATOR_REGISTRY[item["indicator_key"]].global_shell_support
-            or "overview" in INDICATOR_REGISTRY[item["indicator_key"]].supported_pages
-        ]
-        for index, item in enumerate(eligible):
-            item["visible"] = index < visible_count
+        for item in configuration["items"]:
+            item["visible"] = False
+        for definition in eligible_definitions[:visible_count]:
+            configuration["items"].append(
+                {
+                    "indicator_key": definition.key,
+                    "page": "overview",
+                    "role": "*",
+                    "breakpoint": "default",
+                    "visible": True,
+                    "zone": definition.default_zone,
+                    "order": definition.default_order,
+                }
+            )
         layout = resolve_layout(
             configuration,
             page="overview",
@@ -209,8 +233,14 @@ def test_layout_engine_collapses_empty_zones_and_handles_responsive_counts() -> 
         rendered_keys = [
             item["indicator_key"] for zone in layout["zones"] for item in zone["items"]
         ]
-        assert len(rendered_keys) == min(visible_count, len(eligible))
+        assert len(rendered_keys) == min(visible_count, len(eligible_definitions))
         assert len(rendered_keys) == len(set(rendered_keys))
+        rendered_metrics = [
+            item["definition"]["metric_identity"]
+            for zone in layout["zones"]
+            for item in zone["items"]
+        ]
+        assert len(rendered_metrics) == len(set(rendered_metrics))
 
     configuration = compiled_configuration()
     mobile = resolve_layout(
@@ -251,6 +281,72 @@ def test_layout_engine_collapses_empty_zones_and_handles_responsive_counts() -> 
         item["indicator_key"] for zone in resolved["zones"] for item in zone["items"]
     }
     assert any(warning["code"] == "retired_indicator" for warning in resolved["warnings"])
+
+
+def test_system_health_is_diagnostics_only_and_duplicate_metrics_repair() -> None:
+    permissions = {definition.permission_required for definition in INDICATOR_DEFINITIONS}
+    normal = resolve_layout(
+        compiled_configuration(),
+        page="enrollment",
+        roles={"admin"},
+        permissions=permissions,
+        breakpoint="desktop",
+        revision=2,
+    )
+    normal_keys = {item["indicator_key"] for zone in normal["zones"] for item in zone["items"]}
+    assert not {"system.api_health", "system.database_health", "system.worker_health"} & normal_keys
+    assert "global_status_row" not in {zone["key"] for zone in normal["zones"]}
+
+    diagnostics = resolve_layout(
+        compiled_configuration(),
+        page="system_health",
+        roles={"admin"},
+        permissions=permissions,
+        breakpoint="desktop",
+        revision=2,
+    )
+    diagnostic_zone = next(
+        zone for zone in diagnostics["zones"] if zone["key"] == "diagnostics_summary"
+    )
+    assert {item["indicator_key"] for item in diagnostic_zone["items"]} == {
+        "system.api_health",
+        "system.database_health",
+        "system.worker_health",
+    }
+
+    duplicate = compiled_configuration()
+    duplicate["items"].append(
+        {
+            "indicator_key": "data.aggregate_coverage",
+            "page": "history",
+            "role": "*",
+            "breakpoint": "default",
+            "visible": True,
+            "zone": "page_status_row",
+            "order": 10,
+        }
+    )
+    with pytest.raises(ProblemError) as error:
+        validate_configuration(duplicate)
+    assert error.value.code == "status_metric_duplicate"
+    assert error.value.extra and error.value.extra["metric_identity"] == "data.coverage"
+
+    repaired, repairs = repair_configuration(duplicate)
+    normalized, _warnings = validate_configuration(repaired)
+    assert repairs
+    history = resolve_layout(
+        normalized,
+        page="history",
+        roles={"admin"},
+        permissions=permissions,
+        breakpoint="desktop",
+        revision=2,
+    )
+    history_metrics = [
+        item["definition"]["metric_identity"] for zone in history["zones"] for item in zone["items"]
+    ]
+    assert "data.coverage" not in history_metrics
+    assert len(history_metrics) == len(set(history_metrics))
 
 
 @pytest.mark.asyncio
@@ -335,6 +431,16 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
             evidence={"source": "deterministic-test"},
         )
     )
+    session.add(
+        WorkerState(
+            worker_name="main",
+            instance_id="status-layout-worker",
+            last_loop_at=datetime.now(UTC) - timedelta(minutes=2),
+            last_success_at=datetime.now(UTC) - timedelta(minutes=2),
+            status="failed",
+            details={"error_type": "PermissionError"},
+        )
+    )
     await session.commit()
 
     registry = await api_client.get("/api/v1/status-indicators/registry")
@@ -350,6 +456,8 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
     assert values.json()["values"]["rate.current_plan"]["display_value"] == "Not configured"
     assert values.json()["values"]["rate.current_period"]["display_value"] == "Not configured"
     assert values.json()["values"]["rate.current_price"]["display_value"] == "Not configured"
+    assert values.json()["values"]["system.worker_health"]["display_value"] == "Stale"
+    assert values.json()["values"]["system.worker_health"]["severity"] == "critical"
     selected_values = await api_client.get(
         f"/api/v1/status-indicators/values?site_id={site_id}&device_id={selected_device.id}"
     )
@@ -427,7 +535,9 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
         for item in zone["items"]
     }
     assert "data.energy_today" not in rendered
-    assert rendered["device.offline_count"][0] == "page_summary_strip"
+    # The recommended page-specific site-state placement takes precedence over a
+    # global legacy move, preserving the canonical Overview information hierarchy.
+    assert rendered["device.offline_count"][0] == "overview_site_state"
     assert all(zone["items"] for zone in resolved["zones"])
     # Hiding is presentation-only: the simulated alert remains queryable and counted.
     alerts = await api_client.get("/api/v1/alerts")

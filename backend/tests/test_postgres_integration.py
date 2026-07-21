@@ -80,7 +80,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 FROM devices WHERE id = 'device-migration'
                 """
             )
-            assert revision == "20260720_0006"
+            assert revision == "20260721_0007"
             assert table_count == 77
             assert dict(migrated) == {
                 "lifecycle_status": "decommissioned",
@@ -95,7 +95,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260720_0006"
+                "20260721_0007"
             )
 
             await connection.execute("DROP SCHEMA public CASCADE")
@@ -140,7 +140,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 """
             )
             assert dict(status_state) == {
-                "current_revision": 1,
+                "current_revision": 2,
                 "registry_version": "status-indicators/1.0",
                 "schema_version": "power-monitor-status-layout/1.0",
             }
@@ -149,7 +149,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260720_0006"
+                "20260721_0007"
             )
             assert (
                 await connection.fetchval(

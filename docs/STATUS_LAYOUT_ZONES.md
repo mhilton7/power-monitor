@@ -2,11 +2,12 @@
 
 Layouts use semantic server identifiers rather than CSS coordinates. Global
 zones are `global_header_left`, `global_header_center`,
-`global_header_right`, `global_status_row`, `sidebar_upper`, `sidebar_lower`,
-and `global_footer`. Page zones are `page_header_primary`,
+`global_header_right`, `sidebar_upper`, `sidebar_lower`, and `global_footer`.
+The former full-width `global_status_row` is retired. Page zones are `page_header_primary`,
 `page_header_secondary`, `page_status_row`, `page_summary_strip`, and
-`page_footer`. Narrow layouts use `mobile_header`, `mobile_status_strip`, and
-`mobile_status_drawer`.
+`page_footer`. Feature zones are `overview_site_state`,
+`overview_site_summary`, `history_context`, and `diagnostics_summary`. Narrow
+layouts use `mobile_header`, `mobile_status_strip`, and `mobile_status_drawer`.
 
 An item can be overridden by page, role, and breakpoint. Resolution is
 deterministic:
@@ -18,6 +19,8 @@ deterministic:
    wins over `default`.
 5. The user's underlying data permission is applied last. Layout visibility
    never grants access.
+6. Candidates are grouped by `metric_identity`; the required or strongest
+   canonical placement wins and lower-priority duplicates are suppressed.
 
 The selected site remains the existing authorization scope and is passed to the
 existing status-value service. Per-user personalization is intentionally
@@ -35,4 +38,3 @@ all. When one item remains, it receives the useful bounded width of the zone;
 siblings reflow immediately when an item is disabled or moved. Disabled items
 never leave placeholders, empty grid cells, reserved margins, or spacer
 components.
-

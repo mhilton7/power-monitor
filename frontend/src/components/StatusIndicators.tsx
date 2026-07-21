@@ -104,6 +104,7 @@ export function pageFromPath(pathname: string): string {
   if (pathname.startsWith('/alerts')) return 'alerts'
   if (pathname.startsWith('/enrollment')) return 'enrollment'
   if (pathname.startsWith('/reports')) return 'backups'
+  if (pathname.startsWith('/administration/system-health')) return 'system_health'
   return 'administration'
 }
 
@@ -221,6 +222,7 @@ export const StatusIndicatorItem = memo(function StatusIndicatorItem({
       className={`status-indicator status-density-${density} severity-${item.show_severity === false ? 'neutral' : value?.severity ?? 'unknown'}`}
       aria-label={itemAriaLabel(item, value)}
       data-indicator-key={definition.key}
+      data-metric-identity={definition.metric_identity}
       data-renderer={definition.renderer}
       title={tooltip}
     >

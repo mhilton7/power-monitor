@@ -92,8 +92,7 @@ TEXT_DEFINITIONS = (
     _text(
         "general.dashboard_welcome_subtitle",
         "General",
-        "Live energy, device health, synchronization, and estimated Southern California "
-        "Edison costs across your monitored circuits.",
+        "Monitor energy use, costs, device status, and site performance in one place.",
         "Dashboard welcome subtitle",
         "Subtitle on the Overview page.",
         max_length=300,
@@ -309,6 +308,14 @@ TEXT_DEFINITIONS = (
         max_length=80,
     ),
     _text(
+        "navigation.system_health",
+        "Navigation",
+        "System Health",
+        "System Health",
+        "System-health navigation label.",
+        max_length=60,
+    ),
+    _text(
         "pages.overview.title",
         "Page Titles & Subtitles",
         "Power Dashboard",
@@ -318,8 +325,7 @@ TEXT_DEFINITIONS = (
     _text(
         "pages.overview.subtitle",
         "Page Titles & Subtitles",
-        "Live energy, device health, synchronization, and estimated Southern California "
-        "Edison costs across your monitored circuits.",
+        "Monitor energy use, costs, device status, and site performance in one place.",
         "Overview subtitle",
         "Overview page subtitle.",
         max_length=300,
@@ -527,6 +533,22 @@ TEXT_DEFINITIONS = (
         "Administration",
         "Administration title",
         "Administration page title.",
+    ),
+    _text(
+        "pages.system_health.title",
+        "Page Titles & Subtitles",
+        "System Health",
+        "System Health title",
+        "System Health diagnostics page title.",
+    ),
+    _text(
+        "pages.system_health.subtitle",
+        "Page Titles & Subtitles",
+        "Review API, database, and background-worker readiness without crowding normal "
+        "monitoring pages.",
+        "System Health subtitle",
+        "System Health diagnostics page subtitle.",
+        max_length=300,
     ),
     _text(
         "pages.administration.subtitle",

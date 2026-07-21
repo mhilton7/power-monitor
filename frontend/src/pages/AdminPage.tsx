@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Archive, BellRing, Database, HardDrive, Network, ServerCog, ShieldCheck, Users } from 'lucide-react'
+import { Archive, BellRing, Database, HardDrive, Network, ShieldCheck, Users } from 'lucide-react'
 import { useState } from 'react'
 import { api } from '../api'
 import { UserManagement } from '../components/UserManagement'
@@ -10,7 +10,6 @@ import { EmptyState, ErrorState, formatTime, LoadingState, PageTitle, Panel, Sta
 
 interface Backup { id: string; started_at: string; completed_at?: string; status: string; manifest_hash?: string; verified_at?: string; verification_details: Record<string, unknown> }
 interface Audit { id: string; occurred_at: string; actor_type: string; actor_id?: string; action: string; object_type?: string; object_id?: string; outcome: string; details: Record<string, unknown> }
-interface SystemInfo { product: string; version: string; protocol: string; python_runtime: string; worker: { status: string; last_loop_at?: string; last_success_at?: string }; defaults: Record<string, unknown> }
 interface Account { id: string; site_id: string; name: string; timezone: string; currency: string; billing_cycle_start_day: number; baseline_allocation_kwh?: string; generation_provider: string; active_rate_version_id?: string }
 
 const tabs = [
@@ -20,7 +19,6 @@ const tabs = [
   ['Backups', Archive],
   ['Server & network', Network],
   ['Security & audit', ShieldCheck],
-  ['Diagnostics', ServerCog],
 ] as const
 
 export function AdminPage({ currentUserId }: { currentUserId?: string }) {
@@ -29,7 +27,6 @@ export function AdminPage({ currentUserId }: { currentUserId?: string }) {
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<Account[]>('/api/v1/utility-accounts'), enabled: tab === 'Sites & accounts' })
   const backups = useQuery({ queryKey: ['backups'], queryFn: () => api<Backup[]>('/api/v1/backups'), enabled: tab === 'Backups' })
   const audits = useQuery({ queryKey: ['audit'], queryFn: () => api<Audit[]>('/api/v1/audit-events'), enabled: tab === 'Security & audit' })
-  const system = useQuery({ queryKey: ['system'], queryFn: () => api<SystemInfo>('/api/v1/system/info'), enabled: tab === 'Diagnostics' })
 
   return (
     <>
@@ -94,14 +91,6 @@ export function AdminPage({ currentUserId }: { currentUserId?: string }) {
               {audits.isLoading ? <LoadingState /> : audits.error ? <ErrorState error={audits.error} /> : audits.data?.length ? (
                 <div className="audit-list">{audits.data.map((event) => <article key={event.id}><time>{formatTime(event.occurred_at)}</time><span className={`audit-outcome ${event.outcome}`}>{event.outcome}</span><p><strong>{event.action}</strong><small>{event.actor_type} {event.actor_id?.slice(0, 8) ?? 'anonymous'} · {event.object_type ?? 'system'} {event.object_id?.slice(0, 8) ?? ''}</small></p></article>)}</div>
               ) : <EmptyState title="No audit events" message="Authentication and administrative events appear here." />}
-            </Panel>
-          )}
-
-          {tab === 'Diagnostics' && (
-            <Panel title="Runtime & worker" eyebrow="Version evidence">
-              {system.isLoading ? <LoadingState /> : system.error ? <ErrorState error={system.error} /> : system.data && (
-                <><div className="diagnostic-hero"><span><ServerCog /></span><div><strong>{system.data.product} {system.data.version}</strong><small>{system.data.python_runtime}</small></div><StatusPill status={system.data.worker.status === 'healthy' ? 'healthy' : 'pending'} label={`Worker ${system.data.worker.status}`} /></div><dl className="detail-list"><div><dt>Worker last loop</dt><dd>{formatTime(system.data.worker.last_loop_at)}</dd></div><div><dt>Worker last success</dt><dd>{formatTime(system.data.worker.last_success_at)}</dd></div>{Object.entries(system.data.defaults).map(([key, value]) => <div key={key}><dt>{key.replaceAll('_', ' ')}</dt><dd>{String(value)}</dd></div>)}</dl></>
-              )}
             </Panel>
           )}
         </div>

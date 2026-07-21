@@ -74,6 +74,12 @@ export interface FleetSummary {
   active_alerts: number
   current_tou_bucket?: string
   recent_peak_w: string
+  has_live_data?: boolean
+  has_energy_data?: boolean
+  has_cost_data?: boolean
+  reporting_devices?: number
+  latest_heartbeat_at?: string
+  coverage_percent?: string
   disclosure: string
 }
 
@@ -331,6 +337,12 @@ export interface StatusIndicatorDefinition {
   renderer: string
   icon: string
   registry_version: string
+  metric_identity: string
+  canonical_priority: number
+  allow_duplicate: boolean
+  suppress_when_empty: boolean
+  hide_in_zero_data_state: boolean
+  diagnostics_only: boolean
 }
 
 export interface StatusLayoutItem {
@@ -374,7 +386,7 @@ export interface StatusResolvedLayout {
   roles: string[]
   breakpoint: StatusBreakpoint
   zones: Array<{ key: string; items: StatusLayoutItem[] }>
-  warnings: Array<{ code: string; indicator_key?: string; message: string }>
+  warnings: Array<{ code: string; indicator_key?: string; metric_identity?: string; canonical_surface?: string; kept_indicator_key?: string; message: string }>
   personalization_enabled: false
 }
 
