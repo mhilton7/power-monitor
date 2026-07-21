@@ -82,7 +82,8 @@ function resolveMockStatus(configuration: ReturnType<typeof defaultStatusConfigu
   return { schema_version: 'power-monitor-status-layout/1.0', registry_version: 'status-indicators/1.0', published_revision: 1, page: pageName, roles: [role], breakpoint, zones: statusZones.map((key) => ({ key, items: items.filter((item) => item.zone === key).sort((a, b) => Number(a.order) - Number(b.order)) })).filter((zone) => zone.items.length), warnings: [], personalization_enabled: false }
 }
 
-async function mockApplication(page: Page, roles: string[] = ['admin']) {
+async function mockApplication(page: Page, roles: string[] = ['admin'], initiallyAuthenticated = true) {
+  let authenticated = initiallyAuthenticated
   let enrollmentCounter = 0
   let sensorRemoved = false
   let customDocument: Record<string, unknown> | undefined
@@ -109,7 +110,8 @@ async function mockApplication(page: Page, roles: string[] = ['admin']) {
     const url = new URL(request.url())
     const path = url.pathname
     let body: unknown = []
-    if (path === '/api/v1/auth/session') body = session(roles)
+    if (path === '/api/v1/auth/session') body = authenticated ? session(roles) : { authenticated: false, bootstrap_required: false }
+    else if (path === '/api/v1/auth/login') { authenticated = true; body = session(roles) }
     else if (path === '/api/v1/auth/reauthenticate') body = { reauthenticated: true, valid_for_seconds: 300 }
     else if (path === '/api/v1/interface-text') body = { revision: textRevision, values: publishedText }
     else if (path === '/api/v1/status-indicators/registry') body = { registry_version: 'status-indicators/1.0', indicators: statusDefinitions, zones: statusZones, pages: statusPages, breakpoints: ['desktop', 'tablet', 'mobile'] }
@@ -329,6 +331,82 @@ test('first run creates an administrator without a default password', async ({ p
   await expect(page.getByRole('heading', { name: 'Create the administrator' })).toBeVisible()
   await expect(page.getByLabel('One-time bootstrap secret')).toBeVisible()
   await expect(page.getByText('There is no default password.')).toBeVisible()
+})
+
+test('Chrome-compatible native credential values submit by click and leave the login form', async ({ page }) => {
+  await mockApplication(page, ['admin'], false)
+  await page.goto('/sign-in')
+  const form = page.locator('#login-form')
+  const username = page.locator('#login-username')
+  const password = page.locator('#current-password')
+  await expect(form).toHaveAttribute('method', 'post')
+  await expect(form).toHaveAttribute('autocomplete', 'on')
+  await expect(username).toHaveAttribute('name', 'username')
+  await expect(username).toHaveAttribute('type', 'email')
+  await expect(username).toHaveAttribute('inputmode', 'email')
+  await expect(username).toHaveAttribute('autocomplete', 'username')
+  await expect(username).toHaveAttribute('autocapitalize', 'none')
+  await expect(username).toHaveAttribute('spellcheck', 'false')
+  await expect(password).toHaveAttribute('name', 'password')
+  await expect(password).toHaveAttribute('type', 'password')
+  await expect(password).toHaveAttribute('autocomplete', 'current-password')
+  await expect(form.locator('input[name="username"]')).toHaveCount(1)
+  await expect(form.locator('input[name="password"]')).toHaveCount(1)
+  await expect(form.locator('input[type="hidden"]')).toHaveCount(0)
+
+  const credentialValue = ['  Chrome Autofill', ' 42!  '].join('')
+  await username.evaluate((input, value) => { (input as HTMLInputElement).value = value }, 'chrome.autofill@example.test')
+  await password.evaluate((input, value) => { (input as HTMLInputElement).value = value }, credentialValue)
+  const loginRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/auth/login') && request.method() === 'POST')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  const payload = JSON.parse((await loginRequest).postData() ?? '{}') as Record<string, unknown>
+  expect(payload).toMatchObject({ email: 'chrome.autofill@example.test', password: credentialValue })
+  await expect(form).toHaveCount(0)
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
+})
+
+test('Enter submits login and password visibility keeps the same native input', async ({ page }) => {
+  await mockApplication(page, ['admin'], false)
+  await page.goto('/sign-in')
+  const password = page.locator('#current-password')
+  const originalNode = await password.evaluateHandle((node) => node)
+  await page.locator('#login-username').fill('keyboard@example.test')
+  await password.fill('Keyboard Password 42!')
+  await password.evaluate((input) => { (input as HTMLInputElement).setSelectionRange(2, 8, 'forward') })
+  await page.getByRole('button', { name: 'Show password' }).click()
+  expect(await password.evaluate((node, original) => node === original, originalNode)).toBe(true)
+  await expect(password).toHaveAttribute('type', 'text')
+  await expect(password).toHaveAttribute('autocomplete', 'current-password')
+  await expect(password).toHaveValue('Keyboard Password 42!')
+  expect(await password.evaluate((input) => [(input as HTMLInputElement).selectionStart, (input as HTMLInputElement).selectionEnd])).toEqual([2, 8])
+  await page.getByRole('button', { name: 'Hide password' }).click()
+  await expect(password).toHaveAttribute('type', 'password')
+
+  const loginRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/auth/login') && request.method() === 'POST')
+  await password.press('Enter')
+  await loginRequest
+  await expect(page.locator('#login-form')).toHaveCount(0)
+})
+
+test('login focus, dark theme, mobile layout, and autofill rules remain accessible', async ({ page }) => {
+  await mockApplication(page, ['admin'], false)
+  await page.setViewportSize({ width: 375, height: 760 })
+  await page.goto('/sign-in')
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+  const username = page.locator('#login-username')
+  await username.focus()
+  await expect(username).toBeFocused()
+  const styles = await username.evaluate((input) => {
+    const computed = getComputedStyle(input)
+    return { color: computed.color, backgroundColor: computed.backgroundColor, caretColor: computed.caretColor, outlineStyle: computed.outlineStyle }
+  })
+  expect(styles.color).not.toBe(styles.backgroundColor)
+  expect(styles.caretColor).not.toBe('transparent')
+  expect(styles.outlineStyle).not.toBe('none')
+  expect(await page.evaluate(() => Array.from(document.styleSheets).some((sheet) => Array.from(sheet.cssRules).some((rule) => rule.cssText.includes(':-webkit-autofill'))))).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
 })
 
 test('viewer sees fleet evidence and an in-app denial for restricted pages', async ({ page }) => {

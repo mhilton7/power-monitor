@@ -1,5 +1,50 @@
 # Testing and release gates
 
+## Login autofill and browser acceptance
+
+`frontend/tests/authAutofill.test.tsx` verifies the rendered native form
+contract, direct DOM-value submission without React change events, exact
+password preservation, failed authentication behavior, same-node password
+visibility, public-text success/failure, and first-run autocomplete separation.
+The Chromium suite verifies click and Enter submission, successful removal of
+the form, stable input identity, keyboard focus, dark-theme readability, mobile
+width, and the presence of browser autofill rules.
+
+Run the automated gates with:
+
+```text
+cd frontend
+npm ci
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+npm run e2e
+```
+
+Automation cannot prove that the real Chrome Password Manager UI offered to
+save or update a credential. Complete and record the sanitized manual procedure
+in [Browser compatibility](BROWSER_COMPATIBILITY.md) on the exact deployed HTTPS
+origin. Never use a production administrator password as test evidence.
+
+The 2026-07-20 autofill release gate passed 79 portable backend tests, the
+separate 100-device/18,000-reading load gate, and the live PostgreSQL 17
+migration gate. The frontend passed lint, TypeScript, 22 unit/component tests,
+all 27 Chromium tests, and the Node 24 production build. API, frontend, and
+backup images built successfully. The normal stack reached migration
+`20260720_0006`, reported every service healthy through CA-verified HTTPS, and
+checksum/restore-verified a five-artifact logical backup with 77 tables. Both
+normal and NET_RAW-only ICMP TrueNAS deployments passed fail-closed validation.
+The final digest-pinned seven-service TrueNAS workflow passed migration,
+health/port checks, three simulated-device enrollments, signed heartbeats, 90
+historical readings, SCE calculation, backup verification, and clean restore.
+Python and npm production dependency audits reported no known vulnerabilities.
+
+Real Chrome Password Manager save/update prompting remains a manual acceptance
+gate because the automated Chromium profile does not expose a genuine password
+manager. Its exact remaining steps are maintained in
+[Browser compatibility](BROWSER_COMPATIBILITY.md).
+
 Run commands from the repository root unless a command starts with `cd`.
 
 ## Portable gates

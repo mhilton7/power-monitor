@@ -1,5 +1,15 @@
 # Troubleshooting
 
+## Browser password manager does not autofill sign-in
+
+Use the exact stable HTTPS origin where the credential was saved. Changes from a
+hostname to an IP address, HTTPS to HTTP, one port to another, or production to a
+development URL create a different browser credential context. Confirm password
+saving/autofill is enabled and the site is not on the never-save list. Repair
+only the affected entry in the browser password manager and repeat the synthetic
+account procedure in [Browser compatibility](BROWSER_COMPATIBILITY.md). Never
+disable TLS verification or store the password in Power Monitor settings.
+
 - **Offline:** compare last signed heartbeat, API result, meter/SD/time evidence, and backlog. Ping alone is not proof.
 - **IP changed:** inspect address history and DHCP; identity remains the device UUID. Validate the new address against site CIDRs.
 - **Heartbeat works, pull fails:** verify push/pull mode, worker VLAN/VPN route, allowed port/CIDR/domain, TLS name, and device-local HMAC clock.

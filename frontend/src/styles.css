@@ -813,12 +813,46 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .auth-heading { margin-bottom: 26px; }
 .auth-heading h2 { margin-bottom: 10px; font-size: 1.75rem; }
 .auth-heading p { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.6; }
-.auth-form > label { display: block; margin-bottom: 14px; }
+.auth-form > label, .auth-form > .auth-field { display: block; margin-bottom: 14px; }
+.credential-input { position: relative; display: block; margin: 0; }
+.credential-input input { padding-right: 46px; }
+.password-visibility { position: absolute; top: 50%; right: 6px; display: inline-grid; width: 34px; height: 34px; padding: 0; place-items: center; transform: translateY(-50%); border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.password-visibility:hover { background: var(--accent-soft); color: var(--accent); }
+.password-visibility svg { width: 17px; height: 17px; }
+.auth-form input:-webkit-autofill,
+.auth-form input:-webkit-autofill:hover,
+.auth-form input:-webkit-autofill:active {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 1000px var(--bg-raised) inset;
+  caret-color: var(--text);
+  -webkit-text-fill-color: var(--text);
+}
+.auth-form input:-webkit-autofill:focus {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 78%, white);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 1000px var(--bg-raised) inset;
+  caret-color: var(--text);
+  -webkit-text-fill-color: var(--text);
+}
 .password-guidance { display: flex; align-items: center; gap: 5px; margin: -5px 0 15px; color: var(--accent); font-size: .64rem; }
 .form-error { display: flex; flex-direction: column; gap: 3px; margin-bottom: 15px; padding: 11px; border: 1px solid rgba(255,113,136,.18); border-radius: 9px; background: rgba(255,113,136,.06); }
 .auth-submit { width: 100%; margin-top: 6px; }
 .auth-footnote { margin: 15px 0 0; color: var(--faint); font-size: .61rem; text-align: center; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+@media (forced-colors: active) {
+  .auth-form input:-webkit-autofill,
+  .auth-form input:-webkit-autofill:hover,
+  .auth-form input:-webkit-autofill:focus,
+  .auth-form input:-webkit-autofill:active {
+    border-color: ButtonText;
+    box-shadow: none;
+    caret-color: CanvasText;
+    -webkit-text-fill-color: CanvasText;
+  }
+  .password-visibility { border: 1px solid ButtonText; color: ButtonText; forced-color-adjust: auto; }
+}
 
 @media (max-width: 1180px) {
   .hero-grid { grid-template-columns: 1fr; }

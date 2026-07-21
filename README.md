@@ -57,6 +57,8 @@ cd backend && alembic upgrade head && uvicorn app.main:app --reload
 In separate terminals run `python -m worker.app.main` and `cd frontend && npm run dev`. Run all portable gates with `make lint typecheck test contract frontend`.
 
 For production use [Installation](docs/INSTALLATION.md), then [First run](docs/FIRST_RUN.md).
+Browser sign-in behavior is documented in [Authentication](docs/AUTHENTICATION.md)
+and [Browser compatibility](docs/BROWSER_COMPATIBILITY.md).
 TrueNAS Community Edition 25.10 has a first-class, immutable-image deployment
 through [Apps > Install via YAML](deploy/truenas/installation.md), including exact
 dataset ACLs, three TLS modes, nightly encrypted/restore-tested backups, and an

@@ -23,3 +23,10 @@ Fields are plain text. The server rejects HTML-like markup, scripts, template ex
 ## Login fallback
 
 `GET /api/v1/public/interface-text` returns only the application display name and approved login heading, subtitle, field labels, sign-in label, help/support, safe support URL, and footer, plus a revision and ETag. It never returns the organization tagline, application short name, drafts, users, editors, audit data, topology, or private settings. The login bundle contains safe compiled defaults. A timeout, unavailable endpoint, malformed payload, or missing key cannot hide the email/password/sign-in controls; the page continues with defaults. Security-critical authentication errors remain server-controlled.
+
+The functional login form renders immediately from those defaults. Applying a
+published text revision updates only visible copy: it does not key, replace, or
+remount `login-form`, `login-username`, or `current-password`. Stable native IDs,
+names, and autocomplete tokens never derive from editable labels. Browser-filled
+DOM values therefore survive both successful and failed public-text requests.
+See [Browser authentication](AUTHENTICATION.md) for the enforced form contract.

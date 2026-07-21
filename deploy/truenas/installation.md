@@ -81,6 +81,15 @@ for a new administrator name, email, password, and the one-time value from
 setup, the endpoint closes permanently; archive or rotate the setup-token file so
 it is not reused as an operational credential.
 
+Choose one stable HTTPS dashboard origin before users save credentials. Configure
+`PUBLIC_ORIGIN` to that exact scheme, hostname, and port, configure LAN DNS for
+the hostname, and always open that same URL. Chrome treats a raw IP, HTTP, a
+different hostname, a different port, and a development URL as different
+credential contexts. The example above is illustrative; use the hostname chosen
+for this installation. Follow [Browser compatibility](../../docs/BROWSER_COMPATIBILITY.md)
+for Chrome settings and the real password-manager acceptance procedure. Never
+switch to HTTP or disable TLS verification to work around a saved-password issue.
+
 ## Internal CA trust
 
 Caddy writes the LAN root certificate to:

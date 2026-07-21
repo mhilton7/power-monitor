@@ -57,6 +57,19 @@ through **Datasets > Permissions**; never solve the problem with mode 0777.
 - For public ACME, public DNS must resolve correctly and external TCP 443 must
   reach gateway TCP 443. The default external port 8443 is for LAN deployment.
 
+## Chrome does not offer or fill a saved login
+
+- Open the exact HTTPS origin configured in `PUBLIC_ORIGIN`, including its port.
+  A raw IP, HTTP URL, alternate hostname, or alternate port is a different
+  password-manager context.
+- Confirm Chrome password saving/autofill is enabled and that this exact site is
+  not in the never-save list. Enterprise policy may override local settings.
+- Inspect or remove only the incorrect entry for this synthetic/test account in
+  Google Password Manager, then sign in at the same origin and save it again.
+- Complete the manual procedure in
+  [Browser compatibility](../../docs/BROWSER_COMPATIBILITY.md). Do not disable
+  TLS verification or copy a production password into logs or screenshots.
+
 ## Devices push heartbeats but worker cannot backfill
 
 Signed heartbeats are the primary address source. Confirm the newest accepted
