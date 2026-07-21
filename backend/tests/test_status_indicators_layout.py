@@ -1,14 +1,26 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AlertInstance, AlertRule, Device, DeviceHeartbeat
+from app.db.models import (
+    AlertInstance,
+    AlertRule,
+    Device,
+    DeviceHeartbeat,
+    RateAssignment,
+    RatePlan,
+    RateVersion,
+    Site,
+    Utility,
+    UtilityAccount,
+)
 from app.status_indicators import (
     INDICATOR_DEFINITIONS,
     INDICATOR_REGISTRY,
@@ -91,6 +103,56 @@ def global_item(configuration: dict[str, Any], key: str) -> dict[str, Any]:
         and item["role"] == "*"
         and item["breakpoint"] == "default"
     )
+
+
+def current_rate_document() -> dict[str, Any]:
+    return {
+        "schema_version": "power-monitor-rate-plan/1.0",
+        "plan_name": "Live homepage rate plan",
+        "plan_code": "STATUS-LIVE-RATE",
+        "utility": "Status test utility",
+        "description": "Deterministic current-rate indicator fixture",
+        "currency": "USD",
+        "timezone": "UTC",
+        "ownership_scope": "global",
+        "owner_id": None,
+        "effective_from": "2020-01-01",
+        "effective_through": None,
+        "cost_scope_default": "energy_only",
+        "source_label": "Status indicator fixture",
+        "source_note": "Not a production rate source",
+        "provider_mode": "custom_combined",
+        "seasons": [
+            {
+                "name": "all-year",
+                "start": "01-01",
+                "end": "12-31",
+                "priority": 0,
+                "leap_day_behavior": "include",
+                "schedules": [
+                    {
+                        "day_type": "all-days",
+                        "dates": [],
+                        "periods": [
+                            {
+                                "label": "on-peak",
+                                "start_minute": 0,
+                                "end_minute": 1440,
+                                "price_per_kwh": "0.58347000",
+                                "delivery_per_kwh": "0",
+                                "generation_per_kwh": "0",
+                                "adjustment_per_kwh": "0",
+                                "display_order": 0,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+        "adjustments": [],
+        "custom_notes": "",
+        "cloned_from_rate_version_id": None,
+    }
 
 
 def test_registry_is_complete_unique_and_self_consistent() -> None:
@@ -285,6 +347,9 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
     assert values.json()["values"]["alerts.warning_count"]["display_value"] == "1"
     assert int(values.json()["values"]["alerts.enabled_rule_count"]["display_value"]) >= 1
     assert values.json()["values"]["alerts.disconnect_rule_state"]["display_value"] == "On"
+    assert values.json()["values"]["rate.current_plan"]["display_value"] == "Not configured"
+    assert values.json()["values"]["rate.current_period"]["display_value"] == "Not configured"
+    assert values.json()["values"]["rate.current_price"]["display_value"] == "Not configured"
     selected_values = await api_client.get(
         f"/api/v1/status-indicators/values?site_id={site_id}&device_id={selected_device.id}"
     )
@@ -380,6 +445,179 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
         "status_layout.indicator_moved",
         "status_layout.draft_published",
     } <= actions
+
+
+@pytest.mark.asyncio
+async def test_current_rate_indicators_use_effective_account_plan_period_price_and_time(
+    api_client: httpx.AsyncClient,
+    session: AsyncSession,
+) -> None:
+    await bootstrap_admin(api_client)
+    site = await session.scalar(select(Site).order_by(Site.name))
+    utility = await session.scalar(select(Utility).order_by(Utility.name))
+    assert site and utility
+
+    account = UtilityAccount(
+        site_id=site.id,
+        utility_id=utility.id,
+        name="Home SCE account",
+        timezone="UTC",
+        currency="USD",
+    )
+    plan = RatePlan(
+        utility_id=utility.id,
+        code="STATUS-LIVE-RATE",
+        name="Live homepage rate plan",
+        description="Current status indicator fixture",
+        plan_kind="custom",
+        ownership_scope="global",
+        currency="USD",
+        timezone="UTC",
+        status="active",
+    )
+    session.add_all([account, plan])
+    await session.flush()
+    version = RateVersion(
+        rate_plan_id=plan.id,
+        version=1,
+        effective_from=date(2020, 1, 1),
+        effective_to=None,
+        timezone="UTC",
+        currency="USD",
+        source_url="https://example.test/status-live-rate",
+        source_checked_on=date(2026, 7, 20),
+        source_notes="Deterministic current-rate fixture",
+        content_hash="9" * 64,
+        immutable_after_use=True,
+        is_active=True,
+        status="active",
+        source_kind="custom",
+        normalized_payload=current_rate_document(),
+        created_at=datetime(2020, 1, 1, tzinfo=UTC),
+    )
+    session.add(version)
+    await session.flush()
+    account.active_rate_version_id = version.id
+    sensor = Device(
+        site_id=site.id,
+        utility_account_id=account.id,
+        hardware_id="status-current-rate-sensor",
+        name="Current rate sensor",
+        lifecycle_status="active",
+    )
+    session.add_all(
+        [
+            sensor,
+            RateAssignment(
+                utility_account_id=account.id,
+                rate_version_id=version.id,
+                effective_from=datetime(2020, 1, 1, tzinfo=UTC),
+                effective_to=None,
+                created_at=datetime(2020, 1, 1, tzinfo=UTC),
+            ),
+        ]
+    )
+    await session.commit()
+
+    response = await api_client.get(f"/api/v1/status-indicators/values?site_id={site.id}")
+    assert response.status_code == 200, response.text
+    values = response.json()["values"]
+    assert values["rate.current_plan"]["display_value"] == "Home SCE account"
+    assert "Live homepage rate plan v1" in values["rate.current_plan"]["detail"]
+    assert values["rate.current_period"]["display_value"] == "On-peak"
+    assert "Home SCE account: On-peak" in values["rate.current_period"]["detail"]
+    assert " UTC)" in values["rate.current_period"]["detail"]
+    assert values["rate.current_price"]["display_value"] == "$0.58347/kWh"
+    assert "during On-peak" in values["rate.current_price"]["detail"]
+    assert values["rate.current_price"]["freshness_at"] is not None
+
+    device_response = await api_client.get(
+        f"/api/v1/status-indicators/values?site_id={site.id}&device_id={sensor.id}"
+    )
+    assert device_response.status_code == 200, device_response.text
+    assert (
+        device_response.json()["values"]["rate.current_plan"]["display_value"] == "Home SCE account"
+    )
+
+    second_document = current_rate_document()
+    second_document["plan_name"] = "Second live rate plan"
+    second_document["plan_code"] = "STATUS-SECOND-LIVE-RATE"
+    second_period = second_document["seasons"][0]["schedules"][0]["periods"][0]
+    second_period["label"] = "off-peak"
+    second_period["price_per_kwh"] = "0.21000000"
+    second_account = UtilityAccount(
+        site_id=site.id,
+        utility_id=utility.id,
+        name="Second utility account",
+        timezone="UTC",
+        currency="USD",
+    )
+    second_plan = RatePlan(
+        utility_id=utility.id,
+        code="STATUS-SECOND-LIVE-RATE",
+        name="Second live rate plan",
+        description="Second current status indicator fixture",
+        plan_kind="custom",
+        ownership_scope="global",
+        currency="USD",
+        timezone="UTC",
+        status="active",
+    )
+    session.add_all([second_account, second_plan])
+    await session.flush()
+    second_version = RateVersion(
+        rate_plan_id=second_plan.id,
+        version=1,
+        effective_from=date(2020, 1, 1),
+        effective_to=None,
+        timezone="UTC",
+        currency="USD",
+        source_url="https://example.test/status-second-live-rate",
+        source_checked_on=date(2026, 7, 20),
+        source_notes="Second deterministic current-rate fixture",
+        content_hash="8" * 64,
+        immutable_after_use=True,
+        is_active=True,
+        status="active",
+        source_kind="custom",
+        normalized_payload=second_document,
+        created_at=datetime(2020, 1, 1, tzinfo=UTC),
+    )
+    session.add(second_version)
+    await session.flush()
+    second_account.active_rate_version_id = second_version.id
+    session.add_all(
+        [
+            Device(
+                site_id=site.id,
+                utility_account_id=second_account.id,
+                hardware_id="status-second-current-rate-sensor",
+                name="Second current rate sensor",
+                lifecycle_status="active",
+            ),
+            RateAssignment(
+                utility_account_id=second_account.id,
+                rate_version_id=second_version.id,
+                effective_from=datetime(2020, 1, 1, tzinfo=UTC),
+                effective_to=None,
+                created_at=datetime(2020, 1, 1, tzinfo=UTC),
+            ),
+        ]
+    )
+    await session.commit()
+
+    multi_response = await api_client.get(f"/api/v1/status-indicators/values?site_id={site.id}")
+    assert multi_response.status_code == 200, multi_response.text
+    multi_values = multi_response.json()["values"]
+    assert multi_values["rate.current_plan"]["display_value"] == "Home SCE account + 1 more"
+    assert (
+        "Second utility account: Second live rate plan v1"
+        in multi_values["rate.current_plan"]["detail"]
+    )
+    assert multi_values["rate.current_period"]["display_value"] == "Multiple periods"
+    assert "Second utility account: Off-peak" in multi_values["rate.current_period"]["detail"]
+    assert multi_values["rate.current_price"]["display_value"] == "Multiple rates"
+    assert "Second utility account: $0.21/kWh" in multi_values["rate.current_price"]["detail"]
 
 
 @pytest.mark.asyncio

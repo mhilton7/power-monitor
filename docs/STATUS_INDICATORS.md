@@ -39,6 +39,18 @@ routes additionally pass the selected device UUID. Device health indicators on
 a detail page therefore represent that sensor, while fleet pages remain
 aggregated over the authorized site scope.
 
+The three current-rate indicators use the same effective utility-account
+assignment, normalized rate document, timezone conversion, and `RateEngine`
+period evaluation as historical cost calculations. `rate.current_plan` shows
+the utility-account name and identifies the underlying plan/version in its
+detail. `rate.current_period` shows the time-of-use bucket at the server's
+current instant in the plan timezone, and `rate.current_price` shows that
+bucket's energy-only unit price. The browser refreshes these server-owned values
+every 15 seconds, so a tariff boundary is reflected without waiting for another
+sensor reading. If the selected scope genuinely contains accounts with
+different current periods or prices, the summary reports multiple values rather
+than presenting one account's rate as universal; the tooltip lists each account.
+
 Hiding an indicator is presentation-only. Collection, signed heartbeat
 processing, status calculation, persistence, synchronization, alert rules,
 notification delivery, backups, and audit evidence continue unchanged. Critical

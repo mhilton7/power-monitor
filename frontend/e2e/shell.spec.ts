@@ -53,7 +53,9 @@ const statusDefinitions = [
   statusDefinition('device.online_count', 'Devices online', 'Devices', 'page_status_row', 10, ['overview', 'devices'], 'devices.view', 'Device status remains on Devices.'),
   statusDefinition('device.offline_count', 'Offline or stale', 'Devices', 'page_status_row', 20, ['overview', 'devices'], 'devices.view', 'Disconnect alerts remain active.'),
   statusDefinition('data.energy_today', 'Energy today', 'Energy', 'page_summary_strip', 10, ['overview']),
+  statusDefinition('rate.current_plan', 'Current rate plan', 'Rates', 'page_status_row', 30, ['overview', 'rates', 'history'], 'rates.view'),
   statusDefinition('rate.current_period', 'Current rate period', 'Rates', 'page_summary_strip', 20, ['overview', 'rates', 'history'], 'rates.view'),
+  statusDefinition('rate.current_price', 'Current energy price', 'Rates', 'page_summary_strip', 25, ['overview', 'rates'], 'rates.view'),
   statusDefinition('rate.source_health', 'Rate source health', 'Rates', 'page_status_row', 10, ['rates', 'rate_sources'], 'rates.view'),
   statusDefinition('rate.update_pending', 'Rate update pending', 'Rates', 'page_status_row', 20, ['rates', 'rate_sources'], 'rates.view'),
   statusDefinition('rate.last_successful_check', 'Last source check', 'Rates', 'page_summary_strip', 10, ['rates', 'rate_sources'], 'rates.manage_sources'),
@@ -67,7 +69,22 @@ const defaultStatusConfiguration = () => ({
   registry_version: 'status-indicators/1.0', personalization_enabled: false as const,
   items: statusDefinitions.map((definition) => ({ indicator_key: definition.key, page: '*', role: '*', breakpoint: 'default', visible: true, zone: definition.default_zone, order: definition.default_order, density: 'standard', show_icon: true, show_label: true, show_value: true, show_freshness: true, show_severity: true, show_tooltip: true })),
 })
-const statusValues = Object.fromEntries(statusDefinitions.map((definition) => [definition.key, { status: 'healthy', severity: 'success', display_value: definition.key === 'data.current_power' ? '960 W' : definition.key === 'alerts.active_count' ? '1' : definition.key === 'device.online_count' ? '1' : definition.key === 'device.offline_count' ? '0' : definition.key === 'data.energy_today' ? '12.50 kWh' : definition.key === 'rate.current_period' ? 'On-peak' : definition.key === 'data.recent_peak' ? '1,800 W' : 'Healthy', detail: `${definition.default_label} detail`, freshness_at: '2026-07-20T19:05:00Z' }]))
+
+function statusDisplayValue(key: string): string {
+  return {
+    'data.current_power': '960 W',
+    'alerts.active_count': '1',
+    'device.online_count': '1',
+    'device.offline_count': '0',
+    'data.energy_today': '12.50 kWh',
+    'rate.current_plan': 'Upland SCE account',
+    'rate.current_period': 'On-peak',
+    'rate.current_price': '$0.58/kWh',
+    'data.recent_peak': '1,800 W',
+  }[key] ?? 'Healthy'
+}
+
+const statusValues = Object.fromEntries(statusDefinitions.map((definition) => [definition.key, { status: 'healthy', severity: 'success', display_value: statusDisplayValue(definition.key), detail: `${definition.default_label} detail`, freshness_at: '2026-07-20T19:05:00Z' }]))
 
 function resolveMockStatus(configuration: ReturnType<typeof defaultStatusConfiguration>, pageName: string, breakpoint: string, role = 'admin') {
   const items = statusDefinitions.flatMap((definition) => {
@@ -752,6 +769,9 @@ test('dashboard copy is corrected without exposing protocol or footer status tex
   await page.goto('/')
   await expect(page.getByText('Fleet availability')).toHaveCount(0)
   await expect(page.getByText('100%', { exact: true })).toBeVisible()
+  await expect(page.locator('[data-indicator-key="rate.current_plan"]')).toContainText('Upland SCE account')
+  await expect(page.locator('[data-indicator-key="rate.current_period"]')).toContainText('On-peak')
+  await expect(page.locator('[data-indicator-key="rate.current_price"]')).toContainText('$0.58/kWh')
   await page.goto('/devices')
   await expect(page.getByRole('heading', { name: 'Device Management' })).toBeVisible()
   await expect(page.getByText('Sensor health and general data')).toBeVisible()

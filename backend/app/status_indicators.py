@@ -19,15 +19,21 @@ from app.db.models import (
     EnrollmentToken,
     FirmwareDeployment,
     NotificationAttempt,
+    RateAssignment,
     RateChangeCandidate,
     RateSource,
     RateSyncConfiguration,
+    RateVersion,
     Site,
     StatusLayoutRevision,
     StatusLayoutState,
+    UtilityAccount,
     WorkerState,
 )
 from app.problem import ProblemError
+from app.rates.documents import engine_plan
+from app.rates.engine import RateEngine
+from app.rates.service import version_document
 
 REGISTRY_VERSION = "status-indicators/1.0"
 LAYOUT_SCHEMA_VERSION = "power-monitor-status-layout/1.0"
@@ -1086,6 +1092,260 @@ def _value(
     }
 
 
+@dataclass(frozen=True)
+class CurrentRateSnapshot:
+    account_name: str
+    plan_name: str
+    version: int
+    period: str
+    price_per_kwh: Decimal
+    currency: str
+    local_time: str
+
+
+def _period_label(value: str) -> str:
+    return value.replace("_", " ").capitalize()
+
+
+def _money_rate(value: Decimal, currency: str) -> str:
+    rendered = format(value, "f").rstrip("0").rstrip(".")
+    if "." not in rendered:
+        rendered = f"{rendered}.00"
+    else:
+        whole, fraction = rendered.split(".", 1)
+        rendered = f"{whole}.{fraction.ljust(2, '0')}"
+    prefix = "$" if currency.upper() == "USD" else f"{currency.upper()} "
+    return f"{prefix}{rendered}/kWh"
+
+
+def _local_rate_time(instant: datetime, engine: RateEngine) -> str:
+    local = instant.astimezone(engine.zone)
+    clock = local.strftime("%I:%M %p")
+    if clock.startswith("0"):
+        clock = clock[1:]
+    zone = local.tzname() or str(engine.zone)
+    return f"{local:%b} {local.day}, {local.year} at {clock} {zone}"
+
+
+def _account_label(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else f"{names[0]} + {len(names) - 1} more"
+
+
+async def _current_rate_values(
+    session: AsyncSession,
+    *,
+    selected_site_ids: set[str],
+    devices: list[Device],
+    now: datetime,
+) -> dict[str, dict[str, Any]]:
+    if not selected_site_ids:
+        return {
+            "rate.current_plan": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="No permitted site is available",
+            ),
+            "rate.current_period": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="Assign an active rate to a utility account",
+            ),
+            "rate.current_price": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="Assign an active rate to a utility account",
+            ),
+        }
+
+    all_accounts = list(
+        await session.scalars(
+            select(UtilityAccount)
+            .where(UtilityAccount.site_id.in_(selected_site_ids))
+            .order_by(UtilityAccount.name, UtilityAccount.id)
+        )
+    )
+    accounts_by_site: dict[str, list[UtilityAccount]] = {}
+    for account in all_accounts:
+        accounts_by_site.setdefault(account.site_id, []).append(account)
+
+    selected_account_ids = {
+        device.utility_account_id for device in devices if device.utility_account_id
+    }
+    for device in devices:
+        site_accounts = accounts_by_site.get(device.site_id, [])
+        if device.utility_account_id is None and len(site_accounts) == 1:
+            selected_account_ids.add(site_accounts[0].id)
+    if not selected_account_ids:
+        selected_account_ids = {account.id for account in all_accounts}
+    accounts = [account for account in all_accounts if account.id in selected_account_ids]
+
+    if not accounts:
+        return {
+            "rate.current_plan": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="Create a utility account and assign an active rate",
+            ),
+            "rate.current_period": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="No utility account is available for the selected scope",
+            ),
+            "rate.current_price": _value(
+                "unconfigured",
+                "Not configured",
+                severity="warning",
+                detail="No utility account is available for the selected scope",
+            ),
+        }
+
+    account_ids = [account.id for account in accounts]
+    assignments = list(
+        await session.scalars(
+            select(RateAssignment)
+            .where(
+                RateAssignment.utility_account_id.in_(account_ids),
+                RateAssignment.effective_from <= now,
+                or_(RateAssignment.effective_to.is_(None), RateAssignment.effective_to > now),
+            )
+            .order_by(
+                RateAssignment.utility_account_id,
+                RateAssignment.effective_from.desc(),
+                RateAssignment.created_at.desc(),
+            )
+        )
+    )
+    assignment_by_account: dict[str, RateAssignment] = {}
+    for assignment in assignments:
+        assignment_by_account.setdefault(assignment.utility_account_id, assignment)
+
+    version_ids = {assignment.rate_version_id for assignment in assignment_by_account.values()}
+    version_ids.update(
+        account.active_rate_version_id for account in accounts if account.active_rate_version_id
+    )
+    versions = {
+        version.id: version
+        for version in (
+            list(await session.scalars(select(RateVersion).where(RateVersion.id.in_(version_ids))))
+            if version_ids
+            else []
+        )
+    }
+
+    snapshots: list[CurrentRateSnapshot] = []
+    unavailable: list[str] = []
+    for account in accounts:
+        current_assignment = assignment_by_account.get(account.id)
+        version_id = (
+            current_assignment.rate_version_id
+            if current_assignment
+            else account.active_rate_version_id
+        )
+        version = versions.get(version_id) if version_id else None
+        if version is None:
+            unavailable.append(f"{account.name}: no active rate")
+            continue
+        try:
+            document = await version_document(session, version)
+            engine = RateEngine(engine_plan(document))
+            local_date = now.astimezone(engine.zone).date()
+            if local_date < version.effective_from or (
+                version.effective_to is not None and local_date > version.effective_to
+            ):
+                unavailable.append(f"{account.name}: rate is outside its effective dates")
+                continue
+            period, price = engine.period_at(now)
+        except (KeyError, RuntimeError, ValueError) as error:
+            unavailable.append(f"{account.name}: rate cannot be evaluated ({type(error).__name__})")
+            continue
+        snapshots.append(
+            CurrentRateSnapshot(
+                account_name=account.name,
+                plan_name=document.plan_name,
+                version=version.version,
+                period=_period_label(period),
+                price_per_kwh=price,
+                currency=document.currency,
+                local_time=_local_rate_time(now, engine),
+            )
+        )
+
+    account_names = [account.name for account in accounts]
+    if not snapshots:
+        unavailable_detail = "; ".join(unavailable) or "No effective rate assignment"
+        return {
+            "rate.current_plan": _value(
+                "unconfigured",
+                _account_label(account_names),
+                severity="warning",
+                detail=unavailable_detail,
+            ),
+            "rate.current_period": _value(
+                "unavailable", "Unavailable", severity="warning", detail=unavailable_detail
+            ),
+            "rate.current_price": _value(
+                "unavailable", "Unavailable", severity="warning", detail=unavailable_detail
+            ),
+        }
+
+    snapshot_names = [snapshot.account_name for snapshot in snapshots]
+    plan_detail = "; ".join(
+        f"{snapshot.account_name}: {snapshot.plan_name} v{snapshot.version}"
+        for snapshot in snapshots
+    )
+    if unavailable:
+        plan_detail = f"{plan_detail}; {'; '.join(unavailable)}"
+
+    period_values = {snapshot.period for snapshot in snapshots}
+    period_display = next(iter(period_values)) if len(period_values) == 1 else "Multiple periods"
+    period_detail = "; ".join(
+        f"{snapshot.account_name}: {snapshot.period} ({snapshot.local_time})"
+        for snapshot in snapshots
+    )
+
+    price_values = {(snapshot.price_per_kwh, snapshot.currency.upper()) for snapshot in snapshots}
+    price_display = (
+        _money_rate(snapshots[0].price_per_kwh, snapshots[0].currency)
+        if len(price_values) == 1
+        else "Multiple rates"
+    )
+    price_detail = "; ".join(
+        f"{snapshot.account_name}: "
+        f"{_money_rate(snapshot.price_per_kwh, snapshot.currency)} "
+        f"during {snapshot.period} ({snapshot.local_time})"
+        for snapshot in snapshots
+    )
+
+    return {
+        "rate.current_plan": _value(
+            "configured",
+            _account_label(snapshot_names),
+            severity="success" if not unavailable else "warning",
+            detail=plan_detail,
+            freshness_at=now,
+        ),
+        "rate.current_period": _value(
+            "current",
+            period_display,
+            severity="success" if not unavailable else "warning",
+            detail=period_detail,
+            freshness_at=now,
+        ),
+        "rate.current_price": _value(
+            "current",
+            price_display,
+            severity="success" if not unavailable else "warning",
+            detail=price_detail,
+            freshness_at=now,
+        ),
+    }
+
+
 async def status_values(
     session: AsyncSession,
     *,
@@ -1378,14 +1638,13 @@ async def status_values(
         or 0
     )
     rate_values = {
-        "rate.current_plan": _value(
-            "configured", "Configured accounts", detail="Open Rates for assignment detail"
-        ),
-        "rate.current_period": _value(
-            "current", "See active plan", detail="Evaluated precisely for each reading"
-        ),
-        "rate.current_price": _value(
-            "current", "Rate dependent", detail="Varies by account and TOU period"
+        **(
+            await _current_rate_values(
+                session,
+                selected_site_ids=selected_site_ids,
+                devices=devices,
+                now=now,
+            )
         ),
         "rate.source_health": _value(
             (
