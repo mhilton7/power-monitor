@@ -73,8 +73,11 @@ through **Datasets > Permissions**; never solve the problem with mode 0777.
 ## Devices push heartbeats but worker cannot backfill
 
 Signed heartbeats are the primary address source. Confirm the newest accepted
-heartbeat has the expected RFC1918 `current_ip`, and that the site's allowed CIDRs
-include that LAN/VLAN. The worker joins the normal `public` bridge network so
+heartbeat has the expected RFC1918 `current_ip`. In **Administration > Server &
+network**, select the site and inspect **Server pull access**. Explicit deny-all
+blocks every pull; listed mode requires an enabled CIDR containing that LAN/VLAN;
+all-private mode accepts RFC1918/ULA but still rejects unsafe classes. Use **Test
+sensor IP** to evaluate policy without scanning. The worker joins the normal `public` bridge network so
 outbound bridge/NAT egress to RFC1918 networks is expected; PostgreSQL remains on
 the separate internal network.
 

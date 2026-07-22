@@ -1427,6 +1427,1020 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/versions/{version_id}/current-context:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: Rate Version Current Context
+      operationId: rate_version_current_context_api_v1_rates_versions__version_id__current_context_get
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Rate Version Current Context Api V1 Rates Versions  Version
+                  Id  Current Context Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/sites/{site_id}/utility-accounts:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: List Site Accounts
+      operationId: list_site_accounts_api_v1_admin_sites__site_id__utility_accounts_get
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: include_archived
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Include Archived
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Site Accounts Api V1 Admin Sites  Site Id  Utility
+                  Accounts Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - utility accounts and sensor network
+      summary: Create Site Account
+      operationId: create_site_account_api_v1_admin_sites__site_id__utility_accounts_post
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UtilityAccountWizardCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Site Account Api V1 Admin Sites  Site Id  Utility
+                  Accounts Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: Get Account
+      operationId: get_account_api_v1_admin_utility_accounts__account_id__get
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Account Api V1 Admin Utility Accounts  Account
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - utility accounts and sensor network
+      summary: Update Account
+      operationId: update_account_api_v1_admin_utility_accounts__account_id__put
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UtilityAccountUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Account Api V1 Admin Utility Accounts  Account
+                  Id  Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/archive:
+    post:
+      tags:
+      - utility accounts and sensor network
+      summary: Archive Account
+      operationId: archive_account_api_v1_admin_utility_accounts__account_id__archive_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Archive Account Api V1 Admin Utility Accounts  Account
+                  Id  Archive Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/rate-assignments:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: Account Rate Assignments
+      operationId: account_rate_assignments_api_v1_admin_utility_accounts__account_id__rate_assignments_get
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response Account Rate Assignments Api V1 Admin Utility Accounts  Account
+                  Id  Rate Assignments Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - utility accounts and sensor network
+      summary: Add Account Rate Assignment
+      operationId: add_account_rate_assignment_api_v1_admin_utility_accounts__account_id__rate_assignments_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateAssignmentWrite'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Add Account Rate Assignment Api V1 Admin Utility Accounts  Account
+                  Id  Rate Assignments Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/cost-scope:
+    post:
+      tags:
+      - utility accounts and sensor network
+      summary: Change Cost Scope
+      operationId: change_cost_scope_api_v1_admin_utility_accounts__account_id__cost_scope_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UtilityCostScopeWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Change Cost Scope Api V1 Admin Utility Accounts  Account
+                  Id  Cost Scope Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/recalculate:
+    post:
+      tags:
+      - utility accounts and sensor network
+      summary: Recalculate Account Costs
+      operationId: recalculate_account_costs_api_v1_admin_utility_accounts__account_id__recalculate_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Recalculate Account Costs Api V1 Admin Utility Accounts  Account
+                  Id  Recalculate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/adjustments:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: List Account Adjustments
+      operationId: list_account_adjustments_api_v1_admin_utility_accounts__account_id__adjustments_get
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Account Adjustments Api V1 Admin Utility Accounts  Account
+                  Id  Adjustments Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - utility accounts and sensor network
+      summary: Add Account Adjustment
+      operationId: add_account_adjustment_api_v1_admin_utility_accounts__account_id__adjustments_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UtilityAdjustmentWrite'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Add Account Adjustment Api V1 Admin Utility Accounts  Account
+                  Id  Adjustments Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sites/{site_id}/setup-readiness:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: Setup Readiness
+      operationId: setup_readiness_api_v1_sites__site_id__setup_readiness_get
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Setup Readiness Api V1 Sites  Site Id  Setup Readiness
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/network/policies:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: List Network Policies
+      operationId: list_network_policies_api_v1_admin_network_policies_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Network Policies Api V1 Admin Network Policies
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/network/policies/{policy_id}:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: Get Network Policy
+      operationId: get_network_policy_api_v1_admin_network_policies__policy_id__get
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Policy Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Network Policy Api V1 Admin Network Policies  Policy
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - utility accounts and sensor network
+      summary: Update Network Policy
+      operationId: update_network_policy_api_v1_admin_network_policies__policy_id__put
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Policy Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkPolicyWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Network Policy Api V1 Admin Network Policies  Policy
+                  Id  Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/network/cidrs:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: List Network Cidrs
+      operationId: list_network_cidrs_api_v1_admin_network_cidrs_get
+      parameters:
+      - name: policy_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Policy Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Network Cidrs Api V1 Admin Network Cidrs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - utility accounts and sensor network
+      summary: Add Network Cidr
+      operationId: add_network_cidr_api_v1_admin_network_cidrs_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkCidrWrite'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Add Network Cidr Api V1 Admin Network Cidrs Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/network/cidrs/{cidr_id}:
+    put:
+      tags:
+      - utility accounts and sensor network
+      summary: Update Network Cidr
+      operationId: update_network_cidr_api_v1_admin_network_cidrs__cidr_id__put
+      parameters:
+      - name: cidr_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cidr Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkCidrWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Network Cidr Api V1 Admin Network Cidrs  Cidr
+                  Id  Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - utility accounts and sensor network
+      summary: Delete Network Cidr
+      operationId: delete_network_cidr_api_v1_admin_network_cidrs__cidr_id__delete
+      parameters:
+      - name: cidr_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cidr Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/network/test-address:
+    post:
+      tags:
+      - utility accounts and sensor network
+      summary: Test Network Address
+      operationId: test_network_address_api_v1_admin_network_test_address_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkAddressTest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Test Network Address Api V1 Admin Network Test Address
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/network/observed-devices:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: Observed Devices
+      operationId: observed_devices_api_v1_admin_network_observed_devices_get
+      parameters:
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response Observed Devices Api V1 Admin Network Observed Devices
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/network/suggest-current:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: Suggest Current Network
+      operationId: suggest_current_network_api_v1_admin_network_suggest_current_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Suggest Current Network Api V1 Admin Network Suggest
+                  Current Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/network/runtime:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: Network Runtime
+      operationId: network_runtime_api_v1_admin_network_runtime_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Network Runtime Api V1 Admin Network Runtime Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/device-enrollment/claim:
     post:
       tags:
@@ -7334,6 +8348,7 @@ components:
           - reboot_loop
           - firmware_failure
           - server_failure
+          - device_address_outside_policy
           title: Rule Type
         severity:
           type: string
@@ -8004,6 +9019,25 @@ components:
           - type: string
           - type: 'null'
           title: Current Tou Bucket
+        current_rate_plan:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Rate Plan
+        current_rate_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Current Rate Version
+        current_rate_price_per_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Rate Price Per Kwh
+        rate_configured:
+          type: boolean
+          title: Rate Configured
+          default: false
         recent_peak_w:
           type: string
           title: Recent Peak W
@@ -9130,6 +10164,79 @@ components:
       required:
       - until
       title: MaintenanceWindow
+    NetworkAddressTest:
+      properties:
+        policy_id:
+          type: string
+          title: Policy Id
+        address:
+          type: string
+          maxLength: 80
+          minLength: 2
+          title: Address
+      additionalProperties: false
+      type: object
+      required:
+      - policy_id
+      - address
+      title: NetworkAddressTest
+    NetworkCidrWrite:
+      properties:
+        policy_id:
+          type: string
+          title: Policy Id
+        network:
+          type: string
+          maxLength: 80
+          minLength: 3
+          title: Network
+        label:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Label
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        revision:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Revision
+      additionalProperties: false
+      type: object
+      required:
+      - policy_id
+      - network
+      - label
+      title: NetworkCidrWrite
+    NetworkPolicyWrite:
+      properties:
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        mode:
+          type: string
+          enum:
+          - allow_listed_private
+          - allow_all_private
+          - deny_all
+          title: Mode
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - revision
+      - mode
+      title: NetworkPolicyWrite
     NotificationChannelWrite:
       properties:
         name:
@@ -9243,6 +10350,33 @@ components:
       - value
       - unit
       title: RateAdjustmentDocument
+    RateAssignmentWrite:
+      properties:
+        rate_version_id:
+          type: string
+          title: Rate Version Id
+        effective_from:
+          type: string
+          format: date-time
+          title: Effective From
+        effective_to:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Effective To
+        assignment_reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Assignment Reason
+      additionalProperties: false
+      type: object
+      required:
+      - rate_version_id
+      - effective_from
+      title: RateAssignmentWrite
     RatePeriodDocument:
       properties:
         label:
@@ -10364,6 +11498,278 @@ components:
       - display_name
       - roles
       title: UserSummary
+    UtilityAccountUpdate:
+      properties:
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        name:
+          anyOf:
+          - type: string
+            maxLength: 160
+            minLength: 1
+          - type: 'null'
+          title: Name
+        nickname:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Nickname
+        account_number_suffix:
+          anyOf:
+          - type: string
+            pattern: ^[A-Za-z0-9-]{2,8}$
+          - type: 'null'
+          title: Account Number Suffix
+        billing_cycle_start_day:
+          anyOf:
+          - type: integer
+            maximum: 31.0
+            minimum: 1.0
+          - type: 'null'
+          title: Billing Cycle Start Day
+        currency:
+          anyOf:
+          - type: string
+            pattern: ^[A-Z]{3}$
+          - type: 'null'
+          title: Currency
+        baseline_allocation_kwh:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Baseline Allocation Kwh
+        generation_provider:
+          anyOf:
+          - type: string
+            enum:
+            - sce
+            - cca
+            - direct_access
+            - custom
+          - type: 'null'
+          title: Generation Provider
+        provider_mode:
+          anyOf:
+          - type: string
+            enum:
+            - sce_bundled
+            - sce_delivery_generation
+            - sce_delivery_cca
+            - sce_delivery_direct_access
+            - custom_combined
+          - type: 'null'
+          title: Provider Mode
+        service_class:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Service Class
+      additionalProperties: false
+      type: object
+      required:
+      - revision
+      title: UtilityAccountUpdate
+    UtilityAccountWizardCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Name
+        nickname:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Nickname
+        account_number_suffix:
+          anyOf:
+          - type: string
+            pattern: ^[A-Za-z0-9-]{2,8}$
+          - type: 'null'
+          title: Account Number Suffix
+        status:
+          type: string
+          const: active
+          title: Status
+          default: active
+        utility_provider:
+          type: string
+          enum:
+          - sce
+          - cca
+          - direct_access
+          - custom
+          title: Utility Provider
+          default: sce
+        generation_provider:
+          type: string
+          enum:
+          - sce
+          - cca
+          - direct_access
+          - custom
+          title: Generation Provider
+          default: sce
+        provider_mode:
+          type: string
+          enum:
+          - sce_bundled
+          - sce_delivery_generation
+          - sce_delivery_cca
+          - sce_delivery_direct_access
+          - custom_combined
+          title: Provider Mode
+          default: sce_bundled
+        billing_cycle_start_day:
+          type: integer
+          maximum: 31.0
+          minimum: 1.0
+          title: Billing Cycle Start Day
+          default: 1
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          title: Currency
+          default: USD
+        baseline_allocation_kwh:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Baseline Allocation Kwh
+        service_class:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Service Class
+        rate_assignment:
+          $ref: '#/components/schemas/RateAssignmentWrite'
+        cost_scope:
+          type: string
+          enum:
+          - energy_only
+          - allocated_account_estimate
+          - full_account_estimate
+          title: Cost Scope
+          default: energy_only
+        allocation_method:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Allocation Method
+        full_account_override:
+          type: boolean
+          title: Full Account Override
+          default: false
+        adjustments:
+          items:
+            $ref: '#/components/schemas/UtilityAdjustmentWrite'
+          type: array
+          maxItems: 30
+          title: Adjustments
+        confirmation:
+          type: boolean
+          title: Confirmation
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - rate_assignment
+      - confirmation
+      title: UtilityAccountWizardCreate
+    UtilityAdjustmentWrite:
+      properties:
+        component:
+          type: string
+          enum:
+          - cca_generation
+          - direct_access
+          - baseline_credit
+          - service_charge
+          - tax_fee
+          - custom_fixed
+          - custom_per_kwh
+          title: Component
+        value:
+          anyOf:
+          - type: number
+          - type: string
+          title: Value
+        unit:
+          type: string
+          enum:
+          - per_kwh
+          - fixed
+          - percent
+          - included
+          title: Unit
+        provenance:
+          type: string
+          maxLength: 240
+          minLength: 1
+          title: Provenance
+        effective_from:
+          type: string
+          format: date-time
+          title: Effective From
+        effective_to:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Effective To
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+      additionalProperties: false
+      type: object
+      required:
+      - component
+      - value
+      - unit
+      - provenance
+      - effective_from
+      title: UtilityAdjustmentWrite
+    UtilityCostScopeWrite:
+      properties:
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        cost_scope:
+          type: string
+          enum:
+          - energy_only
+          - allocated_account_estimate
+          - full_account_estimate
+          title: Cost Scope
+        allocation_method:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Allocation Method
+        full_account_override:
+          type: boolean
+          title: Full Account Override
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - revision
+      - cost_scope
+      title: UtilityCostScopeWrite
     ValidationError:
       properties:
         loc:

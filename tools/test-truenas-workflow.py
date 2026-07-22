@@ -252,7 +252,7 @@ def _require_success(response: httpx.Response, operation: str) -> httpx.Response
 
 async def exercise_application(
     *, base_url: str, ca_certificate: Path, setup_token_file: Path, device_count: int
-) -> tuple[int, int]:
+) -> tuple[int, int, int, int]:
     setup_token = setup_token_file.read_text(encoding="utf-8").strip()
     if not setup_token:
         raise WorkflowFailure("administrator setup token is empty")
@@ -290,6 +290,132 @@ async def exercise_application(
         sites = _require_success(await client.get("/api/v1/sites"), "list sites").json()
         if len(sites) != 1:
             raise WorkflowFailure("bootstrap did not create exactly one default site")
+        site = sites[0]
+
+        plans = _require_success(
+            await client.get("/api/v1/rates/plans"), "list published rates"
+        ).json()
+        rate_version = next(
+            (
+                version
+                for plan in plans
+                for version in plan.get("versions", [])
+                if version.get("status") in {"active", "approved"}
+            ),
+            None,
+        )
+        if rate_version is None:
+            raise WorkflowFailure("no assignable rate version was seeded")
+        account_payload = {
+            "nickname": "TrueNAS deployment gate",
+            "account_number_suffix": "0042",
+            "utility_provider": "sce",
+            "generation_provider": "sce",
+            "provider_mode": "sce_bundled",
+            "billing_cycle_start_day": 17,
+            "currency": "USD",
+            "service_class": "Residential",
+            "rate_assignment": {
+                "rate_version_id": rate_version["id"],
+                "effective_from": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
+                "assignment_reason": "Digest-pinned deployment acceptance",
+            },
+            "cost_scope": "energy_only",
+            "adjustments": [],
+            "confirmation": True,
+        }
+        for index, name in enumerate(("Main electric", "Detached building")):
+            account = _require_success(
+                await client.post(
+                    f"/api/v1/admin/sites/{site['id']}/utility-accounts",
+                    headers=csrf_header,
+                    json={**account_payload, "name": name},
+                ),
+                f"create utility account {index + 1}",
+            ).json()
+            context = account.get("rate_context", {})
+            if context.get("state") != "rate_configured_effective":
+                raise WorkflowFailure("utility account lacks an effective rate context")
+            if not context.get("current_period") or not context.get(
+                "current_price_per_kwh"
+            ):
+                raise WorkflowFailure("current period or price did not resolve")
+        utility_accounts = _require_success(
+            await client.get(f"/api/v1/admin/sites/{site['id']}/utility-accounts"),
+            "list utility accounts",
+        ).json()
+        if len(utility_accounts) != 2:
+            raise WorkflowFailure("multiple utility accounts were not persisted")
+        readiness = _require_success(
+            await client.get(f"/api/v1/sites/{site['id']}/setup-readiness"),
+            "read setup readiness",
+        ).json()
+        if (
+            readiness.get("rate_and_cost", {}).get("state")
+            != "rate_configured_effective"
+        ):
+            raise WorkflowFailure("site readiness did not report the effective rate")
+
+        policies = _require_success(
+            await client.get("/api/v1/admin/network/policies"),
+            "list sensor network policies",
+        ).json()
+        ingress = next(
+            item for item in policies if item["direction"] == "device_ingress"
+        )
+        pull = next(item for item in policies if item["direction"] == "server_pull")
+        if ingress["mode"] != "legacy_authenticated_any" or not ingress.get(
+            "migration_notice_pending"
+        ):
+            raise WorkflowFailure(
+                "legacy ingress behavior was not preserved for review"
+            )
+        if pull["mode"] != "deny_all":
+            raise WorkflowFailure("legacy empty pull CIDRs did not migrate to deny-all")
+        _require_success(
+            await client.post(
+                "/api/v1/admin/network/cidrs",
+                headers=csrf_header,
+                json={
+                    "policy_id": pull["id"],
+                    "network": "192.168.50.42/24",
+                    "label": "TrueNAS sensor VLAN",
+                },
+            ),
+            "add canonical sensor CIDR",
+        )
+        pull = _require_success(
+            await client.get(f"/api/v1/admin/network/policies/{pull['id']}"),
+            "reload pull policy",
+        ).json()
+        pull = _require_success(
+            await client.put(
+                f"/api/v1/admin/network/policies/{pull['id']}",
+                headers=csrf_header,
+                json={
+                    "revision": pull["revision"],
+                    "mode": "allow_listed_private",
+                    "reason": "Digest-pinned deployment acceptance",
+                },
+            ),
+            "activate listed private sensor network",
+        ).json()
+        for address, expected in (
+            ("192.168.50.99", True),
+            ("192.168.60.99", False),
+        ):
+            result = _require_success(
+                await client.post(
+                    "/api/v1/admin/network/test-address",
+                    headers=csrf_header,
+                    json={"policy_id": pull["id"], "address": address},
+                ),
+                f"evaluate sensor address {address}",
+            ).json()
+            if result.get("allowed") is not expected:
+                raise WorkflowFailure(
+                    f"sensor address {address} did not match the explicit policy"
+                )
 
         expected_readings = 0
         for index in range(device_count):
@@ -298,7 +424,7 @@ async def exercise_application(
                     "/api/v1/enrollment-tokens",
                     headers=csrf_header,
                     json={
-                        "site_id": sites[0]["id"],
+                        "site_id": site["id"],
                         "name": f"TrueNAS Simulator {index + 1}",
                         "connection_mode": "push",
                     },
@@ -365,11 +491,15 @@ async def exercise_application(
         ).json()
         if rate.get("plan_code") != "TOU-D-4-9PM" or float(rate["display_total"]) <= 0:
             raise WorkflowFailure("SCE rate calculation returned an invalid result")
-        return device_count, expected_readings
+        return device_count, expected_readings, len(utility_accounts), 1
 
 
 def backup_and_restore(
-    compose: Path, expected_devices: int, expected_readings: int
+    compose: Path,
+    expected_devices: int,
+    expected_readings: int,
+    expected_accounts: int,
+    expected_cidrs: int,
 ) -> None:
     backup_output = run_compose(
         compose,
@@ -405,7 +535,9 @@ def backup_and_restore(
         "SELECT (SELECT count(*) FROM devices),"
         "(SELECT count(*) FROM device_heartbeats),"
         "(SELECT count(*) FROM raw_readings),"
-        "(SELECT count(*) FROM alembic_version);"
+        "(SELECT count(*) FROM alembic_version),"
+        "(SELECT count(*) FROM utility_accounts),"
+        "(SELECT count(*) FROM sensor_network_cidrs);"
     )
     restored = run_compose(
         compose,
@@ -422,7 +554,7 @@ def backup_and_restore(
         query,
         capture=True,
     ).splitlines()[-1]
-    devices, heartbeats, readings, revisions = (
+    devices, heartbeats, readings, revisions, accounts, cidrs = (
         int(value) for value in restored.split("|")
     )
     if devices != expected_devices or heartbeats < expected_devices:
@@ -432,6 +564,10 @@ def backup_and_restore(
     if readings != expected_readings or revisions != 1:
         raise WorkflowFailure(
             "restored database is missing historical readings or migration state"
+        )
+    if accounts != expected_accounts or cidrs != expected_cidrs:
+        raise WorkflowFailure(
+            "restored database is missing utility accounts or network policy rules"
         )
 
 
@@ -483,7 +619,7 @@ def main() -> int:
         run_compose(compose, "up", "-d", "--wait", "--wait-timeout", "300")
         assert_container_state(compose, args.gateway_port)
         export_internal_ca(compose, args.ca_certificate.resolve())
-        devices, readings = asyncio.run(
+        devices, readings, accounts, cidrs = asyncio.run(
             exercise_application(
                 base_url=args.base_url,
                 ca_certificate=args.ca_certificate.resolve(),
@@ -491,10 +627,11 @@ def main() -> int:
                 device_count=args.device_count,
             )
         )
-        backup_and_restore(compose, devices, readings)
+        backup_and_restore(compose, devices, readings, accounts, cidrs)
         succeeded = True
         print(
             f"TrueNAS workflow passed: services=7 devices={devices} readings={readings} "
+            f"utility_accounts={accounts} network_cidrs={cidrs} "
             "backup=verified restore=verified ports=verified"
         )
         return 0

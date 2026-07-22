@@ -65,6 +65,21 @@ context placements. The prior revision remains available for review; restoring
 it through the dashboard creates another immutable revision and the resolver
 still enforces diagnostics and deduplication safeguards.
 
+For the utility-account and sensor-network-policy release, migration
+`20260721_0008` extends existing account and rate-assignment tables, creates
+effective-dated account adjustments, explicit per-site ingress/pull policies,
+canonical CIDRs, and immutable policy revisions, and grants the four new
+granular permissions to Administrator. It does not add a dataset, secret,
+mount, service, port, capability, or Compose variable. The migration preserves
+the old behavior exactly: an empty pull CIDR list becomes explicit deny-all;
+existing pull CIDRs are copied; former network-unrestricted signed ingress is
+marked as a review-required legacy mode. After upgrade, open **Administration >
+Server & network**, review both directions for every site, add the intended
+private sensor VLANs, test one allowed and one blocked address without scanning,
+then save an explicit mode. Open **Sites & accounts** and create or review each
+utility account, rate assignment, and cost scope. Do not select complete-account
+scope until topology coverage has been verified.
+
 If migration fails, do not bypass its dependency or point the old application at
 a partly migrated database. Preserve logs and follow the rollback path.
 

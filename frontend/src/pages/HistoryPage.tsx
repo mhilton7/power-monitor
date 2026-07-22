@@ -513,7 +513,7 @@ export function HistoryPage() {
           <div><strong>{queryData.display_mode === 'individual' ? 'Individual sensors' : 'Combined total'} · {queryData.scope.included_device_ids.length} {queryData.scope.included_device_ids.length === 1 ? 'sensor' : 'sensors'} · {queryData.scope.included_device_names.join(' + ')}</strong><small>{queryData.scope.site_name} · {rangeHours < 48 ? `${rangeHours} hours` : `${Math.round(rangeHours / 24)} days`} · {queryData.bucket} buckets · {queryData.scope.mixed_rates ? 'Mixed rates' : queryData.rate_versions_used[0]?.rate_plan_name ?? 'No active rate'}</small></div>
           {basePoints.length > 0 && <span data-metric-identity="data.coverage"><StatusPill status={Number(queryData.summary.coverage_percent) >= 99 ? 'healthy' : 'pending'} label={`${formatNumber(queryData.summary.coverage_percent, 1)}% coverage`} /></span>}
         </section>
-        {basePoints.length > 0 && queryData.warnings.map((warning) => <aside className="history-warning" key={`${warning.code}-${warning.device_ids?.join('-') ?? ''}`} role="status"><AlertTriangle size={18} /><p><strong>{warning.code.replaceAll('_', ' ')}</strong><span>{warning.message}</span>{warning.code === 'rate_unavailable' && <Link to="/rates">Open Rates</Link>}</p></aside>)}
+        {basePoints.length > 0 && queryData.warnings.filter((warning) => warning.code !== 'rate_unavailable').map((warning) => <aside className="history-warning" key={`${warning.code}-${warning.device_ids?.join('-') ?? ''}`} role="status"><AlertTriangle size={18} /><p><strong>{warning.code.replaceAll('_', ' ')}</strong><span>{warning.message}</span></p></aside>)}
 
         {basePoints.length > 0 && <div className="history-summary-grid">
           <article><span>Total energy</span><strong>{unavailableNumber(rangeSummary?.energy_kwh, 4)} kWh</strong></article>
@@ -555,7 +555,7 @@ export function HistoryPage() {
           </table></div>
           <nav className="history-pagination" aria-label="History table pages"><button className="button secondary compact" disabled={page <= 1} onClick={() => { setPage((current) => Math.max(1, current - 1)) }}><ChevronLeft size={16} /> Previous</button><span>Page {queryData.page} · {queryData.total_buckets} total buckets</span><button className="button secondary compact" disabled={!queryData.next_page} onClick={() => { setPage(queryData.next_page ?? page) }} >Next <ChevronRight size={16} /></button></nav>
         </Panel>}
-        {basePoints.length > 0 && costUnavailable && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost is unavailable for intervals without a historically effective rate. Electrical measurements remain visible; the server never guesses a price.</p>}
+        {basePoints.length > 0 && costUnavailable && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost is unavailable for intervals without a historically effective rate. Electrical measurements remain visible; the server never guesses a price. <Link to="/admin?tab=sites-accounts">Configure utility account</Link></p>}
         {basePoints.length > 0 && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost covers interval energy charges for the selected sensors. It excludes account-level service charges, taxes, credits, and other whole-bill items by default.</p>}
       </>}
     </>

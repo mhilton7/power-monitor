@@ -168,6 +168,18 @@ class RateEngine:
                 return str(bucket), Decimal(str(price))
         raise RuntimeError("validated rate plan has no matching period")
 
+    def next_period_at(self, instant: datetime) -> tuple[datetime, str, Decimal]:
+        """Return the next tariff boundary and the period effective after it."""
+        if instant.tzinfo is None:
+            raise ValueError("instant must be timezone-aware")
+        end = instant + timedelta(days=3)
+        for boundary in self._boundaries(instant, end):
+            if boundary <= instant.astimezone(UTC):
+                continue
+            bucket, price = self.period_at(boundary + timedelta(seconds=1))
+            return boundary, bucket, price
+        raise RuntimeError("validated rate plan has no future period boundary")
+
     def _valid_wall_instants(self, day: date, minute: int) -> set[datetime]:
         if minute == 1440:
             day += timedelta(days=1)

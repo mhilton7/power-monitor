@@ -13,11 +13,30 @@ disable TLS verification or store the password in Power Monitor settings.
 - **Offline:** compare last signed heartbeat, API result, meter/SD/time evidence, and backlog. Ping alone is not proof.
 - **IP changed:** inspect address history and DHCP; identity remains the device UUID. Validate the new address against site CIDRs.
 - **Heartbeat works, pull fails:** verify push/pull mode, worker VLAN/VPN route, allowed port/CIDR/domain, TLS name, and device-local HMAC clock.
+- **Network page says deny all:** this is explicit. The old empty pull-CIDR list
+  already denied every pull target and migration preserved that result. Add a
+  private CIDR, then select **Allow listed private networks only**, or select
+  **Allow all private networks** after review. Do not weaken TLS or signatures.
+- **CIDR cannot be saved:** use a canonical RFC1918 IPv4 or IPv6 ULA network.
+  Public, loopback, link-local, multicast, unspecified, metadata, malformed, and
+  duplicate ranges are rejected. Overlaps produce a visible warning. The last
+  enabled listed-mode CIDR cannot be disabled or removed until the mode changes.
+- **Add current private network is unavailable:** the server saw a loopback,
+  public, link-local, or untrusted-proxy address and intentionally made no guess.
+  Enter the narrow sensor VLAN manually; do not substitute a Docker proxy range.
 - **Signature or time error:** verify exact body bytes, canonical duplicate query sorting, directional HKDF info, UTC Unix time, nonce length/uniqueness, protocol string, and credential state. `/api/v1/time` is a hint, not trusted time.
 - **Missing sequence:** inspect retained bounds. Retry pull/backfill; late records fill gaps. `410 Gone` means permanent device-side loss and must remain disclosed.
 - **SD fault:** stop treating history as durable, repair/replace media on the sensor, preserve event evidence, and do not fabricate lost energy.
 - **Incorrect aggregate:** inspect parent/child and split-phase roles. Never sum a parent with its children; a single service leg is not whole-home.
 - **Unexpected cost:** confirm timezone, interval coverage, effective plan/version, cost scope, billing dates, baseline, fixed-charge count, CCA/DA, taxes, credits, and source date.
+- **Current rate says unavailable:** open **Administration > Sites & accounts**.
+  Confirm the account is active, a published version covers the current instant,
+  the site timezone is correct, and no overlapping window was rejected. A rate
+  can be ready before a sensor; live power cannot.
+- **Cost is unavailable although the rate is ready:** assign the relevant sensor
+  or aggregate to the account and wait for durable readings. Energy-only cost is
+  not `$0.00` when readings are missing. Full-account charges additionally need
+  an explicit complete-account aggregate or an audited override.
 - **History cost is unavailable:** confirm every selected sensor is assigned to
   a utility account with a rate assignment covering the historical interval.
   Electrical data remains valid; do not interpret unavailable cost as zero.

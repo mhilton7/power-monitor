@@ -62,3 +62,15 @@ Pointer focus uses a compact border/shadow treatment without changing element
 geometry. Keyboard focus uses a clearly visible two-pixel `:focus-visible`
 outline with offset. Native controls, search inputs, dialogs, and menu controls
 retain their labels, focus order, dialog semantics, and keyboard operation.
+## Utility account and sensor network controls
+
+Utility-account mutations use `utility_accounts.manage`; effective rate assignment additionally
+uses `rates.assign`. Account-number suffixes are optional and the full account number is not
+stored, returned, or logged. Rate assignments remain effective-dated and audit records contain
+identifiers and configuration categories rather than bill credentials.
+
+Sensor policies use `network.view` and `network.manage`. Canonical address parsing unwraps
+IPv4-mapped IPv6 before policy evaluation. Forwarded client addresses are accepted only when the
+direct peer is inside `TRUSTED_PROXY_CIDRS` (defaulting to the private Docker bridge range); the
+right-most forwarded client is then evaluated. CIDR policy adds defense in depth and never
+replaces TLS, device credentials, signed bodies, timestamps, nonces, or replay prevention.

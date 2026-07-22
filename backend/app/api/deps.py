@@ -8,8 +8,9 @@ from fastapi import Cookie, Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
-from app.db.models import AuditEvent
+from app.db.models import AuditEvent, Site
 from app.db.session import get_session
+from app.network_policy import effective_client_ip, evaluate_site_address
 from app.problem import ProblemError
 from app.security.browser import SessionPrincipal, authenticate_session, csrf_matches
 from app.security.protocol import SecretCipher, VerifiedDevice, verify_device_request
@@ -93,7 +94,7 @@ async def authenticated_device(
     headers = {key.lower(): value for key, value in request.headers.items()}
     query = request.url.query
     target = request.url.path + (f"?{query}" if query else "")
-    return await verify_device_request(
+    verified = await verify_device_request(
         session=session,
         headers=headers,
         method=request.method,
@@ -102,6 +103,43 @@ async def authenticated_device(
         cipher=SecretCipher(settings.app_master_key),
         clock_window_seconds=settings.max_device_clock_skew_seconds,
     )
+    site = await session.get(Site, verified.device.site_id)
+    if site is None:
+        raise ProblemError(
+            403, "Device access denied", "Device site is unavailable", "device_site_missing"
+        )
+    direct = request.client.host if request.client else ""
+    try:
+        source_ip = effective_client_ip(
+            direct,
+            request.headers.get("x-forwarded-for"),
+            settings.trusted_proxy_cidrs,
+        )
+        decision = await evaluate_site_address(session, site, "device_ingress", source_ip)
+    except ProblemError:
+        decision = None
+    if decision is None or not decision.allowed:
+        session.add(
+            audit_event(
+                action="network_policy.device_request_blocked",
+                actor_type="device",
+                actor_id=verified.device.id,
+                request=request,
+                object_type="device",
+                object_id=verified.device.id,
+                outcome="blocked",
+                details={"direction": "device_ingress"},
+            )
+        )
+        await session.commit()
+        raise ProblemError(
+            403,
+            "Device access denied",
+            "The signed device request is not accepted from this network",
+            "device_network_blocked",
+        )
+    request.state.device_source_ip = decision.address
+    return verified
 
 
 Verified = Annotated[VerifiedDevice, Depends(authenticated_device)]

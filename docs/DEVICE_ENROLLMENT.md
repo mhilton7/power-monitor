@@ -1,5 +1,11 @@
 # Device enrollment
 
+Before issuing a token, the server shows and evaluates the selected site's effective **Sensor
+ingress** policy. Deny-all prevents issuance of a misleading usable token. Enrollment checks the
+canonical client address after token validation and before provisioning credentials; blocked
+attempts receive a generic structured denial and create a redacted audit record. See
+[Sensor network policy](SENSOR_NETWORK_POLICY.md).
+
 An administrator creates a cryptographically random token with a default 10-minute lifetime and optional site/circuit/name/role/CT/mode preassignment. The token can be claimed once. The device sends its hardware identity, capabilities, `pm-protocol/1.0.0`, and token to `POST /api/v1/device-enrollment/claim` over validated TLS.
 
 Claim and token consumption occur in one transaction. The response contains a permanent UUID, a unique high-entropy enrollment secret shown only to the claiming device, effective non-secret configuration, server OTA public key metadata, and heartbeat/synchronization policy. Browser enrollment pages never receive the permanent secret.

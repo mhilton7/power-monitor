@@ -15,6 +15,7 @@ from app.config import Settings
 from app.db.models import Device, DeviceAddress, DeviceCredential, Site, SyncCursor
 from app.ingestion.service import ingest_readings
 from app.polling.ssrf import AddressRejected, validate_poll_target
+from app.network_policy import poll_policy_parameters
 from app.schemas import Reading
 from app.security.protocol import SecretCipher, sign_headers
 
@@ -85,15 +86,27 @@ async def poll_device(
     site = await session.get(Site, device.site_id)
     if address is None or credential is None or site is None:
         return {"device_id": device.id, "status": "not_configured"}
+    allowed_cidrs, allow_public, network_policy = await poll_policy_parameters(
+        session, site
+    )
+    if network_policy.mode == "deny_all":
+        address.validation_error = (
+            "Server pull access is denied by the site network policy"
+        )
+        return {
+            "device_id": device.id,
+            "status": "target_rejected",
+            "reason": address.validation_error,
+        }
     try:
         await validate_poll_target(
             host=address.host,
             port=address.port,
             scheme=address.scheme,
-            allowed_cidrs=site.allowed_cidrs,
+            allowed_cidrs=allowed_cidrs,
             allowed_domains=site.allowed_domains,
             allowed_ports=settings.allowed_poll_ports,
-            allow_public=settings.poll_public_addresses and site.allow_public_polling,
+            allow_public=allow_public and settings.poll_public_addresses,
         )
     except AddressRejected as exc:
         address.validation_error = str(exc)

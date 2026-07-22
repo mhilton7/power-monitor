@@ -270,6 +270,10 @@ class UtilityAccount(TimestampMixin, Base):
         ForeignKey("utilities.id", ondelete="RESTRICT"), index=True
     )
     name: Mapped[str] = mapped_column(String(160))
+    nickname: Mapped[str | None] = mapped_column(String(160))
+    account_number_suffix: Mapped[str | None] = mapped_column(String(8))
+    status: Mapped[str] = mapped_column(String(24), default="active", index=True)
+    service_class: Mapped[str | None] = mapped_column(String(80))
     timezone: Mapped[str] = mapped_column(String(64), default="America/Los_Angeles")
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     billing_cycle_start_day: Mapped[int] = mapped_column(Integer, default=1)
@@ -277,6 +281,12 @@ class UtilityAccount(TimestampMixin, Base):
     generation_provider: Mapped[str] = mapped_column(String(32), default="sce")
     provider_mode: Mapped[str] = mapped_column(String(32), default="sce_bundled")
     cost_scope_default: Mapped[str] = mapped_column(String(40), default="energy_only")
+    allocation_method: Mapped[str | None] = mapped_column(String(80))
+    full_account_override: Mapped[bool] = mapped_column(Boolean, default=False)
+    adjustment_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    archived_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     active_rate_version_id: Mapped[str | None] = mapped_column(
         ForeignKey("rate_versions.id", ondelete="SET NULL", use_alter=True)
     )
@@ -285,7 +295,93 @@ class UtilityAccount(TimestampMixin, Base):
             "billing_cycle_start_day >= 1 AND billing_cycle_start_day <= 31",
             name="billing_cycle_start_day",
         ),
+        CheckConstraint("status IN ('active','archived')", name="utility_account_status"),
+        CheckConstraint(
+            "cost_scope_default IN "
+            "('energy_only','allocated_account_estimate','full_account_estimate')",
+            name="utility_account_cost_scope",
+        ),
     )
+
+
+class UtilityAccountAdjustment(Base):
+    __tablename__ = "utility_account_adjustments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    utility_account_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
+    )
+    component: Mapped[str] = mapped_column(String(48))
+    value: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+    unit: Mapped[str] = mapped_column(String(24))
+    provenance: Mapped[str] = mapped_column(String(240))
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "component IN ('cca_generation','direct_access','baseline_credit',"
+            "'service_charge','tax_fee','custom_fixed','custom_per_kwh')",
+            name="utility_adjustment_component",
+        ),
+        CheckConstraint("unit IN ('per_kwh','fixed','percent','included')", name="adjustment_unit"),
+        CheckConstraint(
+            "effective_to IS NULL OR effective_to > effective_from",
+            name="adjustment_effective_window",
+        ),
+    )
+
+
+class SensorNetworkPolicy(TimestampMixin, Base):
+    __tablename__ = "sensor_network_policies"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.id", ondelete="CASCADE"), index=True)
+    direction: Mapped[str] = mapped_column(String(24))
+    mode: Mapped[str] = mapped_column(String(40))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    migration_notice_pending: Mapped[bool] = mapped_column(Boolean, default=False)
+    migrated_from_legacy: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    __table_args__ = (
+        UniqueConstraint("site_id", "direction", name="uq_sensor_policy_site_direction"),
+        CheckConstraint(
+            "direction IN ('device_ingress','server_pull')", name="sensor_policy_direction"
+        ),
+        CheckConstraint(
+            "mode IN ('allow_listed_private','allow_all_private','deny_all',"
+            "'legacy_authenticated_any','legacy_public_and_listed')",
+            name="sensor_policy_mode",
+        ),
+    )
+
+
+class SensorNetworkCidr(TimestampMixin, Base):
+    __tablename__ = "sensor_network_cidrs"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    policy_id: Mapped[str] = mapped_column(
+        ForeignKey("sensor_network_policies.id", ondelete="CASCADE"), index=True
+    )
+    network: Mapped[str] = mapped_column(String(80))
+    label: Mapped[str] = mapped_column(String(120))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    __table_args__ = (UniqueConstraint("policy_id", "network", name="uq_policy_network"),)
+
+
+class NetworkPolicyRevision(Base):
+    __tablename__ = "network_policy_revisions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    policy_id: Mapped[str] = mapped_column(
+        ForeignKey("sensor_network_policies.id", ondelete="CASCADE"), index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer)
+    mode: Mapped[str] = mapped_column(String(40))
+    cidrs: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    changed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str | None] = mapped_column(String(500))
+    __table_args__ = (UniqueConstraint("policy_id", "revision", name="uq_policy_revision"),)
 
 
 class Circuit(TimestampMixin, Base):
@@ -986,8 +1082,15 @@ class RateAssignment(Base):
     )
     effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    assignment_reason: Mapped[str | None] = mapped_column(String(500))
     assigned_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "effective_to IS NULL OR effective_to > effective_from",
+            name="rate_assignment_effective_window",
+        ),
+    )
 
 
 class BillingCycle(Base):

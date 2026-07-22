@@ -96,6 +96,123 @@ class UtilityAccountCreate(ApiModel):
     generation_provider: Literal["sce", "cca", "direct_access"] = "sce"
 
 
+class RateAssignmentWrite(ApiModel):
+    rate_version_id: str
+    effective_from: datetime
+    effective_to: datetime | None = None
+    assignment_reason: str | None = Field(default=None, max_length=500)
+
+    _from_aware = field_validator("effective_from")(require_aware)
+    _to_aware = field_validator("effective_to")(
+        lambda value: require_aware(value) if value else value
+    )
+
+    @model_validator(mode="after")
+    def valid_window(self) -> RateAssignmentWrite:
+        if self.effective_to is not None and self.effective_to <= self.effective_from:
+            raise ValueError("effective-through must follow effective-from")
+        return self
+
+
+class UtilityAdjustmentWrite(ApiModel):
+    component: Literal[
+        "cca_generation",
+        "direct_access",
+        "baseline_credit",
+        "service_charge",
+        "tax_fee",
+        "custom_fixed",
+        "custom_per_kwh",
+    ]
+    value: Decimal
+    unit: Literal["per_kwh", "fixed", "percent", "included"]
+    provenance: str = Field(min_length=1, max_length=240)
+    effective_from: datetime
+    effective_to: datetime | None = None
+    enabled: bool = True
+
+    _from_aware = field_validator("effective_from")(require_aware)
+    _to_aware = field_validator("effective_to")(
+        lambda value: require_aware(value) if value else value
+    )
+
+
+class UtilityAccountWizardCreate(ApiModel):
+    name: str = Field(min_length=1, max_length=160)
+    nickname: str | None = Field(default=None, max_length=160)
+    account_number_suffix: str | None = Field(default=None, pattern=r"^[A-Za-z0-9-]{2,8}$")
+    status: Literal["active"] = "active"
+    utility_provider: Literal["sce", "cca", "direct_access", "custom"] = "sce"
+    generation_provider: Literal["sce", "cca", "direct_access", "custom"] = "sce"
+    provider_mode: Literal[
+        "sce_bundled",
+        "sce_delivery_generation",
+        "sce_delivery_cca",
+        "sce_delivery_direct_access",
+        "custom_combined",
+    ] = "sce_bundled"
+    billing_cycle_start_day: int = Field(default=1, ge=1, le=31)
+    currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
+    baseline_allocation_kwh: Decimal | None = Field(default=None, ge=0)
+    service_class: str | None = Field(default=None, max_length=80)
+    rate_assignment: RateAssignmentWrite
+    cost_scope: Literal["energy_only", "allocated_account_estimate", "full_account_estimate"] = (
+        "energy_only"
+    )
+    allocation_method: str | None = Field(default=None, max_length=80)
+    full_account_override: bool = False
+    adjustments: list[UtilityAdjustmentWrite] = Field(default_factory=list, max_length=30)
+    confirmation: bool
+
+
+class UtilityAccountUpdate(ApiModel):
+    revision: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    nickname: str | None = Field(default=None, max_length=160)
+    account_number_suffix: str | None = Field(default=None, pattern=r"^[A-Za-z0-9-]{2,8}$")
+    billing_cycle_start_day: int | None = Field(default=None, ge=1, le=31)
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    baseline_allocation_kwh: Decimal | None = Field(default=None, ge=0)
+    generation_provider: Literal["sce", "cca", "direct_access", "custom"] | None = None
+    provider_mode: (
+        Literal[
+            "sce_bundled",
+            "sce_delivery_generation",
+            "sce_delivery_cca",
+            "sce_delivery_direct_access",
+            "custom_combined",
+        ]
+        | None
+    ) = None
+    service_class: str | None = Field(default=None, max_length=80)
+
+
+class UtilityCostScopeWrite(ApiModel):
+    revision: int = Field(ge=1)
+    cost_scope: Literal["energy_only", "allocated_account_estimate", "full_account_estimate"]
+    allocation_method: str | None = Field(default=None, max_length=80)
+    full_account_override: bool = False
+
+
+class NetworkPolicyWrite(ApiModel):
+    revision: int = Field(ge=1)
+    mode: Literal["allow_listed_private", "allow_all_private", "deny_all"]
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class NetworkCidrWrite(ApiModel):
+    policy_id: str
+    network: str = Field(min_length=3, max_length=80)
+    label: str = Field(min_length=1, max_length=120)
+    enabled: bool = True
+    revision: int | None = Field(default=None, ge=1)
+
+
+class NetworkAddressTest(ApiModel):
+    policy_id: str
+    address: str = Field(min_length=2, max_length=80)
+
+
 class AggregateMemberInput(ApiModel):
     circuit_id: str | None = None
     device_id: str | None = None
@@ -138,6 +255,7 @@ class AlertRuleWrite(ApiModel):
         "reboot_loop",
         "firmware_failure",
         "server_failure",
+        "device_address_outside_policy",
     ]
     severity: Literal["info", "warning", "error", "critical"]
     enabled: bool = True
@@ -870,6 +988,10 @@ class FleetSummary(ApiModel):
     total_devices: int
     active_alerts: int
     current_tou_bucket: str | None
+    current_rate_plan: str | None = None
+    current_rate_version: int | None = None
+    current_rate_price_per_kwh: Decimal | None = None
+    rate_configured: bool = False
     recent_peak_w: Decimal
     has_live_data: bool
     has_energy_data: bool

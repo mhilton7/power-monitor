@@ -53,7 +53,7 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
   const peakIsConfiguredElsewhere = Boolean(status.layout?.zones.some((zone) => zone.items.some((item) => item.definition?.metric_identity === 'power.recent_peak')))
   const backlog = siteDevices.reduce((total, device) => total + device.backlog, 0)
   const hardwareIssues = siteDevices.filter((device) => device.pzem_ok === false || device.sd_ok === false)
-  const operationalIssues = data.online_devices < data.total_devices || backlog > 0 || hardwareIssues.length > 0 || !data.current_tou_bucket
+  const operationalIssues = data.online_devices < data.total_devices || backlog > 0 || hardwareIssues.length > 0 || !data.rate_configured
   const chartData = {
     labels: contributingDevices.map((device) => device.name),
     datasets: [{
@@ -78,8 +78,9 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
           <EmptyState
             title="No sensors enrolled"
             message="Enroll an ESP32 sensor to begin. Readings and site summaries appear after its first valid signed heartbeat."
-            action={canEnroll ? <Link className="button primary" to="/enrollment">Enroll devices <ArrowUpRight size={16} /></Link> : <Link className="button secondary" to="/devices">Open Devices</Link>}
+            action={<div className="inline-actions">{canEnroll ? <Link className="button primary" to="/enrollment">Enroll devices <ArrowUpRight size={16} /></Link> : <Link className="button secondary" to="/devices">Open Devices</Link>}{!data.rate_configured && <Link className="button secondary" to="/admin?tab=sites-accounts">Configure utility account <ArrowUpRight size={16} /></Link>}</div>}
           />
+          {data.rate_configured && <dl className="onboarding-rate-context"><div><dt>Current rate plan</dt><dd>{data.current_rate_plan} · v{data.current_rate_version}</dd></div><div><dt>Current rate period</dt><dd>{data.current_tou_bucket}</dd></div><div><dt>Current energy price</dt><dd>${data.current_rate_price_per_kwh}/kWh</dd></div></dl>}
         </Panel>
       ) : <>
         <section className="overview-site-state" aria-label="Current site state">
@@ -134,7 +135,7 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
               {data.online_devices < data.total_devices && <Link to="/devices"><AlertTriangle /><span><strong>Some devices need attention</strong><small>{data.total_devices - data.online_devices} offline or stale</small></span><ArrowUpRight /></Link>}
               {backlog > 0 && <Link to="/devices"><RefreshCw /><span><strong>Historical readings are synchronizing</strong><small>{backlog} readings reported in the backlog</small></span><ArrowUpRight /></Link>}
               {hardwareIssues.length > 0 && <Link to="/devices"><AlertTriangle /><span><strong>Sensor hardware issue</strong><small>{hardwareIssues.length} devices report meter or storage trouble</small></span><ArrowUpRight /></Link>}
-              {!data.current_tou_bucket && <Link to="/rates"><Clock3 /><span><strong>Rate assignment needed</strong><small>Assign a rate to estimate monitored energy costs.</small></span><ArrowUpRight /></Link>}
+              {!data.rate_configured && <Link to="/admin?tab=sites-accounts"><Clock3 /><span><strong>No effective utility rate</strong><small>Configure the utility account and assign a published rate.</small></span><ArrowUpRight /></Link>}
             </div>}
           </Panel>
         </div>

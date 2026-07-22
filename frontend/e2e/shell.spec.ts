@@ -143,6 +143,11 @@ async function mockApplication(page: Page, roles: string[] = ['admin'], initiall
   let statusDraft = structuredClone(statusPublished)
   let statusDraftRevision = 0
   let statusPreviewedRevision = 0
+  let utilityAccounts: Array<Record<string, unknown>> = []
+  let networkPolicies = [
+    { id: 'ingress-policy-1', site_id: site.id, site_name: site.name, direction: 'device_ingress', mode: 'legacy_authenticated_any', revision: 1, migration_notice_pending: true, migrated_from_legacy: true, effective_summary: 'Legacy signed ingress · review required', cidrs: [] as Array<Record<string, unknown>> },
+    { id: 'pull-policy-1', site_id: site.id, site_name: site.name, direction: 'server_pull', mode: 'deny_all', revision: 1, migration_notice_pending: true, migrated_from_legacy: true, effective_summary: 'Device network access denied', cidrs: [] as Array<Record<string, unknown>> },
+  ]
   const statusRevisions = [{ id: 'status-revision-1', revision: 1, registry_version: 'status-indicators/1.0', created_by: 'user-1', created_at: '2026-07-20T10:00:00Z', reason: 'Compiled current layout' }]
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
@@ -221,6 +226,52 @@ async function mockApplication(page: Page, roles: string[] = ['admin'], initiall
     else if (path === '/api/v1/admin/interface-text/publish') { publishedText = { ...publishedText, ...textDraft }; textRevision += 1; textDraft = {}; textDraftRevision = 0; textPreviewedRevision = 0; body = { id: `revision-${textRevision}`, revision: textRevision, values: publishedText, overrides: publishedText, changed_key_count: Object.keys(publishedText).length, created_at: '2026-07-20T10:00:00Z', created_by: 'user-1' } }
     else if (path === '/api/v1/admin/interface-text/revisions') body = { revisions: textRevision ? [{ id: `revision-${textRevision}`, revision: textRevision, created_by: 'user-1', created_at: '2026-07-20T10:00:00Z', reason: 'Dashboard update', changed_key_count: Object.keys(publishedText).length }] : [] }
     else if (path === '/api/v1/sites') body = [site]
+    else if (path === '/api/v1/sites/site-1/setup-readiness') body = {
+      monitoring: { state: 'no_sensors_enrolled', device_count: 0 },
+      rate_and_cost: utilityAccounts.length
+        ? { state: 'rate_configured_effective', cost_state: 'cost_calculation_blocked_missing_readings', account_count: utilityAccounts.length, effective_account_count: utilityAccounts.length, cost_ready_account_count: 0, pending_candidate_count: 0 }
+        : { state: 'no_utility_account', cost_state: 'cost_calculation_blocked_invalid_configuration', account_count: 0, effective_account_count: 0, cost_ready_account_count: 0, pending_candidate_count: 0 },
+    }
+    else if (path === '/api/v1/admin/sites/site-1/utility-accounts' && request.method() === 'GET') body = utilityAccounts
+    else if (path === '/api/v1/admin/sites/site-1/utility-accounts' && request.method() === 'POST') {
+      const value = JSON.parse(request.postData() ?? '{}') as Record<string, unknown>
+      const created = {
+        id: `account-${utilityAccounts.length + 1}`, site_id: site.id, site_name: site.name,
+        utility_id: 'utility-sce', utility_name: 'Southern California Edison', name: value.name,
+        nickname: value.nickname, account_number_suffix: value.account_number_suffix, status: 'active',
+        timezone: site.timezone, currency: 'USD', billing_cycle_start_day: value.billing_cycle_start_day,
+        generation_provider: value.generation_provider, provider_mode: value.provider_mode, service_class: value.service_class,
+        cost_scope: value.cost_scope, allocation_method: value.allocation_method, full_account_override: value.full_account_override,
+        revision: 1, assignment_count: 1, device_count: 0,
+        readiness: { rate: 'rate_configured_effective', cost: 'cost_blocked_missing_readings', topology_complete: false },
+        rate_context: { state: 'rate_configured_effective', current_plan: officialPlan.name, plan_code: officialPlan.code, current_version: 1, rate_version_id: officialVersion.id, current_period: 'On Peak', current_price_per_kwh: '0.58000000', next_period: 'Off Peak', next_price_per_kwh: '0.24000000', next_period_at: '2026-07-21T04:00:00Z', current_currency: 'USD', assignment_effective_from: (value.rate_assignment as { effective_from: string }).effective_from },
+      }
+      utilityAccounts = [...utilityAccounts, created]
+      body = created
+    }
+    else if (path === '/api/v1/rates/versions/rate-version-official/current-context') body = { current_period: 'On Peak', current_price_per_kwh: '0.58000000', next_period: 'Off Peak', next_price_per_kwh: '0.24000000', next_period_at: '2026-07-21T04:00:00Z', provider_mode: 'sce_bundled', account_adjustments: [{ name: 'Base service charge', component: 'daily_fixed_charge', value: '0.03', unit: 'per_day', scope: 'full_account_estimate' }] }
+    else if (path === '/api/v1/admin/network/policies' && request.method() === 'GET') body = networkPolicies
+    else if (path.match(/^\/api\/v1\/admin\/network\/policies\/[^/]+$/) && request.method() === 'PUT') {
+      const id = path.split('/').at(-1)
+      const value = JSON.parse(request.postData() ?? '{}') as { mode: string }
+      networkPolicies = networkPolicies.map((policy) => policy.id === id ? { ...policy, mode: value.mode, revision: policy.revision + 1, migration_notice_pending: false, effective_summary: value.mode === 'allow_listed_private' ? `Listed private networks only · ${policy.cidrs.length} CIDR` : value.mode === 'allow_all_private' ? 'All private sensor networks allowed' : 'Device network access denied' } : policy)
+      body = networkPolicies.find((policy) => policy.id === id)
+    }
+    else if (path === '/api/v1/admin/network/cidrs' && request.method() === 'POST') {
+      const value = JSON.parse(request.postData() ?? '{}') as { policy_id: string; network: string; label: string; enabled: boolean }
+      const normalized = value.network === '192.168.50.99/24' ? '192.168.50.0/24' : value.network
+      const cidr = { id: 'cidr-1', policy_id: value.policy_id, network: normalized, label: value.label, enabled: value.enabled, revision: 1 }
+      networkPolicies = networkPolicies.map((policy) => policy.id === value.policy_id ? { ...policy, revision: policy.revision + 1, cidrs: [...policy.cidrs, cidr] } : policy)
+      body = { ...cidr, warnings: [] }
+    }
+    else if (path === '/api/v1/admin/network/test-address' && request.method() === 'POST') {
+      const value = JSON.parse(request.postData() ?? '{}') as { policy_id: string; address: string }
+      const policy = networkPolicies.find((item) => item.id === value.policy_id) ?? networkPolicies[0]
+      const allowed = value.address.startsWith('192.168.50.') && policy?.mode === 'allow_listed_private'
+      body = { allowed, address: value.address, direction: policy?.direction, mode: policy?.mode, matching_rule: allowed ? 'Sensor VLAN (192.168.50.0/24)' : null, reason: allowed ? 'Address matched an enabled private-network rule' : 'Address does not match the effective sensor network policy' }
+    }
+    else if (path === '/api/v1/admin/network/observed-devices') body = []
+    else if (path === '/api/v1/admin/network/runtime') body = { sensor_server_url: 'https://power-monitor.test', tls_verification_required: true, certificate_trust: 'Internal CA', default_device_api_port: 443, communication_modes: ['push', 'pull', 'hybrid'], mdns_authoritative: false, heartbeat_expectation_seconds: 15, stale_device_seconds: 60, server_time: '2026-07-21T12:00:00Z', server_timezone: 'UTC', trusted_forwarded_headers: true, address_source: 'Signed device heartbeat' }
     else if (path === '/api/v1/fleet/summary') body = fleet
     else if (path === '/api/v1/devices') {
       const lifecycle = url.searchParams.get('lifecycle')
@@ -762,6 +813,67 @@ test('administration cards and status pills stay inside settings panels', async 
   expect((diagnosticStatusBox?.x ?? 0) + (diagnosticStatusBox?.width ?? 0)).toBeLessThanOrEqual((diagnosticCardBox?.x ?? 0) + (diagnosticCardBox?.width ?? 0))
   const horizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
   expect(horizontalOverflow).toBe(false)
+})
+
+test('administrator configures an effective utility account and explicit private sensor network', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/admin?tab=sites-accounts&rate_version_id=rate-version-official')
+  await expect(page.getByText('No utility account configured')).toBeVisible()
+  await page.getByRole('button', { name: 'Create utility account' }).first().click()
+  await page.getByLabel('Account display name').fill('Upland main electric')
+  await page.getByRole('button', { name: /Next/ }).click()
+  await expect(page.getByRole('dialog', { name: 'Utility & provider' })).toBeVisible()
+  await page.getByRole('button', { name: /Next/ }).click()
+  await expect(page.getByRole('dialog', { name: 'Billing details' })).toBeVisible()
+  await page.getByLabel('Billing-cycle start day').fill('17')
+  await page.getByRole('button', { name: /Next/ }).click()
+  await expect(page.getByRole('dialog', { name: 'Rate & version' })).toBeVisible()
+  await expect(page.getByLabel('Published rate plan and version')).toHaveValue('rate-version-official')
+  await expect(page.getByText('On Peak $0.58000000/kWh')).toBeVisible()
+  await page.getByRole('button', { name: /Next/ }).click()
+  await expect(page.getByRole('radio', { name: /Energy-only monitored scope/ })).toBeChecked()
+  await page.getByRole('button', { name: /Next/ }).click()
+  await expect(page.getByRole('dialog', { name: 'Adjustments' })).toBeVisible()
+  await page.getByRole('button', { name: /Next/ }).click()
+  await expect(page.getByRole('dialog', { name: 'Review & create' })).toBeVisible()
+  await page.getByRole('button', { name: 'Confirm and create' }).click()
+  await expect(page.getByText('Utility account created and rate assignment activated.')).toBeVisible()
+  const account = page.locator('.utility-account-card').filter({ hasText: 'Upland main electric' })
+  await expect(account).toContainText('TOU-D 4 PM to 9 PM')
+  await expect(account).toContainText('On Peak')
+  await expect(account).toContainText('$0.58000000/kWh')
+  await expect(account).toContainText('Energy-only monitored scope')
+  if (process.env.CAPTURE_UTILITY_NETWORK_SCREENSHOTS === '1') {
+    await page.screenshot({ path: '../docs/screenshots/utility-account-management.png', fullPage: true })
+  }
+
+  await page.getByRole('tab', { name: 'Server & network' }).click()
+  await expect(page.getByRole('heading', { name: 'Sensor network policy' })).toBeVisible()
+  await page.getByRole('tab', { name: 'Server pull access' }).click()
+  await expect(page.getByText('Device network access denied')).toBeVisible()
+  await page.getByLabel('IPv4 or IPv6 CIDR').fill('192.168.50.99/24')
+  await page.getByRole('button', { name: 'Add CIDR' }).click()
+  await expect(page.getByText('CIDR added.')).toBeVisible()
+  await expect(page.getByText('192.168.50.0/24')).toBeVisible()
+  await page.getByRole('radio', { name: /Allow listed private networks only/ }).check()
+  await page.getByRole('button', { name: 'Save policy' }).click()
+  await expect(page.getByText('Network policy updated.')).toBeVisible()
+
+  const address = page.getByLabel('Address')
+  await address.fill('192.168.50.42')
+  await page.getByRole('button', { name: 'Test address' }).click()
+  await expect(page.getByText('Allowed', { exact: true })).toBeVisible()
+  await expect(page.getByText('Sensor VLAN (192.168.50.0/24)')).toBeVisible()
+  await address.fill('192.168.60.42')
+  await page.getByRole('button', { name: 'Test address' }).click()
+  await expect(page.getByText('Blocked', { exact: true })).toBeVisible()
+  if (process.env.CAPTURE_UTILITY_NETWORK_SCREENSHOTS === '1') {
+    await page.evaluate(() => { window.scrollTo(0, 0) })
+    await page.screenshot({ path: '../docs/screenshots/sensor-network-policy.png', fullPage: true })
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
 })
 
 test('disabled controls in rate details use a disabled cursor, not a busy spinner', async ({ page }) => {

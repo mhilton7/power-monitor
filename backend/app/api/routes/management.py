@@ -57,6 +57,7 @@ from app.db.models import (
     UtilityAccount,
 )
 from app.history import MAX_HISTORY_BUCKETS, history_csv, query_history
+from app.network_policy import policy_cidrs, policy_for_site, policy_summary
 from app.problem import ProblemError
 from app.schemas import (
     AggregateSetCreate,
@@ -213,7 +214,7 @@ async def delete_site(
 
 @router.get("/utility-accounts")
 async def list_utility_accounts(principal: Viewer, session: DbSession) -> list[dict[str, Any]]:
-    _permission(principal, "sites.view")
+    _permission(principal, "utility_accounts.view")
     query = select(UtilityAccount).order_by(UtilityAccount.name)
     if not principal.all_sites:
         query = query.where(UtilityAccount.site_id.in_(principal.site_ids))
@@ -241,7 +242,7 @@ async def create_utility_account(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _permission(principal, "sites.manage")
+    _permission(principal, "utility_accounts.manage")
     utility = await session.scalar(
         select(Utility).where(Utility.name == "Southern California Edison")
     )
@@ -289,7 +290,7 @@ async def update_utility_account(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _permission(principal, "sites.manage")
+    _permission(principal, "utility_accounts.manage")
     account = await session.get(UtilityAccount, account_id)
     if account is None:
         raise ProblemError(
@@ -329,7 +330,7 @@ async def update_utility_account(
 async def delete_utility_account(
     account_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> Response:
-    _permission(principal, "sites.manage")
+    _permission(principal, "utility_accounts.manage")
     account = await session.get(UtilityAccount, account_id)
     if account is None:
         raise ProblemError(
@@ -740,11 +741,29 @@ async def create_enrollment_token(
     _permission(principal, "enrollment.manage")
     if payload.site_id:
         _site_allowed(principal, payload.site_id)
+        site = await session.get(Site, payload.site_id)
+        if site is None:
+            raise ProblemError(
+                404, "Site not found", "The selected site does not exist", "site_missing"
+            )
+        ingress_policy = await policy_for_site(session, site, "device_ingress")
+        ingress_cidrs = await policy_cidrs(session, ingress_policy.id)
+        if ingress_policy.mode == "deny_all":
+            raise ProblemError(
+                409,
+                "Enrollment is locked down",
+                "Change the site's sensor ingress policy before issuing a token",
+                "enrollment_policy_deny_all",
+            )
     now = datetime.now(UTC)
     plaintext = secrets.token_urlsafe(48)
     preassignment = payload.model_dump(
         mode="json", exclude={"expires_in_seconds"}, exclude_none=True
     )
+    if payload.site_id:
+        preassignment["effective_ingress_policy"] = policy_summary(
+            ingress_policy, sum(1 for item in ingress_cidrs if item.enabled)
+        )
     token = EnrollmentToken(
         token_hash=hashlib.sha256(plaintext.encode()).hexdigest(),
         expires_at=now + timedelta(seconds=payload.expires_in_seconds),
@@ -1771,6 +1790,30 @@ async def fleet_summary(
         )
         current_bucket = recent_energy.bucket if recent_energy else None
         has_cost_data = bool(result_rows)
+    from app.api.routes.account_network import _account_assignments, _rate_context
+
+    account_query = select(UtilityAccount).where(UtilityAccount.status == "active")
+    if site_id:
+        account_query = account_query.where(UtilityAccount.site_id == site_id)
+    elif not principal.all_sites:
+        account_query = account_query.where(UtilityAccount.site_id.in_(principal.site_ids))
+    rate_contexts = [
+        await _rate_context(session, account, await _account_assignments(session, account.id))
+        for account in await session.scalars(account_query)
+    ]
+    effective_contexts = [
+        context for context in rate_contexts if context["state"] == "rate_configured_effective"
+    ]
+    context_periods = {str(context["current_period"]) for context in effective_contexts}
+    context_plans = {str(context["current_plan"]) for context in effective_contexts}
+    context_versions = {int(context["current_version"]) for context in effective_contexts}
+    context_prices = {
+        Decimal(str(context["current_price_per_kwh"])) for context in effective_contexts
+    }
+    if context_periods:
+        current_bucket = (
+            next(iter(context_periods)) if len(context_periods) == 1 else "Multiple periods"
+        )
     alert_query = (
         select(func.count()).select_from(AlertInstance).where(AlertInstance.status == "active")
     )
@@ -1810,6 +1853,12 @@ async def fleet_summary(
         total_devices=len(devices),
         active_alerts=int(alerts or 0),
         current_tou_bucket=current_bucket,
+        current_rate_plan=next(iter(context_plans)) if len(context_plans) == 1 else None,
+        current_rate_version=next(iter(context_versions)) if len(context_versions) == 1 else None,
+        current_rate_price_per_kwh=(
+            next(iter(context_prices)) if len(context_prices) == 1 else None
+        ),
+        rate_configured=bool(effective_contexts),
         recent_peak_w=current_load,
         has_live_data=reporting_devices > 0,
         has_energy_data=has_energy_data,
@@ -1839,6 +1888,7 @@ async def list_alerts(
         {
             "id": alert.id,
             "name": rules[alert.rule_id].name if alert.rule_id in rules else "Deleted rule",
+            "rule_type": rules[alert.rule_id].rule_type if alert.rule_id in rules else "unknown",
             "status": alert.status,
             "severity": alert.severity,
             "device_id": alert.device_id,

@@ -77,6 +77,12 @@ DEFAULT_ALERTS: tuple[tuple[str, str, str, int], ...] = (
     ("Retroactive rate activated", "rate_retroactive_activated", "warning", 0),
     ("Rate estimates recalculated", "rate_estimates_recalculated", "info", 0),
     ("SCE source check is stale", "rate_source_stale", "warning", 0),
+    (
+        "Device address outside server-pull policy",
+        "device_address_outside_policy",
+        "warning",
+        0,
+    ),
 )
 
 

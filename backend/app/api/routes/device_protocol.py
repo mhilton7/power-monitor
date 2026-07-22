@@ -11,6 +11,8 @@ from sqlalchemy import select
 
 from app.api.deps import AppSettings, DbSession, Verified, audit_event
 from app.db.models import (
+    AlertInstance,
+    AlertRule,
     Device,
     DeviceAddress,
     DeviceCapability,
@@ -28,6 +30,7 @@ from app.db.models import (
     SyncCursor,
 )
 from app.ingestion.service import ingest_readings
+from app.network_policy import effective_client_ip, evaluate_site_address
 from app.problem import ProblemError
 from app.schemas import (
     ConfigReport,
@@ -42,6 +45,62 @@ from app.schemas import (
 from app.security.protocol import PROTOCOL, SecretCipher
 
 router = APIRouter(prefix="/api/v1", tags=["device protocol"])
+
+
+async def _set_address_policy_alert(
+    session: DbSession,
+    device: Device,
+    *,
+    active: bool,
+    address: str,
+    reason: str | None,
+    now: datetime,
+) -> None:
+    rules = list(
+        await session.scalars(
+            select(AlertRule).where(
+                AlertRule.rule_type == "device_address_outside_policy",
+                AlertRule.enabled.is_(True),
+            )
+        )
+    )
+    for rule in rules:
+        if rule.device_id not in {None, device.id} or rule.site_id not in {
+            None,
+            device.site_id,
+        }:
+            continue
+        instance = await session.scalar(
+            select(AlertInstance).where(
+                AlertInstance.rule_id == rule.id,
+                AlertInstance.device_id == device.id,
+                AlertInstance.status.in_(["active", "acknowledged"]),
+            )
+        )
+        evidence = {
+            "address": address,
+            "policy_direction": "server_pull",
+            "reason": reason or "address accepted",
+            "source": "signed_heartbeat",
+        }
+        if active and instance is None:
+            session.add(
+                AlertInstance(
+                    rule_id=rule.id,
+                    device_id=device.id,
+                    site_id=device.site_id,
+                    status="active",
+                    severity=rule.severity,
+                    opened_at=now,
+                    evidence=evidence,
+                )
+            )
+        elif active and instance is not None:
+            instance.evidence = evidence
+        elif not active and instance is not None:
+            instance.status = "resolved"
+            instance.resolved_at = now
+            instance.evidence = evidence
 
 
 def _assert_device_id(payload_device_id: str, verified_device_id: str) -> None:
@@ -105,6 +164,36 @@ async def claim_enrollment(
     )
     if site is None:
         raise ProblemError(409, "No site", "Create a site before enrollment", "site_required")
+    direct_address = request.client.host if request.client else ""
+    try:
+        source_ip = effective_client_ip(
+            direct_address,
+            request.headers.get("x-forwarded-for"),
+            settings.trusted_proxy_cidrs,
+        )
+        ingress = await evaluate_site_address(session, site, "device_ingress", source_ip)
+    except ProblemError:
+        ingress = None
+    if ingress is None or not ingress.allowed:
+        session.add(
+            audit_event(
+                action="network_policy.enrollment_blocked",
+                actor_type="enrollment_token",
+                actor_id=token.id,
+                request=request,
+                object_type="site",
+                object_id=site.id,
+                outcome="blocked",
+                details={"direction": "device_ingress"},
+            )
+        )
+        await session.commit()
+        raise ProblemError(
+            403,
+            "Enrollment denied",
+            "This sensor network is not accepted for enrollment",
+            "enrollment_network_blocked",
+        )
     assigned_name = (
         preassignment.get("name") or payload.requested_name or f"Sensor {payload.hardware_id[-6:]}"
     )
@@ -288,7 +377,7 @@ async def heartbeat(
         boot_id=payload.boot_id,
         received_at=now,
         device_time=payload.latest.measured_at if payload.latest else None,
-        source_ip=request.client.host if request.client else None,
+        source_ip=getattr(request.state, "device_source_ip", None),
         current_watts=payload.latest.power_w if payload.latest else None,
         rssi_dbm=payload.rssi_dbm,
         pzem_ok=payload.pzem.ok,
@@ -317,9 +406,20 @@ async def heartbeat(
         validation_error = None
         try:
             address = ipaddress.ip_address(payload.current_ip)
-            if address.is_loopback or address.is_link_local or address.is_multicast:
-                validation_error = "address is never pollable"
-        except ValueError:
+            device_site = await session.get(Site, device.site_id)
+            if device_site is None:
+                raise ProblemError(
+                    409, "Device site unavailable", "The device site does not exist", "site_missing"
+                )
+            pull_decision = await evaluate_site_address(
+                session,
+                device_site,
+                "server_pull",
+                str(address),
+            )
+            if not pull_decision.allowed:
+                validation_error = pull_decision.reason
+        except (ValueError, ProblemError):
             validation_error = "not an IP literal; hostname is tracked separately"
         existing_address = await session.scalar(
             select(DeviceAddress).where(
@@ -332,6 +432,15 @@ async def heartbeat(
             existing_address.last_seen_at = now
             existing_address.validation_error = validation_error
         else:
+            prior_address = await session.scalar(
+                select(DeviceAddress)
+                .where(
+                    DeviceAddress.device_id == device.id,
+                    DeviceAddress.source == "heartbeat",
+                )
+                .order_by(DeviceAddress.last_seen_at.desc())
+                .limit(1)
+            )
             session.add(
                 DeviceAddress(
                     device_id=device.id,
@@ -344,6 +453,33 @@ async def heartbeat(
                     validation_error=validation_error,
                 )
             )
+            if prior_address is not None and prior_address.host != payload.current_ip:
+                session.add(
+                    audit_event(
+                        action="device.address_changed_outside_policy"
+                        if validation_error
+                        else "device.address_changed",
+                        actor_type="device",
+                        actor_id=device.id,
+                        request=request,
+                        object_type="device",
+                        object_id=device.id,
+                        outcome="warning" if validation_error else "success",
+                        details={
+                            "previous_address": prior_address.host,
+                            "current_address": payload.current_ip,
+                            "server_pull_allowed": validation_error is None,
+                        },
+                    )
+                )
+        await _set_address_policy_alert(
+            session,
+            device,
+            active=validation_error is not None,
+            address=payload.current_ip,
+            reason=validation_error,
+            now=now,
+        )
     cursor = await session.get(SyncCursor, device.id)
     if cursor is None:
         cursor = SyncCursor(

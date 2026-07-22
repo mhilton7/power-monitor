@@ -8,12 +8,12 @@ import smtplib
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from email.message import EmailMessage
-from typing import Any, Literal, cast
+from typing import Any, Literal
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -45,6 +45,7 @@ from app.db.models import (
     Site,
     SiteRollup,
     UtilityAccount,
+    UtilityAccountAdjustment,
     WorkerState,
 )
 from app.polling.ssrf import validate_poll_target
@@ -57,6 +58,49 @@ from app.security.protocol import SecretCipher
 def _csv_safe(value: Any) -> str:
     text = "" if value is None else str(value)
     return f"'{text}" if text.startswith(("=", "+", "-", "@", "\t", "\r")) else text
+
+
+def _aware(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+
+def _window_fraction(
+    window_start: datetime,
+    window_end: datetime,
+    effective_from: datetime,
+    effective_to: datetime | None,
+) -> Decimal:
+    start = max(_aware(window_start), _aware(effective_from))
+    end = (
+        min(_aware(window_end), _aware(effective_to))
+        if effective_to
+        else _aware(window_end)
+    )
+    if end <= start:
+        return Decimal("0")
+    total_seconds = Decimal(
+        str((_aware(window_end) - _aware(window_start)).total_seconds())
+    )
+    return Decimal(str((end - start).total_seconds())) / total_seconds
+
+
+def _effective_interval_energy_kwh(
+    intervals: list[NormalizedInterval],
+    effective_from: datetime,
+    effective_to: datetime | None,
+) -> Decimal:
+    energy = Decimal("0")
+    for interval in intervals:
+        fraction = _window_fraction(
+            interval.interval_start,
+            interval.interval_end,
+            effective_from,
+            effective_to,
+        )
+        energy += (
+            (interval.selected_energy_wh or Decimal("0")) / Decimal("1000") * fraction
+        )
+    return energy
 
 
 async def _calculation_plan(
@@ -214,23 +258,120 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
                 ManualBillAdjustment.created_at < job.input_end,
             )
         )
+        effective_scope: Literal[
+            "energy_only",
+            "allocated_account_estimate",
+            "full_account_estimate",
+        ] = "energy_only"
+        if (
+            account.cost_scope_default == "allocated_account_estimate"
+            and aggregate.cost_scope in {"allocated_account", "full_account"}
+        ):
+            effective_scope = "allocated_account_estimate"
+        elif (
+            account.cost_scope_default == "full_account_estimate"
+            and aggregate.cost_scope == "full_account"
+        ):
+            effective_scope = "full_account_estimate"
+        configured_adjustments = list(
+            await session.scalars(
+                select(UtilityAccountAdjustment).where(
+                    UtilityAccountAdjustment.utility_account_id == account.id,
+                    UtilityAccountAdjustment.enabled.is_(True),
+                    UtilityAccountAdjustment.effective_from < job.input_end,
+                    or_(
+                        UtilityAccountAdjustment.effective_to.is_(None),
+                        UtilityAccountAdjustment.effective_to > job.input_start,
+                    ),
+                )
+            )
+        )
+        account_energy_amount = Decimal("0")
+        account_fixed = (
+            Decimal(str(manual_total or 0))
+            if effective_scope == "full_account_estimate"
+            else Decimal("0")
+        )
+        account_percent: list[tuple[Decimal, Decimal]] = []
+        configured_breakdown: dict[str, str] = {}
+
+        def add_breakdown(component: str, amount: Decimal) -> None:
+            prior = Decimal(configured_breakdown.get(component, "0"))
+            configured_breakdown[component] = str(prior + amount)
+
+        for configured in configured_adjustments:
+            effective_energy = _effective_interval_energy_kwh(
+                intervals, configured.effective_from, configured.effective_to
+            )
+            effective_fraction = _window_fraction(
+                job.input_start,
+                job.input_end,
+                configured.effective_from,
+                configured.effective_to,
+            )
+            if (
+                configured.component
+                in {
+                    "cca_generation",
+                    "direct_access",
+                    "custom_per_kwh",
+                }
+                and configured.unit == "per_kwh"
+            ):
+                amount = effective_energy * configured.value
+                account_energy_amount += amount
+                add_breakdown(configured.component, amount)
+            elif effective_scope != "energy_only" and configured.unit == "percent":
+                account_percent.append((configured.value, effective_fraction))
+            elif (
+                effective_scope == "full_account_estimate"
+                and configured.unit == "per_kwh"
+            ):
+                amount = effective_energy * configured.value
+                if configured.component == "baseline_credit":
+                    amount = -abs(amount)
+                account_fixed += amount
+                add_breakdown(configured.component, amount)
+            elif (
+                effective_scope == "full_account_estimate"
+                and configured.unit == "fixed"
+            ):
+                amount = configured.value * effective_fraction
+                if configured.component == "baseline_credit":
+                    amount = -abs(amount)
+                account_fixed += amount
+                add_breakdown(configured.component, amount)
+        account_energy_rate = (
+            account_energy_amount / total_energy_kwh
+            if total_energy_kwh
+            else Decimal("0")
+        )
+        preliminary = engine.calculate(
+            start=job.input_start,
+            end=job.input_end,
+            energy_kwh=total_energy_kwh,
+            cost_scope=effective_scope,
+            baseline_allocation_kwh=account.baseline_allocation_kwh,
+            cca_adjustment_per_kwh=cca_per_kwh + account_energy_rate,
+            other_adjustment=account_fixed,
+        )
+        percentage_amount = sum(
+            (
+                preliminary.total * percent / Decimal("100") * effective_fraction
+                for percent, effective_fraction in account_percent
+            ),
+            Decimal("0"),
+        )
+        if percentage_amount:
+            add_breakdown("tax_fee", percentage_amount)
         account_components = engine.calculate(
             start=job.input_start,
             end=job.input_end,
             energy_kwh=total_energy_kwh,
-            cost_scope=cast(
-                Literal[
-                    "energy_only",
-                    "allocated_account",
-                    "full_account",
-                    "allocated_account_estimate",
-                    "full_account_estimate",
-                ],
-                aggregate.cost_scope,
-            ),
+            cost_scope=effective_scope,
             baseline_allocation_kwh=account.baseline_allocation_kwh,
-            cca_adjustment_per_kwh=cca_per_kwh,
-            other_adjustment=Decimal(str(manual_total or 0)),
+            cca_adjustment_per_kwh=cca_per_kwh + account_energy_rate,
+            other_adjustment=account_fixed + percentage_amount,
         )
         for component, amount in (
             ("fixed_charge", account_components.fixed_charge),
@@ -251,8 +392,11 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
                         unrounded_cost=amount,
                         component=component,
                         adjustment_breakdown={
-                            key: str(value)
-                            for key, value in account_components.adjustment_breakdown.items()
+                            **{
+                                key: str(value)
+                                for key, value in account_components.adjustment_breakdown.items()
+                            },
+                            **configured_breakdown,
                         }
                         or {component: str(amount)},
                         calculation_version=engine.algorithm_version,

@@ -28,6 +28,74 @@ export interface Site {
   allow_public_polling: boolean
 }
 
+export interface UtilityAccountRateContext {
+  state: string
+  current_plan?: string
+  plan_code?: string
+  current_version?: number
+  rate_version_id?: string
+  current_period?: string
+  current_price_per_kwh?: string
+  next_period?: string
+  next_price_per_kwh?: string
+  next_period_at?: string
+  current_currency: string
+  billing_cycle?: { starts_at: string; ends_at: string }
+  assignment_effective_from?: string
+  source_type?: string
+  source_checked_at?: string
+  next_assignment?: { rate_version_id: string; plan: string; effective_from: string }
+}
+
+export interface UtilityAccount {
+  id: string
+  site_id: string
+  site_name: string
+  utility_id: string
+  utility_name: string
+  name: string
+  nickname?: string
+  account_number_suffix?: string
+  status: 'active' | 'archived'
+  timezone: string
+  currency: string
+  billing_cycle_start_day: number
+  baseline_allocation_kwh?: string
+  generation_provider: string
+  provider_mode: string
+  service_class?: string
+  cost_scope: 'energy_only' | 'allocated_account_estimate' | 'full_account_estimate'
+  allocation_method?: string
+  full_account_override: boolean
+  revision: number
+  archived_at?: string
+  rate_context: UtilityAccountRateContext
+  assignment_count: number
+  device_count: number
+  readiness: { rate: string; cost: string; topology_complete: boolean }
+}
+
+export interface SensorNetworkCidr {
+  id: string
+  network: string
+  label: string
+  enabled: boolean
+  revision: number
+}
+
+export interface SensorNetworkPolicy {
+  id: string
+  site_id: string
+  site_name: string
+  direction: 'device_ingress' | 'server_pull'
+  mode: 'allow_listed_private' | 'allow_all_private' | 'deny_all' | 'legacy_authenticated_any' | 'legacy_public_and_listed'
+  revision: number
+  migration_notice_pending: boolean
+  migrated_from_legacy: boolean
+  effective_summary: string
+  cidrs: SensorNetworkCidr[]
+}
+
 export interface Device {
   id: string
   name: string
@@ -73,6 +141,10 @@ export interface FleetSummary {
   total_devices: number
   active_alerts: number
   current_tou_bucket?: string
+  current_rate_plan?: string
+  current_rate_version?: number
+  current_rate_price_per_kwh?: string
+  rate_configured?: boolean
   recent_peak_w: string
   has_live_data?: boolean
   has_energy_data?: boolean

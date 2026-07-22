@@ -60,6 +60,32 @@ PERMISSION_DEFINITIONS = (
         True,
     ),
     _permission(
+        "utility_accounts.view",
+        "Sites and devices",
+        "View utility accounts",
+        "View utility accounts for assigned sites.",
+    ),
+    _permission(
+        "utility_accounts.manage",
+        "Sites and devices",
+        "Manage utility accounts",
+        "Create, revise, and archive assigned-site utility accounts.",
+        True,
+    ),
+    _permission(
+        "network.view",
+        "Sites and devices",
+        "View sensor network policy",
+        "View assigned-site sensor policies and observed addresses.",
+    ),
+    _permission(
+        "network.manage",
+        "Sites and devices",
+        "Manage sensor network policy",
+        "Change sensor network policies and CIDRs.",
+        True,
+    ),
+    _permission(
         "topology.view", "Sites and devices", "View topology", "View assigned-site topology."
     ),
     _permission(
@@ -281,6 +307,10 @@ PERMISSION_DEPENDENCIES: dict[str, frozenset[str]] = {
     "interface_text.manage": frozenset({"interface_text.view"}),
     "status_indicators.manage": frozenset({"status_indicators.view"}),
     "sites.manage": frozenset({"sites.view"}),
+    "utility_accounts.view": frozenset({"sites.view"}),
+    "utility_accounts.manage": frozenset({"utility_accounts.view", "sites.view"}),
+    "network.view": frozenset({"sites.view"}),
+    "network.manage": frozenset({"network.view", "sites.view"}),
     "topology.manage": frozenset({"topology.view"}),
     "devices.manage": frozenset({"devices.view"}),
     "devices.remove": frozenset({"devices.manage", "devices.view"}),

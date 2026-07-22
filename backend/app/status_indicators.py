@@ -1684,7 +1684,10 @@ async def _current_rate_values(
     all_accounts = list(
         await session.scalars(
             select(UtilityAccount)
-            .where(UtilityAccount.site_id.in_(selected_site_ids))
+            .where(
+                UtilityAccount.site_id.in_(selected_site_ids),
+                UtilityAccount.status == "active",
+            )
             .order_by(UtilityAccount.name, UtilityAccount.id)
         )
     )

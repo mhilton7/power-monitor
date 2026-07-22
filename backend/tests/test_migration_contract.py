@@ -37,6 +37,10 @@ def test_initial_migration_is_frozen_and_covers_metadata() -> None:
         "status_layout_revisions",
         "status_layout_drafts",
         "status_layout_state",
+        "utility_account_adjustments",
+        "sensor_network_policies",
+        "sensor_network_cidrs",
+        "network_policy_revisions",
     }
     assert "CREATE UNIQUE INDEX" in schema
     assert "ix_raw_site_time" in schema
@@ -122,3 +126,22 @@ def test_dashboard_information_architecture_migration_preserves_layout_history()
     assert "status_layout.information_architecture_migrated" in revision
     assert "DELETE FROM status_layout_revisions" in revision
     assert "DROP TABLE" not in revision
+
+
+def test_utility_account_network_policy_migration_preserves_legacy_behavior() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260721_0008_utility_accounts_network_policy.py"
+    ).read_text()
+    assert 'down_revision = "20260721_0007"' in revision
+    assert "sensor_network_policies" in revision
+    assert "sensor_network_cidrs" in revision
+    assert "network_policy_revisions" in revision
+    assert "utility_account_adjustments" in revision
+    assert "legacy_authenticated_any" in revision
+    assert "legacy_public_and_listed" in revision
+    assert "WHEN json_array_length(sites.allowed_cidrs) > 0" in revision
+    assert "ELSE 'deny_all'" in revision
+    assert "behavior_preserved" in revision
+    assert "utility_accounts.manage" in revision
+    assert "network.manage" in revision

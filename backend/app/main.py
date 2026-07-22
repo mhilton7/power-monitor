@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.routes import (
     access_control,
+    account_network,
     auth,
     device_protocol,
     exports,
@@ -62,6 +63,7 @@ for router in (
     auth.router,
     interface_text.router,
     access_control.router,
+    account_network.router,
     device_protocol.router,
     logs.router,
     management.router,

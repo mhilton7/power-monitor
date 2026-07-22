@@ -80,13 +80,25 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 FROM devices WHERE id = 'device-migration'
                 """
             )
-            assert revision == "20260721_0007"
-            assert table_count == 77
+            network_modes = await connection.fetch(
+                """
+                SELECT direction, mode
+                FROM sensor_network_policies
+                WHERE site_id = 'site-migration'
+                ORDER BY direction
+                """
+            )
+            assert revision == "20260721_0008"
+            assert table_count == 81
             assert dict(migrated) == {
                 "lifecycle_status": "decommissioned",
                 "lifecycle_generation": 1,
                 "decommission_reason": "legacy_revoke",
             }
+            assert [dict(row) for row in network_modes] == [
+                {"direction": "device_ingress", "mode": "legacy_authenticated_any"},
+                {"direction": "server_pull", "mode": "deny_all"},
+            ]
 
             await migrate("downgrade", "20260720_0002")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
@@ -95,7 +107,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260721_0007"
+                "20260721_0008"
             )
 
             await connection.execute("DROP SCHEMA public CASCADE")
@@ -127,7 +139,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 await connection.fetchval(
                     "SELECT count(*) FROM role_permissions WHERE role_name = 'admin'"
                 )
-                == 44
+                == 48
             )
             status_state = await connection.fetchrow(
                 """
@@ -149,13 +161,13 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260721_0007"
+                "20260721_0008"
             )
             assert (
                 await connection.fetchval(
                     "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
                 )
-                == 77
+                == 81
             )
         finally:
             await connection.close()

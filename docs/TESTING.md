@@ -1,5 +1,44 @@
 # Testing and release gates
 
+## Utility accounts and sensor network policy acceptance (2026-07-21)
+
+The release passed Ruff lint and formatting, strict mypy, OpenAPI regeneration,
+contract validation, and the repository secret scan. The portable backend and
+simulator suite passed 90 tests; the three environment-gated cases were then
+run separately. PostgreSQL 17 upgraded the populated legacy schema and a clean
+database to `20260721_0008`, downgraded and reapplied the revision, and finished
+with 81 public tables and all 48 Administrator permissions. The 100-device gate
+ingested 18,000 three-hour backfill records in 69.201 seconds, accepted no
+duplicates on retry, used a five-connection pool, and peaked at 11.22 MiB of
+traced Python memory.
+
+The frontend passed lint, TypeScript checking, 25 unit/component tests, all 31
+Chromium end-to-end and accessibility scenarios, and the production build. The
+new scenarios complete the seven-step account workflow, resolve the live rate
+period and price without a sensor, manage account identity, scope, adjustments,
+rate history and archival, configure an explicit private sensor network, test
+allowed and blocked addresses without connecting to them, and check mobile
+containment. Reviewed captures are stored at
+`docs/screenshots/utility-account-management.png` and
+`docs/screenshots/sensor-network-policy.png`.
+
+Fresh API, frontend, and backup images built successfully. The standard Compose
+stack reached `20260721_0008` with every long-running service healthy and
+checksum/restored a five-artifact logical backup into a clean 81-table database.
+The normal, TrueNAS template, digest-pinned deployment, and optional NET_RAW-only
+ICMP configurations all passed fail-closed validation and Docker Compose
+parsing. The immutable seven-service TrueNAS workflow then passed through the
+TLS gateway with a successful one-shot migration, only TCP 8443 published,
+three signed simulated devices, 90 historical readings, SCE calculation, two
+effective utility accounts, one canonical sensor CIDR, an encrypted five-artifact
+backup, checksum verification, and a clean restore that preserved the accounts
+and policy rule. Python and npm dependency audits found no known vulnerabilities.
+
+Migration preserves the former behavior exactly: empty legacy pull CIDRs become
+explicit deny-all, configured legacy CIDRs are copied, and formerly unrestricted
+but signed ingress remains in a visible review-required compatibility state
+until an administrator chooses an explicit policy.
+
 ## Dashboard information architecture acceptance (2026-07-21)
 
 The cleanup release passed Ruff lint/format, strict mypy, 83 portable backend

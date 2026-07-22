@@ -5,7 +5,7 @@ Permissions are stable server identifiers. Display-text customization never rena
 | Area | Permission codes |
 |---|---|
 | Dashboard/data | `overview.view`, `usage.view`, `history.view`, `history.export`, `costs.view`, `costs.export` |
-| Sites/devices | `sites.view`, `sites.manage`, `topology.view`, `topology.manage`, `devices.view`, `devices.manage`, `devices.remove`, `enrollment.view`, `enrollment.manage`, `firmware.view`, `firmware.manage` |
+| Sites/devices | `sites.view`, `sites.manage`, `utility_accounts.view`, `utility_accounts.manage`, `network.view`, `network.manage`, `topology.view`, `topology.manage`, `devices.view`, `devices.manage`, `devices.remove`, `enrollment.view`, `enrollment.manage`, `firmware.view`, `firmware.manage` |
 | Rates | `rates.view`, `rates.manage_custom`, `rates.manage_sources`, `rates.check_sources`, `rates.review_candidates`, `rates.approve_candidates`, `rates.assign` |
 | Alerts | `alerts.view`, `alerts.acknowledge`, `alerts.manage_rules`, `alerts.manage_delivery` |
 | Backup/logs | `backups.view`, `backups.create`, `backups.restore`, `logs.export` |

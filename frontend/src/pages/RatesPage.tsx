@@ -5,8 +5,11 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { EmptyState, ErrorState, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
 import type { ManagedRatePlan } from '../rates'
+import type { Site } from '../types'
 
 interface CandidateSummary { id: string; status: string; summary: { plan_code?: string; material_differences?: number }; created_at: string }
+interface RateAssignmentSummary { id: string; utility_account_id: string; rate_version_id: string; effective_from: string; effective_to?: string }
+interface AccountSummary { id: string; name: string; site_id: string }
 
 function downloadJson(filename: string, value: unknown) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }))
@@ -22,6 +25,9 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
   const importInput = useRef<HTMLInputElement>(null)
   const [jobId, setJobId] = useState<string>()
   const query = useQuery({ queryKey: ['managed-rates'], queryFn: () => api<ManagedRatePlan[]>('/api/v1/rates/plans') })
+  const assignments = useQuery({ queryKey: ['rate-assignments'], queryFn: () => api<RateAssignmentSummary[]>('/api/v1/rates/assignments') })
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<AccountSummary[]>('/api/v1/utility-accounts') })
+  const sites = useQuery({ queryKey: ['sites'], queryFn: () => api<Site[]>('/api/v1/sites') })
   const candidateQuery = useQuery({ queryKey: ['rate-candidates'], queryFn: () => api<CandidateSummary[]>('/api/v1/admin/rate-candidates'), enabled: canManage })
   const check = useMutation({ mutationFn: () => api<{ job_id: string }>('/api/v1/admin/rate-sources/check-now', { method: 'POST' }), onSuccess: (job) => { setJobId(job.job_id) } })
   const syncJob = useQuery({ queryKey: ['rate-sync-job', jobId], queryFn: () => api<{ status: string; progress: { completed?: number; source_ids?: string[] }; result?: { candidate_count?: number } }>(`/api/v1/jobs/${jobId}`), enabled: Boolean(jobId), refetchInterval: (result) => ['queued', 'running'].includes(result.state.data?.status ?? 'queued') ? 1500 : false })
@@ -62,16 +68,27 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
         <div className="rate-grid">
           {query.data.map((plan) => {
             const version = plan.versions.find((item) => item.is_active) ?? plan.versions[0]
+            const now = Date.now()
+            const versionIds = new Set(plan.versions.map((item) => item.id))
+            const versionAssignments = assignments.data?.filter((item) => versionIds.has(item.rate_version_id)) ?? []
+            const effective = versionAssignments.find((item) => new Date(item.effective_from).getTime() <= now && (!item.effective_to || new Date(item.effective_to).getTime() > now))
+            const future = versionAssignments.filter((item) => new Date(item.effective_from).getTime() > now).sort((left, right) => new Date(left.effective_from).getTime() - new Date(right.effective_from).getTime())[0]
+            const assignedAccount = accounts.data?.find((item) => item.id === effective?.utility_account_id)
+            const futureAccount = accounts.data?.find((item) => item.id === future?.utility_account_id)
+            const assignedSite = sites.data?.find((item) => item.id === assignedAccount?.site_id)
+            const pendingCandidate = pending.some((item) => item.summary.plan_code === plan.code)
+            const stateLabel = plan.status === 'retired' ? 'Retired' : assignedAccount ? `Effective now · ${assignedAccount.name}${assignedSite ? ` / ${assignedSite.name}` : ''}` : futureAccount && future ? `Assigned · effective ${new Date(future.effective_from).toLocaleDateString()} · ${futureAccount.name}` : versionAssignments.length ? 'Expired assignment' : pendingCandidate ? 'Candidate awaiting approval' : version?.status === 'draft' ? 'Draft' : 'Published · Available'
             return <Panel key={plan.id} className="rate-card">
-              <header className="rate-card-head"><div><span className="plan-code">{plan.code}</span><h2>{plan.name}</h2></div><StatusPill status={version?.status ?? plan.status} label={version?.is_active ? 'Active' : version?.status ?? plan.status} /></header>
+              <header className="rate-card-head"><div><span className="plan-code">{plan.code}</span><h2>{plan.name}</h2></div><StatusPill status={effective ? 'healthy' : version?.status ?? plan.status} label={stateLabel} /></header>
               <p>{plan.description || 'No plan description has been provided.'}</p>
-              {pending.some((item) => item.summary.plan_code === plan.code) && <StatusPill status="pending" label="Update available" />}
+              {pendingCandidate && <StatusPill status="pending" label="Candidate awaiting approval" />}
               {version && <>
                 <dl className="rate-meta"><div><dt>Effective</dt><dd>{version.effective_from}</dd></div><div><dt>Source checked</dt><dd>{version.source_checked_at?.slice(0, 10) ?? 'Manual'}</dd></div><div><dt>Version</dt><dd>v{version.version}</dd></div><div><dt>Integrity</dt><dd title={version.integrity_sha256}>{version.integrity_sha256.slice(0, 10)}…</dd></div></dl>
                 <div className="source-note"><ClipboardCheck size={17} /><p>{version.source_label || (plan.plan_kind === 'custom' ? 'Administrator-defined plan' : 'SCE archived evidence')}</p></div>
                 <footer><button className="link-button" onClick={() => navigate(`/rates/${plan.id}/versions/${version.id}`)}>View details</button><div>
                   <button className="button ghost" onClick={() => void exportVersion(version.id, plan.code)}><FileJson size={15} /> Export</button>
                   {canManage && <button className="button secondary" disabled={clone.isPending} onClick={() => { clone.mutate(plan.id); }}><Copy size={15} /> Clone</button>}
+                  {canManage && version.status !== 'draft' && <button className="button primary" onClick={() => navigate(`/admin?tab=sites-accounts&rate_version_id=${encodeURIComponent(version.id)}`)}><Plus size={15} /> Assign to utility account</button>}
                   {canManage && version.status === 'draft' && <button className="button primary" disabled={activate.isPending} onClick={() => { activate.mutate(version.id); }}><CheckCircle2 size={15} /> Activate</button>}
                 </div></footer>
               </>}
@@ -81,6 +98,7 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
       ) : <EmptyState title="No rate plans" message="Run first-time initialization to install effective-dated SCE presets." />}
 
       <p className="rate-disclaimer">This estimate is not an SCE bill. Rates shown may differ when generation is provided by a CCA or Direct Access provider.</p>
+      <p className="cross-page-setup"><strong>Plans in this library are not assigned automatically.</strong> <button className="link-button" onClick={() => navigate('/admin?tab=sites-accounts')}>Configure utility account</button></p>
 
       {canManage && <Panel title="Plan portability" eyebrow="Controlled import and export" actions={<>
         <input ref={importInput} className="sr-only" type="file" accept="application/json,.json" onChange={(event) => void importPlan(event.target.files?.[0])} />

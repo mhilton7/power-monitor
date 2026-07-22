@@ -70,7 +70,10 @@ automated multi-device release gate. Protocol and deployment details are in
 [Security](docs/SECURITY.md), and [Operations](docs/OPERATIONS.md).
 Rate administration is covered by [SCE synchronization](docs/SCE_RATE_SYNC.md),
 [custom plans](docs/CUSTOM_RATE_PLANS.md), [source security](docs/RATE_SOURCE_SECURITY.md),
-and [versioning](docs/RATE_VERSIONING.md). See the consolidated
+and [versioning](docs/RATE_VERSIONING.md). Guided account/rate setup and the
+separate sensor-network boundary are documented in
+[Utility accounts](docs/UTILITY_ACCOUNTS.md) and
+[Sensor network policy](docs/SENSOR_NETWORK_POLICY.md). See the consolidated
 [TrueNAS deployment notes](docs/TRUE_NAS_DEPLOYMENT.md) before installing an
 upgrade.
 

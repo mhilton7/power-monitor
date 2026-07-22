@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clipboard, Clock3, KeyRound, Plus, RadioTower, ShieldCheck, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { ClaimedSensors } from '../components/ClaimedSensors'
-import type { Site } from '../types'
+import type { SensorNetworkPolicy, Site } from '../types'
 import { EmptyState, ErrorState, formatTime, PageTitle, Panel, StatusPill } from '../components/UI'
 
 interface Token {
@@ -29,6 +30,8 @@ export function EnrollmentPage() {
   const [now, setNow] = useState(Date.now())
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api<Site[]>('/api/v1/sites') })
   const tokens = useQuery({ queryKey: ['tokens'], queryFn: () => api<Token[]>('/api/v1/enrollment-tokens'), refetchInterval: 5000 })
+  const policies = useQuery({ queryKey: ['network-policies'], queryFn: () => api<SensorNetworkPolicy[]>('/api/v1/admin/network/policies') })
+  const ingressPolicy = policies.data?.find((item) => item.site_id === siteId && item.direction === 'device_ingress')
 
   useEffect(() => { if (!siteId && sites.data?.[0]) setSiteId(sites.data[0].id) }, [siteId, sites.data])
   useEffect(() => {
@@ -75,12 +78,13 @@ export function EnrollmentPage() {
             {createProblem && <div className="form-error" role="alert"><strong>{createProblem.title}</strong><span>{createProblem.detail}</span></div>}
             <label><span>Friendly name</span><input placeholder="Garage HVAC" value={name} onChange={(event) => { setName(event.target.value) }} /></label>
             <label><span>Site</span><select value={siteId} onChange={(event) => { setSiteId(event.target.value) }}>{sites.data?.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>
+            {ingressPolicy && <aside className={ingressPolicy.mode === 'deny_all' ? 'scope-warning' : 'source-note'}><ShieldCheck /><p><strong>Ingress policy: {ingressPolicy.effective_summary}</strong><br />Network policy is checked in addition to the enrollment token and signed device authentication. <Link to="/admin?tab=server-network">Manage network policy</Link></p></aside>}
             <div className="form-columns">
               <label><span>Measurement role</span><select value={role} onChange={(event) => { setRole(event.target.value) }}><option value="submeter">Submeter</option><option value="branch">Branch</option><option value="service-leg">Service leg</option><option value="main">Main</option><option value="informational">Informational</option></select></label>
               <label><span>Connection mode</span><select value={mode} onChange={(event) => { setMode(event.target.value) }}><option value="push">Push / outbound</option><option value="hybrid">Hybrid</option><option value="pull">Pull</option></select></label>
             </div>
             <label><span>CT rating</span><div className="input-unit"><input type="number" min="1" max="5000" value={ct} onChange={(event) => { setCt(event.target.value) }} /><span>A</span></div></label>
-            <button className="button primary" disabled={create.isPending || !siteId}><Plus size={17} /> {create.isPending ? 'Generating…' : 'Add enrollment token'}</button>
+            <button className="button primary" disabled={create.isPending || !siteId || ingressPolicy?.mode === 'deny_all'}><Plus size={17} /> {create.isPending ? 'Generating…' : ingressPolicy?.mode === 'deny_all' ? 'Enrollment locked down' : 'Add enrollment token'}</button>
           </form>
         </Panel>
 

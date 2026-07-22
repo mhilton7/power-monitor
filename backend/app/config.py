@@ -86,6 +86,7 @@ class Settings(BaseSettings):
     max_log_export_bytes: int = 250 * 1024 * 1024
     log_format_version: str = "pm-log/1.0.0"
     poll_public_addresses: bool = False
+    trusted_proxy_cidrs: str = "172.16.0.0/12"
     allowed_poll_ports: tuple[int, ...] = (80, 443, 8080, 8443)
     log_level: str = "INFO"
 
