@@ -51,6 +51,20 @@ PERMISSION_DEFINITIONS = (
     _permission(
         "costs.export", "Dashboard and data", "Export costs", "Export permitted cost data."
     ),
+    _permission(
+        "costs.recalculate",
+        "Dashboard and data",
+        "Recalculate costs",
+        "Recalculate account costs and tier allocations.",
+        True,
+    ),
+    _permission(
+        "usage_imports.manage",
+        "Dashboard and data",
+        "Manage usage imports",
+        "Preview and commit authoritative utility usage evidence.",
+        True,
+    ),
     _permission("sites.view", "Sites and devices", "View sites", "View assigned sites."),
     _permission(
         "sites.manage",
@@ -303,6 +317,8 @@ PERMISSION_DEPENDENCIES: dict[str, frozenset[str]] = {
     "rates.review_candidates": frozenset({"rates.view"}),
     "rates.approve_candidates": frozenset({"rates.review_candidates", "rates.view"}),
     "rates.assign": frozenset({"rates.view"}),
+    "costs.recalculate": frozenset({"costs.view"}),
+    "usage_imports.manage": frozenset({"usage.view", "utility_accounts.view"}),
     "backups.restore": frozenset({"backups.view"}),
     "interface_text.manage": frozenset({"interface_text.view"}),
     "status_indicators.manage": frozenset({"status_indicators.view"}),

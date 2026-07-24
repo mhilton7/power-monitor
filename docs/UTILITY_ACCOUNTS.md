@@ -72,6 +72,15 @@ The start day is 1–31 in the account's inherited site timezone. A shorter mont
 valid day; persisted boundaries are UTC instants. Changing the day affects only unfinalized
 estimates. Finalized cycles and reports keep their original boundaries and rate-version evidence.
 
+Tiered and hybrid plans additionally require an explicit account-usage
+authority. A full-account aggregate or reviewed complete sensor set may advance
+tier usage. Partial circuits remain valid for energy-only history but need
+manual/imported whole-account context for tier pricing. Utility cycle-date and
+usage imports use preview, normalization, content hashing, conflict review,
+commit, and audited reversal. See [Account usage
+authority](ACCOUNT_USAGE_AUTHORITY.md), [Billing cycles](BILLING_CYCLES.md), and
+[Usage imports](USAGE_IMPORTS.md).
+
 ## Readiness
 
 Monitoring readiness and rate/cost readiness are deliberately separate. An effective account

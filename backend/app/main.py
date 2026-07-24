@@ -25,6 +25,7 @@ from app.api.routes import (
     rates,
     status_indicators,
     system,
+    tiered_rates,
 )
 from app.config import get_settings
 from app.logging import configure_logging
@@ -64,6 +65,7 @@ for router in (
     interface_text.router,
     access_control.router,
     account_network.router,
+    tiered_rates.router,
     device_protocol.router,
     logs.router,
     management.router,

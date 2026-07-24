@@ -13,6 +13,19 @@
     "description": {"type": "string"},
     "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
     "timezone": {"type": "string", "minLength": 1},
+    "pricing_model": {"enum": ["flat", "time_of_use", "tiered", "time_of_use_tiered"], "default": "time_of_use"},
+    "flat_rate_per_kwh": {"oneOf": [{"$ref": "#/$defs/nonnegative_decimal"}, {"type": "null"}]},
+    "billing_cycle": {"$ref": "#/$defs/billing_cycle"},
+    "tiers": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/tier"}
+    },
+    "hybrid_pricing": {
+      "oneOf": [
+        {"$ref": "#/$defs/hybrid_pricing"},
+        {"type": "null"}
+      ]
+    },
     "ownership_scope": {"enum": ["global", "site", "utility_account"]},
     "owner_id": {"type": ["string", "null"]},
     "effective_from": {"type": "string", "format": "date"},
@@ -34,6 +47,71 @@
   },
   "$defs": {
     "decimal": {"type": "string", "pattern": "^-?[0-9]+(?:\\.[0-9]{1,8})?$"},
+    "nonnegative_decimal": {"type": "string", "pattern": "^[0-9]+(?:\\.[0-9]{1,8})?$"},
+    "seasonal_baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "start", "end", "daily_kwh"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 80},
+        "start": {"type": "string", "pattern": "^[0-9]{2}-[0-9]{2}$"},
+        "end": {"type": "string", "pattern": "^[0-9]{2}-[0-9]{2}$"},
+        "daily_kwh": {"$ref": "#/$defs/nonnegative_decimal"},
+        "source_citation": {"type": ["string", "null"], "maxLength": 500}
+      }
+    },
+    "threshold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basis"],
+      "properties": {
+        "basis": {"enum": ["fixed_cycle_kwh", "daily_baseline_kwh"]},
+        "daily_baseline_kwh": {"oneOf": [{"$ref": "#/$defs/nonnegative_decimal"}, {"type": "null"}]},
+        "baseline_region": {"type": ["string", "null"], "maxLength": 120},
+        "baseline_category": {"type": ["string", "null"], "maxLength": 120},
+        "rounding_policy": {"enum": ["none", "nearest_kwh", "floor_kwh", "ceil_kwh"]},
+        "seasonal_baselines": {"type": "array", "items": {"$ref": "#/$defs/seasonal_baseline"}},
+        "source_citation": {"type": ["string", "null"], "maxLength": 500}
+      }
+    },
+    "billing_cycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_start_day", "threshold"],
+      "properties": {
+        "expected_start_day": {"type": "integer", "minimum": 1, "maximum": 31},
+        "threshold": {"$ref": "#/$defs/threshold"}
+      }
+    },
+    "tier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tier_id", "name", "order", "price_per_kwh"],
+      "properties": {
+        "tier_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$", "maxLength": 80},
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "order": {"type": "integer", "minimum": 0},
+        "lower_bound_inclusive_kwh": {"$ref": "#/$defs/nonnegative_decimal"},
+        "upper_bound_exclusive_kwh": {"oneOf": [{"$ref": "#/$defs/nonnegative_decimal"}, {"type": "null"}]},
+        "lower_bound_multiplier": {"oneOf": [{"$ref": "#/$defs/nonnegative_decimal"}, {"type": "null"}]},
+        "upper_bound_multiplier": {"oneOf": [{"$ref": "#/$defs/nonnegative_decimal"}, {"type": "null"}]},
+        "price_per_kwh": {"$ref": "#/$defs/nonnegative_decimal"},
+        "tou_prices": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/nonnegative_decimal"}
+        },
+        "season": {"type": ["string", "null"]},
+        "source_citation": {"type": ["string", "null"], "maxLength": 500}
+      }
+    },
+    "hybrid_pricing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method"],
+      "properties": {
+        "method": {"enum": ["tier_period_matrix", "tier_base_plus_tou_adder", "tou_base_plus_tier_adder"]}
+      }
+    },
     "period": {
       "type": "object", "additionalProperties": false,
       "required": ["label", "start_minute", "end_minute", "price_per_kwh"],

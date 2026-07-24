@@ -94,7 +94,7 @@ def versions() -> None:
         "product": "Power Monitor Server",
         "version": "1.0.0",
         "protocol": (ROOT / "shared" / "protocol-version.txt").read_text().strip(),
-        "migration_revision": "20260721_0008",
+        "migration_revision": "20260723_0009",
         "python": platform.python_version(),
         "node": command_version(["node", "--version"]),
         "npm": command_version(["npm.cmd" if os.name == "nt" else "npm", "--version"]),

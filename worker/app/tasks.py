@@ -20,9 +20,11 @@ from app.config import Settings
 from app.db.models import (
     AggregateMember,
     AggregateSet,
+    AccountUsageAuthority,
     AlertInstance,
     AlertRule,
     BaselineRule,
+    BillingCycle,
     CostCalculationRun,
     CostIntervalResult,
     DailyDeviceRollup,
@@ -44,6 +46,7 @@ from app.db.models import (
     SequenceGap,
     Site,
     SiteRollup,
+    TierAllocationSegment,
     UtilityAccount,
     UtilityAccountAdjustment,
     WorkerState,
@@ -52,6 +55,7 @@ from app.polling.ssrf import validate_poll_target
 from app.rates.documents import engine_plan
 from app.rates.engine import RateEngine
 from app.rates.service import version_document
+from app.rates.tiered import calculate_cycle_tier_status, current_billing_cycle
 from app.security.protocol import SecretCipher
 
 
@@ -200,14 +204,126 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
             else []
         )
         engine = RateEngine(await _calculation_plan(session, version))
+        tier_segments = (
+            list(
+                (
+                    await session.scalars(
+                        select(TierAllocationSegment)
+                        .join(
+                            BillingCycle,
+                            BillingCycle.id == TierAllocationSegment.billing_cycle_id,
+                        )
+                        .where(
+                            TierAllocationSegment.utility_account_id == account.id,
+                            TierAllocationSegment.rate_version_id == version.id,
+                            TierAllocationSegment.interval_start < job.input_end,
+                            TierAllocationSegment.interval_end > job.input_start,
+                            TierAllocationSegment.recalculation_version
+                            == BillingCycle.recalculation_version,
+                        )
+                        .order_by(
+                            TierAllocationSegment.interval_start,
+                            TierAllocationSegment.segment_order,
+                        )
+                    )
+                )
+            )
+            if version.pricing_model in {"tiered", "time_of_use_tiered"}
+            else []
+        )
         total_energy_kwh = Decimal("0")
+        tiered_energy_charge = Decimal("0")
         covered_seconds = Decimal("0")
+        tier_cost_missing = False
         for interval in intervals:
             energy_kwh = (interval.selected_energy_wh or Decimal("0")) / Decimal("1000")
             total_energy_kwh += energy_kwh
             covered_seconds += Decimal(
                 str((interval.interval_end - interval.interval_start).total_seconds())
             )
+            if version.pricing_model in {"tiered", "time_of_use_tiered"}:
+                matching = [
+                    segment
+                    for segment in tier_segments
+                    if segment.normalized_interval_id == interval.id
+                ]
+                exact = bool(matching)
+                if not matching:
+                    matching = [
+                        segment
+                        for segment in tier_segments
+                        if segment.interval_start < interval.interval_end
+                        and segment.interval_end > interval.interval_start
+                    ]
+                weighted_seconds = sum(
+                    (
+                        Decimal(
+                            str(
+                                (
+                                    min(interval.interval_end, segment.interval_end)
+                                    - max(
+                                        interval.interval_start, segment.interval_start
+                                    )
+                                ).total_seconds()
+                            )
+                        )
+                        for segment in matching
+                    ),
+                    Decimal("0"),
+                )
+                if not matching or weighted_seconds <= 0:
+                    tier_cost_missing = True
+                    break
+                for segment in matching:
+                    overlap_start = max(interval.interval_start, segment.interval_start)
+                    overlap_end = min(interval.interval_end, segment.interval_end)
+                    overlap_seconds = Decimal(
+                        str((overlap_end - overlap_start).total_seconds())
+                    )
+                    segment_seconds = Decimal(
+                        str(
+                            (
+                                segment.interval_end - segment.interval_start
+                            ).total_seconds()
+                        )
+                    )
+                    if overlap_seconds <= 0 or segment_seconds <= 0:
+                        continue
+                    if exact:
+                        fraction = overlap_seconds / segment_seconds
+                        allocated_energy = segment.segment_energy_kwh * fraction
+                        allocated_cost = segment.unrounded_energy_charge * fraction
+                    else:
+                        allocated_energy = (
+                            energy_kwh * overlap_seconds / weighted_seconds
+                        )
+                        allocated_cost = allocated_energy * segment.price_per_kwh
+                    tiered_energy_charge += allocated_cost
+                    session.add(
+                        CostIntervalResult(
+                            run_id=job.id,
+                            normalized_interval_id=interval.id,
+                            interval_start=overlap_start,
+                            interval_end=overlap_end,
+                            bucket=(
+                                f"{segment.tier_name} / {segment.tou_period}"
+                                if segment.tou_period
+                                else segment.tier_name
+                            ),
+                            energy_kwh=allocated_energy,
+                            price_per_kwh=segment.price_per_kwh,
+                            unrounded_cost=allocated_cost,
+                            component="energy",
+                            adjustment_breakdown={
+                                "tier_id": segment.tier_stable_id,
+                                "billing_cycle_id": segment.billing_cycle_id,
+                                "recalculation_version": segment.recalculation_version,
+                                "usage_authority_type": segment.usage_authority_type,
+                            },
+                            calculation_version=engine.algorithm_version,
+                        )
+                    )
+                continue
             calculation = engine.calculate(
                 start=interval.interval_start,
                 end=interval.interval_end,
@@ -230,6 +346,10 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
                         calculation_version=engine.algorithm_version,
                     )
                 )
+        if tier_cost_missing:
+            job.status = "failed"
+            job.completed_at = datetime.now(UTC)
+            continue
         adjustments = list(
             await session.scalars(
                 select(RateAdjustment).where(
@@ -355,9 +475,14 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
             cca_adjustment_per_kwh=cca_per_kwh + account_energy_rate,
             other_adjustment=account_fixed,
         )
+        preliminary_total = preliminary.total
+        if version.pricing_model in {"tiered", "time_of_use_tiered"}:
+            preliminary_total = (
+                preliminary.total - preliminary.energy_charge + tiered_energy_charge
+            )
         percentage_amount = sum(
             (
-                preliminary.total * percent / Decimal("100") * effective_fraction
+                preliminary_total * percent / Decimal("100") * effective_fraction
                 for percent, effective_fraction in account_percent
             ),
             Decimal("0"),
@@ -413,6 +538,58 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
         version.immutable_after_use = True
         completed += 1
     await session.commit()
+    return completed
+
+
+async def process_tier_recalculations(session: AsyncSession, limit: int = 4) -> int:
+    configured_accounts = list(
+        await session.scalars(
+            select(UtilityAccount)
+            .join(
+                AccountUsageAuthority,
+                AccountUsageAuthority.utility_account_id == UtilityAccount.id,
+            )
+            .where(UtilityAccount.status == "active")
+        )
+    )
+    for configured_account in configured_accounts:
+        cycle = await current_billing_cycle(
+            session,
+            configured_account,
+            datetime.now(UTC),
+            create=True,
+        )
+        if cycle.recalculation_version == 0 and cycle.finalized_at is None:
+            cycle.status = "recalculating"
+    await session.flush()
+    cycles = list(
+        await session.scalars(
+            select(BillingCycle)
+            .where(
+                BillingCycle.status == "recalculating",
+                BillingCycle.finalized_at.is_(None),
+            )
+            .order_by(BillingCycle.updated_at)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+    )
+    completed = 0
+    for cycle in cycles:
+        account = await session.get(UtilityAccount, cycle.utility_account_id)
+        if account is None:
+            cycle.status = "expected"
+            continue
+        result = await calculate_cycle_tier_status(
+            session,
+            account,
+            cycle,
+            persist=True,
+        )
+        if not result["available"]:
+            cycle.status = "confirmed" if cycle.explicit_meter_dates else "expected"
+            cycle.updated_at = datetime.now(UTC)
+        completed += 1
     return completed
 
 

@@ -38,7 +38,7 @@ const textDefinitions = [
 ].map(([key, section, defaultValue, label, visibility, maxLength]) => ({ key, section, default: defaultValue, label, description: `${String(label)} description`, field_type: 'text', required: true, visibility, max_length: Number(maxLength), min_length: 1, line_breaks: false, url_companion: false, markdown: false, blank_allowed: false, preview_location: 'dashboard', current_value: defaultValue, published_revision: 0 }))
 
 const statusZones = ['global_header_left', 'global_header_center', 'global_header_right', 'sidebar_upper', 'sidebar_lower', 'global_footer', 'page_header_primary', 'page_header_secondary', 'page_status_row', 'page_summary_strip', 'page_footer', 'overview_site_state', 'overview_site_summary', 'history_context', 'diagnostics_summary', 'mobile_header', 'mobile_status_strip', 'mobile_status_drawer']
-const statusPages = ['overview', 'devices', 'device_detail', 'topology', 'history', 'rates', 'rate_sources', 'alerts', 'enrollment', 'administration', 'system_health', 'backups']
+const statusPages = ['overview', 'devices', 'device_detail', 'topology', 'usage', 'history', 'costs', 'rates', 'rate_sources', 'alerts', 'enrollment', 'administration', 'system_health', 'backups']
 const statusDefinition = (key: string, label: string, category: string, zone: string, order: number, pages = statusPages, permission = 'overview.view', criticalFallback?: string) => ({
   key, default_label: label, description: `${label} status from existing server data.`, category, data_source: key, current_value_schema: { status: 'string', display_value: 'string' }, severity_capability: ['info', 'success', 'warning', 'critical', 'unknown'], default_enabled: true, default_zone: zone, allowed_zones: statusZones, default_order: order, supported_pages: pages, global_shell_support: zone.startsWith('global'), minimum_display_width: 140, preferred_display_width: 220, presentations: ['compact', 'standard', 'detailed'], icon_supported: true, label_supported: true, value_supported: true, freshness_supported: true, role_visibility_supported: true, permission_required: permission, configurable: true, critical_fallback: criticalFallback, renderer: key.includes('power') || key.includes('peak') ? 'power' : key.includes('count') || key.includes('online') || key.includes('offline') ? 'count' : 'health', icon: key.includes('alert') ? 'bell' : key.includes('power') ? 'zap' : 'activity', metric_identity: ({ 'data.live_connection': 'data.live_state', 'data.current_power': 'power.current', 'alerts.active_count': 'alerts.active_count', 'device.online_count': 'devices.online', 'device.offline_count': 'devices.offline', 'device.synchronized_count': 'data.synchronization', 'data.energy_today': 'energy.today', 'data.recent_peak': 'power.recent_peak', 'data.aggregate_coverage': 'data.coverage' } as Record<string, string>)[key] ?? key, canonical_priority: 300, allow_duplicate: false, suppress_when_empty: true, hide_in_zero_data_state: false, diagnostics_only: key.startsWith('system.'), registry_version: 'status-indicators/1.0',
 })
@@ -556,13 +556,13 @@ test('topology shows an explicitly confirmed overlap warning', async ({ page }) 
   await expect(page.getByText('Never summed by default')).toBeVisible()
 })
 
-test('cost workspace is removed from navigation and routing', async ({ page }) => {
+test('cost workspace is available from navigation and routing', async ({ page }) => {
   await mockApplication(page)
   await page.goto('/')
-  await expect(page.getByRole('link', { name: 'Costs' })).toHaveCount(0)
-  await page.goto('/costs')
-  await expect(page).toHaveURL(/\/$/)
-  await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Costs' })).toBeVisible()
+  await page.getByRole('link', { name: 'Costs' }).click()
+  await expect(page).toHaveURL(/\/costs$/)
+  await expect(page.getByRole('heading', { name: 'Costs', exact: true })).toBeVisible()
 })
 
 test('admin can create an enrollment token without seeing a permanent secret', async ({ page }) => {
@@ -705,7 +705,10 @@ test('rate manager creates, validates, activates, and assigns a custom TOU plan'
   await page.getByLabel('Plan name').fill('Weekday and weekend test plan')
   await page.getByLabel('Plan code').fill('CUSTOM-E2E')
   await page.getByRole('button', { name: /Next/ }).click()
-  await expect(page.getByRole('button', { name: /Seasons & schedules/ })).toHaveAttribute('aria-current', 'step')
+  await expect(page.getByRole('button', { name: /Pricing & tiers/ })).toHaveAttribute('aria-current', 'step')
+  await expect(page.getByLabel('Pricing model')).toHaveValue('time_of_use')
+  await page.getByRole('button', { name: /Next/ }).click()
+  await expect(page.getByRole('button', { name: /TOU schedules/ })).toHaveAttribute('aria-current', 'step')
   await expect(page.getByLabel('Total price per kWh')).toHaveValue('0.25000000')
   await page.getByLabel('End minute').fill('1380')
   await expect(page.getByText('This schedule does not cover the full day')).toBeVisible()

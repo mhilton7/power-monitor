@@ -25,6 +25,7 @@ from worker.app.tasks import (
     process_export_jobs,
     process_notification_jobs,
     process_report_jobs,
+    process_tier_recalculations,
     recompute_recent_rollups,
 )
 
@@ -44,58 +45,68 @@ async def _unlock(session: Any) -> None:
         await session.execute(text(f"SELECT pg_advisory_unlock({LOCK_ID})"))
 
 
+async def _process_work(session: Any, factory: Any, settings: Any) -> dict[str, Any]:
+    alerts = await evaluate_alerts(session, settings)
+    notifications = await process_notification_jobs(session, settings)
+    exports = await process_export_jobs(session, settings)
+    reports = await process_report_jobs(session, settings)
+    tier_recalculations = await process_tier_recalculations(session)
+    costs = await process_cost_jobs(session)
+    rollups = await recompute_recent_rollups(session)
+    rate_sync = await process_rate_sync_jobs(session, settings)
+    rates_activated = await activate_due_versions(session)
+    stale_rate_sources = await check_stale_sources(session)
+    polling = await poll_due_devices(factory, settings)
+    now = datetime.now(UTC)
+    state = await session.get(WorkerState, "main")
+    if state is None:
+        state = WorkerState(
+            worker_name="main",
+            instance_id=f"{socket.gethostname()}:{os.getpid()}",
+            last_loop_at=now,
+            last_success_at=now,
+            status="healthy",
+            details={},
+        )
+        session.add(state)
+    state.last_loop_at = now
+    state.last_success_at = now
+    state.status = "healthy"
+    state.details = {
+        "alerts": alerts,
+        "notifications": notifications,
+        "exports_completed": exports,
+        "reports_completed": reports,
+        "cost_runs_completed": costs,
+        "tier_recalculations_completed": tier_recalculations,
+        "rollups": rollups,
+        "rate_sync": rate_sync,
+        "rates_activated": rates_activated,
+        "stale_rate_sources": stale_rate_sources,
+        "polled": len(polling),
+        "poll_failures": sum(
+            item["status"] not in {"ok", "not_configured", "circuit_open"}
+            for item in polling
+        ),
+    }
+    await session.commit()
+    return state.details
+
+
 async def run_once() -> dict[str, Any]:
     settings = get_settings()
     factory = session_factory()
-    async with factory() as session:
-        if not await _try_lock(session):
+    # A PostgreSQL session-level advisory lock belongs to the physical
+    # connection that acquired it. Work tasks commit independently, so keep a
+    # dedicated lock session checked out until the complete loop is finished.
+    async with factory() as lock_session:
+        if not await _try_lock(lock_session):
             return {"status": "standby"}
         try:
-            alerts = await evaluate_alerts(session, settings)
-            notifications = await process_notification_jobs(session, settings)
-            exports = await process_export_jobs(session, settings)
-            reports = await process_report_jobs(session, settings)
-            costs = await process_cost_jobs(session)
-            rollups = await recompute_recent_rollups(session)
-            rate_sync = await process_rate_sync_jobs(session, settings)
-            rates_activated = await activate_due_versions(session)
-            stale_rate_sources = await check_stale_sources(session)
-            polling = await poll_due_devices(factory, settings)
-            now = datetime.now(UTC)
-            state = await session.get(WorkerState, "main")
-            if state is None:
-                state = WorkerState(
-                    worker_name="main",
-                    instance_id=f"{socket.gethostname()}:{os.getpid()}",
-                    last_loop_at=now,
-                    last_success_at=now,
-                    status="healthy",
-                    details={},
-                )
-                session.add(state)
-            state.last_loop_at = now
-            state.last_success_at = now
-            state.status = "healthy"
-            state.details = {
-                "alerts": alerts,
-                "notifications": notifications,
-                "exports_completed": exports,
-                "reports_completed": reports,
-                "cost_runs_completed": costs,
-                "rollups": rollups,
-                "rate_sync": rate_sync,
-                "rates_activated": rates_activated,
-                "stale_rate_sources": stale_rate_sources,
-                "polled": len(polling),
-                "poll_failures": sum(
-                    item["status"] not in {"ok", "not_configured", "circuit_open"}
-                    for item in polling
-                ),
-            }
-            await session.commit()
-            return state.details
+            async with factory() as work_session:
+                return await _process_work(work_session, factory, settings)
         finally:
-            await _unlock(session)
+            await _unlock(lock_session)
 
 
 async def main() -> None:

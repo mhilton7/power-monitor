@@ -39,6 +39,7 @@ from app.problem import ProblemError
 from app.rates.documents import engine_plan
 from app.rates.engine import RateEngine
 from app.rates.service import version_document
+from app.rates.tiered import calculate_cycle_tier_status, current_billing_cycle
 
 REGISTRY_VERSION = "status-indicators/1.0"
 LAYOUT_SCHEMA_VERSION = "power-monitor-status-layout/1.0"
@@ -48,7 +49,9 @@ PAGES = (
     "devices",
     "device_detail",
     "topology",
+    "usage",
     "history",
+    "costs",
     "rates",
     "rate_sources",
     "alerts",
@@ -1783,7 +1786,29 @@ async def _current_rate_values(
             ):
                 unavailable.append(f"{account.name}: rate is outside its effective dates")
                 continue
-            period, price = engine.period_at(now)
+            if version.pricing_model in {"tiered", "time_of_use_tiered"}:
+                cycle = await current_billing_cycle(session, account, now, create=False)
+                tier_status = await calculate_cycle_tier_status(
+                    session, account, cycle, persist=False
+                )
+                if not tier_status["available"]:
+                    unavailable.append(f"{account.name}: {tier_status['warnings'][0]}")
+                    continue
+                calculation = engine.calculate(
+                    start=now,
+                    end=now + timedelta(seconds=1),
+                    energy_kwh=Decimal("0"),
+                    cumulative_usage_before_kwh=Decimal(
+                        str(tier_status["authoritative_usage_kwh"])
+                    ),
+                    cycle_start=cycle.starts_at,
+                    cycle_end=cycle.ends_at,
+                )
+                current_slice = calculation.slices[0]
+                period = current_slice.bucket
+                price = current_slice.price_per_kwh
+            else:
+                period, price = engine.period_at(now)
         except (KeyError, RuntimeError, ValueError) as error:
             unavailable.append(f"{account.name}: rate cannot be evaluated ({type(error).__name__})")
             continue

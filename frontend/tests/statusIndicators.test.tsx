@@ -146,6 +146,8 @@ describe('status route mapping', () => {
   it('maps shell routes to deterministic layout pages', () => {
     expect(pageFromPath('/')).toBe('overview')
     expect(pageFromPath('/devices/8d53')).toBe('device_detail')
+    expect(pageFromPath('/usage')).toBe('usage')
+    expect(pageFromPath('/costs')).toBe('costs')
     expect(pageFromPath('/rates/sources')).toBe('rate_sources')
     expect(pageFromPath('/administration/status-indicators')).toBe('administration')
     expect(pageFromPath('/administration/system-health')).toBe('system_health')

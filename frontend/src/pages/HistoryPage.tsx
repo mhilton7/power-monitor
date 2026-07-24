@@ -408,7 +408,7 @@ export function HistoryPage() {
             if (point.quality_flags.length) lines.push(`Quality: ${point.quality_flags.join(', ')}`)
             if (point.rate_contributions.length > 1) {
               lines.push(...point.rate_contributions.map((part) =>
-                `${part.rate_plan_name} · ${part.tou_period}: ${part.energy_kwh} kWh at ${formatMoney(part.rate_per_kwh)}/kWh = ${formatMoney(part.energy_cost)}`,
+                `${part.rate_plan_name} · ${part.tier_name ? `${part.tier_name} / ` : ''}${part.tou_period}: ${part.energy_kwh} kWh at ${formatMoney(part.rate_per_kwh)}/kWh = ${formatMoney(part.energy_cost)}${part.cumulative_start_kwh ? ` (cycle ${part.cumulative_start_kwh}-${part.cumulative_end_kwh} kWh)` : ''}`,
               ))
             }
             return lines
@@ -546,7 +546,7 @@ export function HistoryPage() {
               <td>{formatInterval(point)}</td>
               <td>{unavailableNumber(point.energy_kwh, 6)} kWh</td>
               <td>{unavailableNumber(point.average_power_w, 2)} / {unavailableNumber(point.peak_power_w, 2)} W</td>
-              <td>{point.tou_period ?? 'Unavailable'}{point.mixed_rates && <small>Mixed rates</small>}</td>
+              <td>{point.tou_period ?? 'Unavailable'}{point.mixed_rates && <small>Mixed rates</small>}{point.rate_contributions.some((part) => part.tier_name) && <small>{point.rate_contributions.map((part) => `${part.tier_name}: cycle ${part.cumulative_start_kwh}-${part.cumulative_end_kwh} kWh`).join(' / ')}</small>}</td>
               <td>{point.rate_per_kwh ? `${formatMoney(point.rate_per_kwh)}/kWh` : 'Unavailable'}</td>
               <td>{unavailableMoney(point.energy_cost)}</td>
               <td>{point.rate_plan_name ?? 'Unavailable'}<small>{point.rate_version_id ?? 'No version'}</small></td>
@@ -555,7 +555,7 @@ export function HistoryPage() {
           </table></div>
           <nav className="history-pagination" aria-label="History table pages"><button className="button secondary compact" disabled={page <= 1} onClick={() => { setPage((current) => Math.max(1, current - 1)) }}><ChevronLeft size={16} /> Previous</button><span>Page {queryData.page} · {queryData.total_buckets} total buckets</span><button className="button secondary compact" disabled={!queryData.next_page} onClick={() => { setPage(queryData.next_page ?? page) }} >Next <ChevronRight size={16} /></button></nav>
         </Panel>}
-        {basePoints.length > 0 && costUnavailable && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost is unavailable for intervals without a historically effective rate. Electrical measurements remain visible; the server never guesses a price. <Link to="/admin?tab=sites-accounts">Configure utility account</Link></p>}
+        {basePoints.length > 0 && costUnavailable && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost is unavailable for intervals without a historically effective rate or a completed tier recalculation. Electrical measurements remain visible; the server never guesses a price or resets cumulative tier usage per interval. <Link to="/admin?tab=sites-accounts">Configure or recalculate account</Link></p>}
         {basePoints.length > 0 && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost covers interval energy charges for the selected sensors. It excludes account-level service charges, taxes, credits, and other whole-bill items by default.</p>}
       </>}
     </>

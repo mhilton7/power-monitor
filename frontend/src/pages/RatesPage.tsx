@@ -4,12 +4,20 @@ import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { EmptyState, ErrorState, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
-import type { ManagedRatePlan } from '../rates'
+import type { ManagedRatePlan, PricingModel } from '../rates'
 import type { Site } from '../types'
 
 interface CandidateSummary { id: string; status: string; summary: { plan_code?: string; material_differences?: number }; created_at: string }
 interface RateAssignmentSummary { id: string; utility_account_id: string; rate_version_id: string; effective_from: string; effective_to?: string }
 interface AccountSummary { id: string; name: string; site_id: string }
+type ModelFilter = 'all' | PricingModel
+
+function pricingLabel(model?: PricingModel) {
+  if (model === 'flat') return 'Flat'
+  if (model === 'tiered') return 'Billing-cycle tiered'
+  if (model === 'time_of_use_tiered') return 'Hybrid TOU + tiered'
+  return 'Time of use'
+}
 
 function downloadJson(filename: string, value: unknown) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }))
@@ -24,6 +32,7 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
   const navigate = useNavigate()
   const importInput = useRef<HTMLInputElement>(null)
   const [jobId, setJobId] = useState<string>()
+  const [modelFilter, setModelFilter] = useState<ModelFilter>('all')
   const query = useQuery({ queryKey: ['managed-rates'], queryFn: () => api<ManagedRatePlan[]>('/api/v1/rates/plans') })
   const assignments = useQuery({ queryKey: ['rate-assignments'], queryFn: () => api<RateAssignmentSummary[]>('/api/v1/rates/assignments') })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api<AccountSummary[]>('/api/v1/utility-accounts') })
@@ -34,6 +43,10 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
   const clone = useMutation({ mutationFn: (id: string) => api<{ editor_url: string }>(`/api/v1/rates/plans/${id}/clone`, { method: 'POST' }), onSuccess: (result) => navigate(result.editor_url) })
   const activate = useMutation({ mutationFn: (id: string) => api<{ status: string }>(`/api/v1/rates/versions/${id}/activate`, { method: 'POST' }), onSuccess: () => void query.refetch() })
   const pending = candidateQuery.data?.filter((item) => item.status === 'pending_review') ?? []
+  const displayedPlans = query.data?.filter((plan) => {
+    const version = plan.versions.find((item) => item.is_active) ?? plan.versions[0]
+    return modelFilter === 'all' || version?.pricing_model === modelFilter
+  })
 
   async function exportVersion(id: string, code: string) {
     const result = await api<{ document: unknown; integrity_sha256: string }>(`/api/v1/rates/versions/${id}/export`)
@@ -63,10 +76,14 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
 
       {check.isSuccess && <p className="form-success" role="status">SCE source check {syncJob.data?.status ?? 'queued'} · {syncJob.data?.progress.completed ?? 0}/{syncJob.data?.progress.source_ids?.length ?? 4} sources · {syncJob.data?.result?.candidate_count ?? 0} candidates.</p>}
       {check.error && <ErrorState error={check.error} />}
+      <div className="rate-library-toolbar" aria-label="Rate library filters">
+        <label>Pricing model<select value={modelFilter} onChange={(event) => { setModelFilter(event.target.value as ModelFilter) }}><option value="all">All pricing models</option><option value="flat">Flat</option><option value="time_of_use">Time of use</option><option value="tiered">Billing-cycle tiered</option><option value="time_of_use_tiered">Hybrid TOU + tiered</option></select></label>
+        <span>{displayedPlans?.length ?? 0} of {query.data?.length ?? 0} plans</span>
+      </div>
 
-      {query.isLoading ? <LoadingState /> : query.error ? <ErrorState error={query.error} retry={() => void query.refetch()} /> : query.data?.length ? (
+      {query.isLoading ? <LoadingState /> : query.error ? <ErrorState error={query.error} retry={() => void query.refetch()} /> : displayedPlans?.length ? (
         <div className="rate-grid">
-          {query.data.map((plan) => {
+          {displayedPlans.map((plan) => {
             const version = plan.versions.find((item) => item.is_active) ?? plan.versions[0]
             const now = Date.now()
             const versionIds = new Set(plan.versions.map((item) => item.id))
@@ -81,6 +98,7 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
             return <Panel key={plan.id} className="rate-card">
               <header className="rate-card-head"><div><span className="plan-code">{plan.code}</span><h2>{plan.name}</h2></div><StatusPill status={effective ? 'healthy' : version?.status ?? plan.status} label={stateLabel} /></header>
               <p>{plan.description || 'No plan description has been provided.'}</p>
+              {version && <div className="rate-model-summary"><StatusPill status="info" label={pricingLabel(version.pricing_model)} /><span>{version.tier_count ? `${version.tier_count} tiers Â· ${version.threshold_basis?.replaceAll('_', ' ')}` : 'No billing-cycle tiers'}</span></div>}
               {pendingCandidate && <StatusPill status="pending" label="Candidate awaiting approval" />}
               {version && <>
                 <dl className="rate-meta"><div><dt>Effective</dt><dd>{version.effective_from}</dd></div><div><dt>Source checked</dt><dd>{version.source_checked_at?.slice(0, 10) ?? 'Manual'}</dd></div><div><dt>Version</dt><dd>v{version.version}</dd></div><div><dt>Integrity</dt><dd title={version.integrity_sha256}>{version.integrity_sha256.slice(0, 10)}…</dd></div></dl>
@@ -95,7 +113,7 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
             </Panel>
           })}
         </div>
-      ) : <EmptyState title="No rate plans" message="Run first-time initialization to install effective-dated SCE presets." />}
+      ) : <EmptyState title={query.data?.length ? 'No matching rate plans' : 'No rate plans'} message={query.data?.length ? 'Choose another pricing model filter.' : 'Run first-time initialization to install effective-dated SCE presets.'} />}
 
       <p className="rate-disclaimer">This estimate is not an SCE bill. Rates shown may differ when generation is provided by a CCA or Direct Access provider.</p>
       <p className="cross-page-setup"><strong>Plans in this library are not assigned automatically.</strong> <button className="link-button" onClick={() => navigate('/admin?tab=sites-accounts')}>Configure utility account</button></p>

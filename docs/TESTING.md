@@ -1,5 +1,43 @@
 # Testing and release gates
 
+## Tiered and hybrid rate-plan acceptance (2026-07-23)
+
+The release passed Ruff lint/format, strict mypy, OpenAPI and JSON Schema
+contract validation, 106 portable backend tests, and the separate PostgreSQL 17
+integration gate. PostgreSQL upgraded the complete migration chain to
+`20260723_0009`, downgraded to `20260721_0008`, reapplied the tiered revision,
+and clean-installed 91 public tables with all 50 Administrator permissions.
+Deterministic rate tests cover flat, TOU, two- and three-tier plans, arbitrary
+tier counts, exact boundaries, daily baselines for 28/29/30/31-day and leap-year
+cycles, seasonal thresholds, rounding, hybrid price matrices, chronological
+allocation, imports, managed candidates, and missing-authority behavior.
+The separately enabled resilience gate enrolled 100 simulated devices,
+accepted 18,000 three-hour backfill readings, accepted zero duplicates on a
+complete retry, retained a five-connection pool, and stayed below its 256 MiB
+traced-memory ceiling.
+
+The frontend passed a locked Node 24 install, lint, TypeScript checking, 29
+unit/component tests, 32 Chromium end-to-end/accessibility scenarios, and the
+production build. Coverage includes the flat/tiered/hybrid editor, usage import
+preview and commit, billing-cycle tier progress, exact account costs,
+source-candidate review, History provenance, and the existing custom TOU flow.
+
+Fresh API, frontend, and backup images built successfully. The standard Compose
+stack migrated and reported API, worker, PostgreSQL, frontend, and gateway
+healthy. The worker advisory lock stays on a dedicated PostgreSQL connection,
+so task commits no longer produce spurious unlock warnings. A five-artifact
+logical backup passed every checksum and restored into a clean 91-table database
+at `20260723_0009`.
+
+The template, optional NET_RAW-only overlay, and a deployment-mode TrueNAS
+render for `/mnt/Apps/Power/power-monitor` passed fail-closed validation and
+Docker Compose parsing. The immutable seven-service TrueNAS workflow then
+passed through strict internal-CA TLS with only TCP 8443 published: successful
+one-shot migration, all health checks, 3 signed simulated devices, 90 backfilled
+readings, SCE calculation, 2 utility accounts, 1 canonical sensor CIDR,
+encrypted backup/checksums, and clean restore preserving migration and data
+counts.
+
 ## Utility accounts and sensor network policy acceptance (2026-07-21)
 
 The release passed Ruff lint and formatting, strict mypy, OpenAPI regeneration,

@@ -40,6 +40,40 @@ export interface RateAdjustmentDocument {
   description: string
 }
 
+export type PricingModel = 'flat' | 'time_of_use' | 'tiered' | 'time_of_use_tiered'
+
+export interface SeasonalBaselineDocument {
+  name: string
+  start: string
+  end: string
+  daily_kwh: string
+  source_citation: string | null
+}
+
+export interface TierThresholdDocument {
+  basis: 'fixed_cycle_kwh' | 'daily_baseline_kwh'
+  daily_baseline_kwh: string | null
+  baseline_region: string | null
+  baseline_category: string | null
+  rounding_policy: 'none' | 'nearest_kwh' | 'floor_kwh' | 'ceil_kwh'
+  seasonal_baselines: IndexedArray<SeasonalBaselineDocument>
+  source_citation: string | null
+}
+
+export interface TierDefinitionDocument {
+  tier_id: string
+  name: string
+  order: number
+  lower_bound_inclusive_kwh: string
+  upper_bound_exclusive_kwh: string | null
+  lower_bound_multiplier: string | null
+  upper_bound_multiplier: string | null
+  price_per_kwh: string
+  tou_prices: Record<string, string>
+  season: string | null
+  source_citation: string | null
+}
+
 export interface RatePlanDocument {
   schema_version: 'power-monitor-rate-plan/1.0'
   plan_name: string
@@ -48,6 +82,16 @@ export interface RatePlanDocument {
   description: string
   currency: string
   timezone: string
+  pricing_model: PricingModel
+  flat_rate_per_kwh: string | null
+  billing_cycle: {
+    expected_start_day: number
+    threshold: TierThresholdDocument
+  }
+  tiers: IndexedArray<TierDefinitionDocument>
+  hybrid_pricing: {
+    method: 'tier_period_matrix' | 'tier_base_plus_tou_adder' | 'tou_base_plus_tier_adder'
+  } | null
   ownership_scope: 'global' | 'site' | 'utility_account'
   owner_id: string | null
   effective_from: string
@@ -65,6 +109,9 @@ export interface RatePlanDocument {
 export interface ManagedRateVersion {
   id: string
   version: number
+  pricing_model: PricingModel
+  tier_count: number
+  threshold_basis?: 'fixed_cycle_kwh' | 'daily_baseline_kwh'
   effective_from: string
   effective_through?: string | null
   status: string
@@ -115,6 +162,22 @@ export const emptyRateDocument = (): RatePlanDocument => ({
   description: '',
   currency: 'USD',
   timezone: 'America/Los_Angeles',
+  pricing_model: 'time_of_use',
+  flat_rate_per_kwh: null,
+  billing_cycle: {
+    expected_start_day: 1,
+    threshold: {
+      basis: 'fixed_cycle_kwh',
+      daily_baseline_kwh: null,
+      baseline_region: null,
+      baseline_category: null,
+      rounding_policy: 'none',
+      seasonal_baselines: [],
+      source_citation: null,
+    },
+  },
+  tiers: [],
+  hybrid_pricing: null,
   ownership_scope: 'global',
   owner_id: null,
   effective_from: new Date().toISOString().slice(0, 10),

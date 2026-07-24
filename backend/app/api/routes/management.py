@@ -1804,11 +1804,17 @@ async def fleet_summary(
     effective_contexts = [
         context for context in rate_contexts if context["state"] == "rate_configured_effective"
     ]
-    context_periods = {str(context["current_period"]) for context in effective_contexts}
+    context_periods = {
+        str(context["current_period"])
+        for context in effective_contexts
+        if context.get("current_period") is not None
+    }
     context_plans = {str(context["current_plan"]) for context in effective_contexts}
     context_versions = {int(context["current_version"]) for context in effective_contexts}
     context_prices = {
-        Decimal(str(context["current_price_per_kwh"])) for context in effective_contexts
+        Decimal(str(context["current_price_per_kwh"]))
+        for context in effective_contexts
+        if context.get("current_price_per_kwh") is not None
     }
     if context_periods:
         current_bucket = (

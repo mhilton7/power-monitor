@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
 
 export function useSelectedSiteId(): string | undefined {
-  const [siteId, setSiteId] = useState(() => localStorage.getItem('pm-site-id') ?? undefined)
+  const [siteId, setSiteId] = useState(() => {
+    try {
+      return window.localStorage.getItem('pm-site-id') ?? undefined
+    } catch {
+      return undefined
+    }
+  })
   useEffect(() => {
     const update = (event: Event) => {
       setSiteId((event as CustomEvent<string>).detail || undefined)

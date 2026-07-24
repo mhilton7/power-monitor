@@ -72,6 +72,9 @@ def document_differences(
                         "end_minute",
                         "adjustments",
                         "provider_mode",
+                        "pricing_model",
+                        "tiers",
+                        "billing_cycle.threshold",
                     )
                 ),
             }
@@ -144,6 +147,8 @@ async def auto_activation_reasons(
         active_document = await version_document(session, active)
         if active_document.provider_mode != document.provider_mode:
             reasons.append("provider_assumption_changed")
+        if active_document.pricing_model != document.pricing_model:
+            reasons.append("pricing_model_change_requires_explicit_review")
     return sorted(set(reasons))
 
 
@@ -227,6 +232,7 @@ async def create_candidate_from_document(
         effective_to=document.effective_through,
         timezone=document.timezone,
         currency=document.currency,
+        pricing_model=document.pricing_model,
         source_url="archived-sce-evidence",
         source_checked_on=date.today(),
         source_checked_at=datetime.now(UTC),
@@ -256,6 +262,10 @@ async def create_candidate_from_document(
             "plan_code": document.plan_code,
             "differences": len(differences),
             "material_differences": material_count,
+            "pricing_model": document.pricing_model,
+            "pricing_model_changed": bool(
+                before_document and before_document.pricing_model != document.pricing_model
+            ),
             "validation": validation.model_dump(mode="json"),
         },
         created_at=datetime.now(UTC),

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import (
     AggregateMember,
     AggregateSet,
+    BillingCycle,
     Circuit,
     Device,
     NormalizedInterval,
@@ -25,6 +26,7 @@ from app.db.models import (
     RateVersion,
     RawReading,
     Site,
+    TierAllocationSegment,
     UtilityAccount,
 )
 from app.problem import ProblemError
@@ -103,6 +105,12 @@ class CostPart:
     version_number: int
     effective_from: date
     tou_period: str
+    tier_id: str | None = None
+    tier_name: str | None = None
+    cumulative_start_kwh: Decimal | None = None
+    cumulative_end_kwh: Decimal | None = None
+    recalculation_version: int | None = None
+    usage_authority_type: str | None = None
     energy_kwh: Decimal = ZERO
     cost: Decimal = ZERO
 
@@ -126,7 +134,9 @@ class DeviceBucketAccumulator:
     frequency_weighted: Decimal = ZERO
     frequency_seconds: Decimal = ZERO
     quality_flags: set[str] = field(default_factory=set)
-    cost_parts: dict[tuple[str, str, str, Decimal], CostPart] = field(default_factory=dict)
+    cost_parts: dict[tuple[str, str, str, str | None, Decimal, int | None], CostPart] = field(
+        default_factory=dict
+    )
     cost_missing: bool = False
 
     def add_cost(
@@ -137,8 +147,21 @@ class DeviceBucketAccumulator:
         rate: Decimal,
         energy_kwh: Decimal,
         cost: Decimal,
+        tier_id: str | None = None,
+        tier_name: str | None = None,
+        cumulative_start_kwh: Decimal | None = None,
+        cumulative_end_kwh: Decimal | None = None,
+        recalculation_version: int | None = None,
+        usage_authority_type: str | None = None,
     ) -> None:
-        key = (context.account_id, context.version.id, tou_period, rate)
+        key = (
+            context.account_id,
+            context.version.id,
+            tou_period,
+            tier_id,
+            rate,
+            recalculation_version,
+        )
         part = self.cost_parts.get(key)
         if part is None:
             part = CostPart(
@@ -149,10 +172,28 @@ class DeviceBucketAccumulator:
                 version_number=context.version.version,
                 effective_from=context.version.effective_from,
                 tou_period=tou_period,
+                tier_id=tier_id,
+                tier_name=tier_name,
+                cumulative_start_kwh=cumulative_start_kwh,
+                cumulative_end_kwh=cumulative_end_kwh,
+                recalculation_version=recalculation_version,
+                usage_authority_type=usage_authority_type,
             )
             self.cost_parts[key] = part
         part.energy_kwh += energy_kwh
         part.cost += cost
+        if cumulative_start_kwh is not None:
+            part.cumulative_start_kwh = (
+                cumulative_start_kwh
+                if part.cumulative_start_kwh is None
+                else min(part.cumulative_start_kwh, cumulative_start_kwh)
+            )
+        if cumulative_end_kwh is not None:
+            part.cumulative_end_kwh = (
+                cumulative_end_kwh
+                if part.cumulative_end_kwh is None
+                else max(part.cumulative_end_kwh, cumulative_end_kwh)
+            )
 
 
 def _merge_duration(ranges: list[tuple[datetime, datetime]]) -> Decimal:
@@ -623,6 +664,8 @@ def _apply_cost(
     start: datetime,
     end: datetime,
     energy_kwh: Decimal,
+    normalized_interval_id: str | None,
+    tier_segments: list[TierAllocationSegment],
 ) -> None:
     seconds = Decimal(str((end - start).total_seconds()))
     if seconds <= 0:
@@ -632,6 +675,86 @@ def _apply_cost(
         part_energy = energy_kwh * part_seconds / seconds
         if context is None:
             accumulator.cost_missing = True
+            continue
+        if context.engine.pricing_model in {"tiered", "time_of_use_tiered"}:
+            matching_segments = [
+                segment
+                for segment in tier_segments
+                if segment.rate_version_id == context.version.id
+                and _aware_utc(segment.interval_start) < right
+                and _aware_utc(segment.interval_end) > left
+            ]
+            if not matching_segments:
+                accumulator.cost_missing = True
+                accumulator.quality_flags.add("tier_recalculation_required")
+                continue
+            exact_segments = [
+                segment
+                for segment in matching_segments
+                if segment.normalized_interval_id == normalized_interval_id
+            ]
+            account_schedule_fallback = not exact_segments
+            if exact_segments:
+                matching_segments = exact_segments
+            weighted_seconds = sum(
+                (
+                    Decimal(
+                        str(
+                            (
+                                min(right, _aware_utc(segment.interval_end))
+                                - max(left, _aware_utc(segment.interval_start))
+                            ).total_seconds()
+                        )
+                    )
+                    for segment in matching_segments
+                ),
+                ZERO,
+            )
+            for segment in matching_segments:
+                segment_start = _aware_utc(segment.interval_start)
+                segment_end = _aware_utc(segment.interval_end)
+                overlap_start = max(left, segment_start)
+                overlap_end = min(right, segment_end)
+                segment_seconds = Decimal(str((segment_end - segment_start).total_seconds()))
+                overlap_seconds = Decimal(str((overlap_end - overlap_start).total_seconds()))
+                if segment_seconds <= 0 or overlap_seconds <= 0:
+                    continue
+                fraction = overlap_seconds / segment_seconds
+                allocated_energy = (
+                    part_energy * overlap_seconds / weighted_seconds
+                    if account_schedule_fallback and weighted_seconds
+                    else segment.segment_energy_kwh * fraction
+                )
+                allocated_cost = (
+                    allocated_energy * segment.price_per_kwh
+                    if account_schedule_fallback
+                    else segment.unrounded_energy_charge * fraction
+                )
+                offset_fraction = (
+                    Decimal(str((overlap_start - segment_start).total_seconds())) / segment_seconds
+                )
+                cumulative_start = (
+                    segment.cumulative_start_kwh + segment.segment_energy_kwh * offset_fraction
+                )
+                cumulative_end = cumulative_start + allocated_energy
+                label = (
+                    f"{segment.tier_name} / {segment.tou_period}"
+                    if segment.tou_period
+                    else segment.tier_name
+                )
+                accumulator.add_cost(
+                    context=context,
+                    tou_period=label,
+                    rate=segment.price_per_kwh,
+                    energy_kwh=allocated_energy,
+                    cost=allocated_cost,
+                    tier_id=segment.tier_stable_id,
+                    tier_name=segment.tier_name,
+                    cumulative_start_kwh=cumulative_start,
+                    cumulative_end_kwh=cumulative_end,
+                    recalculation_version=segment.recalculation_version,
+                    usage_authority_type=segment.usage_authority_type,
+                )
             continue
         calculation = context.engine.calculate(
             start=left, end=right, energy_kwh=part_energy, cost_scope="energy_only"
@@ -658,6 +781,7 @@ def _add_reading(
     left: datetime,
     right: datetime,
     contexts: list[RateContext],
+    tier_segments: list[TierAllocationSegment],
 ) -> None:
     raw_start = _aware_utc(raw.interval_start)
     raw_end = _aware_utc(raw.interval_end)
@@ -689,6 +813,8 @@ def _add_reading(
             start=left,
             end=right,
             energy_kwh=energy_kwh,
+            normalized_interval_id=normalized.id if normalized else None,
+            tier_segments=tier_segments,
         )
     else:
         accumulator.quality_flags.add("energy_unavailable")
@@ -732,13 +858,24 @@ def _rate_contributions(
             rate_version=part.version_number,
             rate_effective_from=part.effective_from,
             tou_period=part.tou_period,
+            tier_id=part.tier_id,
+            tier_name=part.tier_name,
+            cumulative_start_kwh=part.cumulative_start_kwh,
+            cumulative_end_kwh=part.cumulative_end_kwh,
+            recalculation_version=part.recalculation_version,
+            usage_authority_type=part.usage_authority_type,
             energy_kwh=part.energy_kwh * scale,
             rate_per_kwh=(part.cost / part.energy_kwh if part.energy_kwh else ZERO),
             energy_cost=part.cost * scale,
         )
         for part in sorted(
             accumulator.cost_parts.values(),
-            key=lambda item: (item.version_id, item.tou_period),
+            key=lambda item: (
+                item.version_id,
+                item.recalculation_version or 0,
+                item.cumulative_start_kwh or ZERO,
+                item.tou_period,
+            ),
         )
     ]
 
@@ -1148,6 +1285,31 @@ async def query_history(
             "history_source_row_limit",
         )
     contexts, device_accounts = await _load_rate_contexts(session, resolved, start, end)
+    tier_segments_by_account: dict[str, list[TierAllocationSegment]] = defaultdict(list)
+    account_ids = {value for value in device_accounts.values() if value}
+    if account_ids:
+        tier_segments = list(
+            await session.scalars(
+                select(TierAllocationSegment)
+                .join(
+                    BillingCycle,
+                    BillingCycle.id == TierAllocationSegment.billing_cycle_id,
+                )
+                .where(
+                    TierAllocationSegment.utility_account_id.in_(account_ids),
+                    TierAllocationSegment.recalculation_version
+                    == BillingCycle.recalculation_version,
+                    TierAllocationSegment.interval_start < end,
+                    TierAllocationSegment.interval_end > start,
+                )
+                .order_by(
+                    TierAllocationSegment.interval_start,
+                    TierAllocationSegment.segment_order,
+                )
+            )
+        )
+        for segment in tier_segments:
+            tier_segments_by_account[segment.utility_account_id].append(segment)
     accumulators: list[dict[str, DeviceBucketAccumulator]] = [
         {device.id: DeviceBucketAccumulator() for device in resolved.devices}
         for _ in range(total_buckets)
@@ -1170,6 +1332,7 @@ async def query_history(
                     left,
                     right,
                     contexts.get(account_id or "", []),
+                    tier_segments_by_account.get(account_id or "", []),
                 )
             index += 1
     combined_all: list[HistoryBucket] = []
@@ -1253,12 +1416,18 @@ async def query_history(
         point.energy_kwh is not None and "rate_unavailable" in point.quality_flags
         for point in combined_all
     ):
+        tier_recalculation_required = any(
+            "tier_recalculation_required" in point.quality_flags for point in combined_all
+        )
         resolved.warnings.append(
             {
                 "code": "rate_unavailable",
                 "message": (
-                    "Cost is unavailable where a selected sensor has no historically "
-                    "effective rate assignment."
+                    "Cost is unavailable until chronological billing-cycle tier "
+                    "allocation is recalculated."
+                    if tier_recalculation_required
+                    else "Cost is unavailable where a selected sensor has no "
+                    "historically effective rate assignment."
                 ),
                 "device_ids": [
                     device.id

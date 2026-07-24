@@ -56,6 +56,16 @@ check, artifact, and candidate-review endpoints live under
 `docs/rate-automation-and-custom-plans.md` for request semantics, immutable
 activation, source evidence, and custom-plan schema behavior.
 
+Tiered account status is
+`GET /api/v1/utility-accounts/{account_id}/tier-status`. Account administration
+uses `/api/v1/admin/utility-accounts/{account_id}/usage-authority`,
+`/manual-usage`, `/usage-imports`, and `/billing-cycles`. Cycle subresources
+support reconciliation adjustments, recalculation, and finalization. Import
+mutations require `usage_imports.manage`; recalculation/finalization require
+`costs.recalculate`; all are site-scoped and CSRF protected. See
+[Tiered and hybrid rates](TIERED_AND_HYBRID_RATES.md), [Billing
+cycles](BILLING_CYCLES.md), and [Usage imports](USAGE_IMPORTS.md).
+
 Log exports accept date values rather than filesystem names, limit selection to
 the retained 90-day window and known service identifiers, and return a streamed
 ZIP with a per-file SHA-256 manifest. The server never exposes its log directory

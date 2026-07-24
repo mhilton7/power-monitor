@@ -105,13 +105,21 @@ async def _version_live_context(session: DbSession, version: RateVersion) -> dic
     now = datetime.now(UTC)
     document = await version_document(session, version)
     engine = RateEngine(engine_plan(document))
-    period, price = engine.period_at(now)
-    next_at, next_period, next_price = engine.next_period_at(now)
+    tier_context_required = engine.pricing_model in {"tiered", "time_of_use_tiered"}
+    if tier_context_required:
+        period = "Account usage required"
+        price = None
+        next_at = None
+        next_period = None
+        next_price = None
+    else:
+        period, price = engine.period_at(now)
+        next_at, next_period, next_price = engine.next_period_at(now)
     return {
         "current_period": period.replace("_", " ").title(),
-        "current_price_per_kwh": str(price),
-        "next_period": next_period.replace("_", " ").title(),
-        "next_price_per_kwh": str(next_price),
+        "current_price_per_kwh": str(price) if price is not None else None,
+        "next_period": next_period.replace("_", " ").title() if next_period else None,
+        "next_price_per_kwh": str(next_price) if next_price is not None else None,
         "next_period_at": next_at,
         "provider_mode": document.provider_mode,
         "account_adjustments": [
@@ -288,6 +296,18 @@ async def _rate_context(
     )
     try:
         result.update(await _version_live_context(session, version))
+        if version.pricing_model in {"tiered", "time_of_use_tiered"}:
+            from app.rates.tiered import calculate_cycle_tier_status, current_billing_cycle
+
+            cycle = await current_billing_cycle(session, account, now, create=False)
+            tier_status = await calculate_cycle_tier_status(session, account, cycle, persist=False)
+            result["current_period"] = tier_status.get("current_rate_period")
+            result["current_price_per_kwh"] = tier_status.get("current_energy_price")
+            result["next_period"] = None
+            result["next_price_per_kwh"] = None
+            result["next_period_at"] = None
+            result["tier_context_available"] = bool(tier_status.get("available"))
+            result["tier_context_warning"] = next(iter(tier_status.get("warnings", [])), None)
     except (KeyError, RuntimeError, ValueError):
         result["state"] = "rate_configuration_invalid"
     return result

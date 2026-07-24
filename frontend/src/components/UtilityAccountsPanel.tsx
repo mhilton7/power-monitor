@@ -1,16 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, CalendarClock, ChevronLeft, ChevronRight, CircleDollarSign, Pencil, Plus, RefreshCw, X } from 'lucide-react'
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, ApiError } from '../api'
 import type { ManagedRatePlan, ManagedRateVersion } from '../rates'
-import type { Site, UtilityAccount } from '../types'
+import type { AggregateSet, Device, Site, TierStatus, UtilityAccount } from '../types'
 import { EmptyState, ErrorState, LoadingState, Panel, StatusPill, formatTime } from './UI'
 
 type CostScope = UtilityAccount['cost_scope']
 type AdjustmentComponent = 'cca_generation' | 'direct_access' | 'baseline_credit' | 'service_charge' | 'tax_fee' | 'custom_fixed' | 'custom_per_kwh'
 interface WizardAdjustment { component: AdjustmentComponent; value: string; unit: 'per_kwh' | 'fixed' | 'percent'; provenance: string; effectiveFrom: string; effectiveTo: string }
-interface VersionContext { current_period: string; current_price_per_kwh: string; next_period: string; next_price_per_kwh: string; next_period_at: string; provider_mode: string; account_adjustments: Array<{ name: string; component: string; value: string; unit: string; scope: string }> }
+interface VersionContext { current_period?: string; current_price_per_kwh?: string; next_period?: string; next_price_per_kwh?: string; next_period_at?: string; provider_mode: string; account_adjustments: Array<{ name: string; component: string; value: string; unit: string; scope: string }> }
 interface SetupReadiness { monitoring: { state: string; device_count: number; latest_signed_heartbeat_at?: string }; rate_and_cost: { state: string; cost_state: string; account_count: number; effective_account_count: number; cost_ready_account_count: number; pending_candidate_count: number } }
+const isTierStatus = (value: unknown): value is TierStatus => (
+  typeof value === 'object'
+  && value !== null
+  && !Array.isArray(value)
+  && 'cycle' in value
+)
 interface WizardState {
   siteId: string
   name: string
@@ -201,7 +207,10 @@ export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: S
             <button className="button ghost" disabled={recalculate.isPending} onClick={() => { recalculate.mutate(account.id); }}><RefreshCw size={14} /> Recalculate costs</button>
             <button className="button ghost danger-text" disabled={archive.isPending} onClick={() => { if (window.confirm(`Archive ${account.name}? Historical assignments and costs will remain.`)) archive.mutate(account.id) }}><Archive size={14} /> Archive</button>
           </footer>
-          {expanded === account.id && <AccountManager account={account} versions={versions} onSaved={async (message) => { setSuccess(message); await queryClient.invalidateQueries({ queryKey: ['utility-accounts'] }) }} />}
+          {expanded === account.id && <>
+            <AccountManager account={account} versions={versions} onSaved={async (message) => { setSuccess(message); await queryClient.invalidateQueries({ queryKey: ['utility-accounts'] }) }} />
+            <UsageAuthorityManager account={account} onSaved={async (message) => { setSuccess(message); await queryClient.invalidateQueries({ queryKey: ['utility-accounts'] }) }} />
+          </>}
         </article>)}
       </div> : <EmptyState title="No utility account configured" message="Create a utility account to assign a rate plan, determine the current time-of-use period, and calculate energy costs for this site." action={<button className="button primary" onClick={openWizard}><Plus size={16} /> Create utility account</button>} />}
     </Panel>
@@ -227,7 +236,10 @@ export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: S
 }
 
 function RateEvidence({ plan, version, context }: { plan: ManagedRatePlan; version: ManagedRateVersion; context?: VersionContext }) {
-  return <dl className="rate-evidence"><div><dt>Plan</dt><dd>{plan.code} · {plan.name}</dd></div><div><dt>Library state</dt><dd>Published · Available</dd></div><div><dt>Source</dt><dd>{version.source_kind} · checked {version.source_checked_at?.slice(0, 10) ?? 'manually'}</dd></div><div><dt>Version dates</dt><dd>{version.effective_from}{version.effective_through ? ` through ${version.effective_through}` : ''}</dd></div><div><dt>Current / next TOU</dt><dd>{context ? `${context.current_period} $${context.current_price_per_kwh}/kWh · next ${context.next_period} $${context.next_price_per_kwh}/kWh` : 'Loading server rate context…'}</dd></div><div><dt>Provider assumption</dt><dd>{context?.provider_mode.replaceAll('_', ' ') ?? 'Loading…'}</dd></div><div><dt>Account charges / credits</dt><dd>{context?.account_adjustments.length ? context.account_adjustments.map((item) => `${item.name} (${item.value} ${item.unit})`).join(', ') : 'None in this rate version'}</dd></div></dl>
+  const currentContext = context?.current_price_per_kwh
+    ? `${context.current_period} $${context.current_price_per_kwh}/kWh${context.next_period && context.next_price_per_kwh ? ` · next ${context.next_period} $${context.next_price_per_kwh}/kWh` : ''}`
+    : context?.current_period ?? 'Loading server rate context…'
+  return <dl className="rate-evidence"><div><dt>Plan</dt><dd>{plan.code} · {plan.name}</dd></div><div><dt>Library state</dt><dd>Published · Available</dd></div><div><dt>Source</dt><dd>{version.source_kind} · checked {version.source_checked_at?.slice(0, 10) ?? 'manually'}</dd></div><div><dt>Version dates</dt><dd>{version.effective_from}{version.effective_through ? ` through ${version.effective_through}` : ''}</dd></div><div><dt>Current rate context</dt><dd>{currentContext}</dd></div><div><dt>Provider assumption</dt><dd>{context?.provider_mode.replaceAll('_', ' ') ?? 'Loading…'}</dd></div><div><dt>Account charges / credits</dt><dd>{context?.account_adjustments.length ? context.account_adjustments.map((item) => `${item.name} (${item.value} ${item.unit})`).join(', ') : 'None in this rate version'}</dd></div></dl>
 }
 
 function Review({ label, value }: { label: string; value?: string }) {
@@ -263,4 +275,283 @@ function AccountManager({ account, versions, onSaved }: { account: UtilityAccoun
       <section><h5>Adjustments</h5><label><span>New custom $/kWh</span><input type="number" step="0.00000001" value={adjustment} onChange={(event) => { setAdjustment(event.target.value); }} /></label><button className="button secondary" disabled={addAdjustment.isPending || !adjustment} onClick={() => { addAdjustment.mutate(); }}><CircleDollarSign size={14} /> Add adjustment</button>{adjustments.isLoading ? <LoadingState /> : adjustments.error ? <ErrorState error={adjustments.error} /> : adjustments.data?.length ? <ul className="adjustment-history">{adjustments.data.map((item) => <li key={item.id}><strong>{item.component.replaceAll('_', ' ')}</strong><span>{item.value} {item.unit.replaceAll('_', ' ')}</span><small>{item.provenance} · effective {formatTime(item.effective_from)}{item.effective_to ? ` through ${formatTime(item.effective_to)}` : ''}</small></li>)}</ul> : <p className="field-help">No account-level adjustments. Rate-version charges remain separate.</p>}</section></div>
     <h5>Immutable assignment history</h5>{history.isLoading ? <LoadingState /> : history.error ? <ErrorState error={history.error} /> : <div className="responsive-table"><table><thead><tr><th>Plan</th><th>Version</th><th>Effective from</th><th>Effective through</th><th>Reason</th></tr></thead><tbody>{history.data?.map((item) => <tr key={item.id}><td>{item.plan_code} · {item.plan_name}</td><td>{item.version}</td><td>{formatTime(item.effective_from)}</td><td>{item.effective_to ? formatTime(item.effective_to) : 'Open'}</td><td>{item.assignment_reason || '—'}</td></tr>)}</tbody></table></div>}
   </div>
+}
+
+type AuthorityType =
+  | 'complete_site_aggregate'
+  | 'service_leg_pair'
+  | 'whole_account_meter'
+  | 'utility_interval_import'
+  | 'manual_cycle_usage'
+  | 'external_feed'
+  | 'partial_monitored_circuits'
+
+interface Authority {
+  configured: boolean
+  authority_type?: AuthorityType
+  aggregate_set_id?: string
+  device_ids: string[]
+  source_reference?: string
+  confidence: 'unverified' | 'low' | 'medium' | 'high' | 'utility_verified'
+  complete_account: boolean
+  revision: number
+}
+
+type UsageImportKind = 'interval' | 'daily' | 'cycle_cumulative' | 'cycle_dates' | 'bill_total'
+type UsageConflictPolicy = 'reject' | 'prefer_utility' | 'prefer_monitored' | 'keep_separate'
+interface UsageImportPreview {
+  content_sha256: string
+  row_count: number
+  duplicate: boolean
+  conflict_count: number
+  duplicate_row_count: number
+  overlap_count: number
+  gap_count: number
+  affected_cycle_count: number
+  finalized_cycle_conflict: boolean
+  normalized_preview: Array<Record<string, unknown>>
+  will_commit: boolean
+  id?: string
+  status?: string
+}
+
+function UsageImportManager({ account, onImported }: { account: UtilityAccount; onImported: () => Promise<void> }) {
+  const [kind, setKind] = useState<UsageImportKind>('interval')
+  const [timezone, setTimezone] = useState(account.timezone)
+  const [sourceName, setSourceName] = useState('')
+  const [mappingText, setMappingText] = useState('{}')
+  const [rowsText, setRowsText] = useState('[]')
+  const [conflictPolicy, setConflictPolicy] = useState<UsageConflictPolicy>('reject')
+  const [preview, setPreview] = useState<UsageImportPreview>()
+  const [message, setMessage] = useState('')
+
+  function payload(commit: boolean) {
+    const rows: unknown = JSON.parse(rowsText)
+    const fieldMapping: unknown = JSON.parse(mappingText)
+    if (!Array.isArray(rows) || rows.length === 0 || !rows.every((row) => typeof row === 'object' && row !== null && !Array.isArray(row))) {
+      throw new Error('Usage rows must be a non-empty JSON array of objects.')
+    }
+    if (typeof fieldMapping !== 'object' || fieldMapping === null || Array.isArray(fieldMapping)) {
+      throw new Error('Field mapping must be a JSON object.')
+    }
+    return {
+      import_kind: kind,
+      timezone,
+      source_name: sourceName,
+      field_mapping: fieldMapping,
+      rows,
+      conflict_policy: conflictPolicy,
+      commit,
+    }
+  }
+
+  const previewImport = useMutation({
+    mutationFn: () => api<UsageImportPreview>(`/api/v1/admin/utility-accounts/${account.id}/usage-imports`, {
+      method: 'POST',
+      body: JSON.stringify(payload(false)),
+    }),
+    onSuccess: (result) => {
+      setPreview(result)
+      setMessage('Import preview normalized. Review every warning before committing.')
+    },
+  })
+  const commitImport = useMutation({
+    mutationFn: () => api<UsageImportPreview>(`/api/v1/admin/utility-accounts/${account.id}/usage-imports`, {
+      method: 'POST',
+      body: JSON.stringify(payload(true)),
+    }),
+    onSuccess: async (result) => {
+      setPreview(result)
+      setMessage(`Usage evidence committed. ${result.affected_cycle_count} billing cycle(s) queued for review or recalculation.`)
+      await onImported()
+    },
+  })
+  const invalidatePreview = () => {
+    setPreview(undefined)
+    setMessage('')
+  }
+  const commitBlocked = !preview
+    || preview.duplicate
+    || preview.duplicate_row_count > 0
+    || preview.overlap_count > 0
+    || (preview.conflict_count > 0 && conflictPolicy === 'reject')
+    || (kind === 'cycle_dates' && preview.finalized_cycle_conflict)
+
+  return <section className="usage-import-manager">
+    <header><div><span className="plan-code">Reviewed evidence intake</span><h5>Utility usage import</h5></div>{preview && <StatusPill status={commitBlocked ? 'warning' : 'healthy'} label={`${preview.row_count} normalized row${preview.row_count === 1 ? '' : 's'}`} />}</header>
+    <p className="field-help">Paste canonical JSON rows or map canonical field names to names in a utility export. Preview performs timezone normalization, exact-decimal validation, hashing, duplicate detection, gap/overlap analysis, monitored-data conflict checks, and billing-cycle impact checks.</p>
+    {message && <p className="form-success" role="status">{message}</p>}
+    {previewImport.error && <ErrorState error={previewImport.error} />}
+    {commitImport.error && <ErrorState error={commitImport.error} />}
+    <div className="usage-import-grid">
+      <label><span>Import kind</span><select value={kind} onChange={(event) => { setKind(event.target.value as UsageImportKind); invalidatePreview() }}><option value="interval">Utility interval usage</option><option value="daily">Daily usage</option><option value="cycle_cumulative">Cycle-to-date cumulative usage</option><option value="cycle_dates">Exact billing-cycle dates</option><option value="bill_total">Final utility bill total</option></select></label>
+      <label><span>Import timezone</span><input value={timezone} onChange={(event) => { setTimezone(event.target.value); invalidatePreview() }} /></label>
+      <label><span>Source name</span><input value={sourceName} onChange={(event) => { setSourceName(event.target.value); invalidatePreview() }} placeholder="SCE Green Button export, bill, or portal" /></label>
+      <label><span>Overlap policy</span><select value={conflictPolicy} onChange={(event) => { setConflictPolicy(event.target.value as UsageConflictPolicy); invalidatePreview() }}><option value="reject">Reject monitored overlap</option><option value="prefer_utility">Prefer utility evidence</option><option value="prefer_monitored">Prefer monitored readings</option><option value="keep_separate">Keep both as separate evidence</option></select></label>
+    </div>
+    <label><span>Field mapping (canonical name to source field)</span><textarea rows={3} spellCheck={false} value={mappingText} onChange={(event) => { setMappingText(event.target.value); invalidatePreview() }} aria-describedby={`usage-import-mapping-${account.id}`} /></label>
+    <p id={`usage-import-mapping-${account.id}`} className="field-help">Example: {`{"start":"interval_start","end":"interval_end","energy_kwh":"usage"}`}. Use {`{}`} when rows already use canonical names.</p>
+    <label><span>Usage rows (JSON)</span><textarea rows={9} spellCheck={false} value={rowsText} onChange={(event) => { setRowsText(event.target.value); invalidatePreview() }} placeholder='[{"start":"2026-07-22T00:00:00-07:00","end":"2026-07-22T01:00:00-07:00","energy_kwh":"1.25"}]' /></label>
+    <div className="button-row">
+      <button className="button secondary" disabled={!sourceName.trim() || previewImport.isPending} onClick={() => { previewImport.mutate() }}>Preview and validate</button>
+      <button className="button primary" disabled={commitBlocked || commitImport.isPending} onClick={() => { commitImport.mutate() }}>Commit reviewed evidence</button>
+    </div>
+    {preview && <div className="usage-import-preview">
+      <dl className="authority-status">
+        <div><dt>Content SHA-256</dt><dd><code>{preview.content_sha256}</code></dd></div>
+        <div><dt>Existing duplicate</dt><dd>{preview.duplicate ? 'Yes - commit blocked' : 'No'}</dd></div>
+        <div><dt>Internal duplicates / overlaps</dt><dd>{preview.duplicate_row_count} / {preview.overlap_count}</dd></div>
+        <div><dt>Gaps</dt><dd>{preview.gap_count}</dd></div>
+        <div><dt>Monitored overlaps</dt><dd>{preview.conflict_count}</dd></div>
+        <div><dt>Affected cycles</dt><dd>{preview.affected_cycle_count}{preview.finalized_cycle_conflict ? ' (includes finalized evidence)' : ''}</dd></div>
+      </dl>
+      {preview.gap_count > 0 && <p className="scope-warning">The import contains gaps. It can remain evidence, but coverage and projections will disclose the missing windows.</p>}
+      {preview.conflict_count > 0 && conflictPolicy === 'reject' && <p className="scope-warning">Choose and review an explicit overlap policy before committing.</p>}
+      <details><summary>Normalized preview</summary><pre>{JSON.stringify(preview.normalized_preview, null, 2)}</pre></details>
+    </div>}
+  </section>
+}
+
+function UsageAuthorityManager({ account, onSaved }: { account: UtilityAccount; onSaved: (message: string) => Promise<void> }) {
+  const [authorityType, setAuthorityType] = useState<AuthorityType>('complete_site_aggregate')
+  const [aggregateId, setAggregateId] = useState('')
+  const [deviceIds, setDeviceIds] = useState<string[]>([])
+  const [sourceReference, setSourceReference] = useState('')
+  const [confidence, setConfidence] = useState<Authority['confidence']>('unverified')
+  const [manualKwh, setManualKwh] = useState('')
+  const [manualNote, setManualNote] = useState('')
+  const [cycleStart, setCycleStart] = useState('')
+  const [cycleEnd, setCycleEnd] = useState('')
+  const [message, setMessage] = useState('')
+  const authority = useQuery({
+    queryKey: ['usage-authority', account.id],
+    queryFn: () => api<Authority>(`/api/v1/admin/utility-accounts/${account.id}/usage-authority`),
+  })
+  const devices = useQuery({ queryKey: ['devices', account.site_id], queryFn: () => api<Device[]>('/api/v1/devices') })
+  const aggregates = useQuery({ queryKey: ['aggregates', account.site_id], queryFn: () => api<AggregateSet[]>('/api/v1/aggregate-sets') })
+  const tierStatus = useQuery({
+    queryKey: ['tier-status', account.id],
+    queryFn: () => api<TierStatus>(`/api/v1/utility-accounts/${account.id}/tier-status`),
+  })
+  const tierData = isTierStatus(tierStatus.data) ? tierStatus.data : undefined
+
+  useEffect(() => {
+    if (!authority.data) return
+    if (typeof authority.data.configured !== 'boolean') return
+    setAuthorityType(authority.data.authority_type ?? 'complete_site_aggregate')
+    setAggregateId(authority.data.aggregate_set_id ?? '')
+    setDeviceIds(authority.data.device_ids)
+    setSourceReference(authority.data.source_reference ?? '')
+    setConfidence(authority.data.confidence)
+  }, [authority.data])
+
+  const accountDevices = (devices.data ?? []).filter((device) => device.site_id === account.site_id && device.lifecycle_status !== 'decommissioned')
+  const accountAggregates = (aggregates.data ?? []).filter((aggregate) => aggregate.site_id === account.site_id && aggregate.cost_scope === 'full_account')
+  const requiredDevices = authorityType === 'service_leg_pair' ? 2 : authorityType === 'whole_account_meter' ? 1 : undefined
+  const authorityValid = (authorityType !== 'complete_site_aggregate' || Boolean(aggregateId))
+    && (requiredDevices === undefined || deviceIds.length === requiredDevices)
+
+  const saveAuthority = useMutation({
+    mutationFn: () => api<Authority>(`/api/v1/admin/utility-accounts/${account.id}/usage-authority`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        revision: authority.data?.configured ? authority.data.revision : null,
+        authority_type: authorityType,
+        aggregate_set_id: authorityType === 'complete_site_aggregate' ? aggregateId : null,
+        device_ids: ['service_leg_pair', 'whole_account_meter', 'partial_monitored_circuits'].includes(authorityType) ? deviceIds : [],
+        source_reference: sourceReference || null,
+        confidence,
+        complete_account: authorityType !== 'partial_monitored_circuits',
+      }),
+    }),
+    onSuccess: async () => {
+      setMessage('Account usage authority saved.')
+      await authority.refetch()
+      await tierStatus.refetch()
+      await onSaved('Account usage authority saved.')
+    },
+  })
+  const addManual = useMutation({
+    mutationFn: () => api(`/api/v1/admin/utility-accounts/${account.id}/manual-usage`, {
+      method: 'POST',
+      body: JSON.stringify({
+        effective_at: new Date().toISOString(),
+        cumulative_kwh: manualKwh,
+        source_note: manualNote,
+        evidence_reference: sourceReference || null,
+        verification_status: confidence === 'utility_verified' ? 'verified' : 'unverified',
+        idempotency_key: crypto.randomUUID(),
+      }),
+    }),
+    onSuccess: async () => {
+      setManualKwh('')
+      setManualNote('')
+      setMessage('Manual cycle usage recorded with an audit trail.')
+      await tierStatus.refetch()
+    },
+  })
+  const overrideCycle = useMutation({
+    mutationFn: () => api(`/api/v1/admin/utility-accounts/${account.id}/billing-cycles`, {
+      method: 'POST',
+      body: JSON.stringify({
+        starts_at: new Date(cycleStart).toISOString(),
+        ends_at: new Date(cycleEnd).toISOString(),
+        source: 'manual_override',
+        reason: 'Administrator confirmed exact meter cycle dates',
+      }),
+    }),
+    onSuccess: async () => {
+      setMessage('Exact billing-cycle dates saved.')
+      await tierStatus.refetch()
+    },
+  })
+  const recalculateTier = useMutation({
+    mutationFn: () => api<TierStatus>(`/api/v1/admin/utility-accounts/${account.id}/billing-cycles/${tierData?.cycle.id}/recalculate`, { method: 'POST' }),
+    onSuccess: async () => {
+      setMessage('Chronological tier allocation recalculated.')
+      await tierStatus.refetch()
+    },
+  })
+
+  return <section className="usage-authority-manager">
+    <header><div><span className="plan-code">Billing-cycle usage authority</span><h4>Tier calculation source</h4></div>{tierData?.available && <StatusPill status="healthy" label={`${tierData.current_tier?.name ?? 'Tier'} / ${tierData.authoritative_usage_kwh} kWh`} />}</header>
+    <p className="field-help">Tier progression uses one explicit complete-account source. Partial circuit readings remain visible but cannot silently drive an account tier.</p>
+    {message && <p className="form-success" role="status">{message}</p>}
+    {authority.error && <ErrorState error={authority.error} />}
+    <div className="account-manager-grid">
+      <section>
+        <h5>Authoritative source</h5>
+        <label><span>Source type</span><select value={authorityType} onChange={(event) => { setAuthorityType(event.target.value as AuthorityType); setDeviceIds([]) }}><option value="complete_site_aggregate">Verified full-account aggregate</option><option value="service_leg_pair">Paired service-leg sensors</option><option value="whole_account_meter">Whole-account meter sensor</option><option value="utility_interval_import">Utility interval import</option><option value="manual_cycle_usage">Manual cycle-to-date usage</option><option value="external_feed">External account feed</option><option value="partial_monitored_circuits">Partial monitored circuits (not tier authoritative)</option></select></label>
+        {authorityType === 'complete_site_aggregate' && <label><span>Full-account aggregate</span><select value={aggregateId} onChange={(event) => { setAggregateId(event.target.value) }}><option value="">Choose an aggregate</option>{accountAggregates.map((aggregate) => <option key={aggregate.id} value={aggregate.id}>{aggregate.name}</option>)}</select></label>}
+        {['service_leg_pair', 'whole_account_meter', 'partial_monitored_circuits'].includes(authorityType) && <fieldset className="authority-device-list"><legend>Sensors {requiredDevices ? `(choose ${requiredDevices})` : ''}</legend>{accountDevices.map((device) => <label key={device.id}><input type="checkbox" checked={deviceIds.includes(device.id)} onChange={(event) => { setDeviceIds(event.target.checked ? [...deviceIds, device.id] : deviceIds.filter((id) => id !== device.id)) }} /><span>{device.name}<small>{device.measurement_role}</small></span></label>)}</fieldset>}
+        <label><span>Evidence or source reference</span><input value={sourceReference} onChange={(event) => { setSourceReference(event.target.value) }} placeholder="Bill, Green Button export, or topology note" /></label>
+        <label><span>Confidence</span><select value={confidence} onChange={(event) => { setConfidence(event.target.value as Authority['confidence']) }}><option value="unverified">Unverified</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="utility_verified">Utility verified</option></select></label>
+        <button className="button secondary" disabled={!authorityValid || saveAuthority.isPending} onClick={() => { saveAuthority.mutate() }}>Save usage authority</button>
+      </section>
+      <section>
+        <h5>Manual cycle-to-date reading</h5>
+        <label><span>Cumulative usage (kWh)</span><input type="number" min="0" step="0.001" value={manualKwh} onChange={(event) => { setManualKwh(event.target.value) }} /></label>
+        <label><span>Evidence note</span><input value={manualNote} onChange={(event) => { setManualNote(event.target.value) }} placeholder="Reading copied from utility portal" /></label>
+        <button className="button secondary" disabled={!manualKwh || !manualNote.trim() || addManual.isPending} onClick={() => { addManual.mutate() }}>Record manual usage</button>
+        <p className="field-help">Manual readings are append-only and idempotent. Existing evidence is never overwritten.</p>
+      </section>
+      <section>
+        <h5>Exact billing-cycle dates</h5>
+        <label><span>Meter cycle starts</span><input type="datetime-local" value={cycleStart} onChange={(event) => { setCycleStart(event.target.value) }} /></label>
+        <label><span>Meter cycle ends</span><input type="datetime-local" value={cycleEnd} onChange={(event) => { setCycleEnd(event.target.value) }} /></label>
+        <button className="button secondary" disabled={!cycleStart || !cycleEnd || overrideCycle.isPending} onClick={() => { overrideCycle.mutate() }}>Save exact cycle</button>
+        <p className="field-help">Expected dates remain visible until exact utility meter dates are confirmed.</p>
+      </section>
+      <section>
+        <h5>Recalculation state</h5>
+        {tierStatus.isLoading ? <LoadingState /> : tierStatus.error ? <ErrorState error={tierStatus.error} /> : tierData ? <dl className="authority-status"><div><dt>Cycle</dt><dd>{formatTime(tierData.cycle.starts_at)} - {formatTime(tierData.cycle.ends_at)}</dd></div><div><dt>Authority</dt><dd>{tierData.usage_authority.authority_type?.replaceAll('_', ' ') ?? 'Not configured'}</dd></div><div><dt>Calculation version</dt><dd>{tierData.recalculation_version ?? 0}</dd></div></dl> : null}
+        <button className="button secondary" disabled={!tierData || Boolean(tierData.cycle.finalized_at) || recalculateTier.isPending} onClick={() => { recalculateTier.mutate() }}><RefreshCw size={14} /> Recalculate tier allocation</button>
+        {tierData?.cycle.finalized_at && <p className="field-help">This cycle is finalized and immutable. Reconcile differences instead of rewriting history.</p>}
+      </section>
+    </div>
+    <UsageImportManager account={account} onImported={async () => {
+      await tierStatus.refetch()
+      await onSaved('Utility usage evidence imported.')
+    }} />
+  </section>
 }

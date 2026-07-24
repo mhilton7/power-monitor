@@ -559,6 +559,57 @@ async def test_strict_auto_activation_blocks_warning_and_large_change(
 
 
 @pytest.mark.asyncio
+async def test_managed_tiered_candidate_preserves_evidence_and_requires_review(
+    session, tmp_path: Path
+) -> None:
+    document, extraction, artifact, active = await _official_candidate_context(
+        session, tmp_path, code="SCE-TIERED-CANDIDATE"
+    )
+    fixture_path = (
+        Path(__file__).resolve().parents[2] / "shared" / "examples" / "tiered-rate-plan.json"
+    )
+    tiered = RatePlanDocument.model_validate_json(fixture_path.read_bytes()).model_copy(
+        update={
+            "plan_code": document.plan_code,
+            "plan_name": document.plan_name,
+            "utility": document.utility,
+            "provider_mode": document.provider_mode,
+            "effective_from": date.today(),
+            "source_label": document.source_label,
+            "source_note": document.source_note,
+        }
+    )
+
+    candidate = await create_candidate_from_document(
+        session,
+        tiered,
+        extraction,
+        artifact,
+        approval_mode="auto_activate_verified",
+        auto_activate_verified=True,
+        maximum_percent_change=Decimal("100"),
+        retroactive_days=0,
+    )
+
+    assert candidate is not None and candidate.status == "pending_review"
+    assert active.is_active
+    assert candidate.summary["pricing_model"] == "tiered"
+    assert candidate.summary["pricing_model_changed"] is True
+    assert (
+        "pricing_model_change_requires_explicit_review"
+        in candidate.summary["automatic_activation_blocked"]
+    )
+    stored_version = await session.get(RateVersion, candidate.candidate_rate_version_id)
+    assert stored_version is not None
+    stored = await version_document(session, stored_version)
+    assert stored.pricing_model == "tiered"
+    assert [tier.tier_id for tier in stored.tiers] == ["tier-1", "tier-2"]
+    assert await session.scalar(
+        select(RateVersion).where(RateVersion.id == candidate.candidate_rate_version_id)
+    )
+
+
+@pytest.mark.asyncio
 async def test_conflicting_official_candidates_are_blocking(session, tmp_path: Path) -> None:
     document, extraction, artifact, _active = await _official_candidate_context(
         session, tmp_path, code="SCE-CONFLICT"

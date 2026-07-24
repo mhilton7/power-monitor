@@ -2,7 +2,9 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowDown,
   ArrowRight,
+  ArrowUp,
   CheckCircle2,
   Copy,
   Plus,
@@ -22,6 +24,7 @@ import {
   type RatePeriodDocument,
   type RatePlanDocument,
   type RateSeasonDocument,
+  type TierDefinitionDocument,
   type ValidationReport,
 } from '../rates'
 
@@ -30,10 +33,26 @@ interface Account { id: string; name: string }
 
 const stepNames = [
   'Plan details',
-  'Seasons & schedules',
+  'Pricing & tiers',
+  'TOU schedules',
   'Charges & adjustments',
   'Validate & preview',
 ]
+
+interface TierPreview {
+  display_total: string
+  energy_charge: string
+  blended_energy_rate: string | null
+  energy_by_tier_kwh: Record<string, string>
+  charge_by_tier: Record<string, string>
+  tier_thresholds: Array<{
+    tier_id: string
+    name: string
+    lower_bound_kwh: string
+    upper_bound_kwh: string | null
+    derived_baseline_kwh: string | null
+  }>
+}
 
 function clone(document: RatePlanDocument): RatePlanDocument {
   return JSON.parse(JSON.stringify(document)) as RatePlanDocument
@@ -58,6 +77,22 @@ function blankPeriod(start = 0): RatePeriodDocument {
   }
 }
 
+function blankTier(order: number, lower = '0'): TierDefinitionDocument {
+  return {
+    tier_id: `tier-${order + 1}`,
+    name: `Tier ${order + 1}`,
+    order,
+    lower_bound_inclusive_kwh: lower,
+    upper_bound_exclusive_kwh: null,
+    lower_bound_multiplier: order === 0 ? '0' : null,
+    upper_bound_multiplier: null,
+    price_per_kwh: '0.00000000',
+    tou_prices: {},
+    season: null,
+    source_citation: null,
+  }
+}
+
 function scheduleIssues(schedule: DayScheduleDocument): string[] {
   const issues: string[] = []
   let cursor = 0
@@ -79,7 +114,8 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
   const [saved, setSaved] = useState<{ planId: string; versionId: string } | undefined>(
     planId && versionId ? { planId, versionId } : undefined,
   )
-  const [sampleCost, setSampleCost] = useState<string>()
+  const [sampleUsage, setSampleUsage] = useState('951')
+  const [sampleCost, setSampleCost] = useState<TierPreview>()
   const activationDialog = useRef<HTMLDialogElement>(null)
   const query = useQuery({
     queryKey: ['rate-version', versionId],
@@ -89,7 +125,7 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
   const accounts = useQuery({
     queryKey: ['utility-accounts'],
     queryFn: () => api<Account[]>('/api/v1/utility-accounts'),
-    enabled: canManage && step === 3,
+    enabled: canManage && step === 4,
   })
   const editable = canManage && (!query.data || query.data.version.status === 'draft')
 
@@ -129,6 +165,40 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
   function changeAdjustment(index: number, mutator: (item: RateAdjustmentDocument) => void) {
     update((draft) => { mutator(requiredAt(draft.adjustments, index)); })
   }
+
+  function normalizeTiers(tiers: TierDefinitionDocument[], basis: 'fixed_cycle_kwh' | 'daily_baseline_kwh') {
+    tiers.forEach((tier, index) => {
+      tier.order = index
+      if (basis === 'fixed_cycle_kwh') {
+        tier.lower_bound_inclusive_kwh = index === 0
+          ? '0'
+          : (requiredAt(tiers, index - 1).upper_bound_exclusive_kwh ?? tier.lower_bound_inclusive_kwh)
+        tier.lower_bound_multiplier = null
+        tier.upper_bound_multiplier = null
+      } else {
+        tier.lower_bound_multiplier = index === 0
+          ? '0'
+          : (requiredAt(tiers, index - 1).upper_bound_multiplier ?? tier.lower_bound_multiplier)
+        tier.upper_bound_exclusive_kwh = null
+      }
+      if (index === tiers.length - 1) {
+        tier.upper_bound_exclusive_kwh = null
+        tier.upper_bound_multiplier = null
+      }
+    })
+  }
+
+  function changeTier(index: number, mutator: (item: TierDefinitionDocument) => void) {
+    update((draft) => {
+      mutator(requiredAt(draft.tiers, index))
+      normalizeTiers(draft.tiers, draft.billing_cycle.threshold.basis)
+    })
+  }
+
+  const touLabels = useMemo(
+    () => [...new Set(document.seasons.flatMap((season) => season.schedules.flatMap((schedule) => schedule.periods.map((period) => period.label))))],
+    [document.seasons],
+  )
 
   const save = useMutation({
     mutationFn: async () => {
@@ -173,17 +243,17 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
     }),
   })
   const preview = useMutation({
-    mutationFn: () => api<{ display_total: string }>('/api/v1/rates/preview-cost', {
+    mutationFn: () => api<TierPreview>('/api/v1/rates/preview-cost', {
       method: 'POST',
       body: JSON.stringify({
         document,
         interval_start: `${document.effective_from}T00:00:00-07:00`,
         interval_end: `${document.effective_from}T01:00:00-07:00`,
-        energy_kwh: '1.000000',
+        energy_kwh: sampleUsage,
         cost_scope: document.cost_scope_default,
       }),
     }),
-    onSuccess: (result) => { setSampleCost(result.display_total); },
+    onSuccess: setSampleCost,
   })
   const coverage = useMemo(
     () => document.seasons.flatMap((season) => season.schedules.map((schedule) => ({
@@ -252,6 +322,126 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
 
       {step === 1 && (
         <div className="editor-stack">
+          <Panel title="Pricing model" eyebrow="Server-authoritative calculation strategy">
+            <fieldset className="editor-fieldset" disabled={!editable}>
+              <label>Pricing model<select value={document.pricing_model} onChange={(event) => { update((draft) => {
+                const model = event.target.value as RatePlanDocument['pricing_model']
+                draft.pricing_model = model
+                draft.flat_rate_per_kwh = model === 'flat' ? (draft.flat_rate_per_kwh ?? '0.25000000') : null
+                if (model === 'tiered' || model === 'time_of_use_tiered') {
+                  if (draft.tiers.length < 2) {
+                    const first = blankTier(0)
+                    first.upper_bound_exclusive_kwh = '579'
+                    const second = blankTier(1, '579')
+                    draft.tiers = [first, second] as RatePlanDocument['tiers']
+                  }
+                  draft.hybrid_pricing = model === 'time_of_use_tiered'
+                    ? (draft.hybrid_pricing ?? { method: 'tier_period_matrix' })
+                    : null
+                } else {
+                  draft.tiers = [] as unknown as RatePlanDocument['tiers']
+                  draft.hybrid_pricing = null
+                }
+              }); }}>
+                <option value="flat">Flat</option>
+                <option value="time_of_use">Time of use</option>
+                <option value="tiered">Tiered by billing-cycle usage</option>
+                <option value="time_of_use_tiered">Time of use + usage tiers</option>
+              </select></label>
+              {document.pricing_model === 'flat' && (
+                <label>Flat energy price ($/kWh)<input inputMode="decimal" value={document.flat_rate_per_kwh ?? ''} onChange={(event) => { update((draft) => { draft.flat_rate_per_kwh = event.target.value }); }} /></label>
+              )}
+              {document.pricing_model === 'time_of_use' && (
+                <p className="panel-copy">Time-of-use pricing uses the complete seasonal schedules in the next step. Existing TOU calculation behavior is preserved.</p>
+              )}
+              {(document.pricing_model === 'tiered' || document.pricing_model === 'time_of_use_tiered') && <>
+                <div className="form-columns">
+                  <label>Expected billing-cycle start day<input type="number" min="1" max="31" value={document.billing_cycle.expected_start_day} onChange={(event) => { update((draft) => { draft.billing_cycle.expected_start_day = Number(event.target.value) }); }} /></label>
+                  <label>Threshold basis<select value={document.billing_cycle.threshold.basis} onChange={(event) => { update((draft) => {
+                    const basis = event.target.value as RatePlanDocument['billing_cycle']['threshold']['basis']
+                    draft.billing_cycle.threshold.basis = basis
+                    draft.billing_cycle.threshold.daily_baseline_kwh = basis === 'daily_baseline_kwh' ? (draft.billing_cycle.threshold.daily_baseline_kwh ?? '19.3') : null
+                    draft.billing_cycle.threshold.seasonal_baselines = basis === 'daily_baseline_kwh' ? draft.billing_cycle.threshold.seasonal_baselines : [] as unknown as RatePlanDocument['billing_cycle']['threshold']['seasonal_baselines']
+                    normalizeTiers(draft.tiers, basis)
+                    if (basis === 'daily_baseline_kwh') {
+                      draft.tiers.forEach((tier, index) => {
+                        tier.lower_bound_multiplier = index === 0 ? '0' : String(index)
+                        tier.upper_bound_multiplier = index === draft.tiers.length - 1 ? null : String(index + 1)
+                      })
+                    }
+                  }); }}><option value="fixed_cycle_kwh">Fixed billing-cycle kWh</option><option value="daily_baseline_kwh">Daily baseline × exact cycle days</option></select></label>
+                </div>
+                {document.billing_cycle.threshold.basis === 'daily_baseline_kwh' && <>
+                  <div className="form-columns">
+                    <label>Default daily baseline (kWh/day)<input inputMode="decimal" value={document.billing_cycle.threshold.daily_baseline_kwh ?? ''} onChange={(event) => { update((draft) => { draft.billing_cycle.threshold.daily_baseline_kwh = event.target.value }); }} /></label>
+                    <label>Threshold rounding<select value={document.billing_cycle.threshold.rounding_policy} onChange={(event) => { update((draft) => { draft.billing_cycle.threshold.rounding_policy = event.target.value as RatePlanDocument['billing_cycle']['threshold']['rounding_policy'] }); }}><option value="none">No rounding</option><option value="nearest_kwh">Nearest kWh</option><option value="floor_kwh">Floor to kWh</option><option value="ceil_kwh">Ceil to kWh</option></select></label>
+                  </div>
+                  <div className="baseline-preview" aria-label="Exact cycle threshold previews">
+                    {[28, 29, 30, 31].map((days) => <span key={days}><small>{days}-day cycle</small><strong>{(Number(document.billing_cycle.threshold.daily_baseline_kwh ?? 0) * days).toFixed(3)} kWh baseline</strong></span>)}
+                  </div>
+                  <div className="seasonal-baseline-list">
+                    {document.billing_cycle.threshold.seasonal_baselines.map((baseline, index) => <article className="tier-card" key={`${baseline.name}-${index}`}>
+                      <header><strong>{baseline.name || `Seasonal baseline ${index + 1}`}</strong><button className="icon-button danger-text" aria-label="Remove seasonal baseline" onClick={() => { update((draft) => { draft.billing_cycle.threshold.seasonal_baselines.splice(index, 1) }); }}><Trash2 size={15} /></button></header>
+                      <div className="season-fields">
+                        <label>Name<input value={baseline.name} onChange={(event) => { update((draft) => { requiredAt(draft.billing_cycle.threshold.seasonal_baselines, index).name = event.target.value }); }} /></label>
+                        <label>Starts<input value={baseline.start} onChange={(event) => { update((draft) => { requiredAt(draft.billing_cycle.threshold.seasonal_baselines, index).start = event.target.value }); }} /></label>
+                        <label>Ends<input value={baseline.end} onChange={(event) => { update((draft) => { requiredAt(draft.billing_cycle.threshold.seasonal_baselines, index).end = event.target.value }); }} /></label>
+                        <label>kWh/day<input value={baseline.daily_kwh} onChange={(event) => { update((draft) => { requiredAt(draft.billing_cycle.threshold.seasonal_baselines, index).daily_kwh = event.target.value }); }} /></label>
+                      </div>
+                    </article>)}
+                    <button className="button secondary" onClick={() => { update((draft) => { draft.billing_cycle.threshold.seasonal_baselines.push({ name: `baseline-${draft.billing_cycle.threshold.seasonal_baselines.length + 1}`, start: '06-01', end: '09-30', daily_kwh: draft.billing_cycle.threshold.daily_baseline_kwh ?? '19.3', source_citation: null }) }); }}><Plus size={15} /> Add seasonal baseline</button>
+                  </div>
+                </>}
+                {document.pricing_model === 'time_of_use_tiered' && <label>Hybrid calculation method<select value={document.hybrid_pricing?.method ?? 'tier_period_matrix'} onChange={(event) => { update((draft) => { draft.hybrid_pricing = { method: event.target.value as NonNullable<RatePlanDocument['hybrid_pricing']>['method'] } }); }}><option value="tier_period_matrix">Separate price for every tier and TOU period</option><option value="tier_base_plus_tou_adder">Tier base price + TOU adder</option><option value="tou_base_plus_tier_adder">TOU base price + tier adder</option></select></label>}
+              </>}
+            </fieldset>
+          </Panel>
+          {(document.pricing_model === 'tiered' || document.pricing_model === 'time_of_use_tiered') && (
+            <Panel title="Tier definitions" eyebrow={`${document.tiers.length} ordered tiers · final tier open-ended`}>
+              <fieldset className="editor-fieldset" disabled={!editable}>
+                <div className="tier-editor-list">
+                  {document.tiers.map((tier, index) => {
+                    const final = index === document.tiers.length - 1
+                    return <article className="tier-card" key={tier.tier_id}>
+                      <header><div><span className="plan-code">Tier {index + 1}</span><strong>{tier.name}</strong></div><div className="tier-order-actions">
+                        <button className="icon-button" aria-label={`Move ${tier.name} up`} disabled={index === 0} onClick={() => { update((draft) => { const moved = draft.tiers.splice(index, 1)[0]; if (moved) draft.tiers.splice(index - 1, 0, moved); normalizeTiers(draft.tiers, draft.billing_cycle.threshold.basis) }); }}><ArrowUp size={15} /></button>
+                        <button className="icon-button" aria-label={`Move ${tier.name} down`} disabled={final} onClick={() => { update((draft) => { const moved = draft.tiers.splice(index, 1)[0]; if (moved) draft.tiers.splice(index + 1, 0, moved); normalizeTiers(draft.tiers, draft.billing_cycle.threshold.basis) }); }}><ArrowDown size={15} /></button>
+                        <button className="icon-button" aria-label={`Clone ${tier.name}`} onClick={() => { update((draft) => { const copy = structuredClone(requiredAt(draft.tiers, index)); copy.tier_id = `${copy.tier_id}-copy-${Date.now()}`; copy.name = `${copy.name} Copy`; draft.tiers.splice(index + 1, 0, copy); normalizeTiers(draft.tiers, draft.billing_cycle.threshold.basis) }); }}><Copy size={15} /></button>
+                        <button className="icon-button danger-text" aria-label={`Remove ${tier.name}`} disabled={document.tiers.length <= 2} onClick={() => { update((draft) => { draft.tiers.splice(index, 1); normalizeTiers(draft.tiers, draft.billing_cycle.threshold.basis) }); }}><Trash2 size={15} /></button>
+                      </div></header>
+                      <div className="form-columns">
+                        <label>Stable tier ID<input value={tier.tier_id} onChange={(event) => { changeTier(index, (item) => { item.tier_id = event.target.value.replace(/[^A-Za-z0-9._-]/g, '-') }); }} /></label>
+                        <label>Display name<input value={tier.name} onChange={(event) => { changeTier(index, (item) => { item.name = event.target.value }); }} /></label>
+                      </div>
+                      <div className="tier-bounds-grid">
+                        <label>Lower bound<input readOnly value={document.billing_cycle.threshold.basis === 'fixed_cycle_kwh' ? `${tier.lower_bound_inclusive_kwh} kWh` : `${tier.lower_bound_multiplier ?? '0'} × baseline`} /></label>
+                        {!final && document.billing_cycle.threshold.basis === 'fixed_cycle_kwh' && <label>Exclusive upper bound (kWh)<input inputMode="decimal" value={tier.upper_bound_exclusive_kwh ?? ''} onChange={(event) => { changeTier(index, (item) => { item.upper_bound_exclusive_kwh = event.target.value }); }} /></label>}
+                        {!final && document.billing_cycle.threshold.basis === 'daily_baseline_kwh' && <label>Exclusive upper baseline multiple<input inputMode="decimal" value={tier.upper_bound_multiplier ?? ''} onChange={(event) => { changeTier(index, (item) => { item.upper_bound_multiplier = event.target.value }); }} /></label>}
+                        {final && <label>Upper bound<input readOnly value="Open-ended" /></label>}
+                        <label>{document.pricing_model === 'time_of_use_tiered' && document.hybrid_pricing?.method !== 'tier_period_matrix' ? 'Tier rate / adder ($/kWh)' : 'Rate ($/kWh)'}<input inputMode="decimal" value={tier.price_per_kwh} onChange={(event) => { changeTier(index, (item) => { item.price_per_kwh = event.target.value }); }} /></label>
+                      </div>
+                      {document.pricing_model === 'time_of_use_tiered' && document.hybrid_pricing?.method === 'tier_period_matrix' && <div className="hybrid-price-grid">{touLabels.map((label) => <label key={label}>{label} ($/kWh)<input value={tier.tou_prices[label] ?? ''} onChange={(event) => { changeTier(index, (item) => { item.tou_prices[label] = event.target.value }); }} /></label>)}</div>}
+                      <label>Source citation (optional)<input value={tier.source_citation ?? ''} onChange={(event) => { changeTier(index, (item) => { item.source_citation = event.target.value || null }); }} /></label>
+                    </article>
+                  })}
+                </div>
+                <button className="button secondary" onClick={() => { update((draft) => {
+                  const previous = requiredAt(draft.tiers, draft.tiers.length - 1)
+                  if (draft.billing_cycle.threshold.basis === 'fixed_cycle_kwh') previous.upper_bound_exclusive_kwh = String(Number(previous.lower_bound_inclusive_kwh) + 100)
+                  else previous.upper_bound_multiplier = String(Number(previous.lower_bound_multiplier ?? 0) + 1)
+                  draft.tiers.push(blankTier(draft.tiers.length, previous.upper_bound_exclusive_kwh ?? '0'))
+                  normalizeTiers(draft.tiers, draft.billing_cycle.threshold.basis)
+                }); }}><Plus size={15} /> Add tier</button>
+              </fieldset>
+            </Panel>
+          )}
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="editor-stack">
+          {(document.pricing_model === 'flat' || document.pricing_model === 'tiered') && <Panel title="TOU schedules not used" eyebrow="Pricing model"><p className="panel-copy">This pricing model does not depend on time of day. Continue to charges and adjustments.</p></Panel>}
+          {(document.pricing_model === 'time_of_use' || document.pricing_model === 'time_of_use_tiered') && <>
           {document.seasons.map((season, seasonIndex) => (
             <Panel
               key={`${season.name}-${seasonIndex}`}
@@ -310,10 +500,11 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
             </Panel>
           ))}
           {editable && <button className="button secondary add-season" onClick={() => { update((draft) => { draft.seasons.push({ name: `season-${draft.seasons.length + 1}`, start: '01-01', end: '12-31', priority: draft.seasons.length, leap_day_behavior: 'include', schedules: [{ day_type: 'all-days', dates: [], periods: [blankPeriod()] }] }) }); }}><Plus size={15} /> Add season</button>}
+          </>}
         </div>
       )}
 
-      {step === 2 && (
+      {step === 3 && (
         <Panel title="Charges, credits, and adjustments" eyebrow="Applied in explicit calculation order">
           <fieldset className="editor-fieldset" disabled={!editable}>
             <p className="panel-copy">Whole-account items are ignored when the cost scope is energy-only.</p>
@@ -339,18 +530,33 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
         </Panel>
       )}
 
-      {step === 3 && (
+      {step === 4 && (
         <div className="validation-layout">
           <Panel title="Validation" eyebrow="Blocking checks and warnings" actions={canManage && <button className="button secondary" disabled={validate.isPending} onClick={() => { validate.mutate(); }}><CheckCircle2 size={15} /> Validate</button>}>
-            {!validation ? <p className="panel-copy">Run validation to check annual and 24-hour coverage, exact decimals, provider assumptions, and account-charge scope.</p> : <>
+            {!validation ? <p className="panel-copy">Run validation to check pricing structure, exact decimals, billing-cycle thresholds, schedule coverage, provider assumptions, and account-charge scope.</p> : <>
               <div className="validation-summary"><StatusPill status={validation.valid ? 'validated' : 'failed'} label={validation.valid ? 'Ready to activate' : `${validation.errors.length} blocking errors`} /><code>{validation.integrity_sha256}</code></div>
               {[...validation.errors, ...validation.warnings].map((issue, index) => <div className={`validation-issue ${issue.level}`} key={`${issue.code}-${index}`}><AlertTriangle size={16} /><p><strong>{issue.message}</strong><small>{issue.path} · {issue.code}</small></p></div>)}
             </>}
           </Panel>
           <Panel title="Coverage and sample" eyebrow="Normalized preview">
             <div className="coverage-list">{coverage.map((item) => <div key={item.key}><span>{item.key}</span><strong className={item.valid ? 'good-text' : 'danger-text'}>{item.valid ? 'Complete' : `${item.minutes}/1,440 min · invalid`}</strong></div>)}</div>
-            <button className="button secondary" disabled={preview.isPending} onClick={() => { preview.mutate(); }}>Preview 1 kWh sample</button>
-            {sampleCost && <p className="sample-cost"><span>Estimated sample cost</span><strong>${sampleCost}</strong></p>}
+            <div className="preview-controls">
+              <label>Sample cycle usage (kWh)<input inputMode="decimal" value={sampleUsage} onChange={(event) => { setSampleUsage(event.target.value) }} /></label>
+              <button className="button secondary" disabled={preview.isPending} onClick={() => { preview.mutate(); }}>{preview.isPending ? 'Calculatingâ€¦' : 'Calculate preview'}</button>
+            </div>
+            {sampleCost && <div className="tier-preview-result">
+              <p className="sample-cost"><span>Energy charge</span><strong>${sampleCost.energy_charge}</strong></p>
+              <p className="sample-cost"><span>Blended energy rate</span><strong>{sampleCost.blended_energy_rate ? `$${sampleCost.blended_energy_rate}/kWh` : 'Unavailable'}</strong></p>
+              <p className="sample-cost"><span>Estimated sample total</span><strong>${sampleCost.display_total}</strong></p>
+              {sampleCost.tier_thresholds.length > 0 && <div className="table-wrap"><table><thead><tr><th>Tier</th><th>Range</th><th>Usage</th><th>Charge</th></tr></thead><tbody>
+                {sampleCost.tier_thresholds.map((tier) => <tr key={tier.tier_id}>
+                  <td>{tier.name}</td>
+                  <td>{tier.lower_bound_kwh}â€“{tier.upper_bound_kwh ?? 'and above'} kWh</td>
+                  <td>{sampleCost.energy_by_tier_kwh[tier.tier_id] ?? '0'} kWh</td>
+                  <td>${sampleCost.charge_by_tier[tier.tier_id] ?? '0.00'}</td>
+                </tr>)}
+              </tbody></table></div>}
+            </div>}
             {preview.error && <p className="field-error">{preview.error.message}</p>}
             <details className="json-preview"><summary>Normalized JSON</summary><pre>{JSON.stringify(document, null, 2)}</pre></details>
           </Panel>
@@ -363,7 +569,7 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
         <div>
           {save.error && <span className="field-error">{save.error.message}</span>}
           {editable && <button className="button secondary" disabled={save.isPending} onClick={() => { save.mutate(); }}><Save size={15} /> Save draft</button>}
-          {step < 3 ? <button className="button primary" onClick={() => { setStep((value) => value + 1); }}>Next <ArrowRight size={15} /></button> : editable && saved && <button className="button primary" disabled={!validation?.valid || activate.isPending} onClick={() => { activationDialog.current?.showModal() }}><CheckCircle2 size={15} /> Activate</button>}
+          {step < 4 ? <button className="button primary" onClick={() => { setStep((value) => value + 1); }}>Next <ArrowRight size={15} /></button> : editable && saved && <button className="button primary" disabled={!validation?.valid || activate.isPending} onClick={() => { activationDialog.current?.showModal() }}><CheckCircle2 size={15} /> Activate</button>}
         </div>
       </footer>
       <dialog ref={activationDialog} className="sensor-removal-dialog rate-activation-dialog" aria-labelledby="activate-rate-title">

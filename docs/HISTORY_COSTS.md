@@ -28,3 +28,10 @@ electrical measurements remain visible.
 Rate source websites are never contacted by a History request. SCE synchronized,
 manually approved SCE, and custom plans all enter History through the same
 immutable rate-version document and engine path.
+
+For tiered and hybrid plans, History uses the account cycle's persisted
+chronological allocation/recalculation version. Chart buckets do not restart
+at Tier 1. A complete-account aggregate advances tier usage once; a partial
+circuit can be priced only against independent whole-account cumulative
+context. Missing context makes cost unavailable while electrical readings
+remain visible.

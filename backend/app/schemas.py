@@ -194,6 +194,91 @@ class UtilityCostScopeWrite(ApiModel):
     full_account_override: bool = False
 
 
+class AccountUsageAuthorityWrite(ApiModel):
+    revision: int | None = Field(default=None, ge=1)
+    authority_type: Literal[
+        "complete_site_aggregate",
+        "service_leg_pair",
+        "whole_account_meter",
+        "utility_interval_import",
+        "manual_cycle_usage",
+        "external_feed",
+        "partial_monitored_circuits",
+    ]
+    aggregate_set_id: str | None = None
+    device_ids: list[str] = Field(default_factory=list, max_length=32)
+    source_reference: str | None = Field(default=None, max_length=500)
+    confidence: Literal["unverified", "low", "medium", "high", "utility_verified"] = "unverified"
+    complete_account: bool = False
+
+    @model_validator(mode="after")
+    def required_source(self) -> AccountUsageAuthorityWrite:
+        if self.authority_type == "complete_site_aggregate" and not self.aggregate_set_id:
+            raise ValueError("complete site aggregate authority requires an aggregate set")
+        if self.authority_type == "service_leg_pair" and len(set(self.device_ids)) != 2:
+            raise ValueError("service-leg authority requires exactly two distinct sensors")
+        if self.authority_type == "whole_account_meter" and len(set(self.device_ids)) != 1:
+            raise ValueError("whole-account meter authority requires exactly one sensor")
+        if self.authority_type == "partial_monitored_circuits" and self.complete_account:
+            raise ValueError("partial monitored circuits cannot claim complete-account authority")
+        return self
+
+
+class ManualAccountUsageWrite(ApiModel):
+    effective_at: datetime
+    cumulative_kwh: Decimal = Field(ge=0)
+    source_note: str = Field(min_length=1, max_length=500)
+    evidence_reference: str | None = Field(default=None, max_length=500)
+    verification_status: Literal["unverified", "verified", "reconciled"] = "unverified"
+    idempotency_key: str = Field(min_length=8, max_length=128)
+
+    _effective_aware = field_validator("effective_at")(require_aware)
+
+
+class UtilityUsageImportWrite(ApiModel):
+    import_kind: Literal["interval", "daily", "cycle_cumulative", "cycle_dates", "bill_total"]
+    timezone: str = Field(min_length=1, max_length=64)
+    source_name: str = Field(min_length=1, max_length=240)
+    field_mapping: dict[str, str] = Field(default_factory=dict)
+    rows: list[dict[str, Any]] = Field(min_length=1, max_length=10000)
+    conflict_policy: Literal["reject", "prefer_utility", "prefer_monitored", "keep_separate"] = (
+        "reject"
+    )
+    commit: bool = False
+
+
+class BillingCycleOverrideWrite(ApiModel):
+    starts_at: datetime
+    ends_at: datetime
+    source: Literal["manual_override", "utility_import", "external_feed"] = "manual_override"
+    reason: str = Field(min_length=1, max_length=500)
+
+    _starts_aware = field_validator("starts_at")(require_aware)
+    _ends_aware = field_validator("ends_at")(require_aware)
+
+    @model_validator(mode="after")
+    def valid_cycle(self) -> BillingCycleOverrideWrite:
+        if self.ends_at <= self.starts_at:
+            raise ValueError("billing-cycle end must follow its start")
+        if (self.ends_at - self.starts_at).days < 20 or (self.ends_at - self.starts_at).days > 45:
+            raise ValueError("billing cycle must be between 20 and 45 days")
+        return self
+
+
+class ReconciliationAdjustmentWrite(ApiModel):
+    component: Literal[
+        "utility_bill_difference",
+        "tax",
+        "credit",
+        "fixed_charge",
+        "provider_adjustment",
+        "other",
+    ]
+    amount: Decimal
+    notes: str = Field(min_length=1, max_length=1000)
+    provenance: str = Field(min_length=1, max_length=500)
+
+
 class NetworkPolicyWrite(ApiModel):
     revision: int = Field(ge=1)
     mode: Literal["allow_listed_private", "allow_all_private", "deny_all"]
@@ -884,6 +969,12 @@ class HistoryRateContribution(ApiModel):
     rate_version: int
     rate_effective_from: date
     tou_period: str
+    tier_id: str | None = None
+    tier_name: str | None = None
+    cumulative_start_kwh: Decimal | None = None
+    cumulative_end_kwh: Decimal | None = None
+    recalculation_version: int | None = None
+    usage_authority_type: str | None = None
     energy_kwh: Decimal
     rate_per_kwh: Decimal
     energy_cost: Decimal

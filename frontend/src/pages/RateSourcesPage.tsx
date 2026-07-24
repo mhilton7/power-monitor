@@ -73,8 +73,8 @@ interface SourceDraft {
 const parserOptions = [
   {
     value: 'sce_public_tou_html_v1',
-    label: 'SCE TOU rate page',
-    help: 'Extracts published TOU schedules and prices into review candidates.',
+    label: 'SCE structured rate page',
+    help: 'Extracts archived flat, TOU, tiered, or hybrid normalized rate data into review candidates.',
   },
   {
     value: 'sce_rate_advisory_html_v1',

@@ -41,6 +41,16 @@ def test_initial_migration_is_frozen_and_covers_metadata() -> None:
         "sensor_network_policies",
         "sensor_network_cidrs",
         "network_policy_revisions",
+        "rate_tier_definitions",
+        "rate_threshold_rules",
+        "rate_seasonal_baselines",
+        "account_usage_authorities",
+        "manual_account_usage",
+        "utility_usage_imports",
+        "tier_allocation_segments",
+        "cycle_tier_summaries",
+        "tier_projection_snapshots",
+        "account_reconciliation_adjustments",
     }
     assert "CREATE UNIQUE INDEX" in schema
     assert "ix_raw_site_time" in schema

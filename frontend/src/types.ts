@@ -75,6 +75,89 @@ export interface UtilityAccount {
   readiness: { rate: string; cost: string; topology_complete: boolean }
 }
 
+export interface TierStatusTier {
+  tier_id: string
+  name: string
+  order: number
+  lower_bound_kwh: string
+  upper_bound_kwh?: string
+  price_per_kwh: string
+  threshold_basis: 'fixed_cycle_kwh' | 'daily_baseline_kwh'
+  derived_baseline_kwh?: string
+  rounding_policy: string
+  usage_kwh?: string
+  energy_charge?: string
+}
+
+export interface TierStatus {
+  available: boolean
+  utility_account_id: string
+  account_name: string
+  currency: string
+  pricing_model?: 'flat' | 'time_of_use' | 'tiered' | 'time_of_use_tiered'
+  rate_version_id?: string
+  rate_version?: number
+  cycle: {
+    id: string
+    starts_at: string
+    ends_at: string
+    days: number
+    days_remaining: number
+    status: string
+    boundary_source: string
+    exact_dates: boolean
+    finalized_at?: string
+  }
+  authoritative_usage_kwh?: string
+  usage_authority: {
+    configured: boolean
+    authority_type?: string
+    complete_account: boolean
+    confidence: string
+    source_reference?: string
+    aggregate_set_id?: string
+    device_ids: string[]
+    revision: number
+  }
+  current_tier?: TierStatusTier
+  current_rate_period?: string
+  current_energy_price?: string
+  remaining_kwh?: string
+  tiers: TierStatusTier[]
+  energy_charge?: string
+  blended_energy_rate?: string
+  projected_usage_kwh?: string
+  projected_energy_charge?: string
+  projected_final_tier?: TierStatusTier
+  projection_method?: string
+  projection_confidence?: string
+  coverage_percent?: string
+  bill_components?: {
+    energy_charge?: string
+    fixed_charge?: string
+    credits?: string
+    adjustments?: string
+    estimated_total?: string
+    projected_total?: string
+    scope: string
+  }
+  estimated_total_bill?: string
+  projected_total_bill?: string
+  utility_bill_comparison?: {
+    utility_total: string
+    utility_usage_kwh?: string
+    reference?: string
+    estimated_total?: string
+    difference?: string
+    reconciliation_adjustments: string
+    unexplained_difference?: string
+  }
+  recalculation_version?: number
+  warnings: string[]
+  configuration_action?: string
+  disclosure: string
+}
+
 export interface SensorNetworkCidr {
   id: string
   network: string
@@ -219,6 +302,12 @@ export interface HistoryRateContribution {
   rate_version: number
   rate_effective_from: string
   tou_period: string
+  tier_id?: string
+  tier_name?: string
+  cumulative_start_kwh?: string
+  cumulative_end_kwh?: string
+  recalculation_version?: number
+  usage_authority_type?: string
   energy_kwh: string
   rate_per_kwh: string
   energy_cost: string

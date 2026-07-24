@@ -2441,6 +2441,575 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/utility-accounts/{account_id}/tier-status:
+    get:
+      tags:
+      - tiered rates and billing cycles
+      summary: Tier Status
+      operationId: tier_status_api_v1_utility_accounts__account_id__tier_status_get
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Tier Status Api V1 Utility Accounts  Account Id  Tier
+                  Status Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/usage-authority:
+    get:
+      tags:
+      - tiered rates and billing cycles
+      summary: Get Usage Authority
+      operationId: get_usage_authority_api_v1_admin_utility_accounts__account_id__usage_authority_get
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Usage Authority Api V1 Admin Utility Accounts  Account
+                  Id  Usage Authority Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - tiered rates and billing cycles
+      summary: Put Usage Authority
+      operationId: put_usage_authority_api_v1_admin_utility_accounts__account_id__usage_authority_put
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountUsageAuthorityWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Put Usage Authority Api V1 Admin Utility Accounts  Account
+                  Id  Usage Authority Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/manual-usage:
+    post:
+      tags:
+      - tiered rates and billing cycles
+      summary: Enter Manual Usage
+      operationId: enter_manual_usage_api_v1_admin_utility_accounts__account_id__manual_usage_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualAccountUsageWrite'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Enter Manual Usage Api V1 Admin Utility Accounts  Account
+                  Id  Manual Usage Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/usage-imports:
+    post:
+      tags:
+      - tiered rates and billing cycles
+      summary: Import Usage
+      operationId: import_usage_api_v1_admin_utility_accounts__account_id__usage_imports_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UtilityUsageImportWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Import Usage Api V1 Admin Utility Accounts  Account
+                  Id  Usage Imports Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/usage-imports/{import_id}/reverse:
+    post:
+      tags:
+      - tiered rates and billing cycles
+      summary: Reverse Usage Import
+      operationId: reverse_usage_import_api_v1_admin_utility_accounts__account_id__usage_imports__import_id__reverse_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: import_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Import Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Reverse Usage Import Api V1 Admin Utility Accounts  Account
+                  Id  Usage Imports  Import Id  Reverse Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/billing-cycles:
+    post:
+      tags:
+      - tiered rates and billing cycles
+      summary: Override Billing Cycle
+      operationId: override_billing_cycle_api_v1_admin_utility_accounts__account_id__billing_cycles_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingCycleOverrideWrite'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Override Billing Cycle Api V1 Admin Utility Accounts  Account
+                  Id  Billing Cycles Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - tiered rates and billing cycles
+      summary: List Billing Cycles
+      operationId: list_billing_cycles_api_v1_admin_utility_accounts__account_id__billing_cycles_get
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Billing Cycles Api V1 Admin Utility Accounts  Account
+                  Id  Billing Cycles Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/billing-cycles/{cycle_id}/reconciliations:
+    get:
+      tags:
+      - tiered rates and billing cycles
+      summary: List Reconciliations
+      operationId: list_reconciliations_api_v1_admin_utility_accounts__account_id__billing_cycles__cycle_id__reconciliations_get
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: cycle_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cycle Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Reconciliations Api V1 Admin Utility Accounts  Account
+                  Id  Billing Cycles  Cycle Id  Reconciliations Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - tiered rates and billing cycles
+      summary: Create Reconciliation
+      operationId: create_reconciliation_api_v1_admin_utility_accounts__account_id__billing_cycles__cycle_id__reconciliations_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: cycle_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cycle Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconciliationAdjustmentWrite'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Reconciliation Api V1 Admin Utility Accounts  Account
+                  Id  Billing Cycles  Cycle Id  Reconciliations Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/billing-cycles/{cycle_id}/recalculate:
+    post:
+      tags:
+      - tiered rates and billing cycles
+      summary: Recalculate Cycle
+      operationId: recalculate_cycle_api_v1_admin_utility_accounts__account_id__billing_cycles__cycle_id__recalculate_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: cycle_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cycle Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Recalculate Cycle Api V1 Admin Utility Accounts  Account
+                  Id  Billing Cycles  Cycle Id  Recalculate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/billing-cycles/{cycle_id}/finalize:
+    post:
+      tags:
+      - tiered rates and billing cycles
+      summary: Finalize Cycle
+      operationId: finalize_cycle_api_v1_admin_utility_accounts__account_id__billing_cycles__cycle_id__finalize_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: cycle_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cycle Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Finalize Cycle Api V1 Admin Utility Accounts  Account
+                  Id  Billing Cycles  Cycle Id  Finalize Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/device-enrollment/claim:
     post:
       tags:
@@ -6180,6 +6749,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rates/tiered-preview:
+    post:
+      tags:
+      - rate management
+      summary: Preview Tiered Cost
+      operationId: preview_tiered_cost_api_v1_admin_rates_tiered_preview_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Preview Tiered Cost Api V1 Admin Rates Tiered Preview
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/rates/validate-document:
     post:
       tags:
@@ -8244,6 +8860,61 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
+    AccountUsageAuthorityWrite:
+      properties:
+        revision:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Revision
+        authority_type:
+          type: string
+          enum:
+          - complete_site_aggregate
+          - service_leg_pair
+          - whole_account_meter
+          - utility_interval_import
+          - manual_cycle_usage
+          - external_feed
+          - partial_monitored_circuits
+          title: Authority Type
+        aggregate_set_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Aggregate Set Id
+        device_ids:
+          items:
+            type: string
+          type: array
+          maxItems: 32
+          title: Device Ids
+        source_reference:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Source Reference
+        confidence:
+          type: string
+          enum:
+          - unverified
+          - low
+          - medium
+          - high
+          - utility_verified
+          title: Confidence
+          default: unverified
+        complete_account:
+          type: boolean
+          title: Complete Account
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - authority_type
+      title: AccountUsageAuthorityWrite
     AggregateMemberInput:
       properties:
         circuit_id:
@@ -8411,6 +9082,49 @@ components:
       required:
       - until
       title: AlertSilence
+    BillingCycleBehaviorDocument:
+      properties:
+        expected_start_day:
+          type: integer
+          maximum: 31.0
+          minimum: 1.0
+          title: Expected Start Day
+          default: 1
+        threshold:
+          $ref: '#/components/schemas/TierThresholdDocument'
+      additionalProperties: false
+      type: object
+      title: BillingCycleBehaviorDocument
+    BillingCycleOverrideWrite:
+      properties:
+        starts_at:
+          type: string
+          format: date-time
+          title: Starts At
+        ends_at:
+          type: string
+          format: date-time
+          title: Ends At
+        source:
+          type: string
+          enum:
+          - manual_override
+          - utility_import
+          - external_feed
+          title: Source
+          default: manual_override
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - starts_at
+      - ends_at
+      - reason
+      title: BillingCycleOverrideWrite
     Body_import_rate_plan_api_v1_rates_import_post:
       properties:
         upload:
@@ -9766,6 +10480,36 @@ components:
         tou_period:
           type: string
           title: Tou Period
+        tier_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tier Id
+        tier_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tier Name
+        cumulative_start_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cumulative Start Kwh
+        cumulative_end_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cumulative End Kwh
+        recalculation_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Recalculation Version
+        usage_authority_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Usage Authority Type
         energy_kwh:
           type: string
           title: Energy Kwh
@@ -9912,6 +10656,19 @@ components:
       required:
       - type
       title: HistoryScopeQuery
+    HybridPricingDocument:
+      properties:
+        method:
+          type: string
+          enum:
+          - tier_period_matrix
+          - tier_base_plus_tou_adder
+          - tou_base_plus_tier_adder
+          title: Method
+          default: tier_period_matrix
+      additionalProperties: false
+      type: object
+      title: HybridPricingDocument
     InterfaceTextDraftWrite:
       properties:
         base_revision:
@@ -10164,6 +10921,50 @@ components:
       required:
       - until
       title: MaintenanceWindow
+    ManualAccountUsageWrite:
+      properties:
+        effective_at:
+          type: string
+          format: date-time
+          title: Effective At
+        cumulative_kwh:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+          title: Cumulative Kwh
+        source_note:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Source Note
+        evidence_reference:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Evidence Reference
+        verification_status:
+          type: string
+          enum:
+          - unverified
+          - verified
+          - reconciled
+          title: Verification Status
+          default: unverified
+        idempotency_key:
+          type: string
+          maxLength: 128
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - effective_at
+      - cumulative_kwh
+      - source_note
+      - idempotency_key
+      title: ManualAccountUsageWrite
     NetworkAddressTest:
       properties:
         policy_id:
@@ -10453,6 +11254,31 @@ components:
         timezone:
           type: string
           title: Timezone
+        pricing_model:
+          type: string
+          enum:
+          - flat
+          - time_of_use
+          - tiered
+          - time_of_use_tiered
+          title: Pricing Model
+          default: time_of_use
+        flat_rate_per_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Flat Rate Per Kwh
+        billing_cycle:
+          $ref: '#/components/schemas/BillingCycleBehaviorDocument'
+        tiers:
+          items:
+            $ref: '#/components/schemas/TierDefinitionDocument'
+          type: array
+          title: Tiers
+        hybrid_pricing:
+          anyOf:
+          - $ref: '#/components/schemas/HybridPricingDocument'
+          - type: 'null'
         ownership_scope:
           type: string
           enum:
@@ -10919,6 +11745,41 @@ components:
       required:
       - password
       title: ReauthenticateRequest
+    ReconciliationAdjustmentWrite:
+      properties:
+        component:
+          type: string
+          enum:
+          - utility_bill_difference
+          - tax
+          - credit
+          - fixed_charge
+          - provider_adjustment
+          - other
+          title: Component
+        amount:
+          anyOf:
+          - type: number
+          - type: string
+          title: Amount
+        notes:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Notes
+        provenance:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Provenance
+      additionalProperties: false
+      type: object
+      required:
+      - component
+      - amount
+      - notes
+      - provenance
+      title: ReconciliationAdjustmentWrite
     RejectedReading:
       properties:
         sequence:
@@ -11008,6 +11869,38 @@ components:
       - description
       - permissions
       title: RoleWrite
+    SeasonalBaselineDocument:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Name
+        start:
+          type: string
+          pattern: ^\d{2}-\d{2}$
+          title: Start
+        end:
+          type: string
+          pattern: ^\d{2}-\d{2}$
+          title: End
+        daily_kwh:
+          type: string
+          title: Daily Kwh
+        source_citation:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Source Citation
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - start
+      - end
+      - daily_kwh
+      title: SeasonalBaselineDocument
     SessionView:
       properties:
         authenticated:
@@ -11342,6 +12235,119 @@ components:
       - ok
       - status
       title: SubsystemHealth
+    TierDefinitionDocument:
+      properties:
+        tier_id:
+          type: string
+          maxLength: 80
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+          title: Tier Id
+        name:
+          type: string
+          maxLength: 120
+          minLength: 1
+          title: Name
+        order:
+          type: integer
+          minimum: 0.0
+          title: Order
+        lower_bound_inclusive_kwh:
+          type: string
+          title: Lower Bound Inclusive Kwh
+          default: '0'
+        upper_bound_exclusive_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Upper Bound Exclusive Kwh
+        lower_bound_multiplier:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lower Bound Multiplier
+        upper_bound_multiplier:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Upper Bound Multiplier
+        price_per_kwh:
+          type: string
+          title: Price Per Kwh
+        tou_prices:
+          additionalProperties:
+            type: string
+          type: object
+          title: Tou Prices
+        season:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Season
+        source_citation:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Source Citation
+      additionalProperties: false
+      type: object
+      required:
+      - tier_id
+      - name
+      - order
+      - price_per_kwh
+      title: TierDefinitionDocument
+    TierThresholdDocument:
+      properties:
+        basis:
+          type: string
+          enum:
+          - fixed_cycle_kwh
+          - daily_baseline_kwh
+          title: Basis
+          default: fixed_cycle_kwh
+        daily_baseline_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Daily Baseline Kwh
+        baseline_region:
+          anyOf:
+          - type: string
+            maxLength: 120
+          - type: 'null'
+          title: Baseline Region
+        baseline_category:
+          anyOf:
+          - type: string
+            maxLength: 120
+          - type: 'null'
+          title: Baseline Category
+        rounding_policy:
+          type: string
+          enum:
+          - none
+          - nearest_kwh
+          - floor_kwh
+          - ceil_kwh
+          title: Rounding Policy
+          default: none
+        seasonal_baselines:
+          items:
+            $ref: '#/components/schemas/SeasonalBaselineDocument'
+          type: array
+          title: Seasonal Baselines
+        source_citation:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Source Citation
+      additionalProperties: false
+      type: object
+      title: TierThresholdDocument
     TimeHealth:
       properties:
         trusted:
@@ -11770,6 +12776,61 @@ components:
       - revision
       - cost_scope
       title: UtilityCostScopeWrite
+    UtilityUsageImportWrite:
+      properties:
+        import_kind:
+          type: string
+          enum:
+          - interval
+          - daily
+          - cycle_cumulative
+          - cycle_dates
+          - bill_total
+          title: Import Kind
+        timezone:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Timezone
+        source_name:
+          type: string
+          maxLength: 240
+          minLength: 1
+          title: Source Name
+        field_mapping:
+          additionalProperties:
+            type: string
+          type: object
+          title: Field Mapping
+        rows:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          maxItems: 10000
+          minItems: 1
+          title: Rows
+        conflict_policy:
+          type: string
+          enum:
+          - reject
+          - prefer_utility
+          - prefer_monitored
+          - keep_separate
+          title: Conflict Policy
+          default: reject
+        commit:
+          type: boolean
+          title: Commit
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - import_kind
+      - timezone
+      - source_name
+      - rows
+      title: UtilityUsageImportWrite
     ValidationError:
       properties:
         loc:

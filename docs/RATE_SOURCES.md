@@ -10,4 +10,12 @@ The bundled seed is `shared/schemas/sce-rates-2026-06-01.json`. Its supplied met
 
 Public TOU values assume SCE delivery and SCE generation. CCA and Direct Access generation are modeled separately. The scheduled worker retrieves and archives enabled approved SCE sources, and the public TOU adapter deterministically extracts published schedule blocks into review candidates. Used rate versions are immutable; later corrections create new effective versions. No holiday schedule is assumed without a versioned source.
 
+Managed candidates may also contain flat, tiered, or hybrid plan documents.
+Their evidence archive retains pricing model, tier order/IDs, boundaries,
+baseline method and citation, hybrid combination method, and per-period prices.
+A pricing-model change is always held for explicit administrator review; it is
+never auto-activated solely because parsing succeeded. The photographed tier
+values supplied for development exist only in the deterministic fixture
+`shared/examples/tiered-rate-plan.json` and are not production SCE data.
+
 These presets are estimates and are not tariff sheets or utility bills. Operators must verify their plan code, eligibility, baseline allocation, generation provider, taxes, and bill adjustments.

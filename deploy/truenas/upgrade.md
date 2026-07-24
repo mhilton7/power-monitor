@@ -80,6 +80,19 @@ then save an explicit mode. Open **Sites & accounts** and create or review each
 utility account, rate assignment, and cost scope. Do not select complete-account
 scope until topology coverage has been verified.
 
+For the tiered and hybrid rate release, migration `20260723_0009` extends rate
+versions with an explicit pricing model, creates immutable tier/baseline
+definitions, expands billing-cycle calculation evidence, and adds account usage
+authority, manual/imported usage, allocation segments, tier summaries,
+projections, and reconciliation adjustments. It grants `usage_imports.manage`
+and `costs.recalculate` to Administrator. It does not add a dataset, secret,
+mount, service, port, capability, or Compose variable. Existing rate versions
+are backfilled as `time_of_use`, preserving their schedules and assignments.
+After upgrade, verify one existing TOU account, then create a test tiered draft,
+run its preview, configure an account usage authority, and confirm Usage/Costs
+show the exact cycle. Do not finalize a cycle until coverage and utility dates
+have been reviewed.
+
 If migration fails, do not bypass its dependency or point the old application at
 a partly migrated database. Preserve logs and follow the rollback path.
 

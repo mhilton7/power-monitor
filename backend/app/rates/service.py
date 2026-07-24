@@ -21,7 +21,10 @@ from app.db.models import (
     RatePeriod,
     RatePlan,
     RateSeason,
+    RateSeasonalBaseline,
     RateSourceArtifact,
+    RateThresholdRule,
+    RateTierDefinition,
     RateVersion,
     RateVersionSource,
     Utility,
@@ -159,6 +162,7 @@ async def version_document(session: AsyncSession, version: RateVersion) -> RateP
         description=plan.description,
         currency=version.currency,
         timezone=version.timezone,
+        pricing_model=version.pricing_model,  # type: ignore[arg-type]
         ownership_scope=plan.ownership_scope,  # type: ignore[arg-type]
         owner_id=plan.owner_site_id or plan.owner_utility_account_id,
         effective_from=version.effective_from,
@@ -182,11 +186,75 @@ async def _replace_version_rows(
         RatePeriod,
         RateDayType,
         RateSeason,
+        RateSeasonalBaseline,
+        RateThresholdRule,
+        RateTierDefinition,
         RateAdjustment,
         FixedChargeRule,
         BaselineRule,
     ):
         await session.execute(delete(model).where(model.rate_version_id == version.id))
+    threshold = document.billing_cycle.threshold
+    session.add(
+        RateThresholdRule(
+            rate_version_id=version.id,
+            basis=threshold.basis,
+            daily_baseline_kwh=(
+                Decimal(threshold.daily_baseline_kwh)
+                if threshold.daily_baseline_kwh is not None
+                else None
+            ),
+            baseline_region=threshold.baseline_region,
+            baseline_category=threshold.baseline_category,
+            rounding_policy=threshold.rounding_policy,
+            expected_cycle_start_day=document.billing_cycle.expected_start_day,
+            source_citation=threshold.source_citation,
+        )
+    )
+    for tier in document.tiers:
+        session.add(
+            RateTierDefinition(
+                rate_version_id=version.id,
+                stable_tier_id=tier.tier_id,
+                name=tier.name,
+                display_order=tier.order,
+                lower_bound_kwh=Decimal(tier.lower_bound_inclusive_kwh),
+                upper_bound_kwh=(
+                    Decimal(tier.upper_bound_exclusive_kwh)
+                    if tier.upper_bound_exclusive_kwh is not None
+                    else None
+                ),
+                lower_bound_multiplier=(
+                    Decimal(tier.lower_bound_multiplier)
+                    if tier.lower_bound_multiplier is not None
+                    else None
+                ),
+                upper_bound_multiplier=(
+                    Decimal(tier.upper_bound_multiplier)
+                    if tier.upper_bound_multiplier is not None
+                    else None
+                ),
+                price_per_kwh=Decimal(tier.price_per_kwh),
+                tou_prices=tier.tou_prices,
+                season_name=tier.season,
+                source_citation=tier.source_citation,
+            )
+        )
+    for baseline in threshold.seasonal_baselines:
+        start_month, start_day = (int(part) for part in baseline.start.split("-"))
+        end_month, end_day = (int(part) for part in baseline.end.split("-"))
+        session.add(
+            RateSeasonalBaseline(
+                rate_version_id=version.id,
+                name=baseline.name,
+                start_month=start_month,
+                start_day=start_day,
+                end_month=end_month,
+                end_day=end_day,
+                daily_kwh=Decimal(baseline.daily_kwh),
+                source_citation=baseline.source_citation,
+            )
+        )
     day_types: dict[str, DayScheduleDocument] = {}
     for season in document.seasons:
         start_month, start_day = (int(part) for part in season.start.split("-"))
@@ -340,6 +408,7 @@ async def create_custom_plan(
         effective_to=document.effective_through,
         timezone=document.timezone,
         currency=document.currency,
+        pricing_model=document.pricing_model,
         source_url="urn:power-monitor:custom-rate-plan",
         source_checked_on=date.today(),
         source_checked_at=now,
@@ -390,6 +459,7 @@ async def update_draft_version(
     version.effective_to = document.effective_through
     version.timezone = document.timezone
     version.currency = document.currency
+    version.pricing_model = document.pricing_model
     version.source_label = document.source_label
     version.source_notes = document.source_note
     version.normalized_payload = document.model_dump(mode="json")

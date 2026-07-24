@@ -27,7 +27,7 @@ import {
 } from '../components/UI'
 import { useLiveEvents } from '../hooks/useLiveEvents'
 import { useSelectedSiteId } from '../hooks/useSelectedSite'
-import type { Device, FleetSummary } from '../types'
+import type { Device, FleetSummary, TierStatus, UtilityAccount } from '../types'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -38,6 +38,14 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
   const fleetUrl = siteId ? `/api/v1/fleet/summary?site_id=${encodeURIComponent(siteId)}` : '/api/v1/fleet/summary'
   const summary = useQuery({ queryKey: ['fleet', siteId], queryFn: () => api<FleetSummary>(fleetUrl) })
   const devices = useQuery({ queryKey: ['devices'], queryFn: () => api<Device[]>('/api/v1/devices') })
+  const accounts = useQuery({ queryKey: ['utility-accounts', 'overview', siteId], queryFn: () => api<UtilityAccount[]>('/api/v1/utility-accounts') })
+  const account = accounts.data?.find((item) => (!siteId || item.site_id === siteId) && item.status === 'active')
+  const tierStatus = useQuery({
+    queryKey: ['tier-status', account?.id],
+    queryFn: () => api<TierStatus>(`/api/v1/utility-accounts/${account?.id}/tier-status`),
+    enabled: Boolean(account),
+    refetchInterval: 60_000,
+  })
   if (summary.isLoading || devices.isLoading) return <LoadingState label="Opening the live site view…" />
   if (summary.error || devices.error) return <ErrorState error={summary.error ?? devices.error} retry={() => { void summary.refetch(); void devices.refetch() }} />
   const data = summary.data
@@ -80,7 +88,7 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
             message="Enroll an ESP32 sensor to begin. Readings and site summaries appear after its first valid signed heartbeat."
             action={<div className="inline-actions">{canEnroll ? <Link className="button primary" to="/enrollment">Enroll devices <ArrowUpRight size={16} /></Link> : <Link className="button secondary" to="/devices">Open Devices</Link>}{!data.rate_configured && <Link className="button secondary" to="/admin?tab=sites-accounts">Configure utility account <ArrowUpRight size={16} /></Link>}</div>}
           />
-          {data.rate_configured && <dl className="onboarding-rate-context"><div><dt>Current rate plan</dt><dd>{data.current_rate_plan} · v{data.current_rate_version}</dd></div><div><dt>Current rate period</dt><dd>{data.current_tou_bucket}</dd></div><div><dt>Current energy price</dt><dd>${data.current_rate_price_per_kwh}/kWh</dd></div></dl>}
+          {data.rate_configured && <dl className="onboarding-rate-context"><div><dt>Current rate plan</dt><dd>{data.current_rate_plan} · v{data.current_rate_version}</dd></div><div><dt>Current rate period</dt><dd>{data.current_tou_bucket ?? 'Account usage required'}</dd></div><div><dt>Current energy price</dt><dd>{data.current_rate_price_per_kwh ? `$${data.current_rate_price_per_kwh}/kWh` : 'Account tier unavailable'}</dd></div></dl>}
         </Panel>
       ) : <>
         <section className="overview-site-state" aria-label="Current site state">
@@ -156,6 +164,14 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
           </div>
         </Panel>
       </>}
+      {tierStatus.data?.available && <Panel eyebrow="Current billing cycle" title="Tier progress" className="overview-tier-summary" actions={<Link to="/usage">View usage <ArrowUpRight size={14} /></Link>}>
+        <dl className="overview-tier-grid">
+          <div><dt>Current tier</dt><dd>{tierStatus.data.current_tier?.name ?? 'Unavailable'}</dd><small>{tierStatus.data.remaining_kwh ? `${formatNumber(tierStatus.data.remaining_kwh)} kWh to next tier` : 'Highest configured tier'}</small></div>
+          <div><dt>Cycle usage</dt><dd>{formatNumber(tierStatus.data.authoritative_usage_kwh)} kWh</dd><small>{tierStatus.data.cycle.days_remaining} days remaining</small></div>
+          <div><dt>Energy charge</dt><dd>${Number(tierStatus.data.energy_charge ?? 0).toFixed(2)}</dd><small>Chronological tier allocation</small></div>
+          <div><dt>Projected cycle</dt><dd>{formatNumber(tierStatus.data.projected_usage_kwh)} kWh</dd><small>{tierStatus.data.projected_final_tier?.name ?? 'Tier unavailable'} / {tierStatus.data.projection_confidence} confidence</small></div>
+        </dl>
+      </Panel>}
       <Disclosure />
     </>
   )

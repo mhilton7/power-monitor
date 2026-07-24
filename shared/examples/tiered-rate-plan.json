@@ -1,0 +1,64 @@
+{
+  "schema_version": "power-monitor-rate-plan/1.0",
+  "plan_name": "Deterministic Domestic Tier Fixture",
+  "plan_code": "FIXTURE-DOMESTIC-TIERED",
+  "utility": "Fixture Utility",
+  "description": "Test-only two-tier billing-cycle plan based on the supplied visual example.",
+  "currency": "USD",
+  "timezone": "America/Los_Angeles",
+  "pricing_model": "tiered",
+  "flat_rate_per_kwh": null,
+  "billing_cycle": {
+    "expected_start_day": 22,
+    "threshold": {
+      "basis": "fixed_cycle_kwh",
+      "daily_baseline_kwh": null,
+      "baseline_region": null,
+      "baseline_category": null,
+      "rounding_policy": "none",
+      "seasonal_baselines": [],
+      "source_citation": "Deterministic reference fixture"
+    }
+  },
+  "tiers": [
+    {
+      "tier_id": "tier-1",
+      "name": "Tier 1",
+      "order": 0,
+      "lower_bound_inclusive_kwh": "0",
+      "upper_bound_exclusive_kwh": "579",
+      "lower_bound_multiplier": null,
+      "upper_bound_multiplier": null,
+      "price_per_kwh": "0.30",
+      "tou_prices": {},
+      "season": null,
+      "source_citation": "Deterministic reference fixture"
+    },
+    {
+      "tier_id": "tier-2",
+      "name": "Tier 2",
+      "order": 1,
+      "lower_bound_inclusive_kwh": "579",
+      "upper_bound_exclusive_kwh": null,
+      "lower_bound_multiplier": null,
+      "upper_bound_multiplier": null,
+      "price_per_kwh": "0.40",
+      "tou_prices": {},
+      "season": null,
+      "source_citation": "Deterministic reference fixture"
+    }
+  ],
+  "hybrid_pricing": null,
+  "ownership_scope": "global",
+  "owner_id": null,
+  "effective_from": "2026-07-22",
+  "effective_through": null,
+  "cost_scope_default": "energy_only",
+  "source_label": "Deterministic test fixture",
+  "source_note": "Not a production utility tariff.",
+  "provider_mode": "custom_combined",
+  "seasons": [],
+  "adjustments": [],
+  "custom_notes": "For automated tests only.",
+  "cloned_from_rate_version_id": null
+}

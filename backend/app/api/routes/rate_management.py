@@ -68,9 +68,16 @@ def _rate_manager(principal: Principal, permission: str = "rates.manage_custom")
 
 
 def _version_summary(version: RateVersion) -> dict[str, Any]:
+    payload = version.normalized_payload or {}
+    tiers = payload.get("tiers", []) if isinstance(payload, dict) else []
+    billing_cycle = payload.get("billing_cycle", {}) if isinstance(payload, dict) else {}
+    threshold = billing_cycle.get("threshold", {}) if isinstance(billing_cycle, dict) else {}
     return {
         "id": version.id,
         "version": version.version,
+        "pricing_model": version.pricing_model,
+        "tier_count": len(tiers) if isinstance(tiers, list) else 0,
+        "threshold_basis": (threshold.get("basis") if isinstance(threshold, dict) else None),
         "effective_from": version.effective_from,
         "effective_through": version.effective_to,
         "status": version.status,
@@ -135,7 +142,13 @@ async def create_rate_plan(
             request=request,
             object_type="rate_plan",
             object_id=plan.id,
-            details={"version_id": version.id, "integrity_sha256": version.content_hash},
+            details={
+                "version_id": version.id,
+                "integrity_sha256": version.content_hash,
+                "pricing_model": version.pricing_model,
+                "tier_count": len(payload.tiers),
+                "threshold_basis": payload.billing_cycle.threshold.basis,
+            },
         )
     )
     await session.commit()
@@ -561,16 +574,89 @@ async def preview_managed_cost(
             if payload.get("baseline_allocation_kwh") is not None
             else None
         ),
+        cumulative_usage_before_kwh=Decimal(str(payload.get("cumulative_usage_before_kwh", "0"))),
+        cycle_start=(
+            datetime.fromisoformat(str(payload["cycle_start"]))
+            if payload.get("cycle_start")
+            else None
+        ),
+        cycle_end=(
+            datetime.fromisoformat(str(payload["cycle_end"])) if payload.get("cycle_end") else None
+        ),
     )
+    energy_by_tier_id: dict[str, Decimal] = {}
+    charge_by_tier_id: dict[str, Decimal] = {}
+    for item in result.slices:
+        if item.tier_id is None:
+            continue
+        energy_by_tier_id[item.tier_id] = (
+            energy_by_tier_id.get(item.tier_id, Decimal("0")) + item.energy_kwh
+        )
+        charge_by_tier_id[item.tier_id] = (
+            charge_by_tier_id.get(item.tier_id, Decimal("0")) + item.cost
+        )
     return {
         "energy_by_bucket_kwh": {key: str(value) for key, value in result.energy_by_bucket.items()},
+        "energy_by_tier_kwh": {key: str(value) for key, value in energy_by_tier_id.items()},
+        "charge_by_tier": {key: str(value) for key, value in charge_by_tier_id.items()},
+        "tier_thresholds": [
+            {
+                "tier_id": value["tier_id"],
+                "name": value["name"],
+                "lower_bound_kwh": str(value["lower_bound_kwh"]),
+                "upper_bound_kwh": (
+                    str(value["upper_bound_kwh"]) if value["upper_bound_kwh"] is not None else None
+                ),
+                "derived_baseline_kwh": (
+                    str(value["derived_baseline_kwh"])
+                    if value["derived_baseline_kwh"] is not None
+                    else None
+                ),
+                "rounding_policy": value["rounding_policy"],
+            }
+            for value in result.tier_thresholds
+        ],
+        "segments": [
+            {
+                "start": item.start,
+                "end": item.end,
+                "energy_kwh": str(item.energy_kwh),
+                "tier_id": item.tier_id,
+                "tier_name": item.tier_name,
+                "tou_period": item.tou_period,
+                "cumulative_start_kwh": (
+                    str(item.cumulative_start_kwh)
+                    if item.cumulative_start_kwh is not None
+                    else None
+                ),
+                "cumulative_end_kwh": (
+                    str(item.cumulative_end_kwh) if item.cumulative_end_kwh is not None else None
+                ),
+                "price_per_kwh": str(item.price_per_kwh),
+                "energy_charge": str(item.cost),
+            }
+            for item in result.slices
+        ],
         "energy_charge": str(result.energy_charge),
+        "blended_energy_rate": (
+            str(result.energy_charge / Decimal(str(payload["energy_kwh"])))
+            if Decimal(str(payload["energy_kwh"])) > 0
+            else None
+        ),
         "fixed_charge": str(result.fixed_charge),
         "baseline_credit": str(result.baseline_credit),
         "unrounded_total": str(result.total),
         "display_total": str(engine.display_currency(result.total)),
         "integrity_sha256": report.integrity_sha256,
     }
+
+
+@router.post("/admin/rates/tiered-preview")
+async def preview_tiered_cost(
+    payload: dict[str, Any], principal: CsrfPrincipal, session: DbSession
+) -> dict[str, Any]:
+    _rate_manager(principal)
+    return await preview_managed_cost(payload, principal, session)
 
 
 @router.post("/rates/validate-document")

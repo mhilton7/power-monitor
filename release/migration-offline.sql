@@ -1,4 +1,4 @@
-﻿BEGIN;
+BEGIN;
 
 CREATE TABLE alembic_version (
     version_num VARCHAR(32) NOT NULL,
@@ -1717,6 +1717,646 @@ CREATE TABLE interface_text_state (
 INSERT INTO interface_text_state (id, current_revision_id, current_revision, updated_at) VALUES ('current', NULL, 0, CURRENT_TIMESTAMP);
 
 UPDATE alembic_version SET version_num='20260720_0005' WHERE alembic_version.version_num = '20260720_0004';
+
+-- Running upgrade 20260720_0005 -> 20260720_0006
+
+CREATE TABLE status_layout_revisions (
+    id VARCHAR(36) NOT NULL,
+    revision INTEGER NOT NULL,
+    registry_version VARCHAR(64) NOT NULL,
+    configuration JSON NOT NULL,
+    created_by VARCHAR(36),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    reason VARCHAR(500),
+    restored_from_id VARCHAR(36),
+    CONSTRAINT pk_status_layout_revisions PRIMARY KEY (id),
+    CONSTRAINT uq_status_layout_revisions_revision UNIQUE (revision),
+    CONSTRAINT fk_status_layout_revisions_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT fk_status_layout_revisions_restored_from_id_status_layo_3f9a FOREIGN KEY(restored_from_id) REFERENCES status_layout_revisions (id) ON DELETE SET NULL
+);
+
+CREATE UNIQUE INDEX ix_status_layout_revisions_revision ON status_layout_revisions (revision);
+
+CREATE INDEX ix_status_layout_revisions_created_by ON status_layout_revisions (created_by);
+
+CREATE INDEX ix_status_layout_revisions_created_at ON status_layout_revisions (created_at);
+
+CREATE TABLE status_layout_drafts (
+    id VARCHAR(36) NOT NULL,
+    base_revision INTEGER DEFAULT '1' NOT NULL,
+    revision INTEGER DEFAULT '1' NOT NULL,
+    previewed_revision INTEGER,
+    registry_version VARCHAR(64) NOT NULL,
+    configuration JSON NOT NULL,
+    edited_by VARCHAR(36),
+    reason VARCHAR(500),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_status_layout_drafts PRIMARY KEY (id),
+    CONSTRAINT fk_status_layout_drafts_edited_by_users FOREIGN KEY(edited_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_status_layout_drafts_edited_by ON status_layout_drafts (edited_by);
+
+CREATE INDEX ix_status_layout_drafts_updated_at ON status_layout_drafts (updated_at);
+
+CREATE TABLE status_layout_state (
+    id VARCHAR(36) NOT NULL,
+    current_revision_id VARCHAR(36),
+    current_revision INTEGER DEFAULT '1' NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_status_layout_state PRIMARY KEY (id),
+    CONSTRAINT fk_status_layout_state_current_revision_id_status_layou_8b84 FOREIGN KEY(current_revision_id) REFERENCES status_layout_revisions (id) ON DELETE RESTRICT
+);
+
+INSERT INTO status_layout_revisions (id, revision, registry_version, configuration, created_by, created_at, reason, restored_from_id) VALUES ('00000000-0000-4000-8000-000000000006', 1, 'status-indicators/1.0', json_build_object('schema_version', 'power-monitor-status-layout/1.0', 'registry_version', 'status-indicators/1.0', 'personalization_enabled', false, 'items', json_build_array()), NULL, CURRENT_TIMESTAMP, 'Compiled dashboard layout captured during migration', NULL);
+
+INSERT INTO status_layout_state (id, current_revision_id, current_revision, updated_at) VALUES ('current', '00000000-0000-4000-8000-000000000006', 1, CURRENT_TIMESTAMP);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('status_indicators.view', 'Administration', 'View status layouts', 'View registered indicators and the effective published layout.', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('status_indicators.manage', 'Administration', 'Manage status layouts', 'Draft, preview, publish, import, reset, and restore status layouts.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'status_indicators.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'status_indicators.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'status_indicators.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'status_indicators.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'status_indicators.manage');
+
+UPDATE alembic_version SET version_num='20260720_0006' WHERE alembic_version.version_num = '20260720_0005';
+
+-- Running upgrade 20260720_0006 -> 20260721_0007
+
+INSERT INTO status_layout_revisions
+            (id, revision, registry_version, configuration, created_by, created_at,
+             reason, restored_from_id)
+        SELECT
+            '00000000-0000-4000-8000-000000000007',
+            state.current_revision + 1,
+            current.registry_version,
+            jsonb_set(
+                current.configuration::jsonb,
+                '{items}',
+                COALESCE(
+                    (
+                        SELECT jsonb_agg(
+                            CASE
+                                WHEN item->>'indicator_key' IN
+                                    ('system.api_health', 'system.database_health',
+                                     'system.worker_health')
+                                    THEN item || jsonb_build_object(
+                                        'page', 'system_health',
+                                        'zone', 'diagnostics_summary'
+                                    )
+                                WHEN item->>'indicator_key' = 'site.current'
+                                    THEN item || jsonb_build_object('visible', false)
+                                ELSE item
+                            END
+                        )
+                        FROM jsonb_array_elements(
+                            COALESCE(current.configuration::jsonb->'items', '[]'::jsonb)
+                        ) AS item
+                        WHERE NOT (
+                            item->>'indicator_key' IN
+                                ('data.current_power', 'data.aggregate_coverage')
+                            AND item->>'page' IN ('overview', 'history')
+                            AND COALESCE(item->>'role', '*') = '*'
+                            AND COALESCE(item->>'breakpoint', 'default') = 'default'
+                        )
+                    ),
+                    '[]'::jsonb
+                ) || jsonb_build_array(
+                    jsonb_build_object(
+                        'indicator_key', 'data.current_power',
+                        'page', 'overview', 'role', '*', 'breakpoint', 'default',
+                        'visible', false
+                    ),
+                    jsonb_build_object(
+                        'indicator_key', 'data.aggregate_coverage',
+                        'page', 'history', 'role', '*', 'breakpoint', 'default',
+                        'visible', false
+                    )
+                ),
+                true
+            )::json,
+            NULL,
+            CURRENT_TIMESTAMP,
+            'System migration: compact shell, diagnostics relocation, and metric deduplication',
+            state.current_revision_id
+        FROM status_layout_state AS state
+        JOIN status_layout_revisions AS current ON current.id = state.current_revision_id
+        WHERE state.id = 'current';
+
+UPDATE status_layout_state
+        SET current_revision_id = '00000000-0000-4000-8000-000000000007',
+            current_revision = current_revision + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 'current';
+
+INSERT INTO audit_events
+            (id, occurred_at, actor_type, actor_id, action, object_type, object_id,
+             source_ip, outcome, correlation_id, details)
+        VALUES
+            ('00000000-0000-4000-9000-000000000007', CURRENT_TIMESTAMP, 'system', NULL,
+             'status_layout.information_architecture_migrated', 'status_layout',
+             '00000000-0000-4000-8000-000000000007', NULL, 'success',
+             'migration:20260721_0007',
+             json_build_object(
+                 'summary', 'Moved system health to diagnostics and repaired canonical placements',
+                 'previous_revision_preserved', true,
+                 'automatic_repair', 'Keep recommended placement'
+             ));
+
+UPDATE alembic_version SET version_num='20260721_0007' WHERE alembic_version.version_num = '20260720_0006';
+
+-- Running upgrade 20260721_0007 -> 20260721_0008
+
+ALTER TABLE utility_accounts ADD COLUMN nickname VARCHAR(160);
+
+ALTER TABLE utility_accounts ADD COLUMN account_number_suffix VARCHAR(8);
+
+ALTER TABLE utility_accounts ADD COLUMN status VARCHAR(24) DEFAULT 'active' NOT NULL;
+
+ALTER TABLE utility_accounts ADD COLUMN service_class VARCHAR(80);
+
+ALTER TABLE utility_accounts ADD COLUMN allocation_method VARCHAR(80);
+
+ALTER TABLE utility_accounts ADD COLUMN full_account_override BOOLEAN DEFAULT false NOT NULL;
+
+ALTER TABLE utility_accounts ADD COLUMN adjustment_config JSON DEFAULT '{}' NOT NULL;
+
+ALTER TABLE utility_accounts ADD COLUMN revision INTEGER DEFAULT '1' NOT NULL;
+
+ALTER TABLE utility_accounts ADD COLUMN archived_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE utility_accounts ADD COLUMN archived_by VARCHAR(36);
+
+ALTER TABLE utility_accounts ADD CONSTRAINT fk_utility_accounts_archived_by_users FOREIGN KEY(archived_by) REFERENCES users (id) ON DELETE SET NULL;
+
+CREATE INDEX ix_utility_accounts_status ON utility_accounts (status);
+
+CREATE INDEX ix_utility_accounts_archived_at ON utility_accounts (archived_at);
+
+ALTER TABLE utility_accounts ADD CONSTRAINT ck_utility_accounts_utility_account_status CHECK (status IN ('active','archived'));
+
+ALTER TABLE utility_accounts ADD CONSTRAINT ck_utility_accounts_utility_account_cost_scope CHECK (cost_scope_default IN ('energy_only','allocated_account_estimate','full_account_estimate'));
+
+ALTER TABLE rate_assignments ADD COLUMN assignment_reason VARCHAR(500);
+
+ALTER TABLE rate_assignments ADD CONSTRAINT ck_rate_assignments_rate_assignment_effective_window CHECK (effective_to IS NULL OR effective_to > effective_from);
+
+CREATE INDEX ix_rate_assignments_account_window ON rate_assignments (utility_account_id, effective_from, effective_to);
+
+CREATE TABLE utility_account_adjustments (
+    id VARCHAR(36) NOT NULL,
+    utility_account_id VARCHAR(36) NOT NULL,
+    component VARCHAR(48) NOT NULL,
+    value NUMERIC(18, 8) NOT NULL,
+    unit VARCHAR(24) NOT NULL,
+    provenance VARCHAR(240) NOT NULL,
+    effective_from TIMESTAMP WITH TIME ZONE NOT NULL,
+    effective_to TIMESTAMP WITH TIME ZONE,
+    enabled BOOLEAN DEFAULT true NOT NULL,
+    created_by VARCHAR(36),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_utility_account_adjustments PRIMARY KEY (id),
+    CONSTRAINT ck_utility_account_adjustments_utility_adjustment_component CHECK (component IN ('cca_generation','direct_access','baseline_credit','service_charge','tax_fee','custom_fixed','custom_per_kwh')),
+    CONSTRAINT ck_utility_account_adjustments_adjustment_unit CHECK (unit IN ('per_kwh','fixed','percent','included')),
+    CONSTRAINT ck_utility_account_adjustments_adjustment_effective_window CHECK (effective_to IS NULL OR effective_to > effective_from),
+    CONSTRAINT fk_utility_account_adjustments_utility_account_id_utili_cc20 FOREIGN KEY(utility_account_id) REFERENCES utility_accounts (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_utility_account_adjustments_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_utility_account_adjustments_utility_account_id ON utility_account_adjustments (utility_account_id);
+
+CREATE INDEX ix_utility_account_adjustments_effective_from ON utility_account_adjustments (effective_from);
+
+CREATE TABLE sensor_network_policies (
+    id VARCHAR(36) NOT NULL,
+    site_id VARCHAR(36) NOT NULL,
+    direction VARCHAR(24) NOT NULL,
+    mode VARCHAR(40) NOT NULL,
+    revision INTEGER DEFAULT '1' NOT NULL,
+    migration_notice_pending BOOLEAN DEFAULT true NOT NULL,
+    migrated_from_legacy BOOLEAN DEFAULT true NOT NULL,
+    updated_by VARCHAR(36),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    CONSTRAINT pk_sensor_network_policies PRIMARY KEY (id),
+    CONSTRAINT uq_sensor_policy_site_direction UNIQUE (site_id, direction),
+    CONSTRAINT ck_sensor_network_policies_sensor_policy_direction CHECK (direction IN ('device_ingress','server_pull')),
+    CONSTRAINT ck_sensor_network_policies_sensor_policy_mode CHECK (mode IN ('allow_listed_private','allow_all_private','deny_all','legacy_authenticated_any','legacy_public_and_listed')),
+    CONSTRAINT fk_sensor_network_policies_site_id_sites FOREIGN KEY(site_id) REFERENCES sites (id) ON DELETE CASCADE,
+    CONSTRAINT fk_sensor_network_policies_updated_by_users FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_sensor_network_policies_site_id ON sensor_network_policies (site_id);
+
+CREATE TABLE sensor_network_cidrs (
+    id VARCHAR(36) NOT NULL,
+    policy_id VARCHAR(36) NOT NULL,
+    network VARCHAR(80) NOT NULL,
+    label VARCHAR(120) NOT NULL,
+    enabled BOOLEAN DEFAULT true NOT NULL,
+    revision INTEGER DEFAULT '1' NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    CONSTRAINT pk_sensor_network_cidrs PRIMARY KEY (id),
+    CONSTRAINT uq_policy_network UNIQUE (policy_id, network),
+    CONSTRAINT fk_sensor_network_cidrs_policy_id_sensor_network_policies FOREIGN KEY(policy_id) REFERENCES sensor_network_policies (id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_sensor_network_cidrs_policy_id ON sensor_network_cidrs (policy_id);
+
+CREATE TABLE network_policy_revisions (
+    id VARCHAR(36) NOT NULL,
+    policy_id VARCHAR(36) NOT NULL,
+    revision INTEGER NOT NULL,
+    mode VARCHAR(40) NOT NULL,
+    cidrs JSON NOT NULL,
+    changed_by VARCHAR(36),
+    changed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    reason VARCHAR(500),
+    CONSTRAINT pk_network_policy_revisions PRIMARY KEY (id),
+    CONSTRAINT uq_policy_revision UNIQUE (policy_id, revision),
+    CONSTRAINT fk_network_policy_revisions_policy_id_sensor_network_policies FOREIGN KEY(policy_id) REFERENCES sensor_network_policies (id) ON DELETE CASCADE,
+    CONSTRAINT fk_network_policy_revisions_changed_by_users FOREIGN KEY(changed_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_network_policy_revisions_policy_id ON network_policy_revisions (policy_id);
+
+INSERT INTO sensor_network_policies
+            (id, site_id, direction, mode, revision, migration_notice_pending,
+             migrated_from_legacy, created_at, updated_at)
+        SELECT substr(md5(sites.id || chr(58) || 'device_ingress'),1,8)||'-'||substr(md5(sites.id || chr(58) || 'device_ingress'),9,4)||'-4'||substr(md5(sites.id || chr(58) || 'device_ingress'),14,3)||'-8'||substr(md5(sites.id || chr(58) || 'device_ingress'),18,3)||'-'||substr(md5(sites.id || chr(58) || 'device_ingress'),21,12), sites.id, 'device_ingress', 'legacy_authenticated_any', 1,
+               true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM sites;
+
+INSERT INTO sensor_network_policies
+            (id, site_id, direction, mode, revision, migration_notice_pending,
+             migrated_from_legacy, created_at, updated_at)
+        SELECT substr(md5(sites.id || chr(58) || 'server_pull'),1,8)||'-'||substr(md5(sites.id || chr(58) || 'server_pull'),9,4)||'-4'||substr(md5(sites.id || chr(58) || 'server_pull'),14,3)||'-8'||substr(md5(sites.id || chr(58) || 'server_pull'),18,3)||'-'||substr(md5(sites.id || chr(58) || 'server_pull'),21,12), sites.id, 'server_pull',
+               CASE
+                   WHEN sites.allow_public_polling THEN 'legacy_public_and_listed'
+                   WHEN json_array_length(sites.allowed_cidrs) > 0 THEN 'allow_listed_private'
+                   ELSE 'deny_all'
+               END,
+               1, true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM sites;
+
+INSERT INTO sensor_network_cidrs
+            (id, policy_id, network, label, enabled, revision, created_at, updated_at)
+        SELECT substr(md5(policy.id || ':' || cidr.value),1,8)||'-'||substr(md5(policy.id || ':' || cidr.value),9,4)||'-4'||substr(md5(policy.id || ':' || cidr.value),14,3)||'-8'||substr(md5(policy.id || ':' || cidr.value),18,3)||'-'||substr(md5(policy.id || ':' || cidr.value),21,12), policy.id, cidr.value, 'Migrated site CIDR', true, 1,
+               CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM sites
+        JOIN sensor_network_policies AS policy
+          ON policy.site_id = sites.id AND policy.direction = 'server_pull'
+        CROSS JOIN LATERAL json_array_elements_text(sites.allowed_cidrs) AS cidr(value);
+
+INSERT INTO network_policy_revisions
+            (id, policy_id, revision, mode, cidrs, changed_by, changed_at, reason)
+        SELECT policy.id, policy.id, 1, policy.mode, COALESCE(
+            (SELECT json_agg(json_build_object('network', cidr.network, 'label', cidr.label,
+                                               'enabled', cidr.enabled))
+             FROM sensor_network_cidrs AS cidr WHERE cidr.policy_id = policy.id),
+            '[]'::json
+        ), NULL, CURRENT_TIMESTAMP,
+        'System migration preserved the previously effective network behavior.'
+        FROM sensor_network_policies AS policy;
+
+INSERT INTO alert_rules
+            (id, name, rule_type, severity, enabled, site_id, device_id,
+             debounce_seconds, resolve_seconds, configuration, created_at, updated_at)
+        SELECT substr(md5('device_address_outside_policy'),1,8)||'-'||substr(md5('device_address_outside_policy'),9,4)||'-4'||substr(md5('device_address_outside_policy'),14,3)||'-8'||substr(md5('device_address_outside_policy'),18,3)||'-'||substr(md5('device_address_outside_policy'),21,12), 'Device address outside server-pull policy',
+               'device_address_outside_policy', 'warning', true, NULL, NULL,
+               0, 0, '{}'::json, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        WHERE NOT EXISTS (
+            SELECT 1 FROM alert_rules
+            WHERE rule_type = 'device_address_outside_policy'
+              AND site_id IS NULL AND device_id IS NULL
+        );
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('utility_accounts.view', 'Sites and devices', 'View utility accounts', 'View assigned-site utility accounts.', false);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'utility_accounts.view');
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('utility_accounts.manage', 'Sites and devices', 'Manage utility accounts', 'Create, revise, and archive utility accounts.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'utility_accounts.manage');
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('network.view', 'Sites and devices', 'View sensor network policy', 'View assigned-site network policy and observed addresses.', false);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'network.view');
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('network.manage', 'Sites and devices', 'Manage sensor network policy', 'Change sensor network policies and CIDRs.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'network.manage');
+
+INSERT INTO audit_events
+            (id, occurred_at, actor_type, actor_id, action, object_type, object_id,
+             source_ip, outcome, correlation_id, details)
+        SELECT policy.id, CURRENT_TIMESTAMP, 'system', NULL,
+               'network_policy.legacy_behavior_migrated', 'sensor_network_policy', policy.id,
+               NULL, 'success', 'migration:20260721_0008',
+               json_build_object('direction', policy.direction, 'mode', policy.mode,
+                                 'behavior_preserved', true, 'review_required', true)
+        FROM sensor_network_policies AS policy;
+
+UPDATE alembic_version SET version_num='20260721_0008' WHERE alembic_version.version_num = '20260721_0007';
+
+-- Running upgrade 20260721_0008 -> 20260723_0009
+
+ALTER TABLE rate_versions ADD COLUMN pricing_model VARCHAR(32) DEFAULT 'time_of_use' NOT NULL;
+
+CREATE INDEX ix_rate_versions_pricing_model ON rate_versions (pricing_model);
+
+ALTER TABLE rate_versions ADD CONSTRAINT ck_rate_versions_rate_version_pricing_model CHECK (pricing_model IN ('flat','time_of_use','tiered','time_of_use_tiered'));
+
+CREATE TABLE rate_tier_definitions (
+    id VARCHAR(36) NOT NULL,
+    rate_version_id VARCHAR(36) NOT NULL,
+    stable_tier_id VARCHAR(80) NOT NULL,
+    name VARCHAR(120) NOT NULL,
+    display_order INTEGER NOT NULL,
+    lower_bound_kwh NUMERIC(20, 9) NOT NULL,
+    upper_bound_kwh NUMERIC(20, 9),
+    lower_bound_multiplier NUMERIC(16, 8),
+    upper_bound_multiplier NUMERIC(16, 8),
+    price_per_kwh NUMERIC(14, 8) NOT NULL,
+    tou_prices JSON DEFAULT '{}'::json NOT NULL,
+    season_name VARCHAR(80),
+    source_citation VARCHAR(500),
+    CONSTRAINT pk_rate_tier_definitions PRIMARY KEY (id),
+    CONSTRAINT uq_rate_tier_stable_id UNIQUE (rate_version_id, stable_tier_id),
+    CONSTRAINT uq_rate_tier_order UNIQUE (rate_version_id, display_order),
+    CONSTRAINT ck_rate_tier_definitions_rate_tier_order_nonnegative CHECK (display_order >= 0),
+    CONSTRAINT ck_rate_tier_definitions_rate_tier_lower_nonnegative CHECK (lower_bound_kwh >= 0),
+    CONSTRAINT ck_rate_tier_definitions_rate_tier_bounds CHECK (upper_bound_kwh IS NULL OR upper_bound_kwh > lower_bound_kwh),
+    CONSTRAINT ck_rate_tier_definitions_rate_tier_price_nonnegative CHECK (price_per_kwh >= 0),
+    CONSTRAINT fk_rate_tier_definitions_rate_version_id_rate_versions FOREIGN KEY(rate_version_id) REFERENCES rate_versions (id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_rate_tier_definitions_rate_version_id ON rate_tier_definitions (rate_version_id);
+
+CREATE TABLE rate_threshold_rules (
+    id VARCHAR(36) NOT NULL,
+    rate_version_id VARCHAR(36) NOT NULL,
+    basis VARCHAR(32) DEFAULT 'fixed_cycle_kwh' NOT NULL,
+    daily_baseline_kwh NUMERIC(18, 9),
+    baseline_region VARCHAR(120),
+    baseline_category VARCHAR(120),
+    rounding_policy VARCHAR(32) DEFAULT 'none' NOT NULL,
+    expected_cycle_start_day INTEGER DEFAULT '1' NOT NULL,
+    source_citation VARCHAR(500),
+    CONSTRAINT pk_rate_threshold_rules PRIMARY KEY (id),
+    CONSTRAINT ck_rate_threshold_rules_rate_threshold_basis CHECK (basis IN ('fixed_cycle_kwh','daily_baseline_kwh')),
+    CONSTRAINT ck_rate_threshold_rules_rate_threshold_rounding CHECK (rounding_policy IN ('none','nearest_kwh','floor_kwh','ceil_kwh')),
+    CONSTRAINT ck_rate_threshold_rules_rate_threshold_cycle_day CHECK (expected_cycle_start_day >= 1 AND expected_cycle_start_day <= 31),
+    CONSTRAINT uq_rate_threshold_rules_rate_version_id UNIQUE (rate_version_id),
+    CONSTRAINT fk_rate_threshold_rules_rate_version_id_rate_versions FOREIGN KEY(rate_version_id) REFERENCES rate_versions (id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_rate_threshold_rules_rate_version_id ON rate_threshold_rules (rate_version_id);
+
+CREATE TABLE rate_seasonal_baselines (
+    id VARCHAR(36) NOT NULL,
+    rate_version_id VARCHAR(36) NOT NULL,
+    name VARCHAR(80) NOT NULL,
+    start_month INTEGER NOT NULL,
+    start_day INTEGER NOT NULL,
+    end_month INTEGER NOT NULL,
+    end_day INTEGER NOT NULL,
+    daily_kwh NUMERIC(18, 9) NOT NULL,
+    source_citation VARCHAR(500),
+    CONSTRAINT pk_rate_seasonal_baselines PRIMARY KEY (id),
+    CONSTRAINT uq_rate_seasonal_baseline_name UNIQUE (rate_version_id, name),
+    CONSTRAINT ck_rate_seasonal_baselines_rate_seasonal_baseline_positive CHECK (daily_kwh > 0),
+    CONSTRAINT fk_rate_seasonal_baselines_rate_version_id_rate_versions FOREIGN KEY(rate_version_id) REFERENCES rate_versions (id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_rate_seasonal_baselines_rate_version_id ON rate_seasonal_baselines (rate_version_id);
+
+ALTER TABLE billing_cycles ADD COLUMN status VARCHAR(24) DEFAULT 'expected' NOT NULL;
+
+ALTER TABLE billing_cycles ADD COLUMN boundary_source VARCHAR(32) DEFAULT 'generated' NOT NULL;
+
+ALTER TABLE billing_cycles ADD COLUMN override_revision INTEGER DEFAULT '0' NOT NULL;
+
+ALTER TABLE billing_cycles ADD COLUMN recalculation_version INTEGER DEFAULT '0' NOT NULL;
+
+ALTER TABLE billing_cycles ADD COLUMN locked_snapshot_hash VARCHAR(64);
+
+ALTER TABLE billing_cycles ADD COLUMN created_by VARCHAR(36);
+
+ALTER TABLE billing_cycles ADD COLUMN updated_by VARCHAR(36);
+
+ALTER TABLE billing_cycles ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL;
+
+ALTER TABLE billing_cycles ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL;
+
+ALTER TABLE billing_cycles ADD CONSTRAINT fk_billing_cycles_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE billing_cycles ADD CONSTRAINT fk_billing_cycles_updated_by_users FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE SET NULL;
+
+CREATE INDEX ix_billing_cycles_status ON billing_cycles (status);
+
+ALTER TABLE billing_cycles ADD CONSTRAINT uq_billing_cycle_account_window UNIQUE (utility_account_id, starts_at, ends_at);
+
+ALTER TABLE billing_cycles ADD CONSTRAINT ck_billing_cycles_billing_cycle_window CHECK (ends_at > starts_at);
+
+ALTER TABLE billing_cycles ADD CONSTRAINT ck_billing_cycles_billing_cycle_status CHECK (status IN ('expected','confirmed','recalculating','finalized'));
+
+ALTER TABLE billing_cycles ADD CONSTRAINT ck_billing_cycles_billing_cycle_boundary_source CHECK (boundary_source IN ('generated','manual_override','utility_import','external_feed'));
+
+CREATE TABLE account_usage_authorities (
+    id VARCHAR(36) NOT NULL,
+    utility_account_id VARCHAR(36) NOT NULL,
+    authority_type VARCHAR(48) NOT NULL,
+    aggregate_set_id VARCHAR(36),
+    device_ids JSON DEFAULT '[]'::json NOT NULL,
+    source_reference VARCHAR(500),
+    confidence VARCHAR(24) DEFAULT 'unverified' NOT NULL,
+    complete_account BOOLEAN DEFAULT false NOT NULL,
+    revision INTEGER DEFAULT '1' NOT NULL,
+    updated_by VARCHAR(36),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_account_usage_authorities PRIMARY KEY (id),
+    CONSTRAINT ck_account_usage_authorities_account_usage_authority_type CHECK (authority_type IN ('complete_site_aggregate','service_leg_pair','whole_account_meter','utility_interval_import','manual_cycle_usage','external_feed','partial_monitored_circuits')),
+    CONSTRAINT ck_account_usage_authorities_account_usage_authority_confidence CHECK (confidence IN ('unverified','low','medium','high','utility_verified')),
+    CONSTRAINT uq_account_usage_authorities_utility_account_id UNIQUE (utility_account_id),
+    CONSTRAINT fk_account_usage_authorities_utility_account_id_utility_42a1 FOREIGN KEY(utility_account_id) REFERENCES utility_accounts (id) ON DELETE CASCADE,
+    CONSTRAINT fk_account_usage_authorities_aggregate_set_id_aggregate_sets FOREIGN KEY(aggregate_set_id) REFERENCES aggregate_sets (id) ON DELETE SET NULL,
+    CONSTRAINT fk_account_usage_authorities_updated_by_users FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_account_usage_authorities_utility_account_id ON account_usage_authorities (utility_account_id);
+
+CREATE TABLE manual_account_usage (
+    id VARCHAR(36) NOT NULL,
+    utility_account_id VARCHAR(36) NOT NULL,
+    billing_cycle_id VARCHAR(36),
+    effective_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    cumulative_kwh NUMERIC(24, 9) NOT NULL,
+    source_note VARCHAR(500) NOT NULL,
+    evidence_reference VARCHAR(500),
+    idempotency_key VARCHAR(128) NOT NULL,
+    verification_status VARCHAR(24) DEFAULT 'unverified' NOT NULL,
+    superseded_at TIMESTAMP WITH TIME ZONE,
+    created_by VARCHAR(36) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_manual_account_usage PRIMARY KEY (id),
+    CONSTRAINT ck_manual_account_usage_manual_account_usage_nonnegative CHECK (cumulative_kwh >= 0),
+    CONSTRAINT ck_manual_account_usage_manual_account_usage_verification CHECK (verification_status IN ('unverified','verified','reconciled')),
+    CONSTRAINT uq_manual_usage_idempotency UNIQUE (utility_account_id, idempotency_key),
+    CONSTRAINT fk_manual_account_usage_utility_account_id_utility_accounts FOREIGN KEY(utility_account_id) REFERENCES utility_accounts (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_manual_account_usage_billing_cycle_id_billing_cycles FOREIGN KEY(billing_cycle_id) REFERENCES billing_cycles (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_manual_account_usage_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT
+);
+
+CREATE INDEX ix_manual_account_usage_utility_account_id ON manual_account_usage (utility_account_id);
+
+CREATE INDEX ix_manual_account_usage_billing_cycle_id ON manual_account_usage (billing_cycle_id);
+
+CREATE INDEX ix_manual_account_usage_effective_at ON manual_account_usage (effective_at);
+
+CREATE TABLE utility_usage_imports (
+    id VARCHAR(36) NOT NULL,
+    utility_account_id VARCHAR(36) NOT NULL,
+    import_kind VARCHAR(32) NOT NULL,
+    status VARCHAR(24) DEFAULT 'preview' NOT NULL,
+    timezone VARCHAR(64) NOT NULL,
+    source_name VARCHAR(240) NOT NULL,
+    content_sha256 VARCHAR(64) NOT NULL,
+    field_mapping JSON DEFAULT '{}'::json NOT NULL,
+    row_count INTEGER DEFAULT '0' NOT NULL,
+    conflict_count INTEGER DEFAULT '0' NOT NULL,
+    normalized_rows JSON DEFAULT '[]'::json NOT NULL,
+    reversed_at TIMESTAMP WITH TIME ZONE,
+    created_by VARCHAR(36) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_utility_usage_imports PRIMARY KEY (id),
+    CONSTRAINT uq_utility_usage_import_content UNIQUE (utility_account_id, content_sha256),
+    CONSTRAINT ck_utility_usage_imports_utility_usage_import_kind CHECK (import_kind IN ('interval','daily','cycle_cumulative','cycle_dates','bill_total')),
+    CONSTRAINT ck_utility_usage_imports_utility_usage_import_status CHECK (status IN ('preview','committed','rejected','reversed')),
+    CONSTRAINT fk_utility_usage_imports_utility_account_id_utility_accounts FOREIGN KEY(utility_account_id) REFERENCES utility_accounts (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_utility_usage_imports_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT
+);
+
+CREATE INDEX ix_utility_usage_imports_utility_account_id ON utility_usage_imports (utility_account_id);
+
+CREATE INDEX ix_utility_usage_imports_content_sha256 ON utility_usage_imports (content_sha256);
+
+CREATE TABLE tier_allocation_segments (
+    id VARCHAR(36) NOT NULL,
+    billing_cycle_id VARCHAR(36) NOT NULL,
+    utility_account_id VARCHAR(36) NOT NULL,
+    normalized_interval_id VARCHAR(36),
+    import_id VARCHAR(36),
+    segment_order INTEGER NOT NULL,
+    interval_start TIMESTAMP WITH TIME ZONE NOT NULL,
+    interval_end TIMESTAMP WITH TIME ZONE NOT NULL,
+    rate_version_id VARCHAR(36) NOT NULL,
+    tier_definition_id VARCHAR(36) NOT NULL,
+    tier_stable_id VARCHAR(80) NOT NULL,
+    tier_name VARCHAR(120) NOT NULL,
+    tou_period VARCHAR(80),
+    cumulative_start_kwh NUMERIC(24, 9) NOT NULL,
+    cumulative_end_kwh NUMERIC(24, 9) NOT NULL,
+    segment_energy_kwh NUMERIC(20, 9) NOT NULL,
+    price_per_kwh NUMERIC(14, 8) NOT NULL,
+    unrounded_energy_charge NUMERIC(24, 12) NOT NULL,
+    derived_threshold_kwh NUMERIC(20, 9),
+    usage_authority_type VARCHAR(48) NOT NULL,
+    quality_flags JSON DEFAULT '[]'::json NOT NULL,
+    recalculation_version INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_tier_allocation_segments PRIMARY KEY (id),
+    CONSTRAINT uq_tier_segment_interval_recalc UNIQUE (billing_cycle_id, normalized_interval_id, segment_order, recalculation_version),
+    CONSTRAINT ck_tier_allocation_segments_tier_segment_energy_nonnegative CHECK (segment_energy_kwh >= 0),
+    CONSTRAINT ck_tier_allocation_segments_tier_segment_cumulative_order CHECK (cumulative_end_kwh >= cumulative_start_kwh),
+    CONSTRAINT fk_tier_allocation_segments_billing_cycle_id_billing_cycles FOREIGN KEY(billing_cycle_id) REFERENCES billing_cycles (id) ON DELETE CASCADE,
+    CONSTRAINT fk_tier_allocation_segments_utility_account_id_utility_accounts FOREIGN KEY(utility_account_id) REFERENCES utility_accounts (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_tier_allocation_segments_normalized_interval_id_norm_f88d FOREIGN KEY(normalized_interval_id) REFERENCES normalized_intervals (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_tier_allocation_segments_import_id_utility_usage_imports FOREIGN KEY(import_id) REFERENCES utility_usage_imports (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_tier_allocation_segments_rate_version_id_rate_versions FOREIGN KEY(rate_version_id) REFERENCES rate_versions (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_tier_allocation_segments_tier_definition_id_rate_tie_0ee5 FOREIGN KEY(tier_definition_id) REFERENCES rate_tier_definitions (id) ON DELETE RESTRICT
+);
+
+CREATE INDEX ix_tier_allocation_segments_billing_cycle_id ON tier_allocation_segments (billing_cycle_id);
+
+CREATE INDEX ix_tier_allocation_segments_utility_account_id ON tier_allocation_segments (utility_account_id);
+
+CREATE INDEX ix_tier_allocation_segments_normalized_interval_id ON tier_allocation_segments (normalized_interval_id);
+
+CREATE INDEX ix_tier_allocation_segments_interval_start ON tier_allocation_segments (interval_start);
+
+CREATE INDEX ix_tier_allocation_segments_rate_version_id ON tier_allocation_segments (rate_version_id);
+
+CREATE TABLE cycle_tier_summaries (
+    billing_cycle_id VARCHAR(36) NOT NULL,
+    tier_stable_id VARCHAR(80) NOT NULL,
+    recalculation_version INTEGER NOT NULL,
+    tier_name VARCHAR(120) NOT NULL,
+    lower_bound_kwh NUMERIC(20, 9) NOT NULL,
+    upper_bound_kwh NUMERIC(20, 9),
+    usage_kwh NUMERIC(20, 9) NOT NULL,
+    energy_charge NUMERIC(24, 12) NOT NULL,
+    calculated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_cycle_tier_summaries PRIMARY KEY (billing_cycle_id, tier_stable_id, recalculation_version),
+    CONSTRAINT fk_cycle_tier_summaries_billing_cycle_id_billing_cycles FOREIGN KEY(billing_cycle_id) REFERENCES billing_cycles (id) ON DELETE CASCADE
+);
+
+CREATE TABLE tier_projection_snapshots (
+    id VARCHAR(36) NOT NULL,
+    billing_cycle_id VARCHAR(36) NOT NULL,
+    calculated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    method VARCHAR(32) NOT NULL,
+    projected_usage_kwh NUMERIC(20, 9) NOT NULL,
+    projected_energy_charge NUMERIC(24, 12) NOT NULL,
+    projected_tier_stable_id VARCHAR(80),
+    confidence VARCHAR(24) NOT NULL,
+    coverage_percent NUMERIC(7, 4) NOT NULL,
+    CONSTRAINT pk_tier_projection_snapshots PRIMARY KEY (id),
+    CONSTRAINT fk_tier_projection_snapshots_billing_cycle_id_billing_cycles FOREIGN KEY(billing_cycle_id) REFERENCES billing_cycles (id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_tier_projection_snapshots_billing_cycle_id ON tier_projection_snapshots (billing_cycle_id);
+
+CREATE INDEX ix_tier_projection_snapshots_calculated_at ON tier_projection_snapshots (calculated_at);
+
+CREATE TABLE account_reconciliation_adjustments (
+    id VARCHAR(36) NOT NULL,
+    utility_account_id VARCHAR(36) NOT NULL,
+    billing_cycle_id VARCHAR(36) NOT NULL,
+    component VARCHAR(48) NOT NULL,
+    amount NUMERIC(18, 8) NOT NULL,
+    notes VARCHAR(1000) NOT NULL,
+    provenance VARCHAR(500) NOT NULL,
+    created_by VARCHAR(36) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_account_reconciliation_adjustments PRIMARY KEY (id),
+    CONSTRAINT fk_account_reconciliation_adjustments_utility_account_i_0391 FOREIGN KEY(utility_account_id) REFERENCES utility_accounts (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_account_reconciliation_adjustments_billing_cycle_id__38c1 FOREIGN KEY(billing_cycle_id) REFERENCES billing_cycles (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_account_reconciliation_adjustments_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT
+);
+
+CREATE INDEX ix_account_reconciliation_adjustments_utility_account_id ON account_reconciliation_adjustments (utility_account_id);
+
+CREATE INDEX ix_account_reconciliation_adjustments_billing_cycle_id ON account_reconciliation_adjustments (billing_cycle_id);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('costs.recalculate', 'Rates and billing', 'Recalculate costs', 'Recalculate unfinalized billing-cycle cost allocations.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'costs.recalculate');
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('usage_imports.manage', 'Rates and billing', 'Manage utility usage imports', 'Preview, commit, reconcile, and reverse utility usage imports.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'usage_imports.manage');
+
+UPDATE alembic_version SET version_num='20260723_0009' WHERE alembic_version.version_num = '20260721_0008';
 
 COMMIT;
 

@@ -18,6 +18,8 @@ const DeviceDetailPage = lazy(() => import('./pages/DeviceDetailPage').then((mod
 const DevicesPage = lazy(() => import('./pages/DevicesPage').then((module) => ({ default: module.DevicesPage })))
 const EnrollmentPage = lazy(() => import('./pages/EnrollmentPage').then((module) => ({ default: module.EnrollmentPage })))
 const HistoryPage = lazy(() => import('./pages/HistoryPage').then((module) => ({ default: module.HistoryPage })))
+const UsagePage = lazy(() => import('./pages/UsagePage').then((module) => ({ default: module.UsagePage })))
+const CostsPage = lazy(() => import('./pages/CostsPage').then((module) => ({ default: module.CostsPage })))
 const RatesPage = lazy(() => import('./pages/RatesPage').then((module) => ({ default: module.RatesPage })))
 const RateEditorPage = lazy(() => import('./pages/RateEditorPage').then((module) => ({ default: module.RateEditorPage })))
 const RateSourcesPage = lazy(() => import('./pages/RateSourcesPage').then((module) => ({ default: module.RateSourcesPage })))
@@ -47,6 +49,8 @@ function ProtectedApp({ session }: { session: Session }) {
         <Route path="/devices/:deviceId" element={<Guard session={session} permission="devices.view"><DeviceDetailPage /></Guard>} />
         <Route path="/topology" element={<Guard session={session} permission="topology.view"><TopologyPage /></Guard>} />
         <Route path="/history" element={<Guard session={session} permission="history.view"><HistoryPage /></Guard>} />
+        <Route path="/usage" element={<Guard session={session} permission="usage.view"><UsagePage /></Guard>} />
+        <Route path="/costs" element={<Guard session={session} permission="costs.view"><CostsPage /></Guard>} />
         <Route path="/rates" element={<Guard session={session} permission="rates.view"><RatesPage canManage={canManageRates} /></Guard>} />
         <Route path="/rates/new" element={<Guard session={session} permission="rates.manage_custom"><RateEditorPage canManage /></Guard>} />
         <Route path="/rates/:planId/versions/:versionId" element={<Guard session={session} permission="rates.view"><RateEditorPage canManage={canManageRates} /></Guard>} />

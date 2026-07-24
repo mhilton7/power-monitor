@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
+    BillingCycle,
     Device,
     DeviceEvent,
     NormalizedInterval,
@@ -207,6 +208,7 @@ async def ingest_readings(
     accepted: list[int] = []
     duplicates: list[int] = []
     rejected: list[RejectedReading] = []
+    accepted_windows: list[tuple[datetime, datetime]] = []
     for reading in readings:
         incoming_hash = reading.record_hash or reading_content_hash(reading)
         existing = await session.scalar(
@@ -260,6 +262,25 @@ async def ingest_readings(
             )
         )
         accepted.append(reading.sequence)
+        accepted_windows.append((reading.interval_start, reading.interval_end))
+    if accepted_windows and device.utility_account_id:
+        earliest = min(value[0] for value in accepted_windows)
+        latest = max(value[1] for value in accepted_windows)
+        affected_cycles = list(
+            await session.scalars(
+                select(BillingCycle)
+                .where(
+                    BillingCycle.utility_account_id == device.utility_account_id,
+                    BillingCycle.finalized_at.is_(None),
+                    BillingCycle.starts_at < latest,
+                    BillingCycle.ends_at > earliest,
+                )
+                .with_for_update()
+            )
+        )
+        for cycle in affected_cycles:
+            cycle.status = "recalculating"
+            cycle.updated_at = now
     cursor = await _recalculate_cursor(session, device_id, now)
     await session.flush()
     gaps = list(

@@ -70,7 +70,11 @@ automated multi-device release gate. Protocol and deployment details are in
 [Security](docs/SECURITY.md), and [Operations](docs/OPERATIONS.md).
 Rate administration is covered by [SCE synchronization](docs/SCE_RATE_SYNC.md),
 [custom plans](docs/CUSTOM_RATE_PLANS.md), [source security](docs/RATE_SOURCE_SECURITY.md),
-and [versioning](docs/RATE_VERSIONING.md). Guided account/rate setup and the
+and [versioning](docs/RATE_VERSIONING.md). Flat, TOU, billing-cycle tiered, and
+hybrid pricing are documented in [Tiered and hybrid rates](docs/TIERED_AND_HYBRID_RATES.md),
+[Billing cycles](docs/BILLING_CYCLES.md), [Account usage authority](docs/ACCOUNT_USAGE_AUTHORITY.md),
+[Usage and costs](docs/USAGE_AND_COSTS.md), and [Usage imports](docs/USAGE_IMPORTS.md).
+Guided account/rate setup and the
 separate sensor-network boundary are documented in
 [Utility accounts](docs/UTILITY_ACCOUNTS.md) and
 [Sensor network policy](docs/SENSOR_NETWORK_POLICY.md). See the consolidated

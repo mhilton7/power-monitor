@@ -789,6 +789,7 @@ class RateVersion(Base):
     effective_to: Mapped[date | None] = mapped_column(Date)
     timezone: Mapped[str] = mapped_column(String(64))
     currency: Mapped[str] = mapped_column(String(3))
+    pricing_model: Mapped[str] = mapped_column(String(32), default="time_of_use", index=True)
     source_url: Mapped[str] = mapped_column(String(500))
     source_checked_on: Mapped[date] = mapped_column(Date)
     source_notes: Mapped[str] = mapped_column(Text)
@@ -808,7 +809,13 @@ class RateVersion(Base):
     automatically_activated: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    __table_args__ = (UniqueConstraint("rate_plan_id", "version", name="uq_rate_version_number"),)
+    __table_args__ = (
+        UniqueConstraint("rate_plan_id", "version", name="uq_rate_version_number"),
+        CheckConstraint(
+            "pricing_model IN ('flat','time_of_use','tiered','time_of_use_tiered')",
+            name="rate_version_pricing_model",
+        ),
+    )
 
 
 class RateSeason(Base):
@@ -858,6 +865,84 @@ class RatePeriod(Base):
         CheckConstraint("start_minute >= 0 AND start_minute < 1440", name="period_start"),
         CheckConstraint("end_minute > 0 AND end_minute <= 1440", name="period_end"),
         CheckConstraint("end_minute > start_minute", name="period_order"),
+    )
+
+
+class RateTierDefinition(Base):
+    __tablename__ = "rate_tier_definitions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    rate_version_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="CASCADE"), index=True
+    )
+    stable_tier_id: Mapped[str] = mapped_column(String(80))
+    name: Mapped[str] = mapped_column(String(120))
+    display_order: Mapped[int] = mapped_column(Integer)
+    lower_bound_kwh: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0"))
+    upper_bound_kwh: Mapped[Decimal | None] = mapped_column(Numeric(20, 9))
+    lower_bound_multiplier: Mapped[Decimal | None] = mapped_column(Numeric(16, 8))
+    upper_bound_multiplier: Mapped[Decimal | None] = mapped_column(Numeric(16, 8))
+    price_per_kwh: Mapped[Decimal] = mapped_column(Numeric(14, 8))
+    tou_prices: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    season_name: Mapped[str | None] = mapped_column(String(80))
+    source_citation: Mapped[str | None] = mapped_column(String(500))
+    __table_args__ = (
+        UniqueConstraint("rate_version_id", "stable_tier_id", name="uq_rate_tier_stable_id"),
+        UniqueConstraint("rate_version_id", "display_order", name="uq_rate_tier_order"),
+        CheckConstraint("display_order >= 0", name="rate_tier_order_nonnegative"),
+        CheckConstraint("lower_bound_kwh >= 0", name="rate_tier_lower_nonnegative"),
+        CheckConstraint(
+            "upper_bound_kwh IS NULL OR upper_bound_kwh > lower_bound_kwh",
+            name="rate_tier_bounds",
+        ),
+        CheckConstraint("price_per_kwh >= 0", name="rate_tier_price_nonnegative"),
+    )
+
+
+class RateThresholdRule(Base):
+    __tablename__ = "rate_threshold_rules"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    rate_version_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    basis: Mapped[str] = mapped_column(String(32), default="fixed_cycle_kwh")
+    daily_baseline_kwh: Mapped[Decimal | None] = mapped_column(Numeric(18, 9))
+    baseline_region: Mapped[str | None] = mapped_column(String(120))
+    baseline_category: Mapped[str | None] = mapped_column(String(120))
+    rounding_policy: Mapped[str] = mapped_column(String(32), default="none")
+    expected_cycle_start_day: Mapped[int] = mapped_column(Integer, default=1)
+    source_citation: Mapped[str | None] = mapped_column(String(500))
+    __table_args__ = (
+        CheckConstraint(
+            "basis IN ('fixed_cycle_kwh','daily_baseline_kwh')",
+            name="rate_threshold_basis",
+        ),
+        CheckConstraint(
+            "rounding_policy IN ('none','nearest_kwh','floor_kwh','ceil_kwh')",
+            name="rate_threshold_rounding",
+        ),
+        CheckConstraint(
+            "expected_cycle_start_day >= 1 AND expected_cycle_start_day <= 31",
+            name="rate_threshold_cycle_day",
+        ),
+    )
+
+
+class RateSeasonalBaseline(Base):
+    __tablename__ = "rate_seasonal_baselines"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    rate_version_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(80))
+    start_month: Mapped[int] = mapped_column(Integer)
+    start_day: Mapped[int] = mapped_column(Integer)
+    end_month: Mapped[int] = mapped_column(Integer)
+    end_day: Mapped[int] = mapped_column(Integer)
+    daily_kwh: Mapped[Decimal] = mapped_column(Numeric(18, 9))
+    source_citation: Mapped[str | None] = mapped_column(String(500))
+    __table_args__ = (
+        UniqueConstraint("rate_version_id", "name", name="uq_rate_seasonal_baseline_name"),
+        CheckConstraint("daily_kwh > 0", name="rate_seasonal_baseline_positive"),
     )
 
 
@@ -1102,7 +1187,128 @@ class BillingCycle(Base):
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     explicit_meter_dates: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(24), default="expected", index=True)
+    boundary_source: Mapped[str] = mapped_column(String(32), default="generated")
+    override_revision: Mapped[int] = mapped_column(Integer, default=0)
+    recalculation_version: Mapped[int] = mapped_column(Integer, default=0)
+    locked_snapshot_hash: Mapped[str | None] = mapped_column(String(64))
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint(
+            "utility_account_id", "starts_at", "ends_at", name="uq_billing_cycle_account_window"
+        ),
+        CheckConstraint("ends_at > starts_at", name="billing_cycle_window"),
+        CheckConstraint(
+            "status IN ('expected','confirmed','recalculating','finalized')",
+            name="billing_cycle_status",
+        ),
+        CheckConstraint(
+            "boundary_source IN ('generated','manual_override','utility_import','external_feed')",
+            name="billing_cycle_boundary_source",
+        ),
+    )
+
+
+class AccountUsageAuthority(Base):
+    __tablename__ = "account_usage_authorities"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    utility_account_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    authority_type: Mapped[str] = mapped_column(String(48))
+    aggregate_set_id: Mapped[str | None] = mapped_column(
+        ForeignKey("aggregate_sets.id", ondelete="SET NULL")
+    )
+    device_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    source_reference: Mapped[str | None] = mapped_column(String(500))
+    confidence: Mapped[str] = mapped_column(String(24), default="unverified")
+    complete_account: Mapped[bool] = mapped_column(Boolean, default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "authority_type IN ('complete_site_aggregate','service_leg_pair',"
+            "'whole_account_meter','utility_interval_import','manual_cycle_usage',"
+            "'external_feed','partial_monitored_circuits')",
+            name="account_usage_authority_type",
+        ),
+        CheckConstraint(
+            "confidence IN ('unverified','low','medium','high','utility_verified')",
+            name="account_usage_authority_confidence",
+        ),
+    )
+
+
+class ManualAccountUsage(Base):
+    __tablename__ = "manual_account_usage"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    utility_account_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
+    )
+    billing_cycle_id: Mapped[str | None] = mapped_column(
+        ForeignKey("billing_cycles.id", ondelete="RESTRICT"), index=True
+    )
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    cumulative_kwh: Mapped[Decimal] = mapped_column(Numeric(24, 9))
+    source_note: Mapped[str] = mapped_column(String(500))
+    evidence_reference: Mapped[str | None] = mapped_column(String(500))
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    verification_status: Mapped[str] = mapped_column(String(24), default="unverified")
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint(
+            "utility_account_id", "idempotency_key", name="uq_manual_usage_idempotency"
+        ),
+        CheckConstraint("cumulative_kwh >= 0", name="manual_account_usage_nonnegative"),
+        CheckConstraint(
+            "verification_status IN ('unverified','verified','reconciled')",
+            name="manual_account_usage_verification",
+        ),
+    )
+
+
+class UtilityUsageImport(Base):
+    __tablename__ = "utility_usage_imports"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    utility_account_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
+    )
+    import_kind: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(24), default="preview")
+    timezone: Mapped[str] = mapped_column(String(64))
+    source_name: Mapped[str] = mapped_column(String(240))
+    content_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    field_mapping: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    conflict_count: Mapped[int] = mapped_column(Integer, default=0)
+    normalized_rows: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint(
+            "utility_account_id", "content_sha256", name="uq_utility_usage_import_content"
+        ),
+        CheckConstraint(
+            "import_kind IN ('interval','daily','cycle_cumulative','cycle_dates','bill_total')",
+            name="utility_usage_import_kind",
+        ),
+        CheckConstraint(
+            "status IN ('preview','committed','rejected','reversed')",
+            name="utility_usage_import_status",
+        ),
+    )
 
 
 class CostCalculationRun(Base):
@@ -1144,6 +1350,106 @@ class CostIntervalResult(Base):
     component: Mapped[str] = mapped_column(String(40), default="energy")
     adjustment_breakdown: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     calculation_version: Mapped[str] = mapped_column(String(40), default="rate-engine/1")
+
+
+class TierAllocationSegment(Base):
+    __tablename__ = "tier_allocation_segments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    billing_cycle_id: Mapped[str] = mapped_column(
+        ForeignKey("billing_cycles.id", ondelete="CASCADE"), index=True
+    )
+    utility_account_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
+    )
+    normalized_interval_id: Mapped[str | None] = mapped_column(
+        ForeignKey("normalized_intervals.id", ondelete="RESTRICT"), index=True
+    )
+    import_id: Mapped[str | None] = mapped_column(
+        ForeignKey("utility_usage_imports.id", ondelete="RESTRICT")
+    )
+    segment_order: Mapped[int] = mapped_column(Integer)
+    interval_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    interval_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    rate_version_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="RESTRICT"), index=True
+    )
+    tier_definition_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_tier_definitions.id", ondelete="RESTRICT")
+    )
+    tier_stable_id: Mapped[str] = mapped_column(String(80))
+    tier_name: Mapped[str] = mapped_column(String(120))
+    tou_period: Mapped[str | None] = mapped_column(String(80))
+    cumulative_start_kwh: Mapped[Decimal] = mapped_column(Numeric(24, 9))
+    cumulative_end_kwh: Mapped[Decimal] = mapped_column(Numeric(24, 9))
+    segment_energy_kwh: Mapped[Decimal] = mapped_column(Numeric(20, 9))
+    price_per_kwh: Mapped[Decimal] = mapped_column(Numeric(14, 8))
+    unrounded_energy_charge: Mapped[Decimal] = mapped_column(Numeric(24, 12))
+    derived_threshold_kwh: Mapped[Decimal | None] = mapped_column(Numeric(20, 9))
+    usage_authority_type: Mapped[str] = mapped_column(String(48))
+    quality_flags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    recalculation_version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint(
+            "billing_cycle_id",
+            "normalized_interval_id",
+            "segment_order",
+            "recalculation_version",
+            name="uq_tier_segment_interval_recalc",
+        ),
+        CheckConstraint("segment_energy_kwh >= 0", name="tier_segment_energy_nonnegative"),
+        CheckConstraint(
+            "cumulative_end_kwh >= cumulative_start_kwh",
+            name="tier_segment_cumulative_order",
+        ),
+    )
+
+
+class CycleTierSummary(Base):
+    __tablename__ = "cycle_tier_summaries"
+    billing_cycle_id: Mapped[str] = mapped_column(
+        ForeignKey("billing_cycles.id", ondelete="CASCADE"), primary_key=True
+    )
+    tier_stable_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    recalculation_version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tier_name: Mapped[str] = mapped_column(String(120))
+    lower_bound_kwh: Mapped[Decimal] = mapped_column(Numeric(20, 9))
+    upper_bound_kwh: Mapped[Decimal | None] = mapped_column(Numeric(20, 9))
+    usage_kwh: Mapped[Decimal] = mapped_column(Numeric(20, 9))
+    energy_charge: Mapped[Decimal] = mapped_column(Numeric(24, 12))
+    calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class TierProjectionSnapshot(Base):
+    __tablename__ = "tier_projection_snapshots"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    billing_cycle_id: Mapped[str] = mapped_column(
+        ForeignKey("billing_cycles.id", ondelete="CASCADE"), index=True
+    )
+    calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    method: Mapped[str] = mapped_column(String(32))
+    projected_usage_kwh: Mapped[Decimal] = mapped_column(Numeric(20, 9))
+    projected_energy_charge: Mapped[Decimal] = mapped_column(Numeric(24, 12))
+    projected_tier_stable_id: Mapped[str | None] = mapped_column(String(80))
+    confidence: Mapped[str] = mapped_column(String(24))
+    coverage_percent: Mapped[Decimal] = mapped_column(Numeric(7, 4))
+
+
+class AccountReconciliationAdjustment(Base):
+    __tablename__ = "account_reconciliation_adjustments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    utility_account_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
+    )
+    billing_cycle_id: Mapped[str] = mapped_column(
+        ForeignKey("billing_cycles.id", ondelete="RESTRICT"), index=True
+    )
+    component: Mapped[str] = mapped_column(String(48))
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+    notes: Mapped[str] = mapped_column(String(1000))
+    provenance: Mapped[str] = mapped_column(String(500))
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class DailyCostRollup(Base):

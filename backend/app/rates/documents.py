@@ -22,6 +22,141 @@ VALID_COST_SCOPES = {
     "allocated_account_estimate",
     "full_account_estimate",
 }
+PRICING_MODELS = {"flat", "time_of_use", "tiered", "time_of_use_tiered"}
+THRESHOLD_BASES = {"fixed_cycle_kwh", "daily_baseline_kwh"}
+ROUNDING_POLICIES = {"none", "nearest_kwh", "floor_kwh", "ceil_kwh"}
+HYBRID_METHODS = {"tier_period_matrix", "tier_base_plus_tou_adder", "tou_base_plus_tier_adder"}
+
+
+def _exact_decimal(value: str, *, label: str, places: int = 8) -> str:
+    try:
+        decimal = Decimal(value)
+    except InvalidOperation as exc:
+        raise ValueError(f"{label} must be an exact decimal string") from exc
+    if not decimal.is_finite() or abs(cast(int, decimal.as_tuple().exponent)) > places:
+        raise ValueError(f"{label} must be finite with no more than {places} decimal places")
+    return format(decimal, "f")
+
+
+class SeasonalBaselineDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=80)
+    start: str = Field(pattern=r"^\d{2}-\d{2}$")
+    end: str = Field(pattern=r"^\d{2}-\d{2}$")
+    daily_kwh: str
+    source_citation: str | None = Field(default=None, max_length=500)
+
+    @field_validator("daily_kwh")
+    @classmethod
+    def exact_daily_kwh(cls, value: str) -> str:
+        value = _exact_decimal(value, label="daily baseline")
+        if Decimal(value) <= 0:
+            raise ValueError("daily baseline must be greater than zero")
+        return value
+
+    @field_validator("start", "end")
+    @classmethod
+    def valid_month_day(cls, value: str) -> str:
+        month, day = (int(part) for part in value.split("-"))
+        try:
+            date(2024, month, day)
+        except ValueError as exc:
+            raise ValueError("month-day is invalid") from exc
+        return value
+
+
+class TierThresholdDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    basis: Literal["fixed_cycle_kwh", "daily_baseline_kwh"] = "fixed_cycle_kwh"
+    daily_baseline_kwh: str | None = None
+    baseline_region: str | None = Field(default=None, max_length=120)
+    baseline_category: str | None = Field(default=None, max_length=120)
+    rounding_policy: Literal["none", "nearest_kwh", "floor_kwh", "ceil_kwh"] = "none"
+    seasonal_baselines: list[SeasonalBaselineDocument] = Field(default_factory=list)
+    source_citation: str | None = Field(default=None, max_length=500)
+
+    @field_validator("daily_baseline_kwh")
+    @classmethod
+    def exact_daily_kwh(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = _exact_decimal(value, label="daily baseline")
+        if Decimal(value) <= 0:
+            raise ValueError("daily baseline must be greater than zero")
+        return value
+
+    @model_validator(mode="after")
+    def complete_threshold(self) -> TierThresholdDocument:
+        if (
+            self.basis == "daily_baseline_kwh"
+            and self.daily_baseline_kwh is None
+            and not self.seasonal_baselines
+        ):
+            raise ValueError("daily baseline thresholds require a baseline allocation")
+        if self.basis == "fixed_cycle_kwh" and (
+            self.daily_baseline_kwh is not None or self.seasonal_baselines
+        ):
+            raise ValueError("fixed-cycle thresholds cannot include daily baseline settings")
+        return self
+
+
+class TierDefinitionDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tier_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    name: str = Field(min_length=1, max_length=120)
+    order: int = Field(ge=0)
+    lower_bound_inclusive_kwh: str = "0"
+    upper_bound_exclusive_kwh: str | None = None
+    lower_bound_multiplier: str | None = None
+    upper_bound_multiplier: str | None = None
+    price_per_kwh: str
+    tou_prices: dict[str, str] = Field(default_factory=dict)
+    season: str | None = Field(default=None, max_length=80)
+    source_citation: str | None = Field(default=None, max_length=500)
+
+    @field_validator(
+        "lower_bound_inclusive_kwh",
+        "upper_bound_exclusive_kwh",
+        "lower_bound_multiplier",
+        "upper_bound_multiplier",
+        "price_per_kwh",
+    )
+    @classmethod
+    def exact_value(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = _exact_decimal(value, label="tier value")
+        if Decimal(value) < 0:
+            raise ValueError("tier bounds, multipliers, and energy prices must be non-negative")
+        return value
+
+    @field_validator("tou_prices")
+    @classmethod
+    def exact_tou_prices(cls, value: dict[str, str]) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for bucket, raw_price in value.items():
+            if not bucket or len(bucket) > 80:
+                raise ValueError("hybrid period labels must be between 1 and 80 characters")
+            price = _exact_decimal(raw_price, label=f"{bucket} price")
+            if Decimal(price) < 0:
+                raise ValueError("hybrid energy prices must be non-negative")
+            result[bucket] = price
+        return result
+
+
+class BillingCycleBehaviorDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_start_day: int = Field(default=1, ge=1, le=31)
+    threshold: TierThresholdDocument = Field(default_factory=TierThresholdDocument)
+
+
+class HybridPricingDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    method: Literal[
+        "tier_period_matrix",
+        "tier_base_plus_tou_adder",
+        "tou_base_plus_tier_adder",
+    ] = "tier_period_matrix"
 
 
 class RatePeriodDocument(BaseModel):
@@ -142,6 +277,13 @@ class RatePlanDocument(BaseModel):
     description: str = ""
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     timezone: str
+    pricing_model: Literal["flat", "time_of_use", "tiered", "time_of_use_tiered"] = "time_of_use"
+    flat_rate_per_kwh: str | None = None
+    billing_cycle: BillingCycleBehaviorDocument = Field(
+        default_factory=BillingCycleBehaviorDocument
+    )
+    tiers: list[TierDefinitionDocument] = Field(default_factory=list)
+    hybrid_pricing: HybridPricingDocument | None = None
     ownership_scope: Literal["global", "site", "utility_account"] = "global"
     owner_id: str | None = None
     effective_from: date
@@ -154,6 +296,16 @@ class RatePlanDocument(BaseModel):
     adjustments: list[RateAdjustmentDocument] = Field(default_factory=list)
     custom_notes: str = ""
     cloned_from_rate_version_id: str | None = None
+
+    @field_validator("flat_rate_per_kwh")
+    @classmethod
+    def exact_flat_rate(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = _exact_decimal(value, label="flat rate")
+        if Decimal(value) < 0:
+            raise ValueError("flat energy prices must be non-negative")
+        return value
 
     @field_validator("timezone")
     @classmethod
@@ -184,6 +336,14 @@ class RatePlanDocument(BaseModel):
             raise ValueError("effective_through must not precede effective_from")
         if self.ownership_scope != "global" and not self.owner_id:
             raise ValueError("owner_id is required for site or utility-account scope")
+        if self.pricing_model == "flat" and self.flat_rate_per_kwh is None:
+            raise ValueError("flat pricing requires flat_rate_per_kwh")
+        if self.pricing_model in {"tiered", "time_of_use_tiered"} and len(self.tiers) < 2:
+            raise ValueError("tiered pricing requires at least two tiers")
+        if self.pricing_model == "time_of_use_tiered" and self.hybrid_pricing is None:
+            raise ValueError("hybrid pricing requires a hybrid calculation method")
+        if self.pricing_model != "time_of_use_tiered" and self.hybrid_pricing is not None:
+            raise ValueError("hybrid pricing settings apply only to time-of-use tiered plans")
         return self
 
 
@@ -255,7 +415,8 @@ def validate_document(
                 message="Utility name is not a recognized SCE or custom label",
             )
         )
-    if not document.seasons:
+    needs_time_schedule = document.pricing_model in {"time_of_use", "time_of_use_tiered"}
+    if needs_time_schedule and not document.seasons:
         errors.append(
             ValidationIssue(
                 level="error",
@@ -345,6 +506,8 @@ def validate_document(
             coverage[key] = valid and cursor == 1440
 
     for day, owners in day_owners.items():
+        if not needs_time_schedule:
+            break
         if not owners:
             errors.append(
                 ValidationIssue(
@@ -367,6 +530,198 @@ def validate_document(
             )
             break
 
+    if (
+        document.pricing_model == "flat"
+        and document.flat_rate_per_kwh is not None
+        and Decimal(document.flat_rate_per_kwh) > max_energy_rate
+    ):
+        warnings.append(
+            ValidationIssue(
+                level="warning",
+                code="rate_sanity",
+                path="flat_rate_per_kwh",
+                message="Flat energy price exceeds the configured sanity threshold",
+            )
+        )
+
+    if document.pricing_model in {"tiered", "time_of_use_tiered"}:
+        ordered_tiers = sorted(document.tiers, key=lambda item: item.order)
+        orders = [item.order for item in ordered_tiers]
+        if orders != list(range(len(ordered_tiers))):
+            errors.append(
+                ValidationIssue(
+                    level="error",
+                    code="tier_order",
+                    path="tiers",
+                    message="Tier order values must be unique and contiguous starting at zero",
+                )
+            )
+        if len({item.tier_id for item in ordered_tiers}) != len(ordered_tiers):
+            errors.append(
+                ValidationIssue(
+                    level="error",
+                    code="tier_id_duplicate",
+                    path="tiers",
+                    message="Tier IDs must be unique within a rate version",
+                )
+            )
+        threshold_basis = document.billing_cycle.threshold.basis
+        tier_cursor = Decimal("0")
+        for index, tier in enumerate(ordered_tiers):
+            final = index == len(ordered_tiers) - 1
+            price = Decimal(tier.price_per_kwh)
+            if price > max_energy_rate:
+                warnings.append(
+                    ValidationIssue(
+                        level="warning",
+                        code="rate_sanity",
+                        path=f"tiers.{index}.price_per_kwh",
+                        message="Tier energy price exceeds the configured sanity threshold",
+                    )
+                )
+            if threshold_basis == "fixed_cycle_kwh":
+                lower = Decimal(tier.lower_bound_inclusive_kwh)
+                upper = (
+                    Decimal(tier.upper_bound_exclusive_kwh)
+                    if tier.upper_bound_exclusive_kwh is not None
+                    else None
+                )
+                if lower != tier_cursor:
+                    errors.append(
+                        ValidationIssue(
+                            level="error",
+                            code="tier_gap_or_overlap",
+                            path=f"tiers.{index}.lower_bound_inclusive_kwh",
+                            message=(
+                                f"Tier must begin at the prior exclusive boundary ({tier_cursor})"
+                            ),
+                        )
+                    )
+                if final and upper is not None:
+                    errors.append(
+                        ValidationIssue(
+                            level="error",
+                            code="final_tier_open",
+                            path=f"tiers.{index}.upper_bound_exclusive_kwh",
+                            message="The final tier must be open-ended",
+                        )
+                    )
+                elif not final and upper is None:
+                    errors.append(
+                        ValidationIssue(
+                            level="error",
+                            code="tier_upper_required",
+                            path=f"tiers.{index}.upper_bound_exclusive_kwh",
+                            message="Every non-final tier needs an exclusive upper boundary",
+                        )
+                    )
+                elif upper is not None and upper <= lower:
+                    errors.append(
+                        ValidationIssue(
+                            level="error",
+                            code="tier_bounds",
+                            path=f"tiers.{index}.upper_bound_exclusive_kwh",
+                            message="Tier upper boundary must be greater than its lower boundary",
+                        )
+                    )
+                if upper is not None:
+                    tier_cursor = upper
+                if (
+                    tier.lower_bound_multiplier is not None
+                    or tier.upper_bound_multiplier is not None
+                ):
+                    errors.append(
+                        ValidationIssue(
+                            level="error",
+                            code="threshold_basis_mismatch",
+                            path=f"tiers.{index}",
+                            message="Fixed-cycle tiers cannot include baseline multipliers",
+                        )
+                    )
+            else:
+                lower = Decimal(tier.lower_bound_multiplier or "0")
+                upper = (
+                    Decimal(tier.upper_bound_multiplier)
+                    if tier.upper_bound_multiplier is not None
+                    else None
+                )
+                if lower != tier_cursor:
+                    errors.append(
+                        ValidationIssue(
+                            level="error",
+                            code="tier_gap_or_overlap",
+                            path=f"tiers.{index}.lower_bound_multiplier",
+                            message=f"Tier baseline multiplier must begin at {tier_cursor}",
+                        )
+                    )
+                if final and upper is not None:
+                    errors.append(
+                        ValidationIssue(
+                            level="error",
+                            code="final_tier_open",
+                            path=f"tiers.{index}.upper_bound_multiplier",
+                            message="The final baseline-derived tier must be open-ended",
+                        )
+                    )
+                elif not final and upper is None:
+                    errors.append(
+                        ValidationIssue(
+                            level="error",
+                            code="tier_multiplier_required",
+                            path=f"tiers.{index}.upper_bound_multiplier",
+                            message="Every non-final tier needs an upper baseline multiplier",
+                        )
+                    )
+                elif upper is not None and upper <= lower:
+                    errors.append(
+                        ValidationIssue(
+                            level="error",
+                            code="tier_bounds",
+                            path=f"tiers.{index}.upper_bound_multiplier",
+                            message="Tier upper multiplier must exceed its lower multiplier",
+                        )
+                    )
+                if upper is not None:
+                    tier_cursor = upper
+            if not final and (
+                (threshold_basis == "fixed_cycle_kwh" and tier.upper_bound_exclusive_kwh is None)
+                or (threshold_basis == "daily_baseline_kwh" and tier.upper_bound_multiplier is None)
+            ):
+                errors.append(
+                    ValidationIssue(
+                        level="error",
+                        code="open_tier_position",
+                        path=f"tiers.{index}",
+                        message="Only the final tier may be open-ended",
+                    )
+                )
+
+        if document.pricing_model == "time_of_use_tiered":
+            period_labels = {
+                period.label
+                for season in document.seasons
+                for schedule in season.schedules
+                for period in schedule.periods
+            }
+            method = (
+                document.hybrid_pricing.method if document.hybrid_pricing else "tier_period_matrix"
+            )
+            if method == "tier_period_matrix":
+                for index, tier in enumerate(ordered_tiers):
+                    missing = sorted(period_labels - set(tier.tou_prices))
+                    extra = sorted(set(tier.tou_prices) - period_labels)
+                    if missing or extra:
+                        errors.append(
+                            ValidationIssue(
+                                level="error",
+                                code="hybrid_matrix_coverage",
+                                path=f"tiers.{index}.tou_prices",
+                                message=(
+                                    "Hybrid matrix must exactly cover all TOU periods; "
+                                    f"missing={missing}, extra={extra}"
+                                ),
+                            )
+                        )
     for index, adjustment in enumerate(document.adjustments):
         value = abs(Decimal(adjustment.value))
         if adjustment.component == "daily_fixed_charge" and value > max_fixed_daily:
@@ -453,6 +808,7 @@ def engine_plan(document: RatePlanDocument) -> dict[str, Any]:
     return {
         "code": document.plan_code,
         "name": document.plan_name,
+        "pricing_model": document.pricing_model,
         "timezone": document.timezone,
         "currency": document.currency,
         "effective_from": document.effective_from.isoformat(),
@@ -461,6 +817,14 @@ def engine_plan(document: RatePlanDocument) -> dict[str, Any]:
         else None,
         "base_service_charge_per_day": daily,
         "baseline_credit_per_kwh": baseline,
+        "flat_rate_per_kwh": document.flat_rate_per_kwh,
+        "billing_cycle": document.billing_cycle.model_dump(mode="json"),
+        "tiers": [item.model_dump(mode="json") for item in document.tiers],
+        "hybrid_pricing": (
+            document.hybrid_pricing.model_dump(mode="json")
+            if document.hybrid_pricing is not None
+            else None
+        ),
         "periods": periods,
         "special_schedules": special_schedules,
         "seasons": {
