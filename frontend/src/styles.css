@@ -452,7 +452,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .calculator-prompt p { display: flex; flex-direction: column; margin: 0; color: var(--text); }
 .calculator-prompt small { margin-top: 4px; color: var(--faint); }
 .projection-note { align-items: center; margin: 0 20px 20px; background: var(--accent-soft); color: var(--accent); }
-.rate-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.rate-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 390px), 1fr)); gap: 14px; }
 .rate-card { display: flex; min-height: 420px; flex-direction: column; }
 .rate-card-head { display: flex; justify-content: space-between; gap: 10px; }
 .rate-card-head h2 { margin-top: 8px; }
@@ -467,14 +467,28 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .rate-card footer > a { display: flex; align-items: center; gap: 4px; color: var(--accent); font-size: .67rem; }
 .rate-card footer > div { display: flex; min-width: 0; gap: 6px; }
 .rate-card-details { flex: 0 0 auto; white-space: nowrap; }
-.rate-card-action-group { flex: 1 1 285px; flex-wrap: wrap; justify-content: flex-end; }
+.rate-card-action-group { display: grid !important; flex: 1 1 320px; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 6px; }
 .rate-card-action-group > *, .rate-card-action-group .button { min-width: 0; }
-.rate-card-action-group .button { height: 100%; line-height: 1.2; white-space: normal; }
+.rate-card-action-group > *, .rate-card-action-group .button { width: 100%; }
+.rate-card-action-group .button { height: 100%; justify-content: center; line-height: 1.2; white-space: normal; }
 .link-button { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--accent); font: inherit; cursor: pointer; }
 .rate-disclaimer { margin: 4px 0 18px; color: var(--muted); font-size: .66rem; line-height: 1.55; }
-.rate-library-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+.rate-library-toolbar { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
 .rate-library-toolbar label { display: flex; min-width: 220px; flex-direction: column; gap: 5px; color: var(--muted); font-size: .63rem; font-weight: 700; }
 .rate-library-toolbar span { color: var(--muted); font-size: .64rem; }
+.rate-removal-note { display: grid; gap: 4px; margin-bottom: 12px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2); }
+.rate-removal-note strong { font-size: .67rem; }
+.rate-removal-note span { color: var(--muted); font-size: .61rem; line-height: 1.4; }
+.rate-plan-lifecycle-dialog { width: min(760px, 100%); }
+.rate-plan-lifecycle-dialog > label { display: grid; gap: 6px; margin-top: 14px; color: var(--text); font-size: .7rem; font-weight: 720; }
+.rate-plan-lifecycle-dialog > label input, .rate-plan-lifecycle-dialog > label textarea { width: 100%; min-width: 0; }
+.rate-plan-lifecycle-dialog > label textarea { min-height: 78px; resize: vertical; }
+.rate-plan-lifecycle-dialog > label small { color: var(--faint); font-size: .61rem; font-weight: 500; }
+.rate-plan-lifecycle-dialog > .form-error, .rate-plan-lifecycle-dialog > .high-risk-warning, .rate-plan-lifecycle-dialog > .removal-impact { margin-top: 14px; }
+.rate-plan-dependency-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0 0 14px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--line); }
+.rate-plan-dependency-summary > div { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; background: var(--panel-2); }
+.rate-plan-dependency-summary dt { color: var(--muted); font-size: .61rem; }
+.rate-plan-dependency-summary dd { margin: 0; overflow-wrap: anywhere; font-size: .68rem; font-weight: 760; text-align: right; }
 .rate-model-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .rate-model-summary > span { color: var(--muted); font-size: .62rem; text-align: right; }
 .panel-copy { color: var(--muted); font-size: .7rem; line-height: 1.55; }
@@ -1529,6 +1543,39 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
   gap: .7rem;
 }
 
+.bill-page-classifications {
+  display: grid;
+  gap: .6rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.bill-page-classifications article {
+  align-items: center;
+  border: 1px solid var(--border, #29473c);
+  border-radius: .65rem;
+  display: grid;
+  gap: .45rem;
+  min-width: 0;
+  padding: .7rem;
+}
+
+.bill-page-classifications article > div {
+  display: grid;
+  gap: .15rem;
+}
+
+.bill-page-classifications small,
+.bill-ignored-sections {
+  color: var(--muted, #9ab2a8);
+}
+
+.bill-ignored-sections {
+  display: grid;
+  gap: .35rem;
+  margin-bottom: 0;
+  padding-left: 1.15rem;
+}
+
 .bill-history-list > button {
   align-items: center;
   background: transparent;
@@ -1634,6 +1681,20 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
   gap: .4rem;
 }
 
+.field-warning-detail {
+  display: grid;
+  gap: .2rem;
+  margin: .5rem 0;
+}
+
+.field-warning-detail .field-warning {
+  margin: 0;
+}
+
+.field-warning-detail small {
+  color: var(--muted, #9ab2a8);
+}
+
 .bill-cycle-grid,
 .bill-comparison-hero {
   display: grid;
@@ -1691,6 +1752,40 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .bill-tier-table th:nth-child(2),
 .bill-tier-table td:nth-child(2) {
   min-width: 10rem;
+}
+
+.bill-charge-table th:nth-child(n+3),
+.bill-charge-table td:nth-child(n+3) {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.bill-validation-summary {
+  display: grid;
+  gap: .7rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bill-validation-summary article {
+  background: color-mix(in srgb, var(--surface, #12261f) 60%, transparent);
+  border: 1px solid var(--border, #29473c);
+  border-radius: .65rem;
+  display: grid;
+  gap: .25rem;
+  min-width: 0;
+  padding: .7rem;
+}
+
+.bill-validation-summary article > span,
+.bill-validation-summary small {
+  color: var(--muted, #9ab2a8);
+}
+
+.validation-line {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
 }
 
 .exact-details {
@@ -1775,14 +1870,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
   background: color-mix(in srgb, var(--surface, #12261f) 94%, transparent);
   border: 1px solid var(--border, #29473c);
   border-radius: .75rem;
-  bottom: .75rem;
   display: flex;
   gap: 1rem;
   justify-content: space-between;
   margin-top: 1rem;
   padding: .65rem;
-  position: sticky;
-  z-index: 10;
+  position: static;
 }
 
 @media (max-width: 900px) {
@@ -1798,6 +1891,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
   .bill-cycle-grid,
   .bill-comparison-hero {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bill-validation-summary {
+    grid-template-columns: 1fr;
   }
 
   .confidence-summary {
@@ -1829,21 +1926,28 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
   .bill-tier-table table,
   .bill-tier-table tbody,
   .bill-tier-table tr,
-  .bill-tier-table td {
+  .bill-tier-table td,
+  .bill-charge-table table,
+  .bill-charge-table tbody,
+  .bill-charge-table tr,
+  .bill-charge-table td {
     display: block;
     width: 100%;
   }
 
-  .bill-tier-table thead {
+  .bill-tier-table thead,
+  .bill-charge-table thead {
     display: none;
   }
 
-  .bill-tier-table tr {
+  .bill-tier-table tr,
+  .bill-charge-table tr {
     border-bottom: 1px solid var(--border, #29473c);
     padding: .65rem 0;
   }
 
-  .bill-tier-table td {
+  .bill-tier-table td,
+  .bill-charge-table td {
     display: flex;
     gap: 1rem;
     justify-content: space-between;
@@ -1851,7 +1955,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
     text-align: right;
   }
 
-  .bill-tier-table td::before {
+  .bill-tier-table td::before,
+  .bill-charge-table td::before {
     color: var(--muted, #9ab2a8);
     content: attr(data-label);
     text-align: left;

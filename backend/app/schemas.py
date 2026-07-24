@@ -153,6 +153,25 @@ class SiteRestoreRequest(SiteLifecycleRequest):
     confirm_high_risk: bool
 
 
+class RatePlanLifecycleRequest(ApiModel):
+    expected_revision: int = Field(ge=1)
+    reason: str = Field(min_length=3, max_length=500)
+    confirmation: str = Field(min_length=1, max_length=160)
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
+
+
+class RatePlanRestoreRequest(ApiModel):
+    expected_revision: int = Field(ge=1)
+    reason: str = Field(min_length=3, max_length=500)
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
+
+
+class RatePlanDraftDeleteRequest(ApiModel):
+    expected_revision: int = Field(ge=1)
+    confirmation: str = Field(min_length=1, max_length=160)
+    reason: str = Field(min_length=3, max_length=500)
+
+
 class SiteSensorResolution(ApiModel):
     device_id: str
     action: Literal["archive", "transfer"]

@@ -56,6 +56,24 @@ and confirm the separate plan and billing-cycle drafts remain available. The
 System Health diagnostic must show matching frontend/backend release and
 `utility-account-rate-context/1.0` schema values.
 
+For the strict SCE parser and rate-plan lifecycle release, migration
+`20260724_0014` adds lifecycle revision/removal/restoration evidence to rate
+plans, parser-rule and validation evidence to imported fields, lifecycle
+indexes/constraints, and `rates.remove`/`rates.restore`. It does not add a
+dataset, secret, service, capability, network, mount, or host port. Existing
+rate versions, assignments, calculations, reports, bills, managed-source
+artifacts, candidates, and audit records remain in place.
+
+After migration, upload the sanitized SCE test fixture through **Billing >
+Rate Plans > Custom Plan > Import from utility bill**. Confirm the adapter is
+`sce_residential_bill_v1`, the detailed charge page is authoritative, ignored
+pages are listed without extracted tariff values, arithmetic passes, and the
+rounded `$0.30/$0.40` chart is display-only. Then remove and restore an
+unassigned non-production custom plan. Confirm assigned-plan removal is
+blocked, removed plans disappear from Active, and restore does not reassign an
+account. Rollback first restores the pre-upgrade logical backup/ZFS snapshot;
+do not downgrade the schema while retaining writes made by the newer release.
+
 For the utility-bill PDF import release, migration `20260724_0010` adds
 bill-import, immutable extraction revision, field evidence, conflict, and
 billing-cycle draft tables plus `utility_bills.view` and

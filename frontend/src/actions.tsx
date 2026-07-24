@@ -29,6 +29,8 @@ export type CanonicalActionId =
   | 'rate_plan.create_custom'
   | 'rate_plan.import_from_bill'
   | 'rate_plan.clone'
+  | 'rate_plan.remove'
+  | 'rate_plan.restore'
   | 'rate_source.create'
   | 'rate_source.check'
   | 'device.enroll'
@@ -77,6 +79,8 @@ export const ACTION_REGISTRY: Record<CanonicalActionId, CanonicalActionDefinitio
   'rate_plan.create_custom': define({ id: 'rate_plan.create_custom', label: 'Create custom plan', route: '/billing/rate-plans/new', workspace: 'billing', permission: 'rates.manage_custom', allowedSurfaces: ['workspace_header', 'panel_header'], presentation: 'primary', contextualLinks: true, allowMultiple: false }),
   'rate_plan.import_from_bill': define({ id: 'rate_plan.import_from_bill', label: 'Import rate plan from bill', route: '/billing/rate-plans/new?bill_import=open', workspace: 'billing', permission: 'utility_bills.manage', allowedSurfaces: ['resource_detail'], presentation: 'secondary', contextualLinks: false, allowMultiple: false }),
   'rate_plan.clone': define({ id: 'rate_plan.clone', label: 'Clone plan', workspace: 'billing', permission: 'rates.manage_custom', allowedSurfaces: ['resource_row', 'overflow_menu'], presentation: 'secondary', contextualLinks: false, allowMultiple: true }),
+  'rate_plan.remove': define({ id: 'rate_plan.remove', label: 'Remove rate plan', workspace: 'billing', permission: 'rates.remove', allowedSurfaces: ['resource_row', 'dialog'], presentation: 'menu', contextualLinks: false, allowMultiple: true }),
+  'rate_plan.restore': define({ id: 'rate_plan.restore', label: 'Restore rate plan', workspace: 'billing', permission: 'rates.restore', allowedSurfaces: ['resource_row', 'dialog'], presentation: 'secondary', contextualLinks: false, allowMultiple: true }),
   'rate_source.create': define({ id: 'rate_source.create', label: 'Add rate source', workspace: 'billing', permission: 'rates.manage_sources', allowedSurfaces: ['panel_header'], presentation: 'primary', contextualLinks: false, allowMultiple: false }),
   'rate_source.check': define({ id: 'rate_source.check', label: 'Check rate sources now', workspace: 'billing', permission: 'rates.check_sources', allowedSurfaces: ['workspace_header', 'panel_header'], presentation: 'secondary', contextualLinks: false, allowMultiple: false }),
   'device.enroll': define({ id: 'device.enroll', label: 'Enroll device', route: '/monitoring/enrollment', workspace: 'monitoring', permission: 'enrollment.manage', allowedSurfaces: ['workspace_header', 'page', 'contextual_link'], presentation: 'primary', contextualLinks: true, allowMultiple: false }),

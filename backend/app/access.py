@@ -245,6 +245,20 @@ PERMISSION_DEFINITIONS = (
     _permission(
         "rates.assign", "Rates", "Assign rates", "Assign effective rates to accounts.", True
     ),
+    _permission(
+        "rates.remove",
+        "Rates",
+        "Remove rate plans",
+        "Delete unused drafts or retire plans after dependency review.",
+        True,
+    ),
+    _permission(
+        "rates.restore",
+        "Rates",
+        "Restore rate plans",
+        "Restore locally removed or retired plans without reassigning accounts.",
+        True,
+    ),
     _permission("alerts.view", "Alerts", "View alerts", "View alerts for assigned sites."),
     _permission(
         "alerts.acknowledge", "Alerts", "Acknowledge alerts", "Acknowledge and silence alerts."
@@ -383,6 +397,8 @@ RATE_MANAGER_PERMISSIONS = VIEWER_PERMISSIONS | {
     "rates.review_candidates",
     "rates.approve_candidates",
     "rates.assign",
+    "rates.remove",
+    "rates.restore",
 }
 BUILTIN_ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "admin": ALL_PERMISSIONS,
@@ -411,6 +427,8 @@ PERMISSION_DEPENDENCIES: dict[str, frozenset[str]] = {
     "rates.review_candidates": frozenset({"rates.view"}),
     "rates.approve_candidates": frozenset({"rates.review_candidates", "rates.view"}),
     "rates.assign": frozenset({"rates.view"}),
+    "rates.remove": frozenset({"rates.manage_custom", "rates.view"}),
+    "rates.restore": frozenset({"rates.manage_custom", "rates.view"}),
     "costs.recalculate": frozenset({"costs.view"}),
     "usage_imports.manage": frozenset({"usage.view", "utility_accounts.view"}),
     "backups.restore": frozenset({"backups.view"}),

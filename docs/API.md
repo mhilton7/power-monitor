@@ -74,6 +74,15 @@ check, artifact, and candidate-review endpoints live under
 `docs/rate-automation-and-custom-plans.md` for request semantics, immutable
 activation, source evidence, and custom-plan schema behavior.
 
+Dependency-aware removal uses
+`GET /api/v1/admin/rate-plans/{plan_id}/dependencies`,
+`DELETE /api/v1/admin/rate-plan-drafts/{plan_id}`,
+`POST /api/v1/admin/rate-plans/{plan_id}/remove`, and
+`POST /api/v1/admin/rate-plans/{plan_id}/restore`. The administrator list
+accepts active, removed, retired, combined, or all status filters. Removed
+plans cannot be assigned, edited, versioned, or activated. See
+[Rate-plan lifecycle](RATE_PLAN_LIFECYCLE.md).
+
 Tiered account status is
 `GET /api/v1/utility-accounts/{account_id}/tier-status`. Account administration
 uses `/api/v1/admin/utility-accounts/{account_id}/usage-authority`,
@@ -100,6 +109,12 @@ identifier. Upload and review reuse the existing job, artifact, rate-source,
 custom-rate, assignment, cycle, audit, RBAC, and CSRF services. The upload job
 is readable through `GET /api/v1/jobs/{job_id}`. See [Utility-bill PDF
 imports](UTILITY_BILL_IMPORTS.md).
+
+Recognized SCE residential bills return strict `sce_bill_v1` adapter metadata,
+page classifications, ignored-section reasons, per-field parser/validation
+evidence, and an exact Decimal reconciliation result. The normative schema is
+`shared/schemas/sce-bill-extraction-1.0.json`; unsupported layouts return
+explicit null drafts and a typed review warning rather than guessed values.
 
 These bill-import endpoints remain unchanged after the frontend integration.
 The browser now invokes them from the existing custom-plan editor; applying

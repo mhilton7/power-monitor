@@ -1,5 +1,53 @@
 # Testing and release gates
 
+## Strict SCE parser and rate-plan lifecycle acceptance (2026-07-24)
+
+The parser fixture gate uses the generated PII-free six-page PDF and
+`sanitized-sce-expected-extraction.json`. It asserts SCE/document/page
+classification, the seven-anchor authoritative section threshold, exact
+DOMESTIC cycle values, all eight charge rows, independent delivery/generation
+tiers, Decimal row/subtotal/tax/total reconciliation, and the display-only
+rounded chart. Mutation cases inject unrelated phone numbers, dates,
+percentages, payment values, definitions, notices, and informational
+breakdowns and prove none become normalized tariff fields. Unsupported layouts
+return null drafts with actionable warnings. OCR ordering/confidence and
+identifier masking are also covered.
+
+Lifecycle coverage permanently deletes only an unused unpublished custom
+draft; soft-removes a published custom plan; blocks active/future assignments
+and active account pointers; preserves historical assignments, cost runs,
+versions, reports, bills, and source evidence; retires/restores an official SCE
+plan without deleting its extraction artifact; and checks permissions, CSRF,
+stale revisions, idempotency, filters, audits, and duplicate-free actions.
+
+The append-only schema head is `20260724_0014`. The frontend component gate
+verifies parser identity, page/ignored-section review, exact five-decimal
+rates, arithmetic status, explicit missing reasons, dependency review, remove,
+blocked resolution, removed listing, and restore.
+
+The final portable Python run passed 135 tests; the separately enabled
+100-device/18,000-reading load gate, PostgreSQL 17 migration gate, and isolated
+TrueNAS deployment gate also passed. Ruff lint/format, strict mypy, generated
+OpenAPI drift, JSON Schema, protocol contracts, and the repository secret scan
+are clean. The frontend passed a locked install, lint, TypeScript checking, 60
+unit/component tests, the Node 24 production container build, and all 50
+Chromium scenarios. The keyboard-operated mobile drawer also passed 10
+parallel repetitions after its canonical-route race was corrected. The
+reviewed strict-parser capture is
+`docs/screenshots/strict-sce-bill-review.png`; the prior rounded generic-parser
+capture remains at `docs/screenshots/utility-bill-import-tier-preview.png`.
+
+PostgreSQL migration testing covers initial-schema upgrade, downgrade and
+re-upgrade, populated prior-schema upgrade, and clean installation at
+`20260724_0014` with 98 public tables and 65 Administrator permissions.
+The standard Compose stack is healthy at that revision. A fresh logical backup
+passed all five checksums and test-restored with 98 tables and three preserved
+status-layout revisions. The isolated seven-service TrueNAS workflow used
+strict internal-CA TLS with SNI, published only TCP 18443 on the gateway,
+enrolled three signed simulated devices, accepted 90 readings, resolved an SCE
+calculation, persisted two utility accounts and one CIDR, verified five
+encrypted artifacts, and restored them at `20260724_0014`.
+
 ## PDF import account-context stabilization acceptance (2026-07-24)
 
 The former production-shaped click path was reproduced with source maps before
@@ -30,11 +78,11 @@ reviewed repaired no-account capture is
 
 PostgreSQL 17 passes populated initial-schema upgrade, downgrade/re-upgrade,
 populated prior-schema upgrade, and clean installation at
-`20260724_0013`, retaining 98 public tables. Fresh API/worker, frontend, and
+`20260724_0014`, retaining 98 public tables. Fresh API/worker, frontend, and
 backup images build with matching `1.0.0` release/revision labels. The standard
-Compose stack migrated to `0013` and every long-running service reported
+Compose stack migrated to `0014` and every long-running service reported
 healthy. Its fresh five-artifact logical backup passed checksums and restored
-to a clean database with revision `0013`, 98 tables, and nullable deferred
+to a clean database with revision `0014`, 98 tables, and nullable deferred
 bill-account references.
 
 The TrueNAS template, optional ICMP overlay, deployment render, mixed-release
@@ -44,7 +92,7 @@ TCP 18443 published. The one-shot migration completed before API/worker startup,
 all health checks passed, three signed simulated devices contributed 90
 readings, SCE calculation resolved, two utility accounts and one canonical
 network CIDR persisted, all five encrypted backup artifacts verified, and the
-backup restored cleanly at `20260724_0013`. The disposable containers,
+backup restored cleanly at `20260724_0014`. The disposable containers,
 networks, volumes, CA, and test secrets were removed.
 
 The locked Python production dependency audit reports no known

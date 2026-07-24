@@ -881,11 +881,24 @@ class RatePlan(TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     timezone: Mapped[str] = mapped_column(String(64), default="America/Los_Angeles")
     status: Mapped[str] = mapped_column(String(24), default="active")
+    lifecycle_revision: Mapped[int] = mapped_column(Integer, default=1)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    removed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    removal_reason: Mapped[str | None] = mapped_column(String(500))
+    restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    restored_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     cloned_from_rate_version_id: Mapped[str | None] = mapped_column(
         ForeignKey("rate_versions.id", ondelete="SET NULL", use_alter=True)
     )
-    __table_args__ = (UniqueConstraint("utility_id", "code", name="uq_rate_plan_utility_code"),)
+    __table_args__ = (
+        UniqueConstraint("utility_id", "code", name="uq_rate_plan_utility_code"),
+        CheckConstraint(
+            "status IN ('draft','active','retired','removed')",
+            name="rate_plan_lifecycle_status",
+        ),
+        CheckConstraint("lifecycle_revision > 0", name="rate_plan_lifecycle_revision"),
+    )
 
 
 class RateVersion(Base):
@@ -1377,6 +1390,8 @@ class UtilityBillExtractedField(Base):
     review_state: Mapped[str] = mapped_column(String(24), default="unreviewed")
     warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     normalization_history: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    parser_rule: Mapped[str | None] = mapped_column(String(160))
+    validation_result: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     confirmed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (

@@ -5,7 +5,8 @@ const ADMIN_FALLBACK = new Set([
   'costs.view', 'costs.export', 'costs.recalculate', 'usage_imports.manage',
   'utility_bills.view', 'utility_bills.manage',
   'rates.view', 'rates.manage_custom', 'rates.manage_sources', 'rates.check_sources',
-  'rates.review_candidates', 'rates.approve_candidates', 'rates.assign', 'alerts.view',
+  'rates.review_candidates', 'rates.approve_candidates', 'rates.assign', 'rates.remove',
+  'rates.restore', 'alerts.view',
   'alerts.acknowledge', 'alerts.manage_rules', 'alerts.manage_delivery', 'enrollment.view',
   'enrollment.manage', 'sites.view', 'sites.manage', 'sites.create', 'sites.edit',
   'sites.set_default', 'sites.disable', 'sites.remove', 'sites.restore',
@@ -21,7 +22,7 @@ const ADMIN_FALLBACK = new Set([
 const ROLE_FALLBACK: Record<string, Set<string>> = {
   viewer: new Set(['overview.view', 'usage.view', 'devices.view', 'topology.view', 'history.view', 'history.export', 'costs.view', 'costs.export', 'rates.view', 'alerts.view', 'sites.view', 'status_indicators.view']),
   operator: new Set(['overview.view', 'usage.view', 'devices.view', 'devices.manage', 'topology.view', 'topology.manage', 'history.view', 'history.export', 'costs.view', 'costs.export', 'rates.view', 'alerts.view', 'alerts.acknowledge', 'alerts.manage_rules', 'enrollment.view', 'enrollment.manage', 'sites.view']),
-  'rate-manager': new Set(['overview.view', 'usage.view', 'devices.view', 'topology.view', 'history.view', 'history.export', 'costs.view', 'costs.export', 'rates.view', 'rates.manage_custom', 'rates.manage_sources', 'rates.check_sources', 'rates.review_candidates', 'rates.approve_candidates', 'rates.assign', 'alerts.view', 'sites.view']),
+  'rate-manager': new Set(['overview.view', 'usage.view', 'devices.view', 'topology.view', 'history.view', 'history.export', 'costs.view', 'costs.export', 'rates.view', 'rates.manage_custom', 'rates.manage_sources', 'rates.check_sources', 'rates.review_candidates', 'rates.approve_candidates', 'rates.assign', 'rates.remove', 'rates.restore', 'alerts.view', 'sites.view']),
 }
 
 export function sessionPermissions(session: Session): Set<string> {

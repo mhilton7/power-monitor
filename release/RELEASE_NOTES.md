@@ -1,5 +1,27 @@
 # Power Monitor Server 1.0.0
 
+## Strict SCE bill parser and safe rate-plan removal
+
+- Replaces broad whole-document extraction for recognized SCE residential
+  bills with versioned `sce_residential_bill_v1` page/section classification,
+  a strict allowlist, anchored charge-row grammar, per-field evidence, explicit
+  null reasons, bounded local OCR, and a normative `sce_bill_v1` schema.
+- Keeps payment/contact/definition/regulatory/informational content out of
+  tariff drafts. Rounded `$0.30/$0.40` chart values are display-only; exact
+  detailed rates, line amounts, usage, subtotal, tax, and total are reconciled
+  with `Decimal`.
+- Adds one canonical dependency-aware Remove action, permanent deletion only
+  for truly unused custom drafts, soft removal for published/historical custom
+  plans, local retirement for official plans, a Removed / Retired view, and
+  explicit restore without reassignment.
+- Blocks removal while active/future assignments or account pointers remain,
+  and preserves versions, historical assignments, costs, reports, bill
+  imports, source evidence, candidates, and audit history.
+- Adds append-only Alembic revision `20260724_0014`, `rates.remove` and
+  `rates.restore`, strict parser/lifecycle tests, updated generated OpenAPI,
+  TrueNAS upgrade guidance, and no new service, dataset, secret, capability,
+  network, mount, or host port.
+
 ## PDF import account-context stabilization
 
 - Permanently fixes the Custom Plan PDF-import crash caused by interpreting the

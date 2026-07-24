@@ -136,6 +136,12 @@ export interface ManagedRatePlan {
   currency: string
   timezone: string
   status: string
+  lifecycle_revision: number
+  removed_at?: string | null
+  removed_by?: string | null
+  removal_reason?: string | null
+  restored_at?: string | null
+  restored_by?: string | null
   versions: IndexedArray<ManagedRateVersion>
 }
 

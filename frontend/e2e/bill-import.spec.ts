@@ -203,6 +203,158 @@ const baseBill = {
   },
 }
 
+const strictSceBill = {
+  ...baseBill,
+  extraction_method: 'text',
+  parser_id: 'sce_residential_bill_v1',
+  parser_version: '1.0.0',
+  page_count: 6,
+  rate_plan_id: null,
+  rate_version_id: null,
+  adapter_result: {
+    schema_version: 'sce_bill_v1',
+    parser_id: 'sce_residential_bill_v1',
+    parser_version: '1.0.0',
+    document_class: 'residential_electric_bill',
+    supported_layout: 'sce_residential_multi_page_charge_details',
+    automatic_publication_eligible: false,
+  },
+  page_classifications: [
+    {
+      page_number: 1,
+      page_class: 'account_and_usage_summary',
+      anchor_score: 0,
+      matched_anchors: [],
+      authoritative_for_rate_plan: false,
+    },
+    {
+      page_number: 3,
+      page_class: 'new_charge_details',
+      anchor_score: 10,
+      matched_anchors: ['details of your new charges'],
+      authoritative_for_rate_plan: true,
+    },
+    {
+      page_number: 5,
+      page_class: 'regulatory_notice',
+      anchor_score: 0,
+      matched_anchors: [],
+      authoritative_for_rate_plan: false,
+    },
+  ],
+  ignored_sections: [
+    {
+      page_number: 2,
+      page_class: 'generic_information',
+      reasons: ['payment_or_balance', 'generic_definition'],
+      authoritative_for_rate_plan: false,
+    },
+    {
+      page_number: 5,
+      page_class: 'regulatory_notice',
+      reasons: ['regulatory_notice'],
+      authoritative_for_rate_plan: false,
+    },
+    {
+      page_number: 6,
+      page_class: 'other',
+      reasons: ['rounded_explanatory_tier_chart'],
+      display_only: true,
+      authoritative_for_rate_plan: false,
+    },
+  ],
+  validation: {
+    valid: true,
+    automatic_publication_eligible: false,
+    usage: [
+      {
+        section: 'delivery',
+        tier_usage_sum_kwh: '951',
+        total_usage_kwh: '951',
+        status: 'pass',
+      },
+      {
+        section: 'generation',
+        tier_usage_sum_kwh: '951',
+        total_usage_kwh: '951',
+        status: 'pass',
+      },
+    ],
+    subtotal: { calculated: '353.86', printed: '353.86', status: 'pass' },
+    total: {
+      calculated: '354.15',
+      printed: '354.15',
+      state_tax: '0.29',
+      status: 'pass',
+    },
+  },
+  normalized: {
+    ...baseBill.normalized,
+    rate_plan: {
+      ...baseBill.normalized.rate_plan,
+      plan_code: 'DOMESTIC',
+      tiers: [
+        {
+          name: 'Tier 1',
+          lower_bound_kwh: '0',
+          upper_bound_kwh: '579.0',
+          usage_kwh: '579',
+          price_per_kwh: '0.30863',
+          energy_charge: null,
+        },
+        {
+          name: 'Tier 2',
+          lower_bound_kwh: '579.0',
+          upper_bound_kwh: null,
+          usage_kwh: '372',
+          price_per_kwh: '0.40962',
+          energy_charge: null,
+        },
+      ],
+    },
+    billing_cycle: {
+      ...baseBill.normalized.billing_cycle,
+      total_usage_kwh: '951',
+      energy_subtotal: '353.86',
+      full_bill_total: '354.15',
+      line_items: [{
+        component: 'energy',
+        section: 'delivery',
+        usage_kwh: '579',
+        unit_rate: '0.17862',
+        amount: '103.42',
+        validation: {
+          exact_product: '103.42098',
+          rounded_product: '103.42',
+          printed_amount: '103.42',
+          difference: '0.00',
+          status: 'pass',
+        },
+      }],
+    },
+  },
+  fields: [{
+    ...thresholdField,
+    id: 'missing-daily-baseline',
+    field_key: 'daily_baseline_formula',
+    raw_value: null,
+    normalized_value: null,
+    effective_value: null,
+    page_number: null,
+    source_excerpt: null,
+    extraction_method: 'text',
+    parser_version: '1.0.0',
+    parser_rule: 'sce.missing_rule.daily_baseline_formula.v1',
+    confidence: 'missing',
+    warnings: [{
+      code: 'field_not_found',
+      message: 'This bill proves a cycle allowance, not the reusable daily formula.',
+      searched_area: 'recognized SCE summary and authoritative charge-detail sections',
+      administrator_action: 'Review the evidence and enter the value manually if needed.',
+    }],
+  }],
+}
+
 const comparison = {
   available: true,
   calculation_correctness: 'validated_by_existing_rate_engine',
@@ -525,6 +677,34 @@ test('reviews separate bill outputs and selectively merges them into the existin
   expect(requests).toContain('POST /api/v1/admin/utility-bill-imports/bill-1/import-billing-cycle')
   expect(requests).toContain('DELETE /api/v1/admin/utility-bill-imports/bill-1/original')
   expect(requests).not.toContain('POST /api/v1/admin/utility-bill-imports/bill-1/publish-and-assign')
+})
+
+test('reviews only strict SCE evidence and keeps rounded chart rates non-authoritative', async ({ page }) => {
+  await mockApplication(page, strictSceBill as unknown as typeof baseBill)
+  await page.goto('/billing/rate-plans/new?bill_import=open')
+  await page.getByLabel('Utility bill import', { exact: true }).getByRole('button', { name: 'Next' }).click()
+  await page.getByLabel('Utility-bill PDF').setInputFiles(path.resolve(
+    process.cwd(),
+    '../backend/tests/fixtures/bills/sanitized-sce-domestic-bill.pdf',
+  ))
+  await page.getByRole('button', { name: 'Upload and create drafts' }).click()
+
+  await expect(page.getByText('sce_residential_bill_v1')).toBeVisible()
+  await expect(page.getByText('Authoritative charge detail')).toBeVisible()
+  await expect(page.getByText(/payments, definitions, notices/i)).toBeVisible()
+  await page.getByText(/Ignored non-tariff sections/).click()
+  await expect(page.getByText(/rounded explanatory tier chart/)).toBeVisible()
+
+  await page.getByRole('button', { name: /Rate rules/ }).click()
+  await expect(page.getByRole('cell', { name: '$0.30863/kWh' })).toBeVisible()
+  await expect(page.getByRole('cell', { name: '$0.40962/kWh' })).toBeVisible()
+  await expect(page.getByText('Exact Decimal pass')).toBeVisible()
+  await expect(page.getByText(/rounded explanatory material/i)).toBeVisible()
+  await expect(page.getByText(/cycle allowance, not the reusable daily formula/i)).toBeVisible()
+  await page.screenshot({
+    path: '../docs/screenshots/strict-sce-bill-review.png',
+    fullPage: true,
+  })
 })
 
 test('keeps an unresolved official-source conflict visible and blocks publication', async ({ page }) => {

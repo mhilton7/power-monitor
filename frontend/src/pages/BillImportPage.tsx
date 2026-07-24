@@ -61,8 +61,83 @@ interface BillField {
   parser_version: string
   confidence: string
   review_state: string
-  warnings: Array<{ code?: string; message?: string }>
+  warnings: Array<{
+    code?: string
+    message?: string
+    searched_area?: string
+    administrator_action?: string
+  }>
   normalization_history: Array<Record<string, unknown>>
+  parser_rule?: string
+  validation_result?: {
+    status?: string
+    calculated?: string
+    printed?: string
+    difference?: string
+    [key: string]: unknown
+  } | null
+}
+
+interface BillPageClassification {
+  page_number: number
+  page_class: string
+  anchor_score: number
+  matched_anchors: string[]
+  authoritative_for_rate_plan: boolean
+}
+
+interface BillIgnoredSection {
+  page_number: number
+  page_class: string
+  reasons: string[]
+  display_only?: boolean
+  authoritative_for_rate_plan: boolean
+}
+
+interface BillValidation {
+  valid?: boolean
+  automatic_publication_eligible?: boolean
+  row_arithmetic?: Array<{
+    component?: string
+    status?: string
+    calculated?: string
+    printed?: string
+    difference?: string
+  }>
+  usage?: Array<{
+    section?: string
+    tier_usage_sum_kwh?: string
+    total_usage_kwh?: string
+    status?: string
+  }>
+  subtotal?: { calculated?: string; printed?: string | null; status?: string }
+  total?: {
+    calculated?: string
+    printed?: string | null
+    state_tax?: string
+    status?: string
+  }
+}
+
+interface StrictChargeLine {
+  component?: string
+  section?: string
+  quantity?: string
+  quantity_unit?: string
+  usage_kwh?: string
+  unit_rate?: string
+  amount?: string
+  recurrence?: string
+  provider?: string
+  season?: string
+  tier?: string
+  validation?: {
+    exact_product?: string
+    rounded_product?: string
+    printed_amount?: string
+    difference?: string
+    status?: string
+  }
 }
 
 interface BillConflict {
@@ -112,6 +187,7 @@ interface BillImport {
   status: string
   source_role: SourceRole
   extraction_method: string
+  parser_id: string
   parser_version: string
   page_count: number
   retention_mode: RetentionMode
@@ -146,6 +222,21 @@ interface BillImport {
     }
     billing_cycle: Record<string, unknown>
   }
+  adapter_result?: {
+    schema_version?: string
+    parser_id?: string
+    parser_version?: string
+    fixture_version?: string
+    utility?: string
+    document_class?: string
+    supported_layout?: string
+    automatic_publication_eligible?: boolean
+    plan_draft?: Record<string, unknown> | null
+    billing_cycle_draft?: Record<string, unknown> | null
+  } | null
+  page_classifications: BillPageClassification[]
+  ignored_sections: BillIgnoredSection[]
+  validation: BillValidation
   fields: BillField[]
   conflicts: BillConflict[]
   cycle_draft?: CycleDraft
@@ -265,6 +356,12 @@ const confidenceStatus = (confidence: string) => {
   return 'failed'
 }
 
+const absentValue = (fieldKey?: string): string =>
+  fieldKey === 'future_rates' ? 'Not applicable' : 'Not found on this bill'
+
+const displayOrReason = (value: unknown, fieldKey?: string): string =>
+  reviewValue(value) || absentValue(fieldKey)
+
 interface RuntimeBillImport extends Partial<Omit<BillImport, 'normalized' | 'cycle_draft'>> {
   normalized?: Partial<BillImport['normalized']>
   cycle_draft?: Partial<CycleDraft>
@@ -286,12 +383,16 @@ function normalizeBillImport(value: BillImport): BillImport {
     status: candidate.status || 'review_required',
     source_role: candidate.source_role || 'supporting',
     extraction_method: candidate.extraction_method || 'unavailable',
+    parser_id: candidate.parser_id || 'utility_bill_generic',
     parser_version: candidate.parser_version || 'unavailable',
     page_count: Number.isFinite(candidate.page_count) && Number(candidate.page_count) > 0 ? Number(candidate.page_count) : 1,
     blocking_warnings: Array.isArray(candidate.blocking_warnings) ? candidate.blocking_warnings : [],
     extraction_warnings: Array.isArray(candidate.extraction_warnings) ? candidate.extraction_warnings : [],
     fields: Array.isArray(candidate.fields) ? candidate.fields : [],
     conflicts: Array.isArray(candidate.conflicts) ? candidate.conflicts : [],
+    page_classifications: Array.isArray(candidate.page_classifications) ? candidate.page_classifications : [],
+    ignored_sections: Array.isArray(candidate.ignored_sections) ? candidate.ignored_sections : [],
+    validation: candidate.validation && typeof candidate.validation === 'object' ? candidate.validation : {},
     normalized: {
       account: candidate.normalized?.account ?? {},
       rate_plan: candidate.normalized?.rate_plan ?? {},
@@ -684,6 +785,9 @@ export function BillImportWorkspace({
     return groups
   }, [bill.data?.fields])
   const current = bill.data
+  const strictLineItems = Array.isArray(current?.normalized.billing_cycle.line_items)
+    ? current.normalized.billing_cycle.line_items as StrictChargeLine[]
+    : []
   const mayContinue = step < 2 || Boolean(current)
   const contextError = accountContext.error ? toAppError(accountContext.error) : null
   const importerState: BillImportState<BillImport> = useMemo(() => {
@@ -912,7 +1016,9 @@ export function BillImportWorkspace({
           <div><dt>SHA-256</dt><dd><code title={current.content_sha256}>{current.content_sha256}</code></dd></div>
           <div><dt>Pages</dt><dd>{current.page_count}</dd></div>
           <div><dt>Extraction</dt><dd>{formatStructuredLabel(current.extraction_method)}</dd></div>
-          <div><dt>Parser</dt><dd>{current.parser_version}</dd></div>
+          <div><dt>Parser</dt><dd><code>{current.parser_id}</code> v{current.parser_version}</dd></div>
+          <div><dt>Document class</dt><dd>{formatStructuredLabel(current.adapter_result?.document_class)}</dd></div>
+          <div><dt>Supported layout</dt><dd>{current.adapter_result?.supported_layout ? formatStructuredLabel(current.adapter_result.supported_layout) : 'Unsupported bill layout'}</dd></div>
           <div><dt>Automatic activation</dt><dd>Disabled</dd></div>
         </dl>
         <div className="inline-actions">
@@ -920,6 +1026,28 @@ export function BillImportWorkspace({
           <button className="button secondary" onClick={() => void download('sanitized-evidence')}><Download size={15} /> Sanitized evidence</button>
         </div>
         {[...current.extraction_warnings, ...current.blocking_warnings].map((warning, index) => <p className="billing-warning" key={`${warning.code}-${index}`}><AlertTriangle size={15} /><span>{warning.message ?? warning.code}</span></p>)}
+      </Panel>
+      <Panel title="Page classification" eyebrow="Strict SCE section boundaries">
+        {current.page_classifications.length ? <div className="bill-page-classifications">
+          {current.page_classifications.map((page) => <article key={page.page_number}>
+            <div><strong>Page {page.page_number}</strong><small>{formatStructuredLabel(page.page_class)}</small></div>
+            <StatusPill
+              status={page.authoritative_for_rate_plan ? 'healthy' : 'pending'}
+              label={page.authoritative_for_rate_plan ? 'Authoritative charge detail' : 'Non-authoritative'}
+            />
+            {page.matched_anchors.length > 0 && <small>{page.anchor_score} recognized anchors</small>}
+          </article>)}
+        </div> : <EmptyState title="No classified pages" message="Unsupported bill layout. Review the PDF and enter tariff rules manually." />}
+        {current.ignored_sections.length > 0 && <details className="exact-details">
+          <summary>Ignored non-tariff sections ({current.ignored_sections.length})</summary>
+          <ul className="bill-ignored-sections">
+            {current.ignored_sections.map((section, index) => <li key={`${section.page_number}-${index}`}>
+              Page {section.page_number}: {section.reasons.map((reason) => formatStructuredLabel(reason)).join(', ')}
+              {section.display_only ? ' — display only' : ''}
+            </li>)}
+          </ul>
+        </details>}
+        <p className="field-help">Payments, definitions, notices, informational breakdowns, and rounded explanatory charts never become rate rules.</p>
       </Panel>
       <AppErrorBoundary
         scope="PDF evidence viewer"
@@ -957,11 +1085,11 @@ export function BillImportWorkspace({
       <FieldReviewPanel title="Billing-cycle fields" eyebrow="Separate cycle draft" fields={fieldGroups.billing_cycle} actions={fieldActions} corrections={corrections} onAction={(id, action) => { setFieldActions((value) => ({ ...value, [id]: action })); }} onCorrection={(id, value) => { setCorrections((currentValue) => ({ ...currentValue, [id]: value })); }} />
       {current.cycle_draft && <Panel title="Billing-cycle draft" eyebrow="Bill-specific output">
         <dl className="bill-cycle-grid">
-          <div><dt>Period</dt><dd>{current.cycle_draft.starts_at && current.cycle_draft.ends_at ? formatBillingPeriod(current.cycle_draft.starts_at, current.cycle_draft.ends_at) : 'Unavailable'}</dd></div>
+          <div><dt>Period</dt><dd>{current.cycle_draft.starts_at && current.cycle_draft.ends_at ? formatBillingPeriod(current.cycle_draft.starts_at, current.cycle_draft.ends_at) : 'Not found on this bill'}</dd></div>
           <div><dt>Usage</dt><dd>{formatEnergy(current.cycle_draft.total_usage_kwh)}</dd></div>
           <div><dt>Energy subtotal</dt><dd>{formatCurrency(current.cycle_draft.energy_subtotal)}</dd></div>
           <div><dt>Complete bill total</dt><dd>{formatCurrency(current.cycle_draft.full_bill_total)}</dd></div>
-          <div><dt>Current / projected tier</dt><dd>{current.cycle_draft.current_tier ?? 'Unavailable'} / {current.cycle_draft.projected_tier ?? 'Unavailable'}</dd></div>
+          <div><dt>Current / projected tier</dt><dd>{current.cycle_draft.current_tier ?? 'Not found on this bill'} / {current.cycle_draft.projected_tier ?? 'Not found on this bill'}</dd></div>
           <div><dt>Import state</dt><dd>{formatStructuredLabel(current.cycle_draft.status)}</dd></div>
         </dl>
         <p className="panel-copy">This bill-specific record remains separate from recurring tariff rules. Credits, taxes, and unexplained adjustments are not copied into the rate plan automatically.</p>
@@ -971,7 +1099,33 @@ export function BillImportWorkspace({
     {step === 4 && current && <>
       <FieldReviewPanel title="Extracted rate-plan rules" eyebrow="Step 5 · Reusable tariff draft" fields={fieldGroups.rate_plan} actions={fieldActions} corrections={corrections} onAction={(id, action) => { setFieldActions((value) => ({ ...value, [id]: action })); }} onCorrection={(id, value) => { setCorrections((currentValue) => ({ ...currentValue, [id]: value })); }} />
       <Panel title="Tier preview" eyebrow="Structured numeric bounds">
-        {current.normalized.rate_plan.tiers?.length ? <div className="responsive-table bill-tier-table"><table><thead><tr><th>Tier</th><th>Range</th><th>Reported usage</th><th>Configured rate</th><th>Reported charge</th></tr></thead><tbody>{current.normalized.rate_plan.tiers.map((tier, index) => <tr key={`${tier.name}-${index}`}><td data-label="Tier">{tier.name ?? `Tier ${index + 1}`}</td><td data-label="Range">{formatTierRange(tier.lower_bound_kwh ?? '0', tier.upper_bound_kwh)}</td><td data-label="Reported usage">{formatEnergy(tier.usage_kwh)}</td><td data-label="Configured rate">{formatEnergyRate(tier.price_per_kwh)}</td><td data-label="Reported charge">{formatCurrency(tier.energy_charge)}</td></tr>)}</tbody></table></div> : <EmptyState title="No complete tier table detected" message="Correct or reject the incomplete extracted fields here; the Custom Plan draft remains unchanged until Step 9." />}
+        {current.normalized.rate_plan.tiers?.length ? <div className="responsive-table bill-tier-table"><table><thead><tr><th>Tier</th><th>Range</th><th>Reported usage</th><th>Exact combined rate</th><th>Reported charge</th></tr></thead><tbody>{current.normalized.rate_plan.tiers.map((tier, index) => <tr key={`${tier.name}-${index}`}><td data-label="Tier">{tier.name ?? `Tier ${index + 1}`}</td><td data-label="Range">{formatTierRange(tier.lower_bound_kwh ?? '0', tier.upper_bound_kwh)}</td><td data-label="Reported usage">{formatEnergy(tier.usage_kwh)}</td><td data-label="Exact combined rate">{formatEnergyRate(tier.price_per_kwh)}</td><td data-label="Reported charge">{tier.energy_charge ? formatCurrency(tier.energy_charge) : 'Calculated from component rows'}</td></tr>)}</tbody></table></div> : <EmptyState title="No complete tier table detected" message="Unsupported or incomplete tariff layout. Enter reusable tariff rules manually; no zero-value plan was created." />}
+        <p className="field-help">Combined validation rates retain five decimal places. Any $0.30/$0.40 usage chart is rounded explanatory material, marked display-only, and never used as tariff evidence.</p>
+      </Panel>
+      <Panel title="Authoritative charge rows" eyebrow="Allowlisted fields from Details of your new charges">
+        {strictLineItems.length ? <div className="responsive-table bill-charge-table"><table>
+          <thead><tr><th>Section</th><th>Component</th><th>Quantity</th><th>Exact unit rate</th><th>Printed amount</th><th>Arithmetic</th></tr></thead>
+          <tbody>{strictLineItems.map((line, index) => <tr key={`${line.section}-${line.component}-${index}`}>
+            <td data-label="Section">{formatStructuredLabel(line.section)}</td>
+            <td data-label="Component">{formatStructuredLabel(line.component)}</td>
+            <td data-label="Quantity">{line.usage_kwh ? `${line.usage_kwh} kWh` : line.quantity ? `${line.quantity} ${line.quantity_unit ?? ''}` : 'Not applicable'}</td>
+            <td data-label="Exact unit rate">{formatEnergyRate(line.unit_rate)}</td>
+            <td data-label="Printed amount">{formatCurrency(line.amount)}</td>
+            <td data-label="Arithmetic"><StatusPill status={line.validation?.status === 'pass' ? 'healthy' : 'failed'} label={line.validation?.status === 'pass' ? 'Exact Decimal pass' : 'Needs review'} /></td>
+          </tr>)}</tbody>
+        </table></div> : <EmptyState title="No authoritative charge rows" message="The required SCE charge-detail layout was not recognized. Review the source or enter values manually." />}
+      </Panel>
+      <Panel title="Exact bill validation" eyebrow="Decimal arithmetic and reconciliation">
+        <div className="bill-validation-summary">
+          <article><span>All checks</span><StatusPill status={current.validation.valid ? 'healthy' : 'failed'} label={current.validation.valid ? 'Passed' : 'Needs review'} /></article>
+          <article><span>Printed subtotal</span><strong>{current.validation.subtotal?.printed ? formatCurrency(current.validation.subtotal.printed) : 'Not found on this bill'}</strong><small>Calculated {current.validation.subtotal?.calculated ? formatCurrency(current.validation.subtotal.calculated) : 'not available'}</small></article>
+          <article><span>Printed total</span><strong>{current.validation.total?.printed ? formatCurrency(current.validation.total.printed) : 'Not found on this bill'}</strong><small>Calculated {current.validation.total?.calculated ? formatCurrency(current.validation.total.calculated) : 'not available'}</small></article>
+        </div>
+        {current.validation.usage?.map((usage) => <p className="validation-line" key={usage.section}>
+          <StatusPill status={usage.status === 'pass' ? 'healthy' : 'failed'} label={usage.status === 'pass' ? 'Pass' : 'Needs review'} />
+          {formatStructuredLabel(usage.section)} tier usage: {formatEnergy(usage.tier_usage_sum_kwh)} of {formatEnergy(usage.total_usage_kwh)}
+        </p>)}
+        <p className="field-help">Every charge row is multiplied and currency-rounded with Decimal arithmetic; subtotals, taxes, totals, and duplicate delivery/generation tier usage are reconciled separately.</p>
       </Panel>
     </>}
 
@@ -980,7 +1134,7 @@ export function BillImportWorkspace({
         <div className="confidence-summary">
           {['administrator_confirmed', 'high', 'medium', 'low', 'missing'].map((confidence) => <article key={confidence}><span>{formatStructuredLabel(confidence)}</span><strong>{current.fields.filter((field) => field.confidence === confidence).length}</strong></article>)}
         </div>
-        <label><span>Threshold interpretation</span><select value={threshold} onChange={(event) => { setThreshold(event.target.value as ThresholdInterpretation); }}><option value="unknown">Unknown — requires administrator review</option><option value="fixed_cycle_threshold">Fixed billing-cycle threshold</option><option value="daily_baseline">Derived from daily baseline</option><option value="baseline_multiplier">Derived from baseline multiplier</option></select></label>
+        <label><span>Threshold interpretation</span><select value={threshold} onChange={(event) => { setThreshold(event.target.value as ThresholdInterpretation); }}><option value="unknown">Needs review — choose an interpretation</option><option value="fixed_cycle_threshold">Fixed billing-cycle threshold</option><option value="daily_baseline">Derived from daily baseline</option><option value="baseline_multiplier">Derived from baseline multiplier</option></select></label>
         <label><span>Uploaded bill source role</span><select value={sourceRole} onChange={(event) => { setSourceRole(event.target.value as SourceRole); }}><option value="supporting">Supporting source</option><option value="authoritative_account_specific" disabled={current.utility_account_id === null}>Authoritative account-specific source</option><option value="reference_only">Reference only</option></select></label>
         <p className="field-help">A displayed threshold does not prove whether it is fixed, baseline-derived, seasonal, or account-specific.</p>
       </Panel>
@@ -994,10 +1148,10 @@ export function BillImportWorkspace({
         <section className="bill-comparison-hero">
           <article><span>Calculated energy subtotal</span><strong>{comparison.data.display?.calculated_energy_subtotal}</strong><small>Existing exact rate engine</small></article>
           <article><span>Derived blended rate</span><strong>{comparison.data.display?.blended_energy_rate}</strong><small>Four-decimal display only</small></article>
-          <article><span>Utility energy subtotal</span><strong>{comparison.data.display?.utility_energy_subtotal ?? 'Unavailable'}</strong><small>Extracted bill evidence</small></article>
-          <article><span>Complete utility bill</span><strong>{comparison.data.display?.utility_full_bill_total ?? 'Unavailable'}</strong><small>Not interchangeable with energy subtotal</small></article>
+          <article><span>Utility energy subtotal</span><strong>{comparison.data.display?.utility_energy_subtotal ?? 'Not reported on this bill'}</strong><small>Extracted bill evidence</small></article>
+          <article><span>Complete utility bill</span><strong>{comparison.data.display?.utility_full_bill_total ?? 'Not reported on this bill'}</strong><small>Not interchangeable with energy subtotal</small></article>
         </section>
-        <dl className="bill-difference-grid"><div><dt>Energy-subtotal difference</dt><dd>{comparison.data.display?.energy_subtotal_difference ?? 'Unavailable'}</dd></div><div><dt>Complete-bill difference</dt><dd>{comparison.data.display?.complete_bill_difference ?? 'Unavailable'}</dd></div><div><dt>Extraction confidence</dt><dd>{formatStructuredLabel(comparison.data.extraction_confidence)}</dd></div><div><dt>Calculation correctness</dt><dd>{formatStructuredLabel(comparison.data.calculation_correctness)}</dd></div></dl>
+        <dl className="bill-difference-grid"><div><dt>Energy-subtotal difference</dt><dd>{comparison.data.display?.energy_subtotal_difference ?? 'Needs review'}</dd></div><div><dt>Complete-bill difference</dt><dd>{comparison.data.display?.complete_bill_difference ?? 'Needs review'}</dd></div><div><dt>Extraction confidence</dt><dd>{formatStructuredLabel(comparison.data.extraction_confidence)}</dd></div><div><dt>Calculation correctness</dt><dd>{formatStructuredLabel(comparison.data.calculation_correctness)}</dd></div></dl>
         <p className="billing-disclosure">{comparison.data.disclosure}</p>
         <details className="exact-details"><summary>Exact unrounded comparison values</summary><pre>{JSON.stringify(comparison.data.exact, null, 2)}</pre></details>
       </>}
@@ -1005,7 +1159,7 @@ export function BillImportWorkspace({
 
     {step === 7 && current && <div className="bill-import-columns">
       <Panel title="Save administrator review" eyebrow="Step 8 · Separate outputs">
-        <dl className="detail-list"><div><dt>Rate-plan draft</dt><dd>{current.rate_plan_id} / {current.rate_version_id}</dd></div><div><dt>Billing-cycle draft</dt><dd>{current.cycle_draft?.id ?? 'Missing'}</dd></div><div><dt>Required review decisions</dt><dd>{current.fields.filter((field) => !['confirmed', 'corrected'].includes(field.review_state)).length} pending</dd></div><div><dt>Blocking warnings</dt><dd>{current.blocking_warnings.length}</dd></div></dl>
+        <dl className="detail-list"><div><dt>Rate-plan draft</dt><dd>{current.rate_plan_id && current.rate_version_id ? `${current.rate_plan_id} / ${current.rate_version_id}` : 'Not created — unsupported or incomplete tariff layout'}</dd></div><div><dt>Billing-cycle draft</dt><dd>{current.cycle_draft?.id ?? 'Not created — unsupported bill layout'}</dd></div><div><dt>Required review decisions</dt><dd>{current.fields.filter((field) => !['confirmed', 'corrected'].includes(field.review_state)).length} pending</dd></div><div><dt>Blocking warnings</dt><dd>{current.blocking_warnings.length}</dd></div></dl>
         <button className="button primary" disabled={review.isPending} onClick={() => { review.mutate(); }}><Save size={16} /> {review.isPending ? 'Saving review…' : 'Save reviewed fields and outputs'}</button>
         <p className="field-help">Choose Confirm, Correct, or Reject for required fields on the Account, Cycle, and Rate Rules steps. Saving does not publish or assign the rate.</p>
       </Panel>
@@ -1042,7 +1196,7 @@ export function BillImportWorkspace({
       </Panel>
       <Panel title="Import billing cycle" eyebrow="Separate bill-specific record">
         <p className="panel-copy">This records exact cycle dates and utility-reported cumulative usage separately. It never overwrites immutable monitored readings.</p>
-        <dl className="detail-list"><div><dt>Cycle</dt><dd>{current.cycle_draft?.starts_at && current.cycle_draft.ends_at ? formatBillingPeriod(current.cycle_draft.starts_at, current.cycle_draft.ends_at) : 'Unavailable'}</dd></div><div><dt>Reported usage</dt><dd>{formatEnergy(current.cycle_draft?.total_usage_kwh)}</dd></div><div><dt>Authority</dt><dd>{formatStructuredLabel(sourceRole)}</dd></div><div><dt>Status</dt><dd>{formatStructuredLabel(current.cycle_draft?.status)}</dd></div></dl>
+        <dl className="detail-list"><div><dt>Cycle</dt><dd>{current.cycle_draft?.starts_at && current.cycle_draft.ends_at ? formatBillingPeriod(current.cycle_draft.starts_at, current.cycle_draft.ends_at) : 'Not found on this bill'}</dd></div><div><dt>Reported usage</dt><dd>{formatEnergy(current.cycle_draft?.total_usage_kwh)}</dd></div><div><dt>Authority</dt><dd>{formatStructuredLabel(sourceRole)}</dd></div><div><dt>Status</dt><dd>{formatStructuredLabel(current.cycle_draft?.status)}</dd></div></dl>
         <button className="button secondary" disabled={importCycle.isPending || current.utility_account_id === null || !['ready_to_publish', 'published'].includes(current.status) || current.cycle_draft?.status === 'imported'} onClick={() => { importCycle.mutate(); }}><FileUp size={15} /> Import reviewed billing cycle</button>
       </Panel>
       <Panel title="Workflow record" eyebrow="Evidence retained">
@@ -1076,13 +1230,18 @@ function FieldReviewPanel({
   onCorrection: (id: string, value: string) => void
 }) {
   return <Panel title={title} eyebrow={eyebrow}>
-    {!fields.length ? <EmptyState title="No fields extracted" message="Missing required values remain publication blockers." /> : <div className="bill-field-list">{fields.map((field) => {
+    {!fields.length ? <EmptyState title="No fields extracted" message="Unsupported bill layout. Review the evidence and enter required values manually." /> : <div className="bill-field-list">{fields.map((field) => {
       const action = actions[field.id] ?? 'review'
       return <article key={field.id} className={`bill-field bill-confidence-${field.confidence}`}>
-        <header><div><strong>{formatStructuredLabel(field.field_key)}</strong><small>Page {field.page_number ?? 'unknown'} · {formatStructuredLabel(field.extraction_method)} · parser {field.parser_version || 'unavailable'}</small></div><StatusPill status={confidenceStatus(field.confidence)} label={formatStructuredLabel(field.confidence)} /></header>
-        <dl><div><dt>Extracted</dt><dd>{reviewValue(field.raw_value) || 'Missing'}</dd></div><div><dt>Normalized</dt><dd>{reviewValue(field.normalized_value) || 'Missing'}</dd></div></dl>
+        <header><div><strong>{formatStructuredLabel(field.field_key)}</strong><small>{field.page_number ? `Page ${field.page_number}` : 'No source page'} · {formatStructuredLabel(field.extraction_method)} · {field.parser_rule ?? `parser ${field.parser_version || 'not recorded'}`}</small></div><StatusPill status={confidenceStatus(field.confidence)} label={field.confidence === 'missing' ? 'Needs review' : formatStructuredLabel(field.confidence)} /></header>
+        <dl><div><dt>Extracted</dt><dd>{displayOrReason(field.raw_value, field.field_key)}</dd></div><div><dt>Normalized</dt><dd>{displayOrReason(field.normalized_value, field.field_key)}</dd></div></dl>
+        {field.validation_result && <p className="validation-line"><StatusPill status={field.validation_result.status === 'pass' ? 'healthy' : 'failed'} label={field.validation_result.status === 'pass' ? 'Arithmetic passed' : 'Arithmetic needs review'} /> Exact parser validation retained</p>}
         {field.source_excerpt && <blockquote>{field.source_excerpt}</blockquote>}
-        {field.warnings.map((warning, index) => <p className="field-warning" key={`${warning.code}-${index}`}><AlertTriangle size={13} /> {warning.message ?? warning.code}</p>)}
+        {field.warnings.map((warning, index) => <div className="field-warning-detail" key={`${warning.code}-${index}`}>
+          <p className="field-warning"><AlertTriangle size={13} /> {warning.message ?? warning.code}</p>
+          {warning.searched_area && <small>Searched: {warning.searched_area}</small>}
+          {warning.administrator_action && <small>Next step: {warning.administrator_action}</small>}
+        </div>)}
         <div className="bill-field-review">
           <label><span>Administrator decision</span><select value={action} onChange={(event) => { onAction(field.id, event.target.value as FieldAction); }}><option value="review">Review required</option><option value="confirm">Confirm normalized value</option><option value="correct">Correct value</option><option value="reject">Reject / mark missing</option></select></label>
           {action === 'correct' && <label><span>Corrected exact value</span><input value={corrections[field.id] ?? ''} onChange={(event) => { onCorrection(field.id, event.target.value); }} /></label>}

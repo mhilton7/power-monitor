@@ -504,6 +504,14 @@ async def activate_version(
     *,
     automatically: bool = False,
 ) -> tuple[str, ValidationReport]:
+    plan = await session.get(RatePlan, version.rate_plan_id)
+    if plan is not None and plan.status in {"removed", "retired"}:
+        raise ProblemError(
+            409,
+            "Rate plan is unavailable",
+            "Restore the removed or retired rate plan before activating a version",
+            "rate_plan_removed",
+        )
     if version.source_kind == "utility_bill_candidate":
         bill = await session.scalar(
             select(UtilityBillImport).where(UtilityBillImport.rate_version_id == version.id)
@@ -570,7 +578,6 @@ async def activate_version(
     version.activated_by = user_id
     version.activated_at = now
     version.automatically_activated = automatically
-    plan = await session.get(RatePlan, version.rate_plan_id)
     if plan:
         plan.status = "active"
     await _move_assignments_and_queue_recalculations(session, version, superseded_ids, user_id)

@@ -1520,7 +1520,7 @@ test('alert acknowledgement calls the audited server action', async ({ page }) =
 test('mobile navigation opens with keyboard-operable controls', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 760 })
   await mockApplication(page)
-  await page.goto('/')
+  await page.goto('/overview')
   const menu = page.getByRole('button', { name: 'Open navigation' })
   await menu.focus()
   await page.keyboard.press('Enter')

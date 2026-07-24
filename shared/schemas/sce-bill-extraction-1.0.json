@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sce-bill-extraction/1.0",
+  "title": "Strict Southern California Edison residential-bill extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "parser_id",
+    "parser_version",
+    "fixture_version",
+    "utility",
+    "document_class",
+    "automatic_publication_eligible",
+    "plan_draft",
+    "billing_cycle_draft",
+    "evidence",
+    "ignored_sections",
+    "validation",
+    "warnings",
+    "page_classifications"
+  ],
+  "properties": {
+    "schema_version": {"const": "sce_bill_v1"},
+    "parser_id": {"const": "sce_residential_bill_v1"},
+    "parser_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "fixture_version": {"type": "string", "minLength": 1},
+    "utility": {"const": "Southern California Edison"},
+    "document_class": {"const": "residential_electric_bill"},
+    "supported_layout": {"type": "string"},
+    "automatic_publication_eligible": {"const": false},
+    "plan_draft": {
+      "oneOf": [
+        {"$ref": "#/$defs/plan_draft"},
+        {"type": "null"}
+      ]
+    },
+    "billing_cycle_draft": {
+      "oneOf": [
+        {"$ref": "#/$defs/billing_cycle_draft"},
+        {"type": "null"}
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/evidence"}
+    },
+    "ignored_sections": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/ignored_section"}
+    },
+    "validation": {"type": "object"},
+    "warnings": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "page_classifications": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/page_classification"}
+    }
+  },
+  "$defs": {
+    "decimal": {
+      "oneOf": [
+        {"type": "string", "pattern": "^-?[0-9]+(?:\\.[0-9]+)?$"},
+        {"type": "null"}
+      ]
+    },
+    "plan_draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "utility",
+        "plan_name",
+        "plan_code",
+        "pricing_model",
+        "currency",
+        "effective_from",
+        "tiers",
+        "tou_periods",
+        "threshold_interpretation",
+        "baseline_allowance_kwh",
+        "season",
+        "generation_provider",
+        "recurring_daily_charge",
+        "recurring_components",
+        "missing_rules",
+        "summary_chart",
+        "automatic_publication_eligible"
+      ],
+      "properties": {
+        "utility": {"const": "Southern California Edison"},
+        "plan_name": {"type": ["string", "null"]},
+        "plan_code": {"type": ["string", "null"]},
+        "pricing_model": {"enum": ["flat", "tiered", "time_of_use", "time_of_use_tiered", null]},
+        "currency": {"const": "USD"},
+        "effective_from": {"type": ["string", "null"], "format": "date"},
+        "tiers": {"type": "array", "items": {"type": "object"}},
+        "tou_periods": {"type": "array", "items": {"type": "object"}},
+        "threshold_interpretation": {"type": "string"},
+        "baseline_allowance_kwh": {"$ref": "#/$defs/decimal"},
+        "season": {"type": ["string", "null"]},
+        "generation_provider": {"type": ["string", "null"]},
+        "recurring_daily_charge": {"type": ["object", "null"]},
+        "recurring_components": {"type": "array", "items": {"$ref": "#/$defs/line_item"}},
+        "missing_rules": {"type": "array", "items": {"type": "object"}},
+        "summary_chart": {"type": "object"},
+        "automatic_publication_eligible": {"const": false}
+      }
+    },
+    "billing_cycle_draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "starts_at",
+        "ends_at",
+        "cycle_days",
+        "meter_read_date",
+        "bill_prepared_date",
+        "next_cycle_end_estimate",
+        "days_remaining",
+        "days_elapsed",
+        "total_usage_kwh",
+        "baseline_allowance_kwh",
+        "usage_by_tier",
+        "usage_by_tou",
+        "meter_records",
+        "current_tier",
+        "projected_tier",
+        "energy_subtotal",
+        "full_bill_total",
+        "fixed_charges",
+        "taxes_fees",
+        "credits",
+        "adjustments",
+        "line_items",
+        "validation"
+      ],
+      "properties": {
+        "starts_at": {"type": ["string", "null"], "format": "date"},
+        "ends_at": {"type": ["string", "null"], "format": "date"},
+        "cycle_days": {"type": ["integer", "null"], "minimum": 1},
+        "meter_read_date": {"type": ["string", "null"], "format": "date"},
+        "bill_prepared_date": {"type": ["string", "null"], "format": "date"},
+        "next_cycle_end_estimate": {"type": ["string", "null"], "format": "date"},
+        "days_remaining": {"type": ["integer", "null"]},
+        "days_elapsed": {"type": ["integer", "null"]},
+        "total_usage_kwh": {"$ref": "#/$defs/decimal"},
+        "baseline_allowance_kwh": {"$ref": "#/$defs/decimal"},
+        "usage_by_tier": {"type": "array", "items": {"type": "object"}},
+        "usage_by_tou": {"type": "array", "items": {"type": "object"}},
+        "meter_records": {"type": "array", "items": {"type": "object"}},
+        "current_tier": {"type": ["string", "null"]},
+        "projected_tier": {"type": ["string", "null"]},
+        "energy_subtotal": {"$ref": "#/$defs/decimal"},
+        "full_bill_total": {"$ref": "#/$defs/decimal"},
+        "fixed_charges": {"$ref": "#/$defs/decimal"},
+        "taxes_fees": {"$ref": "#/$defs/decimal"},
+        "credits": {"$ref": "#/$defs/decimal"},
+        "adjustments": {"$ref": "#/$defs/decimal"},
+        "line_items": {"type": "array", "items": {"$ref": "#/$defs/line_item"}},
+        "validation": {"type": "object"}
+      }
+    },
+    "line_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component",
+        "section",
+        "unit_rate",
+        "amount",
+        "source_page",
+        "source_region",
+        "source_text",
+        "confidence",
+        "parser_rule",
+        "validation"
+      ],
+      "properties": {
+        "component": {"type": "string"},
+        "section": {"enum": ["delivery", "generation", "other", "tax"]},
+        "quantity": {"type": "string"},
+        "quantity_unit": {"enum": ["day"]},
+        "usage_kwh": {"type": "string"},
+        "unit_rate": {"type": "string"},
+        "amount": {"type": "string"},
+        "recurrence": {"enum": ["daily", "per_kwh"]},
+        "provider": {"type": "string"},
+        "season": {"type": "string"},
+        "tier": {"type": "string"},
+        "tier_label": {"type": "string"},
+        "source_page": {"type": "integer", "minimum": 1},
+        "source_region": {"type": "object"},
+        "source_text": {"type": "string"},
+        "confidence": {"enum": ["confirmed", "high", "medium", "low", "missing", "conflict", "not_applicable"]},
+        "parser_rule": {"type": "string"},
+        "validation": {"type": "object"}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "value",
+        "confidence",
+        "source_page",
+        "source_region",
+        "source_text",
+        "extraction_method",
+        "parser_rule",
+        "validation_result",
+        "review_status",
+        "reason"
+      ],
+      "properties": {
+        "field": {"type": "string"},
+        "value": {},
+        "confidence": {"enum": ["confirmed", "high", "medium", "low", "missing", "conflict", "not_applicable"]},
+        "source_page": {"type": ["integer", "null"]},
+        "source_region": {"type": ["object", "null"]},
+        "source_text": {"type": ["string", "null"]},
+        "extraction_method": {"enum": ["text", "ocr"]},
+        "parser_rule": {"type": "string"},
+        "validation_result": {"type": ["object", "null"]},
+        "review_status": {"enum": ["needs_review", "confirmed", "corrected"]},
+        "reason": {"type": ["string", "null"]}
+      }
+    },
+    "ignored_section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_number", "page_class", "reasons", "authoritative_for_rate_plan"],
+      "properties": {
+        "page_number": {"type": "integer", "minimum": 1},
+        "page_class": {"type": "string"},
+        "reasons": {"type": "array", "items": {"type": "string"}},
+        "display_only": {"type": "boolean"},
+        "authoritative_for_rate_plan": {"const": false}
+      }
+    },
+    "page_classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_number",
+        "page_class",
+        "anchor_score",
+        "matched_anchors",
+        "authoritative_for_rate_plan"
+      ],
+      "properties": {
+        "page_number": {"type": "integer", "minimum": 1},
+        "page_class": {
+          "enum": [
+            "account_and_usage_summary",
+            "generic_information",
+            "new_charge_details",
+            "blank_or_separator",
+            "regulatory_notice",
+            "other"
+          ]
+        },
+        "anchor_score": {"type": "integer", "minimum": 0},
+        "matched_anchors": {"type": "array", "items": {"type": "string"}},
+        "authoritative_for_rate_plan": {"type": "boolean"}
+      }
+    }
+  }
+}

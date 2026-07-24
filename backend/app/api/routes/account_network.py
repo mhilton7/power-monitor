@@ -158,6 +158,14 @@ async def _version_or_error(session: DbSession, version_id: str) -> RateVersion:
             "Choose an approved or published rate version",
             "rate_version_unavailable",
         )
+    plan = await session.get(RatePlan, version.rate_plan_id)
+    if plan is None or plan.status in {"removed", "retired"}:
+        raise ProblemError(
+            409,
+            "Rate plan unavailable",
+            "Removed or retired rate plans cannot receive new assignments",
+            "rate_plan_removed",
+        )
     return version
 
 

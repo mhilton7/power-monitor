@@ -184,7 +184,9 @@ export function Layout({ session, children }: { session: Session; children: Reac
     const root = mobileNavigation.current
     if (!root) return
     const focusable = [...root.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled])')]
-    focusable[0]?.focus()
+    // Focus the non-activating drawer container first. Moving focus directly
+    // to Close can let the Enter keyup that opened the drawer close it again.
+    root.focus()
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setMenuOpen(false)
@@ -226,6 +228,7 @@ export function Layout({ session, children }: { session: Session; children: Reac
       <aside
         className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}
         ref={mobileNavigation}
+        tabIndex={-1}
         aria-label="Application navigation"
       >
         <div className="brand">

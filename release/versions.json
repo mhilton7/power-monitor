@@ -2,11 +2,11 @@
   "product": "Power Monitor Server",
   "version": "1.0.0",
   "protocol": "pm-protocol/1.0.0",
-  "migration_revision": "20260724_0013",
+  "migration_revision": "20260724_0014",
   "python": "3.13.14",
   "node": "v26.0.0",
   "npm": "11.12.1",
-  "git_commit": "63c544c10912855d07e005f37ed4790d70b426b3",
+  "git_commit": "1440d38c92a1fa51c275d310c0cbe14d617e7bb1",
   "images": {
     "api": "power-monitor-api:1.0.0",
     "frontend": "power-monitor-frontend:1.0.0",

@@ -1,0 +1,106 @@
+{
+  "fixture_name": "sanitized_sce_domestic_tiered_bill_2026_07",
+  "contains_pii": false,
+  "document_class": "sce_residential_electric_bill",
+  "expected_extraction": {
+    "utility": "Southern California Edison",
+    "rate_plan_code": "DOMESTIC",
+    "billing_period": {
+      "start": "2026-06-22",
+      "end": "2026-07-21",
+      "days": 30
+    },
+    "bill_prepared_date": "2026-07-22",
+    "next_cycle_end_estimate": "2026-08-19",
+    "total_usage_kwh": "951",
+    "baseline_allowance_kwh": "579.0",
+    "line_items": [
+      {
+        "component": "base_services_charge",
+        "section": "delivery",
+        "quantity": "30",
+        "quantity_unit": "day",
+        "unit_rate": "0.76900",
+        "amount": "23.07",
+        "recurrence": "daily"
+      },
+      {
+        "component": "energy",
+        "section": "delivery",
+        "season": "summer",
+        "tier": "tier_1",
+        "tier_label": "within baseline",
+        "usage_kwh": "579",
+        "unit_rate": "0.17862",
+        "amount": "103.42"
+      },
+      {
+        "component": "energy",
+        "section": "delivery",
+        "season": "summer",
+        "tier": "tier_2",
+        "tier_label": "over baseline",
+        "usage_kwh": "372",
+        "unit_rate": "0.27961",
+        "amount": "104.01"
+      },
+      {
+        "component": "wildfire_fund_charge",
+        "section": "delivery",
+        "usage_kwh": "951",
+        "unit_rate": "0.00591",
+        "amount": "5.62"
+      },
+      {
+        "component": "energy",
+        "section": "generation",
+        "provider": "SCE",
+        "season": "summer",
+        "tier": "tier_1",
+        "tier_label": "within baseline",
+        "usage_kwh": "579",
+        "unit_rate": "0.11761",
+        "amount": "68.10"
+      },
+      {
+        "component": "energy",
+        "section": "generation",
+        "provider": "SCE",
+        "season": "summer",
+        "tier": "tier_2",
+        "tier_label": "over baseline",
+        "usage_kwh": "372",
+        "unit_rate": "0.11761",
+        "amount": "43.75"
+      },
+      {
+        "component": "fixed_recovery_charge",
+        "section": "other",
+        "usage_kwh": "951",
+        "unit_rate": "0.00619",
+        "amount": "5.89"
+      },
+      {
+        "component": "state_tax",
+        "section": "tax",
+        "usage_kwh": "951",
+        "unit_rate": "0.00030",
+        "amount": "0.29"
+      }
+    ],
+    "subtotal_new_charges": "353.86",
+    "total_new_charges": "354.15",
+    "summary_chart": {
+      "tier_1_usage_kwh": "579",
+      "tier_2_usage_kwh": "372",
+      "tier_1_display_average_rate": "0.30",
+      "tier_2_display_average_rate": "0.40",
+      "authoritative_for_rate_plan": false,
+      "reason": "Rounded explanatory chart; actual prices may vary."
+    },
+    "derived_validation_only": {
+      "tier_1_variable_rate_sum": "0.30863",
+      "tier_2_variable_rate_sum": "0.40962"
+    }
+  }
+}

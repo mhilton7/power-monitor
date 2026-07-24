@@ -23,6 +23,7 @@ def validate_schemas() -> None:
     schema_paths.append(
         ROOT / "shared" / "schemas" / "power-monitor-rate-plan-1.0.json"
     )
+    schema_paths.append(ROOT / "shared" / "schemas" / "sce-bill-extraction-1.0.json")
     for path in sorted(schema_paths):
         schema = json.loads(path.read_text(encoding="utf-8"))
         Draft202012Validator.check_schema(schema)

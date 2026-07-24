@@ -6980,6 +6980,13 @@ paths:
       summary: List Managed Rate Plans
       operationId: list_managed_rate_plans_api_v1_rates_plans_get
       parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          default: active
+          title: Status
       - name: pm_session
         in: cookie
         required: false
@@ -7042,6 +7049,228 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Create Rate Plan Api V1 Rates Plans Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-plans:
+    get:
+      tags:
+      - rate management
+      summary: List Admin Rate Plans
+      operationId: list_admin_rate_plans_api_v1_admin_rate_plans_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          default: active
+          title: Status
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Admin Rate Plans Api V1 Admin Rate Plans Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-plans/{plan_id}/dependencies:
+    get:
+      tags:
+      - rate management
+      summary: Rate Plan Dependencies
+      operationId: rate_plan_dependencies_api_v1_admin_rate_plans__plan_id__dependencies_get
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Plan Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Rate Plan Dependencies Api V1 Admin Rate Plans  Plan
+                  Id  Dependencies Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-plan-drafts/{plan_id}:
+    delete:
+      tags:
+      - rate management
+      summary: Delete Unused Rate Plan Draft
+      operationId: delete_unused_rate_plan_draft_api_v1_admin_rate_plan_drafts__plan_id__delete
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Plan Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatePlanDraftDeleteRequest'
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-plans/{plan_id}/remove:
+    post:
+      tags:
+      - rate management
+      summary: Remove Rate Plan
+      operationId: remove_rate_plan_api_v1_admin_rate_plans__plan_id__remove_post
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Plan Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatePlanLifecycleRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Remove Rate Plan Api V1 Admin Rate Plans  Plan Id  Remove
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-plans/{plan_id}/restore:
+    post:
+      tags:
+      - rate management
+      summary: Restore Rate Plan
+      operationId: restore_rate_plan_api_v1_admin_rate_plans__plan_id__restore_post
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Plan Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatePlanRestoreRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Restore Rate Plan Api V1 Admin Rate Plans  Plan Id  Restore
+                  Post
         '422':
           description: Validation Error
           content:
@@ -13134,6 +13363,83 @@ components:
       - timezone
       - effective_from
       title: RatePlanDocument
+    RatePlanDraftDeleteRequest:
+      properties:
+        expected_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected Revision
+        confirmation:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Confirmation
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - expected_revision
+      - confirmation
+      - reason
+      title: RatePlanDraftDeleteRequest
+    RatePlanLifecycleRequest:
+      properties:
+        expected_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected Revision
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+        confirmation:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Confirmation
+        idempotency_key:
+          anyOf:
+          - type: string
+            maxLength: 160
+            minLength: 8
+          - type: 'null'
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - expected_revision
+      - reason
+      - confirmation
+      title: RatePlanLifecycleRequest
+    RatePlanRestoreRequest:
+      properties:
+        expected_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected Revision
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+        idempotency_key:
+          anyOf:
+          - type: string
+            maxLength: 160
+            minLength: 8
+          - type: 'null'
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - expected_revision
+      - reason
+      title: RatePlanRestoreRequest
     RatePreviewRequest:
       properties:
         plan_code:

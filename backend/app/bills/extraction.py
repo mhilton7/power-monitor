@@ -17,6 +17,16 @@ from typing import Any
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
+from app.bills.sce import (
+    ADAPTER_ID as SCE_PARSER_ID,
+)
+from app.bills.sce import (
+    ADAPTER_VERSION as SCE_PARSER_VERSION,
+)
+from app.bills.sce import (
+    parse_sce_residential,
+    recognizes_sce_residential,
+)
 from app.config import Settings
 
 PARSER_ID = "utility_bill_pdf_v1"
@@ -64,6 +74,8 @@ class ExtractedField:
     confidence: str
     warnings: list[dict[str, Any]] = field(default_factory=list)
     normalization_history: list[dict[str, Any]] = field(default_factory=list)
+    parser_rule: str | None = None
+    validation_result: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +100,12 @@ class BillExtraction:
     fields: list[ExtractedField]
     warnings: list[dict[str, Any]]
     blocking_warnings: list[dict[str, Any]]
+    parser_id: str = PARSER_ID
+    parser_version: str = PARSER_VERSION
+    page_classifications: list[dict[str, Any]] = field(default_factory=list)
+    ignored_sections: list[dict[str, Any]] = field(default_factory=list)
+    validation: dict[str, Any] = field(default_factory=dict)
+    adapter_result: dict[str, Any] | None = None
 
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
@@ -874,9 +892,21 @@ def extract_bill(
     warnings: list[dict[str, Any]] = []
     ocr_regions: list[TextRegion] = []
     if ocr_pages:
+        bounded_ocr_pages = ocr_pages[:3]
+        if len(ocr_pages) > len(bounded_ocr_pages):
+            warnings.append(
+                {
+                    "code": "ocr_page_scope_limited",
+                    "pages": ocr_pages[len(bounded_ocr_pages) :],
+                    "message": (
+                        "OCR was limited to the first three candidate pages; "
+                        "remaining image-only pages require manual review."
+                    ),
+                }
+            )
         ocr_regions, ocr_warnings = _run_ocr(
             pdf_path,
-            ocr_pages,
+            bounded_ocr_pages,
             settings,
             runner=runner,
         )
@@ -892,12 +922,48 @@ def extract_bill(
         )
     raw_text = "\n".join(region.text for region in regions)
     normalized_text, normalization_history = normalize_extracted_text(raw_text)
-    account, rate, cycle, fields, parse_warnings = _parse_regions(
-        regions,
-        normalization_history,
-    )
-    warnings.extend(parse_warnings)
-    blocking = [
+    parser_id = PARSER_ID
+    parser_version = PARSER_VERSION
+    page_classifications: list[dict[str, Any]] = []
+    ignored_sections: list[dict[str, Any]] = []
+    validation: dict[str, Any] = {}
+    adapter_result: dict[str, Any] | None = None
+    adapter_blocking: list[dict[str, Any]] | None = None
+    if recognizes_sce_residential(regions):
+        sce = parse_sce_residential(regions)
+        parser_id = SCE_PARSER_ID
+        parser_version = SCE_PARSER_VERSION
+        account, rate, cycle = sce.account_data, sce.rate_data, sce.cycle_data
+        fields = [
+            ExtractedField(
+                output_kind=item.output_kind,
+                field_key=item.field_key,
+                raw_value=item.raw_value,
+                normalized_value=item.normalized_value,
+                page_number=item.line.page_number if item.line else None,
+                source_excerpt=(redact_sensitive_text(item.line.text)[:500] if item.line else None),
+                text_region=item.line.region if item.line else None,
+                extraction_method=item.line.method if item.line else "text",
+                confidence=item.confidence,
+                warnings=item.warnings,
+                parser_rule=item.parser_rule,
+                validation_result=item.validation_result,
+            )
+            for item in sce.fields
+        ]
+        warnings.extend(sce.warnings)
+        page_classifications = sce.page_classifications
+        ignored_sections = sce.ignored_sections
+        validation = sce.validation
+        adapter_result = sce.normalized_result
+        adapter_blocking = sce.blocking_warnings
+    else:
+        account, rate, cycle, fields, parse_warnings = _parse_regions(
+            regions,
+            normalization_history,
+        )
+        warnings.extend(parse_warnings)
+    blocking = adapter_blocking or [
         {
             "code": "required_field_review",
             "field": item.field_key,
@@ -948,4 +1014,10 @@ def extract_bill(
         fields=fields,
         warnings=warnings,
         blocking_warnings=blocking,
+        parser_id=parser_id,
+        parser_version=parser_version,
+        page_classifications=page_classifications,
+        ignored_sections=ignored_sections,
+        validation=validation,
+        adapter_result=adapter_result,
     )

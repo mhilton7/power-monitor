@@ -625,14 +625,14 @@ export function RateEditorPage({ canManage, canImportBills = false }: { canManag
         </div>
       )}
 
-      <footer className="editor-footer">
+      {!importOpen && <footer className="editor-footer">
         <button className="button secondary" disabled={step === 0} onClick={() => { setStep((value) => value - 1); }}><ArrowLeft size={15} /> Previous</button>
         <div>
           {save.error && <span className="field-error">{save.error.message}</span>}
           {editable && <button className="button secondary" disabled={save.isPending} onClick={() => { save.mutate(); }}><Save size={15} /> Save draft</button>}
           {step < 4 ? <button className="button primary" onClick={() => { setStep((value) => value + 1); }}>Next <ArrowRight size={15} /></button> : editable && saved && <button className="button primary" disabled={!validation?.valid || activate.isPending} onClick={() => { activationDialog.current?.showModal() }}><CheckCircle2 size={15} /> Activate</button>}
         </div>
-      </footer>
+      </footer>}
       <dialog ref={activationDialog} className="sensor-removal-dialog rate-activation-dialog" aria-labelledby="activate-rate-title">
         <form method="dialog" onSubmit={(event) => { event.preventDefault(); if (saved) activate.mutate(saved.versionId) }}>
           <header><div><span className="eyebrow">Immutable effective-dated change</span><h2 id="activate-rate-title">Activate rate version</h2></div><button type="button" className="icon-button" aria-label="Close activation dialog" onClick={() => activationDialog.current?.close()}><X /></button></header>

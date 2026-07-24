@@ -61,6 +61,10 @@ REQUIRED_REVIEW_FIELDS = {
     "ends_at",
     "total_usage_kwh",
     "threshold_interpretation",
+    "rate_plan_code",
+    "billing_period_start",
+    "billing_period_end",
+    "baseline_allowance_kwh",
 }
 
 
@@ -117,7 +121,9 @@ async def _bill_source(
     return source
 
 
-def _field_payload(field: ExtractedField) -> dict[str, Any]:
+def _field_payload(
+    field: ExtractedField, *, parser_version: str = PARSER_VERSION
+) -> dict[str, Any]:
     return {
         "output_kind": field.output_kind,
         "field_key": field.field_key,
@@ -127,10 +133,12 @@ def _field_payload(field: ExtractedField) -> dict[str, Any]:
         "source_excerpt": field.source_excerpt,
         "text_region": field.text_region,
         "extraction_method": field.extraction_method,
-        "parser_version": PARSER_VERSION,
+        "parser_version": parser_version,
         "confidence": field.confidence,
         "warnings": field.warnings,
         "normalization_history": field.normalization_history,
+        "parser_rule": field.parser_rule,
+        "validation_result": field.validation_result,
     }
 
 
@@ -202,6 +210,22 @@ def _plan_document(
         f"{pricing_model}; unsupported or incomplete tariff rules remain review blockers. "
         "Bill-specific adjustments are not recurring rate rules."
     )
+    adjustments: list[dict[str, Any]] = []
+    recurring_daily = rate.get("recurring_daily_charge")
+    if isinstance(recurring_daily, dict) and recurring_daily.get("unit_rate") is not None:
+        adjustments.append(
+            {
+                "name": "Base services charge",
+                "component": "daily_fixed_charge",
+                "operation": "add",
+                "value": str(recurring_daily["unit_rate"]),
+                "unit": "per_day",
+                "scope": "full_account_estimate",
+                "effective_from": effective_from,
+                "calculation_order": 10,
+                "description": "Exact recurring daily charge extracted from an SCE bill.",
+            }
+        )
     return RatePlanDocument.model_validate(
         {
             "schema_version": "power-monitor-rate-plan/1.0",
@@ -238,7 +262,7 @@ def _plan_document(
             "source_note": notes,
             "provider_mode": _provider_mode(account),
             "seasons": [],
-            "adjustments": [],
+            "adjustments": adjustments,
             "custom_notes": notes,
             "cloned_from_rate_version_id": None,
         }
@@ -410,7 +434,7 @@ async def create_bill_import(
         status="review_required",
         source_role=source_role,
         extraction_method=extraction.extraction_method,
-        parser_version=PARSER_VERSION,
+        parser_version=extraction.parser_version,
         page_count=extraction.page_count,
         retention_mode=retention_mode,
         retain_until=retain_until,
@@ -428,11 +452,12 @@ async def create_bill_import(
         "account": extraction.account_data,
         "rate_plan": extraction.rate_data,
         "billing_cycle": extraction.cycle_data,
+        "adapter_result": extraction.adapter_result,
     }
     extraction_record = RateExtractionResult(
         artifact_id=artifact.id,
-        parser_id=PARSER_ID,
-        parser_version=PARSER_VERSION,
+        parser_id=extraction.parser_id,
+        parser_version=extraction.parser_version,
         status="succeeded",
         normalized_payload=normalized_payload,
         warnings=extraction.warnings,
@@ -444,7 +469,7 @@ async def create_bill_import(
         bill_import_id=bill.id,
         revision=1,
         status="review_required",
-        parser_version=PARSER_VERSION,
+        parser_version=extraction.parser_version,
         ocr_version=extraction.ocr_version,
         normalized_account_data=extraction.account_data,
         normalized_rate_data=extraction.rate_data,
@@ -458,7 +483,11 @@ async def create_bill_import(
             "page_count": extraction.page_count,
             "method": extraction.extraction_method,
             "normalization_history": extraction.normalization_history,
-            "parser_id": PARSER_ID,
+            "parser_id": extraction.parser_id,
+            "page_classifications": extraction.page_classifications,
+            "ignored_sections": extraction.ignored_sections,
+            "validation": extraction.validation,
+            "adapter_result": extraction.adapter_result,
         },
         created_by=user_id,
         created_at=now,
@@ -469,35 +498,46 @@ async def create_bill_import(
         session.add(
             UtilityBillExtractedField(
                 extraction_revision_id=revision.id,
-                **_field_payload(item),
+                **_field_payload(item, parser_version=extraction.parser_version),
             )
         )
-    document = _plan_document(
-        extraction,
-        account,
-        digest,
-        timezone=timezone,
-        currency=currency,
-    )
-    plan, version = await create_custom_plan(
-        session,
-        document,
-        user_id,
-        duplicate_suffix=True,
-    )
-    version.source_kind = "utility_bill_candidate"
-    version.source_url = f"urn:power-monitor:utility-bill:{bill.id}"
-    plan.name = f"{plan.name} (bill draft)"
-    bill.rate_plan_id = plan.id
-    bill.rate_version_id = version.id
-    session.add(
-        RateVersionSource(
-            rate_version_id=version.id,
-            artifact_id=artifact.id,
-            extraction_result_id=extraction_record.id,
-            relationship="supporting",
+    plan = None
+    version = None
+    can_create_rate_draft = bool(
+        extraction.rate_data.get("plan_code")
+        and extraction.rate_data.get("pricing_model")
+        and (
+            extraction.rate_data.get("pricing_model") != "tiered"
+            or len(extraction.rate_data.get("tiers") or []) >= 2
         )
     )
+    if can_create_rate_draft:
+        document = _plan_document(
+            extraction,
+            account,
+            digest,
+            timezone=timezone,
+            currency=currency,
+        )
+        plan, version = await create_custom_plan(
+            session,
+            document,
+            user_id,
+            duplicate_suffix=True,
+        )
+        version.source_kind = "utility_bill_candidate"
+        version.source_url = f"urn:power-monitor:utility-bill:{bill.id}"
+        plan.name = f"{plan.name} (bill draft)"
+        bill.rate_plan_id = plan.id
+        bill.rate_version_id = version.id
+        session.add(
+            RateVersionSource(
+                rate_version_id=version.id,
+                artifact_id=artifact.id,
+                extraction_result_id=extraction_record.id,
+                relationship="supporting",
+            )
+        )
     cycle_data = extraction.cycle_data
     cycle_draft = UtilityBillCycleDraft(
         bill_import_id=bill.id,
@@ -524,7 +564,11 @@ async def create_bill_import(
         taxes_fees=_as_decimal(cycle_data.get("taxes_fees")),
         credits=_as_decimal(cycle_data.get("credits")),
         adjustments=_as_decimal(cycle_data.get("adjustments")),
-        threshold_interpretation="unknown",
+        threshold_interpretation=str(
+            cycle_data.get("threshold_interpretation")
+            or extraction.rate_data.get("threshold_interpretation")
+            or "unknown"
+        ),
         reconciliation_status="not_compared",
         revision=1,
         created_at=now,
@@ -544,11 +588,17 @@ async def create_bill_import(
     evidence_payload = {
         "schema_version": "utility-bill-evidence/1.0",
         "artifact_sha256": digest,
-        "parser_id": PARSER_ID,
-        "parser_version": PARSER_VERSION,
+        "parser_id": extraction.parser_id,
+        "parser_version": extraction.parser_version,
         "extraction_method": extraction.extraction_method,
         "normalized": normalized_payload,
-        "fields": [_field_payload(item) for item in extraction.fields],
+        "fields": [
+            _field_payload(item, parser_version=extraction.parser_version)
+            for item in extraction.fields
+        ],
+        "page_classifications": extraction.page_classifications,
+        "ignored_sections": extraction.ignored_sections,
+        "validation": extraction.validation,
         "warnings": extraction.warnings,
     }
     evidence_path = _safe_path(
@@ -564,8 +614,8 @@ async def create_bill_import(
     job.progress = {"phase": "administrator_review", "percent": 100}
     job.result = {
         "bill_import_id": bill.id,
-        "rate_plan_id": plan.id,
-        "rate_version_id": version.id,
+        "rate_plan_id": plan.id if plan is not None else None,
+        "rate_version_id": version.id if version is not None else None,
         "cycle_draft_id": cycle_draft.id,
         "automatic_activation": False,
     }
@@ -629,6 +679,7 @@ async def import_payload(session: AsyncSession, bill: UtilityBillImport) -> dict
         "status": bill.status,
         "source_role": bill.source_role,
         "extraction_method": bill.extraction_method,
+        "parser_id": revision.extraction_metadata.get("parser_id", "utility_bill_generic"),
         "parser_version": bill.parser_version,
         "page_count": bill.page_count,
         "retention_mode": bill.retention_mode,
@@ -647,6 +698,10 @@ async def import_payload(session: AsyncSession, bill: UtilityBillImport) -> dict
             "rate_plan": revision.normalized_rate_data,
             "billing_cycle": revision.normalized_cycle_data,
         },
+        "adapter_result": revision.extraction_metadata.get("adapter_result"),
+        "page_classifications": revision.extraction_metadata.get("page_classifications", []),
+        "ignored_sections": revision.extraction_metadata.get("ignored_sections", []),
+        "validation": revision.extraction_metadata.get("validation", {}),
         "fields": [
             {
                 "id": item.id,
@@ -669,6 +724,8 @@ async def import_payload(session: AsyncSession, bill: UtilityBillImport) -> dict
                 "review_state": item.review_state,
                 "warnings": item.warnings,
                 "normalization_history": item.normalization_history,
+                "parser_rule": item.parser_rule,
+                "validation_result": item.validation_result,
             }
             for item in fields
         ],
@@ -979,6 +1036,14 @@ async def publish_and_assign(
             "Rate draft missing",
             "The linked rate-plan draft no longer exists",
             "bill_rate_draft_missing",
+        )
+    plan = await session.get(RatePlan, version.rate_plan_id)
+    if plan is None or plan.status in {"removed", "retired"}:
+        raise ProblemError(
+            409,
+            "Rate plan unavailable",
+            "Restore the linked draft before publishing or assigning it",
+            "rate_plan_removed",
         )
     status, _report = await activate_version(session, version, user_id)
     current = list(

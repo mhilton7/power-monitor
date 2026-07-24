@@ -83,6 +83,14 @@ text, uses bounded DPI, page count, memory, and execution time, and caches the
 result by artifact hash. Power Monitor invokes `pdftoppm` and Tesseract directly
 without a shell. No bill is sent to an external OCR or AI service.
 
+Recognized SCE residential bills are routed to the strict
+`sce_residential_bill_v1` adapter instead of the generic parser. The adapter
+classifies pages and requires the anchored **Details of your new charges**
+section before creating reusable rules. Payments, contact instructions,
+definitions, regulatory notices, informational component disclosures, and the
+rounded usage-by-tier chart are explicitly non-authoritative. See
+[Strict SCE residential-bill parser](SCE_BILL_PARSER.md).
+
 ## Evidence and confidence
 
 Every field records its source artifact, page number, retained excerpt,

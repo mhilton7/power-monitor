@@ -2988,5 +2988,55 @@ CREATE UNIQUE INDEX uq_utility_bill_import_unassigned_creator_hash ON utility_bi
 
 UPDATE alembic_version SET version_num='20260724_0013' WHERE alembic_version.version_num = '20260724_0012';
 
+-- Running upgrade 20260724_0013 -> 20260724_0014
+
+ALTER TABLE rate_plans ADD COLUMN lifecycle_revision INTEGER DEFAULT '1' NOT NULL;
+
+ALTER TABLE rate_plans ADD COLUMN removed_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE rate_plans ADD COLUMN removed_by VARCHAR(36);
+
+ALTER TABLE rate_plans ADD CONSTRAINT fk_rate_plans_removed_by_users FOREIGN KEY(removed_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE rate_plans ADD COLUMN removal_reason VARCHAR(500);
+
+ALTER TABLE rate_plans ADD COLUMN restored_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE rate_plans ADD COLUMN restored_by VARCHAR(36);
+
+ALTER TABLE rate_plans ADD CONSTRAINT fk_rate_plans_restored_by_users FOREIGN KEY(restored_by) REFERENCES users (id) ON DELETE SET NULL;
+
+CREATE INDEX ix_rate_plans_removed_at ON rate_plans (removed_at);
+
+ALTER TABLE rate_plans ADD CONSTRAINT ck_rate_plans_rate_plan_lifecycle_status CHECK (status IN ('draft','active','retired','removed'));
+
+ALTER TABLE rate_plans ADD CONSTRAINT ck_rate_plans_rate_plan_lifecycle_revision CHECK (lifecycle_revision > 0);
+
+ALTER TABLE utility_bill_extracted_fields ADD COLUMN parser_rule VARCHAR(160);
+
+ALTER TABLE utility_bill_extracted_fields ADD COLUMN validation_result JSON;
+
+INSERT INTO permissions (code, group_name, label, description, high_risk)
+                VALUES (NULL, 'Rates', NULL, NULL, true)
+                ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO role_permissions (role_name, permission_code)
+                SELECT roles.name, CAST(NULL AS VARCHAR(80))
+                FROM roles
+                WHERE roles.name IN ('admin', 'rate-manager')
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO permissions (code, group_name, label, description, high_risk)
+                VALUES (NULL, 'Rates', NULL, NULL, true)
+                ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO role_permissions (role_name, permission_code)
+                SELECT roles.name, CAST(NULL AS VARCHAR(80))
+                FROM roles
+                WHERE roles.name IN ('admin', 'rate-manager')
+                ON CONFLICT DO NOTHING;
+
+UPDATE alembic_version SET version_num='20260724_0014' WHERE alembic_version.version_num = '20260724_0013';
+
 COMMIT;
 
