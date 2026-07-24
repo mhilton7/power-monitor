@@ -1,5 +1,18 @@
 # TrueNAS troubleshooting
 
+## Utility-bill import or OCR fails
+
+- Confirm the API workload uses the current immutable image digest. The release
+  image contains `pdftoppm`, Tesseract, and English language data.
+- Confirm UID 10001 has Modify/traverse/inherit access to
+  `/mnt/Apps/Power/power-monitor/rate-source-artifacts`.
+- Review the API workload log for a redacted error code. Bill text and account
+  identity are intentionally omitted from ordinary logs.
+- Encrypted/password-protected PDFs are rejected by design. Export a
+  password-free copy locally; do not put a password into Compose or a secret.
+- Do not increase OCR page, DPI, memory, or timeout limits without reviewing the
+  TrueNAS API workload resource limit.
+
 Use **Apps > Installed > power-monitor > Workloads** for status, logs, and a
 specific workload shell. Do not manage this production stack with direct Docker
 commands in the TrueNAS host shell.

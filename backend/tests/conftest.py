@@ -27,6 +27,7 @@ def test_settings() -> Settings:
         report_path=runtime / "reports",
         backup_path=runtime / "backups",
         log_path=runtime / "logs",
+        utility_bill_artifact_path=runtime / "utility-bills",
     )
 
 

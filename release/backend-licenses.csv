@@ -32,6 +32,7 @@ pydantic,2.11.7,MIT,
 pydantic-core,2.33.2,MIT,https://github.com/pydantic/pydantic-core
 pydantic-settings,2.10.1,MIT,
 pyotp,2.9.0,MIT License,https://github.com/pyotp/pyotp
+pypdf,6.14.2,BSD-3-Clause,
 python-dotenv,1.2.2,BSD-3-Clause,
 python-multipart,0.0.32,Apache-2.0,
 pyyaml,6.0.2,MIT,https://pyyaml.org/

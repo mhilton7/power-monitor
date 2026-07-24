@@ -9,6 +9,7 @@ __pycache__/
 .uv-cache/
 .tmp/
 .test-runtime/
+.test-tmp-*/
 htmlcov/
 .coverage
 backend/.coverage

@@ -2,6 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ArrowUpRight, CalendarDays, Gauge, Layers3 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
+import {
+  formatCurrency,
+  formatEnergy,
+  formatEnergyRate,
+  formatTierRange,
+} from '../formatters'
 import { EmptyState, ErrorState, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
 import { useSelectedSiteId } from '../hooks/useSelectedSite'
 import type { TierStatus, UtilityAccount } from '../types'
@@ -86,14 +92,14 @@ function UsageContent({ status }: { status: TierStatus }) {
     <Panel title="Usage by tier" eyebrow="Chronological allocation" actions={<StatusPill status={status.projection_confidence ?? 'info'} label={`${status.projection_confidence ?? 'unknown'} projection confidence`} />}>
       <TierProgress status={status} />
       <div className="responsive-table"><table><thead><tr><th>Tier</th><th>Tier range</th><th>Usage</th><th>Energy charge</th></tr></thead><tbody>
-        {status.tiers.map((tier) => <tr key={tier.tier_id}><td><strong>{tier.name}</strong></td><td>{number(tier.lower_bound_kwh)} - {tier.upper_bound_kwh ? `${number(tier.upper_bound_kwh)} kWh` : 'No upper limit'}</td><td>{number(tier.usage_kwh, 3)} kWh</td><td>{tier.energy_charge ? `$${number(tier.energy_charge, 2)}` : 'Unavailable'}</td></tr>)}
+        {status.tiers.map((tier) => <tr key={tier.tier_id}><td><strong>{tier.name}</strong></td><td>{formatTierRange(tier.lower_bound_kwh, tier.upper_bound_kwh)}</td><td>{formatEnergy(tier.usage_kwh)}</td><td>{formatCurrency(tier.energy_charge, { currency: status.currency })}</td></tr>)}
       </tbody></table></div>
     </Panel>
     <div className="billing-summary-grid">
       <Panel title={`${number(status.authoritative_usage_kwh)} kWh`} eyebrow="Actual usage"><p className="panel-copy">Authority: {status.usage_authority.authority_type?.replaceAll('_', ' ') ?? 'not configured'} ({status.usage_authority.confidence}).</p></Panel>
       <Panel title={`${number(status.projected_usage_kwh)} kWh`} eyebrow="Projected cycle usage"><p className="panel-copy">{status.projection_method?.replaceAll('_', ' ')} projection; projected final tier: {status.projected_final_tier?.name ?? 'unavailable'}.</p></Panel>
       <Panel title={status.current_tier?.threshold_basis === 'daily_baseline_kwh' ? `${number(status.current_tier.derived_baseline_kwh)} kWh` : 'Fixed thresholds'} eyebrow="Threshold source"><p className="panel-copy">{status.current_tier?.threshold_basis.replaceAll('_', ' ') ?? 'Unavailable'} with {status.current_tier?.rounding_policy.replaceAll('_', ' ') ?? 'no'} rounding.</p></Panel>
-      <Panel title={status.current_energy_price ? `$${number(status.current_energy_price, 5)}/kWh` : 'Unavailable'} eyebrow="Current energy context"><p className="panel-copy">{status.current_rate_period ?? status.current_tier?.name ?? 'No active tier'}; blended cycle energy rate {status.blended_energy_rate ? `$${number(status.blended_energy_rate, 5)}/kWh` : 'unavailable'}.</p></Panel>
+      <Panel title={formatEnergyRate(status.current_energy_price, { currency: status.currency })} eyebrow="Current energy context"><p className="panel-copy">{status.current_rate_period ?? status.current_tier?.name ?? 'No active tier'}; blended cycle energy rate {formatEnergyRate(status.blended_energy_rate, { currency: status.currency, derived: true })}.</p></Panel>
     </div>
     <p className="billing-disclosure">{status.disclosure}</p>
   </>

@@ -17,6 +17,12 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { ErrorState, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
 import {
+  formatCurrency,
+  formatEnergy,
+  formatEnergyRate,
+  formatTierRange,
+} from '../formatters'
+import {
   emptyRateDocument,
   type DayScheduleDocument,
   type ManagedRateVersion,
@@ -43,6 +49,11 @@ interface TierPreview {
   display_total: string
   energy_charge: string
   blended_energy_rate: string | null
+  display?: {
+    energy_charge: string
+    blended_energy_rate: string | null
+    estimated_total: string
+  }
   energy_by_tier_kwh: Record<string, string>
   charge_by_tier: Record<string, string>
   tier_thresholds: Array<{
@@ -51,6 +62,9 @@ interface TierPreview {
     lower_bound_kwh: string
     upper_bound_kwh: string | null
     derived_baseline_kwh: string | null
+    display_range?: string
+    display_usage?: string
+    display_charge?: string
   }>
 }
 
@@ -542,18 +556,18 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
             <div className="coverage-list">{coverage.map((item) => <div key={item.key}><span>{item.key}</span><strong className={item.valid ? 'good-text' : 'danger-text'}>{item.valid ? 'Complete' : `${item.minutes}/1,440 min · invalid`}</strong></div>)}</div>
             <div className="preview-controls">
               <label>Sample cycle usage (kWh)<input inputMode="decimal" value={sampleUsage} onChange={(event) => { setSampleUsage(event.target.value) }} /></label>
-              <button className="button secondary" disabled={preview.isPending} onClick={() => { preview.mutate(); }}>{preview.isPending ? 'Calculatingâ€¦' : 'Calculate preview'}</button>
+              <button className="button secondary" disabled={preview.isPending} onClick={() => { preview.mutate(); }}>{preview.isPending ? 'Calculating…' : 'Calculate preview'}</button>
             </div>
             {sampleCost && <div className="tier-preview-result">
-              <p className="sample-cost"><span>Energy charge</span><strong>${sampleCost.energy_charge}</strong></p>
-              <p className="sample-cost"><span>Blended energy rate</span><strong>{sampleCost.blended_energy_rate ? `$${sampleCost.blended_energy_rate}/kWh` : 'Unavailable'}</strong></p>
-              <p className="sample-cost"><span>Estimated sample total</span><strong>${sampleCost.display_total}</strong></p>
+              <p className="sample-cost"><span>Energy charge</span><strong>{sampleCost.display?.energy_charge ?? formatCurrency(sampleCost.energy_charge)}</strong></p>
+              <p className="sample-cost"><span>Blended energy rate</span><strong>{sampleCost.display?.blended_energy_rate ?? formatEnergyRate(sampleCost.blended_energy_rate, { derived: true })}</strong></p>
+              <p className="sample-cost"><span>Estimated sample total</span><strong>{sampleCost.display?.estimated_total ?? formatCurrency(sampleCost.display_total)}</strong></p>
               {sampleCost.tier_thresholds.length > 0 && <div className="table-wrap"><table><thead><tr><th>Tier</th><th>Range</th><th>Usage</th><th>Charge</th></tr></thead><tbody>
                 {sampleCost.tier_thresholds.map((tier) => <tr key={tier.tier_id}>
                   <td>{tier.name}</td>
-                  <td>{tier.lower_bound_kwh}â€“{tier.upper_bound_kwh ?? 'and above'} kWh</td>
-                  <td>{sampleCost.energy_by_tier_kwh[tier.tier_id] ?? '0'} kWh</td>
-                  <td>${sampleCost.charge_by_tier[tier.tier_id] ?? '0.00'}</td>
+                  <td>{tier.display_range ?? formatTierRange(tier.lower_bound_kwh, tier.upper_bound_kwh)}</td>
+                  <td>{tier.display_usage ?? formatEnergy(sampleCost.energy_by_tier_kwh[tier.tier_id] ?? '0')}</td>
+                  <td>{tier.display_charge ?? formatCurrency(sampleCost.charge_by_tier[tier.tier_id] ?? '0')}</td>
                 </tr>)}
               </tbody></table></div>}
             </div>}

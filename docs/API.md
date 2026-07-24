@@ -66,6 +66,17 @@ mutations require `usage_imports.manage`; recalculation/finalization require
 [Tiered and hybrid rates](TIERED_AND_HYBRID_RATES.md), [Billing
 cycles](BILLING_CYCLES.md), and [Usage imports](USAGE_IMPORTS.md).
 
+Administrator utility-bill PDF import is under
+`/api/v1/admin/utility-bill-imports`. Upload uses
+`POST /api/v1/admin/utility-accounts/{account_id}/bill-imports`; list/detail,
+page evidence, authenticated original/sanitized downloads, review corrections,
+rate validation, exact/display comparison, publish-and-assign, separate
+billing-cycle import, retention, and original deletion use the linked import
+identifier. Upload and review reuse the existing job, artifact, rate-source,
+custom-rate, assignment, cycle, audit, RBAC, and CSRF services. The upload job
+is readable through `GET /api/v1/jobs/{job_id}`. See [Utility-bill PDF
+imports](UTILITY_BILL_IMPORTS.md).
+
 Log exports accept date values rather than filesystem names, limit selection to
 the retained 90-day window and known service identifiers, and return a streamed
 ZIP with a per-file SHA-256 manifest. The server never exposes its log directory

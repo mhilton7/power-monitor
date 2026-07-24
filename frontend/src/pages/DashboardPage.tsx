@@ -13,6 +13,7 @@ import {
 import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
+import { formatCurrency, formatEnergyRate } from '../formatters'
 import { StatusIndicatorZone, useStatusIndicators } from '../components/StatusIndicators'
 import {
   Disclosure,
@@ -88,7 +89,7 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
             message="Enroll an ESP32 sensor to begin. Readings and site summaries appear after its first valid signed heartbeat."
             action={<div className="inline-actions">{canEnroll ? <Link className="button primary" to="/enrollment">Enroll devices <ArrowUpRight size={16} /></Link> : <Link className="button secondary" to="/devices">Open Devices</Link>}{!data.rate_configured && <Link className="button secondary" to="/admin?tab=sites-accounts">Configure utility account <ArrowUpRight size={16} /></Link>}</div>}
           />
-          {data.rate_configured && <dl className="onboarding-rate-context"><div><dt>Current rate plan</dt><dd>{data.current_rate_plan} · v{data.current_rate_version}</dd></div><div><dt>Current rate period</dt><dd>{data.current_tou_bucket ?? 'Account usage required'}</dd></div><div><dt>Current energy price</dt><dd>{data.current_rate_price_per_kwh ? `$${data.current_rate_price_per_kwh}/kWh` : 'Account tier unavailable'}</dd></div></dl>}
+          {data.rate_configured && <dl className="onboarding-rate-context"><div><dt>Current rate plan</dt><dd>{data.current_rate_plan} · v{data.current_rate_version}</dd></div><div><dt>Current rate period</dt><dd>{data.current_tou_bucket ?? 'Account usage required'}</dd></div><div><dt>Current energy price</dt><dd>{data.current_rate_price_per_kwh ? formatEnergyRate(data.current_rate_price_per_kwh) : 'Account tier unavailable'}</dd></div></dl>}
         </Panel>
       ) : <>
         <section className="overview-site-state" aria-label="Current site state">
@@ -168,7 +169,7 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
         <dl className="overview-tier-grid">
           <div><dt>Current tier</dt><dd>{tierStatus.data.current_tier?.name ?? 'Unavailable'}</dd><small>{tierStatus.data.remaining_kwh ? `${formatNumber(tierStatus.data.remaining_kwh)} kWh to next tier` : 'Highest configured tier'}</small></div>
           <div><dt>Cycle usage</dt><dd>{formatNumber(tierStatus.data.authoritative_usage_kwh)} kWh</dd><small>{tierStatus.data.cycle.days_remaining} days remaining</small></div>
-          <div><dt>Energy charge</dt><dd>${Number(tierStatus.data.energy_charge ?? 0).toFixed(2)}</dd><small>Chronological tier allocation</small></div>
+          <div><dt>Energy charge</dt><dd>{formatCurrency(tierStatus.data.energy_charge)}</dd><small>Chronological tier allocation</small></div>
           <div><dt>Projected cycle</dt><dd>{formatNumber(tierStatus.data.projected_usage_kwh)} kWh</dd><small>{tierStatus.data.projected_final_tier?.name ?? 'Tier unavailable'} / {tierStatus.data.projection_confidence} confidence</small></div>
         </dl>
       </Panel>}

@@ -1,5 +1,13 @@
 # Usage and costs
 
+The Costs page links to imported bill comparisons. These comparisons keep the
+exact rate-engine energy subtotal, the utility-reported energy subtotal, and
+the complete utility bill total separate. The complete bill can include
+delivery, generation, taxes, credits, fees, and unexplained differences that
+are not valid recurring rate rules. Display rounding never changes the stored
+`Decimal`/`NUMERIC` values. See [Utility-bill PDF
+imports](UTILITY_BILL_IMPORTS.md).
+
 The **Usage** and **Costs** routes are account views. They use the selected
 site's utility account and the server's persisted cycle calculation.
 

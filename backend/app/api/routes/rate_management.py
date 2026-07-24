@@ -29,6 +29,13 @@ from app.db.models import (
     RateVersion,
     RateVersionSource,
     UtilityAccount,
+    UtilityBillImport,
+)
+from app.formatting import (
+    format_currency,
+    format_energy,
+    format_energy_rate,
+    format_tier_range,
 )
 from app.problem import ProblemError
 from app.rates.candidates import create_candidate_from_document
@@ -595,6 +602,9 @@ async def preview_managed_cost(
         charge_by_tier_id[item.tier_id] = (
             charge_by_tier_id.get(item.tier_id, Decimal("0")) + item.cost
         )
+    tier_documents = {tier.tier_id: tier for tier in document.tiers}
+    requested_energy = Decimal(str(payload["energy_kwh"]))
+    blended_rate = result.energy_charge / requested_energy if requested_energy > 0 else None
     return {
         "energy_by_bucket_kwh": {key: str(value) for key, value in result.energy_by_bucket.items()},
         "energy_by_tier_kwh": {key: str(value) for key, value in energy_by_tier_id.items()},
@@ -613,6 +623,25 @@ async def preview_managed_cost(
                     else None
                 ),
                 "rounding_policy": value["rounding_policy"],
+                "display_range": format_tier_range(
+                    value["lower_bound_kwh"],
+                    value["upper_bound_kwh"],
+                ),
+                "display_usage": format_energy(
+                    energy_by_tier_id.get(str(value["tier_id"]), Decimal("0"))
+                ),
+                "display_charge": format_currency(
+                    charge_by_tier_id.get(str(value["tier_id"]), Decimal("0")),
+                    document.currency,
+                ),
+                "display_rate": (
+                    format_energy_rate(
+                        tier_documents[str(value["tier_id"])].price_per_kwh,
+                        document.currency,
+                    )
+                    if str(value["tier_id"]) in tier_documents
+                    else None
+                ),
             }
             for value in result.tier_thresholds
         ],
@@ -638,15 +667,20 @@ async def preview_managed_cost(
             for item in result.slices
         ],
         "energy_charge": str(result.energy_charge),
-        "blended_energy_rate": (
-            str(result.energy_charge / Decimal(str(payload["energy_kwh"])))
-            if Decimal(str(payload["energy_kwh"])) > 0
-            else None
-        ),
+        "blended_energy_rate": str(blended_rate) if blended_rate is not None else None,
         "fixed_charge": str(result.fixed_charge),
         "baseline_credit": str(result.baseline_credit),
         "unrounded_total": str(result.total),
         "display_total": str(engine.display_currency(result.total)),
+        "display": {
+            "energy_charge": format_currency(result.energy_charge, document.currency),
+            "blended_energy_rate": (
+                format_energy_rate(blended_rate, document.currency, derived=True)
+                if blended_rate is not None
+                else None
+            ),
+            "estimated_total": format_currency(result.total, document.currency),
+        },
         "integrity_sha256": report.integrity_sha256,
     }
 
@@ -1530,11 +1564,29 @@ def _verified_artifact_path(artifact: RateSourceArtifact) -> Path:
     return path
 
 
+async def _guard_private_bill_artifact(
+    session: DbSession, principal: Principal, artifact_id: str
+) -> None:
+    private_bill = await session.scalar(
+        select(UtilityBillImport.id).where(UtilityBillImport.artifact_id == artifact_id)
+    )
+    if private_bill and (
+        "admin" not in principal.roles or "utility_bills.view" not in principal.permissions
+    ):
+        raise ProblemError(
+            403,
+            "Administrator permission required",
+            "Private utility-bill evidence is restricted to administrators",
+            "utility_bill_forbidden",
+        )
+
+
 @router.get("/admin/rate-artifacts/{artifact_id}")
 async def get_rate_artifact(
     artifact_id: str, principal: Principal, session: DbSession
 ) -> dict[str, Any]:
     _rate_manager(principal, "rates.review_candidates")
+    await _guard_private_bill_artifact(session, principal, artifact_id)
     artifact = await session.get(RateSourceArtifact, artifact_id)
     if artifact is None:
         raise ProblemError(
@@ -1555,6 +1607,7 @@ async def download_rate_artifact(
     artifact_id: str, principal: Principal, session: DbSession
 ) -> FileResponse:
     _rate_manager(principal, "rates.review_candidates")
+    await _guard_private_bill_artifact(session, principal, artifact_id)
     artifact = await session.get(RateSourceArtifact, artifact_id)
     if artifact is None:
         raise ProblemError(

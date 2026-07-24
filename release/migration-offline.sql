@@ -2358,5 +2358,222 @@ INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'usag
 
 UPDATE alembic_version SET version_num='20260723_0009' WHERE alembic_version.version_num = '20260721_0008';
 
+-- Running upgrade 20260723_0009 -> 20260724_0010
+
+CREATE TABLE utility_bill_imports (
+    id VARCHAR(36) NOT NULL,
+    job_id VARCHAR(36) NOT NULL,
+    utility_account_id VARCHAR(36) NOT NULL,
+    artifact_id VARCHAR(36) NOT NULL,
+    content_sha256 VARCHAR(64) NOT NULL,
+    status VARCHAR(32) DEFAULT 'review_required' NOT NULL,
+    source_role VARCHAR(40) DEFAULT 'supporting' NOT NULL,
+    extraction_method VARCHAR(16) NOT NULL,
+    parser_version VARCHAR(40) NOT NULL,
+    page_count INTEGER NOT NULL,
+    retention_mode VARCHAR(32) DEFAULT 'retain' NOT NULL,
+    retain_until TIMESTAMP WITH TIME ZONE,
+    original_deleted_at TIMESTAMP WITH TIME ZONE,
+    sanitized_evidence_path VARCHAR(1000) NOT NULL,
+    rate_plan_id VARCHAR(36),
+    rate_version_id VARCHAR(36),
+    revision INTEGER DEFAULT '1' NOT NULL,
+    blocking_warnings JSON DEFAULT '[]'::json NOT NULL,
+    extraction_warnings JSON DEFAULT '[]'::json NOT NULL,
+    created_by VARCHAR(36) NOT NULL,
+    reviewed_by VARCHAR(36),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    approved_at TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT pk_utility_bill_imports PRIMARY KEY (id),
+    CONSTRAINT uq_utility_bill_import_account_hash UNIQUE (utility_account_id, content_sha256),
+    CONSTRAINT ck_utility_bill_imports_utility_bill_import_status CHECK (status IN ('processing','review_required','ready_to_publish','published','rejected','failed')),
+    CONSTRAINT ck_utility_bill_imports_utility_bill_import_source_role CHECK (source_role IN ('supporting','authoritative_account_specific','reference_only')),
+    CONSTRAINT ck_utility_bill_imports_utility_bill_import_extraction_method CHECK (extraction_method IN ('text','ocr','mixed')),
+    CONSTRAINT ck_utility_bill_imports_utility_bill_import_retention CHECK (retention_mode IN ('retain','retain_until','delete_after_approval')),
+    CONSTRAINT ck_utility_bill_imports_utility_bill_import_page_count CHECK (page_count > 0),
+    CONSTRAINT ck_utility_bill_imports_utility_bill_import_revision CHECK (revision > 0),
+    CONSTRAINT uq_utility_bill_imports_job_id UNIQUE (job_id),
+    CONSTRAINT fk_utility_bill_imports_job_id_background_jobs FOREIGN KEY(job_id) REFERENCES background_jobs (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_utility_bill_imports_utility_account_id_utility_accounts FOREIGN KEY(utility_account_id) REFERENCES utility_accounts (id) ON DELETE RESTRICT,
+    CONSTRAINT uq_utility_bill_imports_artifact_id UNIQUE (artifact_id),
+    CONSTRAINT fk_utility_bill_imports_artifact_id_rate_source_artifacts FOREIGN KEY(artifact_id) REFERENCES rate_source_artifacts (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_utility_bill_imports_rate_plan_id_rate_plans FOREIGN KEY(rate_plan_id) REFERENCES rate_plans (id) ON DELETE SET NULL,
+    CONSTRAINT fk_utility_bill_imports_rate_version_id_rate_versions FOREIGN KEY(rate_version_id) REFERENCES rate_versions (id) ON DELETE SET NULL,
+    CONSTRAINT fk_utility_bill_imports_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_utility_bill_imports_reviewed_by_users FOREIGN KEY(reviewed_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_utility_bill_imports_job_id ON utility_bill_imports (job_id);
+
+CREATE INDEX ix_utility_bill_imports_utility_account_id ON utility_bill_imports (utility_account_id);
+
+CREATE INDEX ix_utility_bill_imports_artifact_id ON utility_bill_imports (artifact_id);
+
+CREATE INDEX ix_utility_bill_imports_content_sha256 ON utility_bill_imports (content_sha256);
+
+CREATE INDEX ix_utility_bill_imports_status ON utility_bill_imports (status);
+
+CREATE INDEX ix_utility_bill_imports_rate_plan_id ON utility_bill_imports (rate_plan_id);
+
+CREATE INDEX ix_utility_bill_imports_rate_version_id ON utility_bill_imports (rate_version_id);
+
+CREATE INDEX ix_utility_bill_imports_created_at ON utility_bill_imports (created_at);
+
+CREATE TABLE utility_bill_extraction_revisions (
+    id VARCHAR(36) NOT NULL,
+    bill_import_id VARCHAR(36) NOT NULL,
+    revision INTEGER NOT NULL,
+    status VARCHAR(24) DEFAULT 'review_required' NOT NULL,
+    parser_version VARCHAR(40) NOT NULL,
+    ocr_version VARCHAR(80),
+    normalized_account_data JSON DEFAULT '{}'::json NOT NULL,
+    normalized_rate_data JSON DEFAULT '{}'::json NOT NULL,
+    normalized_cycle_data JSON DEFAULT '{}'::json NOT NULL,
+    raw_text_sha256 VARCHAR(64) NOT NULL,
+    normalized_text_sha256 VARCHAR(64) NOT NULL,
+    sanitized_text_path VARCHAR(1000) NOT NULL,
+    extraction_metadata JSON DEFAULT '{}'::json NOT NULL,
+    created_by VARCHAR(36) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_utility_bill_extraction_revisions PRIMARY KEY (id),
+    CONSTRAINT uq_utility_bill_extraction_revision UNIQUE (bill_import_id, revision),
+    CONSTRAINT ck_utility_bill_extraction_revisions_utility_bill_extra_9ea0 CHECK (status IN ('review_required','approved','superseded','failed')),
+    CONSTRAINT ck_utility_bill_extraction_revisions_utility_bill_extra_c326 CHECK (revision > 0),
+    CONSTRAINT fk_utility_bill_extraction_revisions_bill_import_id_uti_55e3 FOREIGN KEY(bill_import_id) REFERENCES utility_bill_imports (id) ON DELETE CASCADE,
+    CONSTRAINT fk_utility_bill_extraction_revisions_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT
+);
+
+CREATE INDEX ix_utility_bill_extraction_revisions_bill_import_id ON utility_bill_extraction_revisions (bill_import_id);
+
+CREATE INDEX ix_utility_bill_extraction_revisions_created_at ON utility_bill_extraction_revisions (created_at);
+
+CREATE TABLE utility_bill_extracted_fields (
+    id VARCHAR(36) NOT NULL,
+    extraction_revision_id VARCHAR(36) NOT NULL,
+    output_kind VARCHAR(24) NOT NULL,
+    field_key VARCHAR(240) NOT NULL,
+    raw_value JSON,
+    normalized_value JSON,
+    corrected_value JSON,
+    page_number INTEGER,
+    text_region JSON,
+    source_excerpt TEXT,
+    extraction_method VARCHAR(16) NOT NULL,
+    parser_version VARCHAR(40) NOT NULL,
+    confidence VARCHAR(32) NOT NULL,
+    review_state VARCHAR(24) DEFAULT 'unreviewed' NOT NULL,
+    warnings JSON DEFAULT '[]'::json NOT NULL,
+    normalization_history JSON DEFAULT '[]'::json NOT NULL,
+    confirmed_by VARCHAR(36),
+    confirmed_at TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT pk_utility_bill_extracted_fields PRIMARY KEY (id),
+    CONSTRAINT uq_utility_bill_extracted_field UNIQUE (extraction_revision_id, output_kind, field_key),
+    CONSTRAINT ck_utility_bill_extracted_fields_utility_bill_field_output_kind CHECK (output_kind IN ('account','rate_plan','billing_cycle')),
+    CONSTRAINT ck_utility_bill_extracted_fields_utility_bill_field_method CHECK (extraction_method IN ('text','ocr','mixed','administrator')),
+    CONSTRAINT ck_utility_bill_extracted_fields_utility_bill_field_confidence CHECK (confidence IN ('administrator_confirmed','high','medium','low','missing','conflicts_current','conflicts_source','not_applicable')),
+    CONSTRAINT ck_utility_bill_extracted_fields_utility_bill_field_rev_ec48 CHECK (review_state IN ('unreviewed','confirmed','corrected','rejected')),
+    CONSTRAINT fk_utility_bill_extracted_fields_extraction_revision_id_2a1b FOREIGN KEY(extraction_revision_id) REFERENCES utility_bill_extraction_revisions (id) ON DELETE CASCADE,
+    CONSTRAINT fk_utility_bill_extracted_fields_confirmed_by_users FOREIGN KEY(confirmed_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_utility_bill_extracted_fields_extraction_revision_id ON utility_bill_extracted_fields (extraction_revision_id);
+
+CREATE INDEX ix_utility_bill_extracted_fields_output_kind ON utility_bill_extracted_fields (output_kind);
+
+CREATE INDEX ix_utility_bill_extracted_fields_confidence ON utility_bill_extracted_fields (confidence);
+
+CREATE TABLE utility_bill_field_conflicts (
+    id VARCHAR(36) NOT NULL,
+    bill_import_id VARCHAR(36) NOT NULL,
+    field_key VARCHAR(240) NOT NULL,
+    extracted_value JSON,
+    configured_value JSON,
+    comparison_source VARCHAR(120) NOT NULL,
+    status VARCHAR(24) DEFAULT 'unresolved' NOT NULL,
+    blocking BOOLEAN DEFAULT true NOT NULL,
+    resolution_note VARCHAR(1000),
+    resolved_by VARCHAR(36),
+    resolved_at TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT pk_utility_bill_field_conflicts PRIMARY KEY (id),
+    CONSTRAINT uq_utility_bill_field_conflict UNIQUE (bill_import_id, field_key, comparison_source),
+    CONSTRAINT ck_utility_bill_field_conflicts_utility_bill_conflict_status CHECK (status IN ('unresolved','accepted_bill','accepted_configured','dismissed')),
+    CONSTRAINT fk_utility_bill_field_conflicts_bill_import_id_utility__020a FOREIGN KEY(bill_import_id) REFERENCES utility_bill_imports (id) ON DELETE CASCADE,
+    CONSTRAINT fk_utility_bill_field_conflicts_resolved_by_users FOREIGN KEY(resolved_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_utility_bill_field_conflicts_bill_import_id ON utility_bill_field_conflicts (bill_import_id);
+
+CREATE INDEX ix_utility_bill_field_conflicts_status ON utility_bill_field_conflicts (status);
+
+CREATE TABLE utility_bill_cycle_drafts (
+    id VARCHAR(36) NOT NULL,
+    bill_import_id VARCHAR(36) NOT NULL,
+    extraction_revision_id VARCHAR(36) NOT NULL,
+    utility_account_id VARCHAR(36) NOT NULL,
+    status VARCHAR(24) DEFAULT 'draft' NOT NULL,
+    starts_at TIMESTAMP WITH TIME ZONE,
+    ends_at TIMESTAMP WITH TIME ZONE,
+    cycle_days INTEGER,
+    meter_read_date DATE,
+    total_usage_kwh NUMERIC(24, 9),
+    usage_by_tier JSON DEFAULT '[]'::json NOT NULL,
+    usage_by_tou JSON DEFAULT '[]'::json NOT NULL,
+    meter_records JSON DEFAULT '[]'::json NOT NULL,
+    current_tier VARCHAR(120),
+    projected_tier VARCHAR(120),
+    energy_subtotal NUMERIC(24, 12),
+    full_bill_total NUMERIC(24, 12),
+    fixed_charges NUMERIC(24, 12),
+    taxes_fees NUMERIC(24, 12),
+    credits NUMERIC(24, 12),
+    adjustments NUMERIC(24, 12),
+    threshold_interpretation VARCHAR(40) DEFAULT 'unknown' NOT NULL,
+    reconciliation_status VARCHAR(32) DEFAULT 'not_compared' NOT NULL,
+    billing_cycle_id VARCHAR(36),
+    utility_usage_import_id VARCHAR(36),
+    revision INTEGER DEFAULT '1' NOT NULL,
+    reviewed_by VARCHAR(36),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    approved_at TIMESTAMP WITH TIME ZONE,
+    CONSTRAINT pk_utility_bill_cycle_drafts PRIMARY KEY (id),
+    CONSTRAINT ck_utility_bill_cycle_drafts_utility_bill_cycle_draft_status CHECK (status IN ('draft','approved','imported','rejected')),
+    CONSTRAINT ck_utility_bill_cycle_drafts_utility_bill_cycle_thresho_21e6 CHECK (threshold_interpretation IN ('fixed_cycle_threshold','daily_baseline','baseline_multiplier','unknown')),
+    CONSTRAINT ck_utility_bill_cycle_drafts_utility_bill_cycle_reconciliation CHECK (reconciliation_status IN ('not_compared','matched','difference','adjusted')),
+    CONSTRAINT ck_utility_bill_cycle_drafts_utility_bill_cycle_window CHECK (starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at),
+    CONSTRAINT ck_utility_bill_cycle_drafts_utility_bill_cycle_usage_n_efc5 CHECK (total_usage_kwh IS NULL OR total_usage_kwh >= 0),
+    CONSTRAINT ck_utility_bill_cycle_drafts_utility_bill_cycle_revision CHECK (revision > 0),
+    CONSTRAINT uq_utility_bill_cycle_drafts_bill_import_id UNIQUE (bill_import_id),
+    CONSTRAINT fk_utility_bill_cycle_drafts_bill_import_id_utility_bil_96a4 FOREIGN KEY(bill_import_id) REFERENCES utility_bill_imports (id) ON DELETE CASCADE,
+    CONSTRAINT fk_utility_bill_cycle_drafts_extraction_revision_id_uti_43a4 FOREIGN KEY(extraction_revision_id) REFERENCES utility_bill_extraction_revisions (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_utility_bill_cycle_drafts_utility_account_id_utility_2977 FOREIGN KEY(utility_account_id) REFERENCES utility_accounts (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_utility_bill_cycle_drafts_billing_cycle_id_billing_cycles FOREIGN KEY(billing_cycle_id) REFERENCES billing_cycles (id) ON DELETE SET NULL,
+    CONSTRAINT fk_utility_bill_cycle_drafts_utility_usage_import_id_ut_b2ba FOREIGN KEY(utility_usage_import_id) REFERENCES utility_usage_imports (id) ON DELETE SET NULL,
+    CONSTRAINT fk_utility_bill_cycle_drafts_reviewed_by_users FOREIGN KEY(reviewed_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_utility_bill_cycle_drafts_bill_import_id ON utility_bill_cycle_drafts (bill_import_id);
+
+CREATE INDEX ix_utility_bill_cycle_drafts_extraction_revision_id ON utility_bill_cycle_drafts (extraction_revision_id);
+
+CREATE INDEX ix_utility_bill_cycle_drafts_utility_account_id ON utility_bill_cycle_drafts (utility_account_id);
+
+CREATE INDEX ix_utility_bill_cycle_drafts_status ON utility_bill_cycle_drafts (status);
+
+CREATE INDEX ix_utility_bill_cycle_drafts_billing_cycle_id ON utility_bill_cycle_drafts (billing_cycle_id);
+
+CREATE INDEX ix_utility_bill_cycle_drafts_usage_import_id ON utility_bill_cycle_drafts (utility_usage_import_id);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('utility_bills.view', 'Rates and billing', 'View utility bill imports', 'View private utility-bill extraction evidence and comparison history.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'utility_bills.view');
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('utility_bills.manage', 'Rates and billing', 'Manage utility bill imports', 'Upload, review, publish, retain, and delete private utility-bill artifacts.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'utility_bills.manage');
+
+UPDATE alembic_version SET version_num='20260724_0010' WHERE alembic_version.version_num = '20260723_0009';
+
 COMMIT;
 

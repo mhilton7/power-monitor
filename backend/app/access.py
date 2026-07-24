@@ -65,6 +65,20 @@ PERMISSION_DEFINITIONS = (
         "Preview and commit authoritative utility usage evidence.",
         True,
     ),
+    _permission(
+        "utility_bills.view",
+        "Rates",
+        "View utility bill imports",
+        "View private utility-bill extraction evidence and comparison history.",
+        True,
+    ),
+    _permission(
+        "utility_bills.manage",
+        "Rates",
+        "Manage utility bill imports",
+        "Upload, review, publish, retain, and delete private utility-bill artifacts.",
+        True,
+    ),
     _permission("sites.view", "Sites and devices", "View sites", "View assigned sites."),
     _permission(
         "sites.manage",

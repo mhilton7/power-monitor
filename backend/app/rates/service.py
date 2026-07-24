@@ -29,6 +29,8 @@ from app.db.models import (
     RateVersionSource,
     Utility,
     UtilityAccount,
+    UtilityBillFieldConflict,
+    UtilityBillImport,
 )
 from app.problem import ProblemError
 from app.rates.documents import (
@@ -471,7 +473,7 @@ async def update_draft_version(
 async def validate_version(session: AsyncSession, version: RateVersion) -> ValidationReport:
     document = await version_document(session, version)
     evidence: dict[str, Any] | None = None
-    if version.source_kind == "official_sce_candidate":
+    if version.source_kind in {"official_sce_candidate", "utility_bill_candidate"}:
         link = await session.scalar(
             select(RateVersionSource).where(RateVersionSource.rate_version_id == version.id)
         )
@@ -489,7 +491,8 @@ async def validate_version(session: AsyncSession, version: RateVersion) -> Valid
         }
     return validate_document(
         document,
-        require_source_evidence=version.source_kind == "official_sce_candidate",
+        require_source_evidence=version.source_kind
+        in {"official_sce_candidate", "utility_bill_candidate"},
         source_evidence=evidence,
     )
 
@@ -501,6 +504,37 @@ async def activate_version(
     *,
     automatically: bool = False,
 ) -> tuple[str, ValidationReport]:
+    if version.source_kind == "utility_bill_candidate":
+        bill = await session.scalar(
+            select(UtilityBillImport).where(UtilityBillImport.rate_version_id == version.id)
+        )
+        unresolved_conflict = (
+            await session.scalar(
+                select(UtilityBillFieldConflict.id)
+                .where(
+                    UtilityBillFieldConflict.bill_import_id == bill.id,
+                    UtilityBillFieldConflict.blocking.is_(True),
+                    UtilityBillFieldConflict.status == "unresolved",
+                )
+                .limit(1)
+            )
+            if bill
+            else None
+        )
+        if (
+            bill is None
+            or bill.status not in {"ready_to_publish", "published"}
+            or bill.blocking_warnings
+            or unresolved_conflict
+            or automatically
+        ):
+            raise ProblemError(
+                409,
+                "Utility-bill review required",
+                "A utility bill can never activate a rate until an administrator "
+                "reviews every required field and source conflict",
+                "utility_bill_review_required",
+            )
     report = await validate_version(session, version)
     if not report.valid:
         raise ProblemError(

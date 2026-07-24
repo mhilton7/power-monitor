@@ -62,3 +62,7 @@ If PostgreSQL reports `Permission denied`, stop the App in **Apps**, correct UID
 able to apply its owner-only mode bits, so use a POSIX owner/group of `999:999`
 for the `postgres` child dataset rather than an NFSv4 ACL that blocks `chmod`.
 Do not make a database dataset world-writable.
+
+The same `rate-source-artifacts` ACL protects uploaded utility-bill originals
+and sanitized extraction evidence. Never add frontend UID 101 or gateway UID
+10002 to that dataset, and never publish it as a share.

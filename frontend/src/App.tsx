@@ -22,6 +22,7 @@ const UsagePage = lazy(() => import('./pages/UsagePage').then((module) => ({ def
 const CostsPage = lazy(() => import('./pages/CostsPage').then((module) => ({ default: module.CostsPage })))
 const RatesPage = lazy(() => import('./pages/RatesPage').then((module) => ({ default: module.RatesPage })))
 const RateEditorPage = lazy(() => import('./pages/RateEditorPage').then((module) => ({ default: module.RateEditorPage })))
+const BillImportPage = lazy(() => import('./pages/BillImportPage').then((module) => ({ default: module.BillImportPage })))
 const RateSourcesPage = lazy(() => import('./pages/RateSourcesPage').then((module) => ({ default: module.RateSourcesPage })))
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((module) => ({ default: module.ReportsPage })))
 const TopologyPage = lazy(() => import('./pages/TopologyPage').then((module) => ({ default: module.TopologyPage })))
@@ -38,6 +39,7 @@ function ProtectedApp({ session }: { session: Session }) {
   const location = useLocation()
   if (!session.authenticated) return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />
   const canManageRates = hasPermission(session, 'rates.manage_custom')
+  const canManageBills = hasPermission(session, 'utility_bills.manage')
   return (
     <InterfaceTextProvider>
       <StatusIndicatorProvider>
@@ -50,9 +52,10 @@ function ProtectedApp({ session }: { session: Session }) {
         <Route path="/topology" element={<Guard session={session} permission="topology.view"><TopologyPage /></Guard>} />
         <Route path="/history" element={<Guard session={session} permission="history.view"><HistoryPage /></Guard>} />
         <Route path="/usage" element={<Guard session={session} permission="usage.view"><UsagePage /></Guard>} />
-        <Route path="/costs" element={<Guard session={session} permission="costs.view"><CostsPage /></Guard>} />
-        <Route path="/rates" element={<Guard session={session} permission="rates.view"><RatesPage canManage={canManageRates} /></Guard>} />
+        <Route path="/costs" element={<Guard session={session} permission="costs.view"><CostsPage canManageBills={canManageBills} /></Guard>} />
+        <Route path="/rates" element={<Guard session={session} permission="rates.view"><RatesPage canManage={canManageRates} canImportBills={canManageBills} /></Guard>} />
         <Route path="/rates/new" element={<Guard session={session} permission="rates.manage_custom"><RateEditorPage canManage /></Guard>} />
+        <Route path="/rates/import-bill" element={<Guard session={session} permission="utility_bills.manage"><BillImportPage /></Guard>} />
         <Route path="/rates/:planId/versions/:versionId" element={<Guard session={session} permission="rates.view"><RateEditorPage canManage={canManageRates} /></Guard>} />
         <Route path="/rates/sources" element={<Guard session={session} permission="rates.manage_sources"><RateSourcesPage /></Guard>} />
         <Route path="/alerts" element={<Guard session={session} permission="alerts.view"><AlertsPage /></Guard>} />

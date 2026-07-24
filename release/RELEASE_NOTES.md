@@ -1,5 +1,29 @@
 # Power Monitor Server 1.0.0
 
+## Utility bill PDF import and formatting update
+
+- Adds a private administrator-only utility-bill workflow that validates local
+  PDFs, uses the text layer first, invokes bounded English OCR only for pages
+  without usable text, and records page/region/method/confidence evidence for
+  every extracted field.
+- Creates separate, linked rate-plan and billing-cycle drafts. Publication,
+  effective-dated assignment, and cycle import remain distinct reviewed
+  actions; an imported bill can never auto-activate a rate.
+- Preserves content-addressed source evidence and sanitized provenance while
+  supporting original-PDF retention or deletion, duplicate-upload
+  idempotency, correction history, optimistic revisions, and conflicts against
+  managed rate sources.
+- Centralizes exact-versus-display formatting for currency, energy rates,
+  energy, and tier bounds. Database/API values retain exact decimal strings
+  while the interface uses readable values such as `$0.30/kWh`, `579 kWh`, and
+  `580 kWh and above`.
+- Normalizes imported text to UTF-8/NFC, repairs known mojibake at the
+  structured-label boundary, and adds responsive review, exact-value preview,
+  OCR, encoding, privacy, conflict, and no-auto-activation coverage.
+- Adds append-only Alembic revision `20260724_0010`. The existing private
+  rate-source-artifacts dataset is reused; no database, service, secret,
+  capability, or host port was added.
+
 ## Tiered and hybrid rate-plan update
 
 - Extends the existing exact-decimal rate engine with flat, time-of-use,
@@ -61,7 +85,7 @@ Highlights include unique device enrollment and rotation, bidirectional HMAC/rep
 
 TrueNAS Community Edition 25.10 is a first-class target through Apps > Install via YAML. The release includes a no-build, `linux/amd64`, digest-pinned production template; Caddy-only host publication; internal database networking; numeric dataset ACL guidance; file-backed secrets and a one-time administrator setup token; internal-CA, user-certificate, and public-ACME configurations; an optional NET_RAW-only ICMP overlay; nightly encrypted backups with automated clean-database restore; and a full deployed multi-device workflow gate.
 
-Database migration: `20260723_0009`. Images: `power-monitor-api:1.0.0`, `power-monitor-frontend:1.0.0`, and `power-monitor-backup:1.0.0`.
+Database migration: `20260724_0010`. Images: `power-monitor-api:1.0.0`, `power-monitor-frontend:1.0.0`, and `power-monitor-backup:1.0.0`.
 
 The software provides monitored-energy cost estimates and is not a revenue-grade meter or an exact reproduction of a utility bill. Validation with real ESP32-S3/PZEM hardware remains an installation responsibility.
 
@@ -82,3 +106,17 @@ accounts, one canonical sensor CIDR, encrypted archived-evidence backup
 verification, and clean-database restore at `20260723_0009` with 91 tables. See
 `docs/TESTING.md` for the recorded gates and
 `deploy/truenas/installation.md` for the supported TrueNAS web-interface flow.
+
+Final utility-bill verification on 2026-07-24 passed 114 portable Python tests,
+the separate PostgreSQL 17 migration and 100-device/18,000-reading gates, 32
+frontend unit/component tests, and all 34 Chromium end-to-end scenarios. Python
+and npm dependency audits found no known vulnerabilities after the PDF parser
+was upgraded to patched `pypdf 6.14.2`. The production API image performed real
+Poppler/Tesseract extraction from the scanned fixture.
+
+The final seven-service TrueNAS-style deployment gate used strict internal-CA
+TLS and only TCP 8443, completed migration `20260724_0010`, enrolled 3 simulated
+devices, accepted 90 historical readings, resolved an SCE calculation,
+persisted 2 utility accounts and 1 canonical network rule, verified all 5
+backup artifacts, and restored a clean 96-table database. The deployment-mode
+TrueNAS render and optional ICMP overlay also passed fail-closed validation.

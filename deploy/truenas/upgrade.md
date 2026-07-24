@@ -35,6 +35,19 @@ the registry, use `latest`, or deploy a tag without its content digest.
 4. Verify every health indicator, the migration log, sign-in, fleet heartbeats,
    historical readings, an SCE rate preview, and the next verified backup.
 
+For the utility-bill PDF import release, migration `20260724_0010` adds
+bill-import, immutable extraction revision, field evidence, conflict, and
+billing-cycle draft tables plus `utility_bills.view` and
+`utility_bills.manage`. The existing `rate-source-artifacts` dataset stores the
+private originals and sanitized evidence; no new dataset, secret, service,
+capability, network, or host port is introduced. The API image now contains
+local Poppler and English Tesseract tools. Before saving the upgraded YAML,
+verify UID 10001 has Modify and UID 10003 has Read on that dataset, retain the
+six `UTILITY_BILL_*` limits from the release template, and take an encrypted
+verified backup. After migration, upload a non-production password-free test
+bill, confirm that automatic activation is disabled, inspect page evidence,
+and delete the test original through the dashboard retention control.
+
 For the Users & Access / Dashboard & Login Text release, migration
 `20260720_0005` adds permission definitions, role revisions/permissions,
 user-site scope, session reauthentication timestamps, and interface-text

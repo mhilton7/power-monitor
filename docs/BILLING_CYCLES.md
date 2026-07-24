@@ -1,5 +1,12 @@
 # Billing cycles
 
+Reviewed utility-bill PDFs create a separate billing-cycle draft containing
+exact dates and utility-reported cumulative usage. Importing that draft creates
+or updates the cycle only through the existing cycle/usage-import services; it
+does not overwrite immutable monitored readings. Bill-specific credits,
+adjustments, and complete-bill totals remain source evidence rather than
+recurring rate rules. See [Utility-bill PDF imports](UTILITY_BILL_IMPORTS.md).
+
 Billing-cycle identity is per utility account. Each persisted cycle has exact
 UTC `starts_at` and `ends_at` instants derived from local utility dates or an
 explicit utility import. The end is exclusive.

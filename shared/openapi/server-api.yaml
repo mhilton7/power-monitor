@@ -2441,6 +2441,599 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/bill-imports:
+    post:
+      tags:
+      - utility bill imports
+      summary: Upload Utility Bill
+      operationId: upload_utility_bill_api_v1_admin_utility_accounts__account_id__bill_imports_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: retention_mode
+        in: query
+        required: false
+        schema:
+          enum:
+          - retain
+          - retain_until
+          - delete_after_approval
+          type: string
+          default: retain
+          title: Retention Mode
+      - name: source_role
+        in: query
+        required: false
+        schema:
+          enum:
+          - supporting
+          - authoritative_account_specific
+          - reference_only
+          type: string
+          default: supporting
+          title: Source Role
+      - name: retain_until
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Retain Until
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_utility_bill_api_v1_admin_utility_accounts__account_id__bill_imports_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Upload Utility Bill Api V1 Admin Utility Accounts  Account
+                  Id  Bill Imports Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports:
+    get:
+      tags:
+      - utility bill imports
+      summary: List Utility Bill Imports
+      operationId: list_utility_bill_imports_api_v1_admin_utility_bill_imports_get
+      parameters:
+      - name: utility_account_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Utility Account Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Utility Bill Imports Api V1 Admin Utility Bill
+                  Imports Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}:
+    get:
+      tags:
+      - utility bill imports
+      summary: Get Utility Bill Import
+      operationId: get_utility_bill_import_api_v1_admin_utility_bill_imports__bill_id__get
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Utility Bill Import Api V1 Admin Utility Bill
+                  Imports  Bill Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/evidence/pages/{page_number}:
+    get:
+      tags:
+      - utility bill imports
+      summary: Get Utility Bill Evidence Page
+      operationId: get_utility_bill_evidence_page_api_v1_admin_utility_bill_imports__bill_id__evidence_pages__page_number__get
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: page_number
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Page Number
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Utility Bill Evidence Page Api V1 Admin Utility
+                  Bill Imports  Bill Id  Evidence Pages  Page Number  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/original:
+    get:
+      tags:
+      - utility bill imports
+      summary: Download Original Utility Bill
+      operationId: download_original_utility_bill_api_v1_admin_utility_bill_imports__bill_id__original_get
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - utility bill imports
+      summary: Delete Original Utility Bill
+      operationId: delete_original_utility_bill_api_v1_admin_utility_bill_imports__bill_id__original_delete
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Delete Original Utility Bill Api V1 Admin Utility
+                  Bill Imports  Bill Id  Original Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/sanitized-evidence:
+    get:
+      tags:
+      - utility bill imports
+      summary: Download Sanitized Utility Bill Evidence
+      operationId: download_sanitized_utility_bill_evidence_api_v1_admin_utility_bill_imports__bill_id__sanitized_evidence_get
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/review:
+    put:
+      tags:
+      - utility bill imports
+      summary: Review Utility Bill Import
+      operationId: review_utility_bill_import_api_v1_admin_utility_bill_imports__bill_id__review_put
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillReviewWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Review Utility Bill Import Api V1 Admin Utility Bill
+                  Imports  Bill Id  Review Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/validate:
+    post:
+      tags:
+      - utility bill imports
+      summary: Validate Utility Bill Rate Draft
+      operationId: validate_utility_bill_rate_draft_api_v1_admin_utility_bill_imports__bill_id__validate_post
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Validate Utility Bill Rate Draft Api V1 Admin Utility
+                  Bill Imports  Bill Id  Validate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/comparison:
+    get:
+      tags:
+      - utility bill imports
+      summary: Compare Utility Bill Import
+      operationId: compare_utility_bill_import_api_v1_admin_utility_bill_imports__bill_id__comparison_get
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Compare Utility Bill Import Api V1 Admin Utility Bill
+                  Imports  Bill Id  Comparison Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/publish-and-assign:
+    post:
+      tags:
+      - utility bill imports
+      summary: Publish And Assign Utility Bill Rate
+      operationId: publish_and_assign_utility_bill_rate_api_v1_admin_utility_bill_imports__bill_id__publish_and_assign_post
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillPublishWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Publish And Assign Utility Bill Rate Api V1 Admin
+                  Utility Bill Imports  Bill Id  Publish And Assign Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/import-billing-cycle:
+    post:
+      tags:
+      - utility bill imports
+      summary: Import Utility Bill Cycle
+      operationId: import_utility_bill_cycle_api_v1_admin_utility_bill_imports__bill_id__import_billing_cycle_post
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Import Utility Bill Cycle Api V1 Admin Utility Bill
+                  Imports  Bill Id  Import Billing Cycle Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/retention:
+    put:
+      tags:
+      - utility bill imports
+      summary: Update Utility Bill Retention
+      operationId: update_utility_bill_retention_api_v1_admin_utility_bill_imports__bill_id__retention_put
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillRetentionWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Utility Bill Retention Api V1 Admin Utility
+                  Bill Imports  Bill Id  Retention Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/utility-accounts/{account_id}/tier-status:
     get:
       tags:
@@ -9082,6 +9675,127 @@ components:
       required:
       - until
       title: AlertSilence
+    BillConflictResolution:
+      properties:
+        conflict_id:
+          type: string
+          maxLength: 36
+          minLength: 1
+          title: Conflict Id
+        decision:
+          type: string
+          enum:
+          - accepted_bill
+          - accepted_configured
+          - dismissed
+          title: Decision
+        note:
+          type: string
+          maxLength: 1000
+          title: Note
+          default: ''
+      type: object
+      required:
+      - conflict_id
+      - decision
+      title: BillConflictResolution
+    BillFieldReview:
+      properties:
+        field_id:
+          type: string
+          maxLength: 36
+          minLength: 1
+          title: Field Id
+        action:
+          type: string
+          enum:
+          - confirm
+          - correct
+          - reject
+          title: Action
+        value:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Value
+      type: object
+      required:
+      - field_id
+      - action
+      title: BillFieldReview
+    BillPublishWrite:
+      properties:
+        effective_from:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Effective From
+      type: object
+      title: BillPublishWrite
+    BillRetentionWrite:
+      properties:
+        revision:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Revision
+        retention_mode:
+          type: string
+          enum:
+          - retain
+          - retain_until
+          - delete_after_approval
+          title: Retention Mode
+        retain_until:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Retain Until
+      type: object
+      required:
+      - revision
+      - retention_mode
+      title: BillRetentionWrite
+    BillReviewWrite:
+      properties:
+        revision:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Revision
+        field_reviews:
+          items:
+            $ref: '#/components/schemas/BillFieldReview'
+          type: array
+          maxItems: 250
+          title: Field Reviews
+        conflict_resolutions:
+          items:
+            $ref: '#/components/schemas/BillConflictResolution'
+          type: array
+          maxItems: 250
+          title: Conflict Resolutions
+        threshold_interpretation:
+          type: string
+          enum:
+          - fixed_cycle_threshold
+          - daily_baseline
+          - baseline_multiplier
+          - unknown
+          title: Threshold Interpretation
+        source_role:
+          type: string
+          enum:
+          - supporting
+          - authoritative_account_specific
+          - reference_only
+          title: Source Role
+          default: supporting
+      type: object
+      required:
+      - revision
+      - threshold_interpretation
+      title: BillReviewWrite
     BillingCycleBehaviorDocument:
       properties:
         expected_start_day:
@@ -9163,6 +9877,16 @@ components:
       - public_key_pem
       - binary
       title: Body_upload_release_api_v1_firmware_releases_post
+    Body_upload_utility_bill_api_v1_admin_utility_accounts__account_id__bill_imports_post:
+      properties:
+        upload:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Upload
+      type: object
+      required:
+      - upload
+      title: Body_upload_utility_bill_api_v1_admin_utility_accounts__account_id__bill_imports_post
     BootstrapRequest:
       properties:
         bootstrap_secret:

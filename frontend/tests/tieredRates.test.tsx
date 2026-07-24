@@ -114,6 +114,9 @@ const tierStatus = {
     energy_charge: '148.80',
   }],
   energy_charge: '322.50',
+  current_rate_period: 'Tier 2',
+  current_energy_price: '0.40',
+  blended_energy_rate: '0.3391167192429022082018927445',
   projected_usage_kwh: '1200',
   projected_energy_charge: '422.10',
   projected_final_tier: { tier_id: 'tier-2', name: 'Tier 2', order: 1, lower_bound_kwh: '579', price_per_kwh: '0.40', threshold_basis: 'fixed_cycle_kwh', rounding_policy: 'none' },
@@ -152,8 +155,10 @@ describe('tiered and hybrid rate interface', () => {
     expect(await screen.findByText('Usage by tier')).toBeVisible()
     expect(screen.getAllByText('Tier 2').length).toBeGreaterThan(0)
     expect(screen.getAllByText('951 kWh').length).toBeGreaterThan(0)
-    expect(screen.getByText('$173.7')).toBeVisible()
-    expect(screen.getByText('$148.8')).toBeVisible()
+    expect(screen.getByText('$173.70')).toBeVisible()
+    expect(screen.getByText('$148.80')).toBeVisible()
+    expect(screen.getByText('$0.40/kWh')).toBeVisible()
+    expect(screen.getByText(/blended cycle energy rate \$0\.3391\/kWh/i)).toBeVisible()
     expect(screen.getByText(/service leg pair/i)).toBeVisible()
   })
 

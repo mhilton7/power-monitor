@@ -39,6 +39,9 @@ opening a TrueNAS workload shell.
 `rate-source-artifacts.tar.gz` (or its encrypted `.enc` form) is included in
 the checksum manifest. It preserves the exact downloaded bytes, metadata,
 normalized extraction, validation output, and hashes linked to rate versions.
+This archive also includes retained private utility-bill originals and
+sanitized evidence, so off-system copies require the same confidentiality
+controls as the database and must remain encrypted.
 
 ## Test restore
 

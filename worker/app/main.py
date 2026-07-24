@@ -10,6 +10,7 @@ import structlog
 from sqlalchemy import text
 
 from app.config import get_settings
+from app.bills.service import due_retention_deletions
 from app.db.models import WorkerState
 from app.db.session import session_factory
 from app.logging import configure_logging
@@ -56,6 +57,7 @@ async def _process_work(session: Any, factory: Any, settings: Any) -> dict[str, 
     rate_sync = await process_rate_sync_jobs(session, settings)
     rates_activated = await activate_due_versions(session)
     stale_rate_sources = await check_stale_sources(session)
+    utility_bill_retention_deletions = await due_retention_deletions(session)
     polling = await poll_due_devices(factory, settings)
     now = datetime.now(UTC)
     state = await session.get(WorkerState, "main")
@@ -83,6 +85,7 @@ async def _process_work(session: Any, factory: Any, settings: Any) -> dict[str, 
         "rate_sync": rate_sync,
         "rates_activated": rates_activated,
         "stale_rate_sources": stale_rate_sources,
+        "utility_bill_retention_deletions": utility_bill_retention_deletions,
         "polled": len(polling),
         "poll_failures": sum(
             item["status"] not in {"ok", "not_configured", "circuit_open"}

@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import { AlertTriangle, CheckCircle2, LoaderCircle, RefreshCw } from 'lucide-react'
+import { formatCurrency } from '../formatters'
 import { useInterfaceText } from '../interfaceText'
 import { StatusIndicatorZone } from './StatusIndicators'
 
@@ -162,7 +163,7 @@ export const formatNumber = (value: string | number | undefined, maximumFraction
   new Intl.NumberFormat(undefined, { maximumFractionDigits }).format(Number(value ?? 0))
 
 export const formatMoney = (value: string | number | undefined) =>
-  new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(Number(value ?? 0))
+  formatCurrency(value)
 
 export const formatTime = (value: string | undefined) =>
   value ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Never'

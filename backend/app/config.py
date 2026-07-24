@@ -80,6 +80,14 @@ class Settings(BaseSettings):
     rate_sync_allowed_hosts: str = "www.sce.com,sce.com"
     rate_sync_auto_max_percent_change: int = 25
     rate_sync_retroactive_auto_days: int = 0
+    utility_bill_max_bytes: int = 15 * 1024 * 1024
+    utility_bill_max_pages: int = 40
+    utility_bill_artifact_path: Path = Path("/app/data/rate-source-artifacts/utility-bills")
+    utility_bill_ocr_timeout_seconds: int = 45
+    utility_bill_ocr_dpi: int = 200
+    utility_bill_ocr_max_memory_mb: int = 768
+    utility_bill_pdf_render_command: str = "pdftoppm"
+    utility_bill_ocr_command: str = "tesseract"
     backup_path: Path = Path("/data/backups")
     log_path: Path = Path("/data/logs")
     log_retention_days: int = 90
@@ -165,6 +173,41 @@ class Settings(BaseSettings):
     def valid_rate_source_limit(cls, value: int) -> int:
         if not 65_536 <= value <= 50 * 1024 * 1024:
             raise ValueError("RATE_SYNC_MAX_SOURCE_BYTES must be between 64 KiB and 50 MiB")
+        return value
+
+    @field_validator("utility_bill_max_bytes")
+    @classmethod
+    def valid_utility_bill_size(cls, value: int) -> int:
+        if not 1_048_576 <= value <= 50 * 1024 * 1024:
+            raise ValueError("UTILITY_BILL_MAX_BYTES must be between 1 MiB and 50 MiB")
+        return value
+
+    @field_validator("utility_bill_max_pages")
+    @classmethod
+    def valid_utility_bill_pages(cls, value: int) -> int:
+        if not 1 <= value <= 100:
+            raise ValueError("UTILITY_BILL_MAX_PAGES must be between 1 and 100")
+        return value
+
+    @field_validator("utility_bill_ocr_timeout_seconds")
+    @classmethod
+    def valid_utility_bill_ocr_timeout(cls, value: int) -> int:
+        if not 5 <= value <= 180:
+            raise ValueError("UTILITY_BILL_OCR_TIMEOUT_SECONDS must be between 5 and 180")
+        return value
+
+    @field_validator("utility_bill_ocr_dpi")
+    @classmethod
+    def valid_utility_bill_ocr_dpi(cls, value: int) -> int:
+        if not 150 <= value <= 300:
+            raise ValueError("UTILITY_BILL_OCR_DPI must be between 150 and 300")
+        return value
+
+    @field_validator("utility_bill_ocr_max_memory_mb")
+    @classmethod
+    def valid_utility_bill_ocr_memory(cls, value: int) -> int:
+        if not 256 <= value <= 2048:
+            raise ValueError("UTILITY_BILL_OCR_MAX_MEMORY_MB must be between 256 and 2048")
         return value
 
     @field_validator("public_origin")

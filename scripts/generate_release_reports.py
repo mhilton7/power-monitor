@@ -8,6 +8,7 @@ import os
 import platform
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,7 +95,7 @@ def versions() -> None:
         "product": "Power Monitor Server",
         "version": "1.0.0",
         "protocol": (ROOT / "shared" / "protocol-version.txt").read_text().strip(),
-        "migration_revision": "20260723_0009",
+        "migration_revision": "20260724_0010",
         "python": platform.python_version(),
         "node": command_version(["node", "--version"]),
         "npm": command_version(["npm.cmd" if os.name == "nt" else "npm", "--version"]),
@@ -118,6 +119,29 @@ def versions() -> None:
     )
 
 
+def migration_offline_sql() -> None:
+    result = subprocess.run(  # noqa: S603 - fixed repository release command
+        [
+            sys.executable,
+            "-m",
+            "alembic",
+            "-c",
+            str(ROOT / "backend" / "alembic.ini"),
+            "upgrade",
+            "head",
+            "--sql",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    normalized = "\n".join(line.rstrip() for line in result.stdout.splitlines()) + "\n"
+    (RELEASE / "migration-offline.sql").write_text(
+        normalized, encoding="utf-8", newline="\n"
+    )
+
+
 def checksums() -> None:
     lines = []
     for path in sorted(RELEASE.iterdir()):
@@ -135,5 +159,6 @@ if __name__ == "__main__":
     RELEASE.mkdir(exist_ok=True)
     backend_licenses()
     frontend_licenses()
+    migration_offline_sql()
     versions()
     checksums()

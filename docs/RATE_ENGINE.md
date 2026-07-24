@@ -29,3 +29,10 @@ For tiered history, the query layer consumes the persisted cycle allocation
 version. Partial-circuit readings do not advance whole-account tiers and need
 independent manual/imported account context. Backfill marks unfinalized cycles
 for full chronological replay; finalized results are immutable.
+
+Utility-bill imports never bypass this engine. A reviewed bill produces a
+separate custom rate draft and billing-cycle draft; the rate draft must pass the
+same flat, TOU, tiered, or hybrid validation and exact `Decimal` calculation
+before an administrator can publish and assign it. The comparison keeps the
+utility energy subtotal separate from the complete bill total. See [Utility
+bill imports](UTILITY_BILL_IMPORTS.md).

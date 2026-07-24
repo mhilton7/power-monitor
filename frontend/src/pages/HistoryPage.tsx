@@ -30,6 +30,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ApiError, api, apiDownload, jsonBody } from '../api'
 import { StatusIndicatorZone } from '../components/StatusIndicators'
+import { formatEnergy, formatEnergyRate } from '../formatters'
 import type {
   AggregateSet,
   Circuit,
@@ -136,7 +137,7 @@ function formatInterval(point: HistoryBucket): string {
   const start = new Date(point.local_start)
   const end = new Date(point.local_end)
   const formatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-  return `${formatter.format(start)}–${formatter.format(end)} (${point.utc_offset})`
+  return `${formatter.format(start)}\u2013${formatter.format(end)} (${point.utc_offset})`
 }
 
 function unavailableMoney(value: string | undefined): string {
@@ -395,11 +396,11 @@ export function HistoryPage() {
             const lines = [
               `Scope: ${point.series_name}`,
               `Sensors: ${point.contributing_sensor_count}/${point.included_sensor_count}`,
-              `Energy: ${unavailableNumber(point.energy_kwh, 6)} kWh`,
+              `Energy: ${formatEnergy(point.energy_kwh)}`,
               `Average power: ${unavailableNumber(point.average_power_w, 2)} W`,
               `Peak power: ${unavailableNumber(point.peak_power_w, 2)} W`,
               `TOU period: ${point.tou_period ?? 'Unavailable'}`,
-              `Rate: ${point.rate_per_kwh ? `${formatMoney(point.rate_per_kwh)}/kWh` : 'Unavailable'}`,
+              `Rate: ${formatEnergyRate(point.rate_per_kwh, { derived: point.mixed_rates })}`,
               `Estimated energy cost: ${unavailableMoney(point.energy_cost)}`,
               `Rate plan: ${point.rate_plan_name ?? 'Unavailable'}`,
               `Rate version: ${point.rate_version_id ?? 'Unavailable'}${point.rate_effective_from ? ` (effective ${point.rate_effective_from})` : ''}`,
@@ -408,7 +409,7 @@ export function HistoryPage() {
             if (point.quality_flags.length) lines.push(`Quality: ${point.quality_flags.join(', ')}`)
             if (point.rate_contributions.length > 1) {
               lines.push(...point.rate_contributions.map((part) =>
-                `${part.rate_plan_name} · ${part.tier_name ? `${part.tier_name} / ` : ''}${part.tou_period}: ${part.energy_kwh} kWh at ${formatMoney(part.rate_per_kwh)}/kWh = ${formatMoney(part.energy_cost)}${part.cumulative_start_kwh ? ` (cycle ${part.cumulative_start_kwh}-${part.cumulative_end_kwh} kWh)` : ''}`,
+                `${part.rate_plan_name} · ${part.tier_name ? `${part.tier_name} / ` : ''}${part.tou_period}: ${formatEnergy(part.energy_kwh)} at ${formatEnergyRate(part.rate_per_kwh)} = ${formatMoney(part.energy_cost)}${part.cumulative_start_kwh ? ` (cycle ${part.cumulative_start_kwh}\u2013${part.cumulative_end_kwh} kWh)` : ''}`,
               ))
             }
             return lines
@@ -516,9 +517,9 @@ export function HistoryPage() {
         {basePoints.length > 0 && queryData.warnings.filter((warning) => warning.code !== 'rate_unavailable').map((warning) => <aside className="history-warning" key={`${warning.code}-${warning.device_ids?.join('-') ?? ''}`} role="status"><AlertTriangle size={18} /><p><strong>{warning.code.replaceAll('_', ' ')}</strong><span>{warning.message}</span></p></aside>)}
 
         {basePoints.length > 0 && <div className="history-summary-grid">
-          <article><span>Total energy</span><strong>{unavailableNumber(rangeSummary?.energy_kwh, 4)} kWh</strong></article>
+          <article><span>Total energy</span><strong>{formatEnergy(rangeSummary?.energy_kwh)}</strong></article>
           <article><span>Estimated energy cost</span><strong>{unavailableMoney(rangeSummary?.energy_cost)}</strong><small>Selected sensors; account-level fixed charges excluded</small></article>
-          <article><span>Blended energy rate</span><strong>{rangeSummary?.blended_rate_per_kwh ? `${formatMoney(rangeSummary.blended_rate_per_kwh)}/kWh` : 'Unavailable'}</strong></article>
+          <article><span>Blended energy rate</span><strong>{formatEnergyRate(rangeSummary?.blended_rate_per_kwh, { derived: true })}</strong></article>
           <article><span>Highest-cost bucket</span><strong>{unavailableMoney(rangeSummary?.highest_cost_bucket_value)}</strong><small>{rangeSummary?.highest_cost_bucket_start ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(rangeSummary.highest_cost_bucket_start)) : 'No cost data'}</small></article>
           <article data-metric-identity="power.recent_peak"><span>Recent peak</span><strong>{unavailableNumber(rangeSummary?.peak_power_w, 2)} W</strong></article>
         </div>}
@@ -532,8 +533,8 @@ export function HistoryPage() {
 
         {selection && queryData.selected_summary && <Panel title="Selected range summary" eyebrow="Server-calculated interval segments">
           <div className="selected-range-heading"><p><strong>{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(selection.start))}–{new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(selection.end))}</strong><small>Select another interval in the table to extend this contiguous range.</small></p><StatusPill status="healthy" label={`${formatNumber(queryData.selected_summary.coverage_percent, 1)}% coverage`} /></div>
-          <div className="history-selected-grid"><span><small>Energy</small><strong>{unavailableNumber(queryData.selected_summary.energy_kwh, 5)} kWh</strong></span><span><small>Estimated energy cost</small><strong>{unavailableMoney(queryData.selected_summary.energy_cost)}</strong></span><span><small>Weighted rate</small><strong>{queryData.selected_summary.blended_rate_per_kwh ? `${formatMoney(queryData.selected_summary.blended_rate_per_kwh)}/kWh` : 'Unavailable'}</strong></span><span><small>Average / peak power</small><strong>{unavailableNumber(queryData.selected_summary.average_power_w, 1)} / {unavailableNumber(queryData.selected_summary.peak_power_w, 1)} W</strong></span></div>
-          <div className="tou-breakdown">{Object.entries(queryData.selected_summary.tou_breakdown).map(([period, values]) => <span key={period}><strong>{period}</strong><small>{formatNumber(values.energy_kwh, 4)} kWh · {formatMoney(values.energy_cost)}</small></span>)}</div>
+          <div className="history-selected-grid"><span><small>Energy</small><strong>{formatEnergy(queryData.selected_summary.energy_kwh)}</strong></span><span><small>Estimated energy cost</small><strong>{unavailableMoney(queryData.selected_summary.energy_cost)}</strong></span><span><small>Weighted rate</small><strong>{formatEnergyRate(queryData.selected_summary.blended_rate_per_kwh, { derived: true })}</strong></span><span><small>Average / peak power</small><strong>{unavailableNumber(queryData.selected_summary.average_power_w, 1)} / {unavailableNumber(queryData.selected_summary.peak_power_w, 1)} W</strong></span></div>
+          <div className="tou-breakdown">{Object.entries(queryData.selected_summary.tou_breakdown).map(([period, values]) => <span key={period}><strong>{period}</strong><small>{formatEnergy(values.energy_kwh)} · {formatMoney(values.energy_cost)}</small></span>)}</div>
         </Panel>}
 
         {basePoints.length > 0 && <Panel title="Interval details" eyebrow="Accessible chart alternative" actions={<span className="count-badge">{queryData.total_buckets} buckets</span>}>
@@ -544,10 +545,10 @@ export function HistoryPage() {
               <td>{series.id === (queryData.combined.length ? 'combined' : queryData.individual[0]?.device_id) ? <input type="checkbox" aria-label={`Include ${formatInterval(point)} in selected range`} checked={selectionIncludes(point)} onChange={() => { selectTableRange(point) }} /> : <span aria-hidden="true">—</span>}</td>
               <th scope="row"><strong>{point.series_name}</strong><small>{point.contributing_sensor_count}/{point.included_sensor_count} sensors</small></th>
               <td>{formatInterval(point)}</td>
-              <td>{unavailableNumber(point.energy_kwh, 6)} kWh</td>
+              <td>{formatEnergy(point.energy_kwh)}</td>
               <td>{unavailableNumber(point.average_power_w, 2)} / {unavailableNumber(point.peak_power_w, 2)} W</td>
-              <td>{point.tou_period ?? 'Unavailable'}{point.mixed_rates && <small>Mixed rates</small>}{point.rate_contributions.some((part) => part.tier_name) && <small>{point.rate_contributions.map((part) => `${part.tier_name}: cycle ${part.cumulative_start_kwh}-${part.cumulative_end_kwh} kWh`).join(' / ')}</small>}</td>
-              <td>{point.rate_per_kwh ? `${formatMoney(point.rate_per_kwh)}/kWh` : 'Unavailable'}</td>
+              <td>{point.tou_period ?? 'Unavailable'}{point.mixed_rates && <small>Mixed rates</small>}{point.rate_contributions.some((part) => part.tier_name) && <small>{point.rate_contributions.map((part) => `${part.tier_name}: cycle ${part.cumulative_start_kwh}\u2013${part.cumulative_end_kwh} kWh`).join(' / ')}</small>}</td>
+              <td>{formatEnergyRate(point.rate_per_kwh, { derived: point.mixed_rates })}</td>
               <td>{unavailableMoney(point.energy_cost)}</td>
               <td>{point.rate_plan_name ?? 'Unavailable'}<small>{point.rate_version_id ?? 'No version'}</small></td>
               <td>{formatNumber(point.coverage_percent, 2)}%<small>{point.quality_flags.length ? point.quality_flags.join(', ') : 'Complete'}</small></td>

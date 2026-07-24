@@ -51,6 +51,11 @@ def test_initial_migration_is_frozen_and_covers_metadata() -> None:
         "cycle_tier_summaries",
         "tier_projection_snapshots",
         "account_reconciliation_adjustments",
+        "utility_bill_imports",
+        "utility_bill_extraction_revisions",
+        "utility_bill_extracted_fields",
+        "utility_bill_field_conflicts",
+        "utility_bill_cycle_drafts",
     }
     assert "CREATE UNIQUE INDEX" in schema
     assert "ix_raw_site_time" in schema
@@ -155,3 +160,20 @@ def test_utility_account_network_policy_migration_preserves_legacy_behavior() ->
     assert "behavior_preserved" in revision
     assert "utility_accounts.manage" in revision
     assert "network.manage" in revision
+
+
+def test_utility_bill_import_migration_is_additive_private_and_indexed() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (root / "alembic" / "versions" / "20260724_0010_utility_bill_imports.py").read_text()
+    assert 'down_revision = "20260723_0009"' in revision
+    assert "utility_bill_imports" in revision
+    assert "utility_bill_extraction_revisions" in revision
+    assert "utility_bill_extracted_fields" in revision
+    assert "utility_bill_field_conflicts" in revision
+    assert "utility_bill_cycle_drafts" in revision
+    assert "utility_bills.view" in revision
+    assert "utility_bills.manage" in revision
+    assert "sa.ForeignKey" in revision
+    assert "op.create_index" in revision
+    assert "DROP SCHEMA" not in revision
+    assert "def downgrade()" in revision

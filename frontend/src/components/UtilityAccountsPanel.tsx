@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, CalendarClock, ChevronLeft, ChevronRight, CircleDollarSign, Pencil, Plus, RefreshCw, X } from 'lucide-react'
+import { Archive, CalendarClock, ChevronLeft, ChevronRight, CircleDollarSign, FileUp, Pencil, Plus, RefreshCw, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, ApiError } from '../api'
+import { formatEnergyRate } from '../formatters'
 import type { ManagedRatePlan, ManagedRateVersion } from '../rates'
 import type { AggregateSet, Device, Site, TierStatus, UtilityAccount } from '../types'
 import { EmptyState, ErrorState, LoadingState, Panel, StatusPill, formatTime } from './UI'
@@ -197,11 +199,12 @@ export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: S
           <dl className="account-readiness-grid">
             <div><dt>Rate plan</dt><dd>{account.rate_context.current_plan ?? 'Not assigned'}</dd><small>{account.rate_context.current_version ? `Version ${account.rate_context.current_version}` : 'Choose a published version'}</small></div>
             <div><dt>Current period</dt><dd>{account.rate_context.current_period ?? 'Unavailable'}</dd><small>{account.rate_context.assignment_effective_from ? `Effective ${formatTime(account.rate_context.assignment_effective_from)}` : 'No current assignment'}</small></div>
-            <div><dt>Current energy price</dt><dd>{account.rate_context.current_price_per_kwh ? `$${account.rate_context.current_price_per_kwh}/kWh` : 'Unavailable'}</dd><small>{account.rate_context.next_period ? `Next: ${account.rate_context.next_period} at $${account.rate_context.next_price_per_kwh}/kWh` : 'Rate context does not require a sensor'}</small></div>
+            <div><dt>Current energy price</dt><dd>{formatEnergyRate(account.rate_context.current_price_per_kwh, { currency: account.rate_context.current_currency })}</dd><small>{account.rate_context.next_period ? `Next: ${account.rate_context.next_period} at ${formatEnergyRate(account.rate_context.next_price_per_kwh, { currency: account.rate_context.current_currency })}` : 'Rate context does not require a sensor'}</small></div>
             <div><dt>Cost scope</dt><dd>{readableScope(account.cost_scope)}</dd><small>{account.device_count} assigned sensor{account.device_count === 1 ? '' : 's'}</small></div>
           </dl>
           {account.rate_context.next_assignment && <p className="inline-notice"><CalendarClock size={15} /> Next: {account.rate_context.next_assignment.plan} on {formatTime(account.rate_context.next_assignment.effective_from)}</p>}
           <footer className="account-actions">
+            <Link className="button ghost" to={`/rates/import-bill?account_id=${encodeURIComponent(account.id)}`}><FileUp size={14} /> Upload current bill</Link>
             <button className="button ghost" onClick={() => { setExpanded(expanded === account.id ? undefined : account.id); }}>View {expanded === account.id ? 'less' : 'details'}</button>
             <button className="button ghost" onClick={() => { setExpanded(account.id); }}><Pencil size={14} /> Manage</button>
             <button className="button ghost" disabled={recalculate.isPending} onClick={() => { recalculate.mutate(account.id); }}><RefreshCw size={14} /> Recalculate costs</button>
@@ -237,7 +240,7 @@ export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: S
 
 function RateEvidence({ plan, version, context }: { plan: ManagedRatePlan; version: ManagedRateVersion; context?: VersionContext }) {
   const currentContext = context?.current_price_per_kwh
-    ? `${context.current_period} $${context.current_price_per_kwh}/kWh${context.next_period && context.next_price_per_kwh ? ` · next ${context.next_period} $${context.next_price_per_kwh}/kWh` : ''}`
+    ? `${context.current_period} ${formatEnergyRate(context.current_price_per_kwh)}${context.next_period && context.next_price_per_kwh ? ` · next ${context.next_period} ${formatEnergyRate(context.next_price_per_kwh)}` : ''}`
     : context?.current_period ?? 'Loading server rate context…'
   return <dl className="rate-evidence"><div><dt>Plan</dt><dd>{plan.code} · {plan.name}</dd></div><div><dt>Library state</dt><dd>Published · Available</dd></div><div><dt>Source</dt><dd>{version.source_kind} · checked {version.source_checked_at?.slice(0, 10) ?? 'manually'}</dd></div><div><dt>Version dates</dt><dd>{version.effective_from}{version.effective_through ? ` through ${version.effective_through}` : ''}</dd></div><div><dt>Current rate context</dt><dd>{currentContext}</dd></div><div><dt>Provider assumption</dt><dd>{context?.provider_mode.replaceAll('_', ' ') ?? 'Loading…'}</dd></div><div><dt>Account charges / credits</dt><dd>{context?.account_adjustments.length ? context.account_adjustments.map((item) => `${item.name} (${item.value} ${item.unit})`).join(', ') : 'None in this rate version'}</dd></div></dl>
 }

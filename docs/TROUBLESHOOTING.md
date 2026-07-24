@@ -1,5 +1,14 @@
 # Troubleshooting
 
+## Utility-bill PDF import
+
+Encrypted PDFs, active-content PDFs, malformed files, non-PDF content, and
+configured size/page-limit violations are rejected. OCR is local and requires
+Poppler plus English Tesseract in the API image. Low-confidence or missing
+tariff fields are expected to block publication; inspect the page evidence and
+make an explicit administrator correction rather than guessing. See
+[Utility-bill PDF imports](UTILITY_BILL_IMPORTS.md).
+
 ## Browser password manager does not autofill sign-in
 
 Use the exact stable HTTPS origin where the credential was saved. Changes from a

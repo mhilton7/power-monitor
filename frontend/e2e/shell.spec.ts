@@ -832,7 +832,7 @@ test('administrator configures an effective utility account and explicit private
   await page.getByRole('button', { name: /Next/ }).click()
   await expect(page.getByRole('dialog', { name: 'Rate & version' })).toBeVisible()
   await expect(page.getByLabel('Published rate plan and version')).toHaveValue('rate-version-official')
-  await expect(page.getByText('On Peak $0.58000000/kWh')).toBeVisible()
+  await expect(page.getByText('On Peak $0.58/kWh')).toBeVisible()
   await page.getByRole('button', { name: /Next/ }).click()
   await expect(page.getByRole('radio', { name: /Energy-only monitored scope/ })).toBeChecked()
   await page.getByRole('button', { name: /Next/ }).click()
@@ -844,7 +844,7 @@ test('administrator configures an effective utility account and explicit private
   const account = page.locator('.utility-account-card').filter({ hasText: 'Upland main electric' })
   await expect(account).toContainText('TOU-D 4 PM to 9 PM')
   await expect(account).toContainText('On Peak')
-  await expect(account).toContainText('$0.58000000/kWh')
+  await expect(account).toContainText('$0.58/kWh')
   await expect(account).toContainText('Energy-only monitored scope')
   if (process.env.CAPTURE_UTILITY_NETWORK_SCREENSHOTS === '1') {
     await page.screenshot({ path: '../docs/screenshots/utility-account-management.png', fullPage: true })

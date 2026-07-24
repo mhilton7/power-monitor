@@ -28,7 +28,13 @@ function downloadJson(filename: string, value: unknown) {
   URL.revokeObjectURL(url)
 }
 
-export function RatesPage({ canManage }: { canManage: boolean }) {
+export function RatesPage({
+  canManage,
+  canImportBills = false,
+}: {
+  canManage: boolean
+  canImportBills?: boolean
+}) {
   const navigate = useNavigate()
   const importInput = useRef<HTMLInputElement>(null)
   const [jobId, setJobId] = useState<string>()
@@ -70,6 +76,7 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
         actions={canManage && <>
           <button className="button secondary" disabled={check.isPending} onClick={() => { check.mutate(); }}><RefreshCw size={16} className={check.isPending ? 'spin' : ''} /> Check SCE now</button>
           <button className="button secondary" onClick={() => navigate('/rates/sources')}><Settings2 size={16} /> Rate source settings</button>
+          {canImportBills && <button className="button secondary" onClick={() => navigate('/rates/import-bill')}><Upload size={16} /> Import from utility bill</button>}
           <button className="button primary" onClick={() => navigate('/rates/new')}><Plus size={17} /> Custom plan</button>
         </>}
       />
@@ -98,7 +105,7 @@ export function RatesPage({ canManage }: { canManage: boolean }) {
             return <Panel key={plan.id} className="rate-card">
               <header className="rate-card-head"><div><span className="plan-code">{plan.code}</span><h2>{plan.name}</h2></div><StatusPill status={effective ? 'healthy' : version?.status ?? plan.status} label={stateLabel} /></header>
               <p>{plan.description || 'No plan description has been provided.'}</p>
-              {version && <div className="rate-model-summary"><StatusPill status="info" label={pricingLabel(version.pricing_model)} /><span>{version.tier_count ? `${version.tier_count} tiers Â· ${version.threshold_basis?.replaceAll('_', ' ')}` : 'No billing-cycle tiers'}</span></div>}
+              {version && <div className="rate-model-summary"><StatusPill status="info" label={pricingLabel(version.pricing_model)} /><span>{version.tier_count ? `${version.tier_count} tiers · ${version.threshold_basis?.replaceAll('_', ' ')}` : 'No billing-cycle tiers'}</span></div>}
               {pendingCandidate && <StatusPill status="pending" label="Candidate awaiting approval" />}
               {version && <>
                 <dl className="rate-meta"><div><dt>Effective</dt><dd>{version.effective_from}</dd></div><div><dt>Source checked</dt><dd>{version.source_checked_at?.slice(0, 10) ?? 'Manual'}</dd></div><div><dt>Version</dt><dd>v{version.version}</dd></div><div><dt>Integrity</dt><dd title={version.integrity_sha256}>{version.integrity_sha256.slice(0, 10)}…</dd></div></dl>

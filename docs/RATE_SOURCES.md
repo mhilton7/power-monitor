@@ -1,5 +1,12 @@
 # Rate sources
 
+An uploaded utility bill is archived through the same artifact and extraction
+evidence infrastructure as a managed rate source. Its default role is
+supporting; an administrator may review it as authoritative account-specific or
+reference-only evidence. Conflicts preserve both values and block automatic
+activation. One bill never automatically replaces an approved utility source.
+See [Utility-bill PDF imports](UTILITY_BILL_IMPORTS.md).
+
 The bundled seed is `shared/schemas/sce-rates-2026-06-01.json`. Its supplied metadata says checked **2026-07-20** and effective **2026-06-01**. During this build the official sources were independently retrieved on **2026-07-19 America/Los_Angeles**; the date difference is retained explicitly rather than rewriting supplied metadata.
 
 ## Official sources checked

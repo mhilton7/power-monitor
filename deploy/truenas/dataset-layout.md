@@ -13,7 +13,7 @@ Create a parent dataset and nine child datasets in **Datasets > Add Dataset**:
 | `Power/power-monitor/backups` | `/mnt/Apps/Power/power-monitor/backups` | encrypted logical backups and checksums | daily; replicate off-system |
 | `Power/power-monitor/firmware` | `/mnt/Apps/Power/power-monitor/firmware` | uploaded firmware artifacts | daily or on change |
 | `Power/power-monitor/logs` | `/mnt/Apps/Power/power-monitor/logs` | daily structured application and backup logs | daily; retain at least the application-managed 90-day window |
-| `Power/power-monitor/rate-source-artifacts` | `/mnt/Apps/Power/power-monitor/rate-source-artifacts` | immutable SCE source bytes, hashes, extraction metadata, and validation evidence | daily and before upgrades; replicate with backups |
+| `Power/power-monitor/rate-source-artifacts` | `/mnt/Apps/Power/power-monitor/rate-source-artifacts` | immutable SCE evidence plus private utility-bill PDFs, sanitized evidence, hashes, and extraction metadata | daily and before upgrades; replicate with encrypted backups |
 | `Power/power-monitor/config` | `/mnt/Apps/Power/power-monitor/config` | Caddyfile and generated reports | daily or on change |
 | `Power/power-monitor/secrets` | `/mnt/Apps/Power/power-monitor/secrets` | file-backed secrets and optional TLS key | snapshot only to encrypted, access-controlled targets |
 | `Power/power-monitor/caddy-data` | `/mnt/Apps/Power/power-monitor/caddy-data` | Caddy CA, certificates, and ACME state | daily or on change |
@@ -39,3 +39,9 @@ python tools/validate-truenas-compose.py --deployment --pool Apps --gateway-port
 
 The command fails if any `POOL` or all-zero digest placeholder remains, if paths
 span pools, or if a required dataset root is absent.
+
+Utility-bill originals are stored below
+`rate-source-artifacts/utility-bills/originals` and are not web assets. Do not
+share this dataset through SMB/NFS. The API (UID 10001) needs Modify access for
+upload and approved retention deletion; the backup identity (UID 10003) needs
+Read access only.

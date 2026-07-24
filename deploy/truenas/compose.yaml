@@ -40,6 +40,12 @@ x-app-environment: &app-environment
   RATE_SYNC_ARTIFACT_PATH: /app/data/rate-source-artifacts
   RATE_SYNC_AUTO_MAX_PERCENT_CHANGE: "25"
   RATE_SYNC_RETROACTIVE_AUTO_DAYS: "0"
+  UTILITY_BILL_ARTIFACT_PATH: /app/data/rate-source-artifacts/utility-bills
+  UTILITY_BILL_MAX_BYTES: "20971520"
+  UTILITY_BILL_MAX_PAGES: "40"
+  UTILITY_BILL_OCR_TIMEOUT_SECONDS: "60"
+  UTILITY_BILL_OCR_DPI: "200"
+  UTILITY_BILL_OCR_MAX_MEMORY_MB: "768"
 
 services:
   postgres:

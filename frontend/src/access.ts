@@ -3,6 +3,7 @@ import type { Session } from './types'
 const ADMIN_FALLBACK = new Set([
   'overview.view', 'usage.view', 'devices.view', 'topology.view', 'history.view', 'history.export',
   'costs.view', 'costs.export', 'costs.recalculate', 'usage_imports.manage',
+  'utility_bills.view', 'utility_bills.manage',
   'rates.view', 'rates.manage_custom', 'rates.manage_sources', 'rates.check_sources',
   'rates.review_candidates', 'rates.approve_candidates', 'rates.assign', 'alerts.view',
   'alerts.acknowledge', 'alerts.manage_rules', 'alerts.manage_delivery', 'enrollment.view',

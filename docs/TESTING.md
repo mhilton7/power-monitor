@@ -1,5 +1,45 @@
 # Testing and release gates
 
+## Utility bill PDF import and formatting acceptance (2026-07-24)
+
+The release passed Ruff lint/format, strict mypy, OpenAPI generation/checking,
+JSON Schema and protocol contracts, the repository secret scan, and a direct
+UTF-8/mojibake scan. The portable backend, worker, and simulator suite passed
+114 tests; the three intentionally gated cases were run separately. The
+PDF/rate subset passed 39 text-layer, scanned, rotated, encrypted, malformed,
+oversized, duplicate, confidence, conflict, privacy, correction, exact-decimal,
+and no-auto-activation cases. A disposable read-only production API container
+with Poppler, Tesseract English, and patched `pypdf 6.14.2` performed real OCR
+of the scanned fixture and extracted one tiered page with 951 kWh.
+
+PostgreSQL 17 upgraded and clean-installed the complete migration chain at
+`20260724_0010`, downgraded/reapplied the new revision, and finished with 96
+public tables and all 52 Administrator permissions. The separately enabled
+resilience gate enrolled 100 simulated devices and accepted 18,000 backfilled
+readings. Python and npm production dependency audits reported no known
+vulnerabilities.
+
+The frontend passed a clean locked install, lint, TypeScript checking, 32
+unit/component tests, all 34 Chromium end-to-end/accessibility scenarios, and
+the production build. The bill workflow scenario uploads a deterministic PDF,
+inspects evidence, corrects a low-confidence threshold, verifies readable and
+exact values, reviews and validates separate outputs, explicitly publishes and
+assigns the rate draft, imports the cycle draft, deletes the original, and
+proves sanitized provenance remains. A second scenario blocks publication for
+an unresolved managed-source conflict, and the responsive gate verifies no
+mobile horizontal overflow. The reviewed tier-preview capture is
+`docs/screenshots/utility-bill-import-tier-preview.png`.
+
+Fresh final API, frontend, and backup images passed their production builds.
+The deployment-mode TrueNAS render for `/mnt/Apps/Power/power-monitor`, its
+optional NET_RAW-only overlay, and Docker Compose parsing passed fail-closed
+validation. The complete disposable seven-service deployment then used strict
+internal-CA TLS with only TCP 8443 published, completed the one-shot migration,
+reported every health check, enrolled 3 signed simulated devices, accepted 90
+historical readings, calculated an SCE rate, retained 2 utility accounts and 1
+canonical sensor CIDR, verified all 5 backup artifacts, and restored a clean
+96-table database at `20260724_0010`.
+
 ## Tiered and hybrid rate-plan acceptance (2026-07-23)
 
 The release passed Ruff lint/format, strict mypy, OpenAPI and JSON Schema

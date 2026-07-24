@@ -1156,6 +1156,243 @@ class RateVersionSource(Base):
     relationship: Mapped[str] = mapped_column(String(32), default="primary")
 
 
+class UtilityBillImport(Base):
+    __tablename__ = "utility_bill_imports"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("background_jobs.id", ondelete="RESTRICT"), unique=True, index=True
+    )
+    utility_account_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
+    )
+    artifact_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_source_artifacts.id", ondelete="RESTRICT"), unique=True, index=True
+    )
+    content_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="review_required", index=True)
+    source_role: Mapped[str] = mapped_column(String(40), default="supporting")
+    extraction_method: Mapped[str] = mapped_column(String(16))
+    parser_version: Mapped[str] = mapped_column(String(40))
+    page_count: Mapped[int] = mapped_column(Integer)
+    retention_mode: Mapped[str] = mapped_column(String(32), default="retain")
+    retain_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    original_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sanitized_evidence_path: Mapped[str] = mapped_column(String(1000))
+    rate_plan_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rate_plans.id", ondelete="SET NULL"), index=True
+    )
+    rate_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="SET NULL"), index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    blocking_warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    extraction_warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint(
+            "utility_account_id", "content_sha256", name="uq_utility_bill_import_account_hash"
+        ),
+        CheckConstraint(
+            "status IN ('processing','review_required','ready_to_publish','published',"
+            "'rejected','failed')",
+            name="utility_bill_import_status",
+        ),
+        CheckConstraint(
+            "source_role IN ('supporting','authoritative_account_specific','reference_only')",
+            name="utility_bill_import_source_role",
+        ),
+        CheckConstraint(
+            "extraction_method IN ('text','ocr','mixed')",
+            name="utility_bill_import_extraction_method",
+        ),
+        CheckConstraint(
+            "retention_mode IN ('retain','retain_until','delete_after_approval')",
+            name="utility_bill_import_retention",
+        ),
+        CheckConstraint("page_count > 0", name="utility_bill_import_page_count"),
+        CheckConstraint("revision > 0", name="utility_bill_import_revision"),
+    )
+
+
+class UtilityBillExtractionRevision(Base):
+    __tablename__ = "utility_bill_extraction_revisions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    bill_import_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_bill_imports.id", ondelete="CASCADE"), index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(24), default="review_required")
+    parser_version: Mapped[str] = mapped_column(String(40))
+    ocr_version: Mapped[str | None] = mapped_column(String(80))
+    normalized_account_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    normalized_rate_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    normalized_cycle_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    raw_text_sha256: Mapped[str] = mapped_column(String(64))
+    normalized_text_sha256: Mapped[str] = mapped_column(String(64))
+    sanitized_text_path: Mapped[str] = mapped_column(String(1000))
+    extraction_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    __table_args__ = (
+        UniqueConstraint("bill_import_id", "revision", name="uq_utility_bill_extraction_revision"),
+        CheckConstraint(
+            "status IN ('review_required','approved','superseded','failed')",
+            name="utility_bill_extraction_status",
+        ),
+        CheckConstraint("revision > 0", name="utility_bill_extraction_revision_positive"),
+    )
+
+
+class UtilityBillExtractedField(Base):
+    __tablename__ = "utility_bill_extracted_fields"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    extraction_revision_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_bill_extraction_revisions.id", ondelete="CASCADE"), index=True
+    )
+    output_kind: Mapped[str] = mapped_column(String(24), index=True)
+    field_key: Mapped[str] = mapped_column(String(240))
+    raw_value: Mapped[Any | None] = mapped_column(JSON)
+    normalized_value: Mapped[Any | None] = mapped_column(JSON)
+    corrected_value: Mapped[Any | None] = mapped_column(JSON)
+    page_number: Mapped[int | None] = mapped_column(Integer)
+    text_region: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    source_excerpt: Mapped[str | None] = mapped_column(Text)
+    extraction_method: Mapped[str] = mapped_column(String(16))
+    parser_version: Mapped[str] = mapped_column(String(40))
+    confidence: Mapped[str] = mapped_column(String(32), index=True)
+    review_state: Mapped[str] = mapped_column(String(24), default="unreviewed")
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    normalization_history: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    confirmed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint(
+            "extraction_revision_id",
+            "output_kind",
+            "field_key",
+            name="uq_utility_bill_extracted_field",
+        ),
+        CheckConstraint(
+            "output_kind IN ('account','rate_plan','billing_cycle')",
+            name="utility_bill_field_output_kind",
+        ),
+        CheckConstraint(
+            "extraction_method IN ('text','ocr','mixed','administrator')",
+            name="utility_bill_field_method",
+        ),
+        CheckConstraint(
+            "confidence IN ('administrator_confirmed','high','medium','low','missing',"
+            "'conflicts_current','conflicts_source','not_applicable')",
+            name="utility_bill_field_confidence",
+        ),
+        CheckConstraint(
+            "review_state IN ('unreviewed','confirmed','corrected','rejected')",
+            name="utility_bill_field_review_state",
+        ),
+    )
+
+
+class UtilityBillFieldConflict(Base):
+    __tablename__ = "utility_bill_field_conflicts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    bill_import_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_bill_imports.id", ondelete="CASCADE"), index=True
+    )
+    field_key: Mapped[str] = mapped_column(String(240))
+    extracted_value: Mapped[Any | None] = mapped_column(JSON)
+    configured_value: Mapped[Any | None] = mapped_column(JSON)
+    comparison_source: Mapped[str] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(24), default="unresolved", index=True)
+    blocking: Mapped[bool] = mapped_column(Boolean, default=True)
+    resolution_note: Mapped[str | None] = mapped_column(String(1000))
+    resolved_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        UniqueConstraint(
+            "bill_import_id",
+            "field_key",
+            "comparison_source",
+            name="uq_utility_bill_field_conflict",
+        ),
+        CheckConstraint(
+            "status IN ('unresolved','accepted_bill','accepted_configured','dismissed')",
+            name="utility_bill_conflict_status",
+        ),
+    )
+
+
+class UtilityBillCycleDraft(Base):
+    __tablename__ = "utility_bill_cycle_drafts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    bill_import_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_bill_imports.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    extraction_revision_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_bill_extraction_revisions.id", ondelete="RESTRICT"), index=True
+    )
+    utility_account_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cycle_days: Mapped[int | None] = mapped_column(Integer)
+    meter_read_date: Mapped[date | None] = mapped_column(Date)
+    total_usage_kwh: Mapped[Decimal | None] = mapped_column(Numeric(24, 9))
+    usage_by_tier: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    usage_by_tou: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    meter_records: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    current_tier: Mapped[str | None] = mapped_column(String(120))
+    projected_tier: Mapped[str | None] = mapped_column(String(120))
+    energy_subtotal: Mapped[Decimal | None] = mapped_column(Numeric(24, 12))
+    full_bill_total: Mapped[Decimal | None] = mapped_column(Numeric(24, 12))
+    fixed_charges: Mapped[Decimal | None] = mapped_column(Numeric(24, 12))
+    taxes_fees: Mapped[Decimal | None] = mapped_column(Numeric(24, 12))
+    credits: Mapped[Decimal | None] = mapped_column(Numeric(24, 12))
+    adjustments: Mapped[Decimal | None] = mapped_column(Numeric(24, 12))
+    threshold_interpretation: Mapped[str] = mapped_column(String(40), default="unknown")
+    reconciliation_status: Mapped[str] = mapped_column(String(32), default="not_compared")
+    billing_cycle_id: Mapped[str | None] = mapped_column(
+        ForeignKey("billing_cycles.id", ondelete="SET NULL"), index=True
+    )
+    utility_usage_import_id: Mapped[str | None] = mapped_column(
+        ForeignKey("utility_usage_imports.id", ondelete="SET NULL"), index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft','approved','imported','rejected')",
+            name="utility_bill_cycle_draft_status",
+        ),
+        CheckConstraint(
+            "threshold_interpretation IN ('fixed_cycle_threshold','daily_baseline',"
+            "'baseline_multiplier','unknown')",
+            name="utility_bill_cycle_threshold_interpretation",
+        ),
+        CheckConstraint(
+            "reconciliation_status IN ('not_compared','matched','difference','adjusted')",
+            name="utility_bill_cycle_reconciliation",
+        ),
+        CheckConstraint(
+            "starts_at IS NULL OR ends_at IS NULL OR ends_at > starts_at",
+            name="utility_bill_cycle_window",
+        ),
+        CheckConstraint(
+            "total_usage_kwh IS NULL OR total_usage_kwh >= 0",
+            name="utility_bill_cycle_usage_nonnegative",
+        ),
+        CheckConstraint("revision > 0", name="utility_bill_cycle_revision"),
+    )
+
+
 class RateAssignment(Base):
     __tablename__ = "rate_assignments"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)

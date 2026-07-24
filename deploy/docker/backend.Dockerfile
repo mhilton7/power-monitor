@@ -10,7 +10,10 @@ RUN python -m pip wheel --no-deps --wheel-dir /wheels ./backend
 FROM python:3.13.5-slim-bookworm AS runtime
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/srv/backend:/srv
-RUN groupadd --system --gid 10001 power-monitor \
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 power-monitor \
     && useradd --system --uid 10001 --gid power-monitor --home-dir /nonexistent power-monitor \
     && mkdir -p /data/firmware /data/reports /data/backups /data/config /data/logs /srv/scripts /srv/tools \
     && chown -R power-monitor:power-monitor /data /srv \
