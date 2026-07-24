@@ -7,14 +7,16 @@ import {
   ArrowUp,
   CheckCircle2,
   Copy,
+  FileUp,
   Plus,
   Save,
   Trash2,
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
+import { BillImportWorkspace } from './BillImportPage'
 import { ErrorState, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
 import {
   formatCurrency,
@@ -119,9 +121,10 @@ function scheduleIssues(schedule: DayScheduleDocument): string[] {
   return [...new Set(issues)]
 }
 
-export function RateEditorPage({ canManage }: { canManage: boolean }) {
+export function RateEditorPage({ canManage, canImportBills = false }: { canManage: boolean; canImportBills?: boolean }) {
   const { planId, versionId } = useParams()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [step, setStep] = useState(0)
   const [document, setDocument] = useState<RatePlanDocument>(emptyRateDocument)
   const [validation, setValidation] = useState<ValidationReport>()
@@ -130,6 +133,8 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
   )
   const [sampleUsage, setSampleUsage] = useState('951')
   const [sampleCost, setSampleCost] = useState<TierPreview>()
+  const [importOpen, setImportOpen] = useState(searchParams.get('bill_import') === 'open' || Boolean(searchParams.get('bill_id') || searchParams.get('account_id')))
+  const [importNotice, setImportNotice] = useState('')
   const activationDialog = useRef<HTMLDialogElement>(null)
   const query = useQuery({
     queryKey: ['rate-version', versionId],
@@ -142,6 +147,15 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
     enabled: canManage && step === 4,
   })
   const editable = canManage && (!query.data || query.data.version.status === 'draft')
+
+  function closeImporter() {
+    setImportOpen(false)
+    const next = new URLSearchParams(searchParams)
+    next.delete('bill_import')
+    next.delete('bill_id')
+    next.delete('account_id')
+    setSearchParams(next, { replace: true })
+  }
 
   useEffect(() => {
     if (query.data) setDocument(query.data.document)
@@ -290,8 +304,21 @@ export function RateEditorPage({ canManage }: { canManage: boolean }) {
         eyebrow={saved ? `Rate version ${query.data?.version.version ?? 1}` : 'New custom plan'}
         title={document.plan_name || 'Custom rate plan'}
         description="Build an exact, effective-dated schedule. Active versions remain immutable; edits are saved only to drafts."
-        actions={<button className="button secondary" onClick={() => navigate('/rates')}><ArrowLeft size={16} /> Rate plans</button>}
+        actions={<div className="inline-actions">{editable && canImportBills && <button className="button secondary" onClick={() => { setImportOpen(true); setImportNotice('') }}><FileUp size={16} /> Import utility bill</button>}<button className="button secondary" onClick={() => navigate('/rates')}><ArrowLeft size={16} /> Rate plans</button></div>}
       />
+      {importNotice && <p className="form-success" role="status">{importNotice}</p>}
+      {importOpen && editable && canImportBills && <section className="bill-import-editor-workspace" aria-label="Utility bill import">
+        <BillImportWorkspace
+          currentDraft={document}
+          onApplyDraft={(next) => {
+            setDocument(next)
+            setValidation(undefined)
+            setImportNotice('Selected reviewed bill values were applied to this unsaved Custom Plan draft. Review every editor step, then save explicitly.')
+            setStep(0)
+          }}
+          onClose={closeImporter}
+        />
+      </section>}
       <nav className="editor-steps" aria-label="Rate plan editor steps">
         {stepNames.map((name, index) => (
           <button

@@ -177,3 +177,21 @@ def test_utility_bill_import_migration_is_additive_private_and_indexed() -> None
     assert "op.create_index" in revision
     assert "DROP SCHEMA" not in revision
     assert "def downgrade()" in revision
+
+
+def test_user_lifecycle_cleanup_migration_is_additive_and_preserves_identity() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260724_0011_user_lifecycle_cleanup.py"
+    ).read_text()
+    assert 'down_revision = "20260724_0010"' in revision
+    assert 'op.add_column(\n        "users"' in revision
+    assert "lifecycle_state" in revision
+    assert "is_protected" in revision
+    assert "removed_role_ids" in revision
+    assert "removed_site_ids" in revision
+    assert "users.disable" in revision
+    assert "users.remove" in revision
+    assert "users.restore" in revision
+    assert "DROP TABLE" not in revision
+    assert "def downgrade()" in revision

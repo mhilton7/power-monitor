@@ -1,17 +1,44 @@
 # Utility-bill PDF imports
 
-Administrators can open **Rates > Import from utility bill**, or choose
-**Upload current bill** on an account under **Administration > Sites &
-accounts**. The workflow processes a password-free PDF on the Power Monitor
-server and creates two linked drafts:
+Administrators open **Rates > Custom plan** and select **Import from utility
+bill** inside the existing custom-plan editor. **Upload current bill** on an
+account under **Administration > Sites & accounts** opens the same editor with
+the account preselected. The workflow processes a password-free PDF on the
+Power Monitor server and produces two separate reviewed outputs:
 
 1. a reusable custom rate-plan draft; and
 2. a bill-specific billing-cycle draft for the selected utility account.
 
-Nothing is activated by upload. Administrator review, rate-engine validation,
-explicit publication, and explicit account assignment remain separate actions.
+The importer is a data-entry assistant, not a separate plan editor. It preserves
+the current in-progress custom-plan form, compares current and extracted values,
+and lets the administrator keep, import, or manually review each supported
+field. Applying a selection updates the current form only. The administrator
+then uses the normal custom-plan validation, server calculation preview, draft
+save, publication, and assignment workflow.
+
+Nothing is activated by upload or by applying extracted fields. Administrator
+review, rate-engine validation, explicit publication, and explicit account
+assignment remain separate actions.
 A single bill often omits tariff rules, so it must not be treated as proof that
 a rate definition is complete.
+
+The previous bookmark `/rates/import-bill` is retained as a replace-style
+compatibility redirect to `/rates/new?bill_import=open`. It never mounts a
+second importer or editor.
+
+## Blank-page correction
+
+The former route lazy-loaded the standalone bill-import page without a
+route-level error boundary. If that generated JavaScript chunk was unavailable
+after an image upgrade or browser cache mismatch, the rejected import escaped
+the route tree and React rendered no recoverable content. The importer itself
+was not the cause.
+
+The shared route workspace now has a visible loading fallback and a recoverable
+error boundary with a **Retry** action. The old URL redirects into the custom
+editor, and every importer state renders a loading, empty, warning, error, or
+review surface rather than returning `null`. Browser regression tests
+deliberately fail the editor chunk and verify the visible error state.
 
 ## Supported documents
 
@@ -57,8 +84,11 @@ recurring tariff rule.
 
 The rate-plan draft reuses the custom-rate editor, immutable rate versions, and
 managed-source evidence system. It may represent flat, time-of-use, tiered, or
-hybrid TOU+tiered pricing. Complete tariff coverage and existing rate-engine
-validation are required before publication.
+hybrid TOU+tiered pricing. Applying it updates one cloned editor document so an
+asynchronous extraction result cannot partially overwrite the live form.
+Existing populated values remain selected as **Keep current** until the
+administrator explicitly chooses otherwise. Complete tariff coverage and
+existing rate-engine validation are required before publication.
 
 The billing-cycle draft retains exact dates, utility-reported usage, reported
 tier/TOU/meter allocations, energy subtotal, complete bill total, components,
@@ -135,6 +165,9 @@ than PDF punctuation.
   Do not confirm a value that the bill does not establish.
 - **Preview unavailable:** complete the linked custom-rate draft and resolve
   blocking warnings, then run validation again.
+- **Editor failed to load:** select **Retry**. If the deployment was just
+  upgraded, reload once after the frontend container is healthy so the browser
+  requests the current immutable chunk.
 - **Plan and bill totals differ:** compare the energy-subtotal difference first.
   A complete utility bill commonly contains non-energy components.
 - **Permission denied on TrueNAS:** ensure UID 10001 can modify the

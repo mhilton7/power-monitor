@@ -126,6 +126,8 @@ async def bootstrap(
         display_name=payload.display_name,
         password_hash=hash_password(payload.password),
         password_changed_at=datetime.now(UTC),
+        lifecycle_state="active",
+        is_protected=True,
     )
     session.add(user)
     await session.flush()

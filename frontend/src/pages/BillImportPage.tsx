@@ -3,9 +3,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  CheckCircle2,
   Download,
-  ExternalLink,
   FileSearch,
   FileUp,
   Save,
@@ -15,7 +13,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, apiDownload } from '../api'
-import { EmptyState, ErrorState, LoadingState, PageTitle, Panel, StatusPill, formatTime } from '../components/UI'
+import { EmptyState, ErrorState, LoadingState, Panel, StatusPill, formatTime } from '../components/UI'
 import {
   formatBillingPeriod,
   formatCurrency,
@@ -25,6 +23,7 @@ import {
   formatTierRange,
 } from '../formatters'
 import type { UtilityAccount } from '../types'
+import type { RatePlanDocument } from '../rates'
 
 type RetentionMode = 'retain' | 'retain_until' | 'delete_after_approval'
 type SourceRole = 'supporting' | 'authoritative_account_specific' | 'reference_only'
@@ -212,8 +211,19 @@ const steps = [
   'Confidence & conflicts',
   'Calculation preview',
   'Review outputs',
-  'Publish & assign',
+  'Apply to custom draft',
 ]
+
+const editableDraftFields = [
+  ['plan_name', 'Plan name'],
+  ['plan_code', 'Plan code'],
+  ['utility', 'Utility'],
+  ['description', 'Description'],
+  ['currency', 'Currency'],
+  ['timezone', 'Timezone'],
+  ['effective_from', 'Effective date'],
+  ['effective_through', 'Optional end date'],
+] as const
 
 const reviewValue = (value: unknown): string => {
   if (value === null || value === undefined) return ''
@@ -252,7 +262,7 @@ function saveBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(href)
 }
 
-export function BillImportPage() {
+export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { currentDraft: RatePlanDocument; onApplyDraft: (document: RatePlanDocument) => void; onClose: () => void }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const fileInput = useRef<HTMLInputElement>(null)
@@ -268,6 +278,8 @@ export function BillImportPage() {
   const [corrections, setCorrections] = useState<Record<string, string>>({})
   const [conflictDecisions, setConflictDecisions] = useState<Record<string, string>>({})
   const [message, setMessage] = useState('')
+  const [draftChoices, setDraftChoices] = useState<Record<string, 'import' | 'keep' | 'manual'>>({})
+  const [manualDraftValues, setManualDraftValues] = useState<Record<string, string>>({})
 
   const accounts = useQuery({
     queryKey: ['utility-accounts', 'bill-import'],
@@ -286,6 +298,11 @@ export function BillImportPage() {
     queryKey: ['utility-bill-comparison', billId],
     queryFn: () => api<BillComparison>(`/api/v1/admin/utility-bill-imports/${billId}/comparison`),
     enabled: Boolean(billId),
+  })
+  const linkedDraft = useQuery({
+    queryKey: ['rate-version', bill.data?.rate_version_id],
+    queryFn: () => api<{ version: Record<string, unknown>; document: RatePlanDocument }>(`/api/v1/rates/versions/${bill.data?.rate_version_id}`),
+    enabled: Boolean(bill.data?.rate_version_id),
   })
   const evidence = useQuery({
     queryKey: ['utility-bill-evidence-page', billId, selectedPage],
@@ -404,19 +421,6 @@ export function BillImportPage() {
     },
   })
 
-  const publish = useMutation({
-    mutationFn: () => api<{ status: string; rate_version_id: string; rate_assignment_id: string }>(
-      `/api/v1/admin/utility-bill-imports/${billId}/publish-and-assign`,
-      { method: 'POST', body: JSON.stringify({}) },
-    ),
-    onSuccess: async (result) => {
-      setMessage(`Immutable rate version published and assigned (${result.status}).`)
-      await bill.refetch()
-      await queryClient.invalidateQueries({ queryKey: ['managed-rates'] })
-      await queryClient.invalidateQueries({ queryKey: ['utility-accounts'] })
-    },
-  })
-
   const importCycle = useMutation({
     mutationFn: () => api<{ status: string }>(
       `/api/v1/admin/utility-bill-imports/${billId}/import-billing-cycle`,
@@ -486,16 +490,48 @@ export function BillImportPage() {
     saveBlob(blob, path === 'original' ? `utility-bill-${billId}.pdf` : `utility-bill-${billId}-evidence.json`)
   }
 
+  function applyImportedRateDraft() {
+    const imported = linkedDraft.data?.document
+    if (!imported) return
+    const next = structuredClone(currentDraft)
+    for (const [key] of editableDraftFields) {
+      const choice = draftChoices[key] ?? 'keep'
+      if (choice === 'import') {
+        next[key] = imported[key] as never
+      } else if (choice === 'manual') {
+        next[key] = (key === 'effective_through'
+          ? manualDraftValues[key] || null
+          : manualDraftValues[key] ?? '') as never
+      }
+    }
+    if ((draftChoices.tariff_rules ?? 'keep') === 'import') {
+      next.pricing_model = imported.pricing_model
+      next.flat_rate_per_kwh = imported.flat_rate_per_kwh
+      next.billing_cycle = structuredClone(imported.billing_cycle)
+      next.tiers = structuredClone(imported.tiers)
+      next.hybrid_pricing = structuredClone(imported.hybrid_pricing)
+      next.seasons = structuredClone(imported.seasons)
+      next.adjustments = structuredClone(imported.adjustments)
+      next.provider_mode = imported.provider_mode
+      next.cost_scope_default = imported.cost_scope_default
+    }
+    if ((draftChoices.source_evidence ?? 'keep') === 'import') {
+      next.source_label = imported.source_label
+      next.source_note = imported.source_note
+      next.cloned_from_rate_version_id = imported.cloned_from_rate_version_id
+    }
+    onApplyDraft(next)
+    onClose()
+  }
+
   if (accounts.isLoading) return <LoadingState label="Loading utility accounts…" />
   if (accounts.error) return <ErrorState error={accounts.error} retry={() => void accounts.refetch()} />
 
   return <>
-    <PageTitle
-      eyebrow="Private administrator workflow"
-      title="Import utility bill"
-      description="Extract account-specific evidence locally, then review separate rate-plan and billing-cycle drafts before any publication or assignment."
-      actions={<Link className="button secondary" to="/rates"><ArrowLeft size={16} /> Rate plans</Link>}
-    />
+    <header className="bill-import-workspace-header">
+      <div><span className="eyebrow">Private administrator workflow inside Custom Plan</span><h2>Import utility bill</h2><p>Extract account-specific evidence locally, review separate outputs, then choose which reviewed fields enter the unsaved Custom Plan draft.</p></div>
+      <button type="button" className="button secondary" onClick={onClose}>Close importer</button>
+    </header>
 
     <nav className="bill-import-steps" aria-label="Utility bill import steps">
       {steps.map((label, index) => (
@@ -516,7 +552,6 @@ export function BillImportPage() {
     {upload.error && <ErrorState error={upload.error} />}
     {review.error && <ErrorState error={review.error} />}
     {validate.error && <ErrorState error={validate.error} />}
-    {publish.error && <ErrorState error={publish.error} />}
     {importCycle.error && <ErrorState error={importCycle.error} />}
     {retention.error && <ErrorState error={retention.error} />}
     {removeOriginal.error && <ErrorState error={removeOriginal.error} />}
@@ -585,8 +620,7 @@ export function BillImportPage() {
     {step === 4 && current && <>
       <FieldReviewPanel title="Extracted rate-plan rules" eyebrow="Step 5 · Reusable tariff draft" fields={fieldGroups.rate_plan} actions={fieldActions} corrections={corrections} onAction={(id, action) => { setFieldActions((value) => ({ ...value, [id]: action })); }} onCorrection={(id, value) => { setCorrections((currentValue) => ({ ...currentValue, [id]: value })); }} />
       <Panel title="Tier preview" eyebrow="Structured numeric bounds">
-        {current.normalized.rate_plan.tiers?.length ? <div className="responsive-table bill-tier-table"><table><thead><tr><th>Tier</th><th>Range</th><th>Reported usage</th><th>Configured rate</th><th>Reported charge</th></tr></thead><tbody>{current.normalized.rate_plan.tiers.map((tier, index) => <tr key={`${tier.name}-${index}`}><td data-label="Tier">{tier.name ?? `Tier ${index + 1}`}</td><td data-label="Range">{formatTierRange(tier.lower_bound_kwh ?? '0', tier.upper_bound_kwh)}</td><td data-label="Reported usage">{formatEnergy(tier.usage_kwh)}</td><td data-label="Configured rate">{formatEnergyRate(tier.price_per_kwh)}</td><td data-label="Reported charge">{formatCurrency(tier.energy_charge)}</td></tr>)}</tbody></table></div> : <EmptyState title="No complete tier table detected" message="Use the linked custom-rate editor to supply missing tariff rules before validation." />}
-        <div className="inline-actions"><Link className="button secondary" to={`/rates/${current.rate_plan_id}/versions/${current.rate_version_id}`}>Edit linked rate draft <ExternalLink size={14} /></Link></div>
+        {current.normalized.rate_plan.tiers?.length ? <div className="responsive-table bill-tier-table"><table><thead><tr><th>Tier</th><th>Range</th><th>Reported usage</th><th>Configured rate</th><th>Reported charge</th></tr></thead><tbody>{current.normalized.rate_plan.tiers.map((tier, index) => <tr key={`${tier.name}-${index}`}><td data-label="Tier">{tier.name ?? `Tier ${index + 1}`}</td><td data-label="Range">{formatTierRange(tier.lower_bound_kwh ?? '0', tier.upper_bound_kwh)}</td><td data-label="Reported usage">{formatEnergy(tier.usage_kwh)}</td><td data-label="Configured rate">{formatEnergyRate(tier.price_per_kwh)}</td><td data-label="Reported charge">{formatCurrency(tier.energy_charge)}</td></tr>)}</tbody></table></div> : <EmptyState title="No complete tier table detected" message="Correct or reject the incomplete extracted fields here; the Custom Plan draft remains unchanged until Step 9." />}
       </Panel>
     </>}
 
@@ -600,12 +634,12 @@ export function BillImportPage() {
         <p className="field-help">A displayed threshold does not prove whether it is fixed, baseline-derived, seasonal, or account-specific.</p>
       </Panel>
       <Panel title="Source conflicts" eyebrow="Current configuration and managed evidence">
-        {current.conflicts.length ? <div className="conflict-list">{current.conflicts.map((conflict) => <article key={conflict.id}><header><strong>{conflict.field_key.replaceAll('_', ' ')}</strong><StatusPill status={conflict.status === 'unresolved' ? 'failed' : 'healthy'} label={conflict.status.replaceAll('_', ' ')} /></header><dl><div><dt>Uploaded bill</dt><dd>{reviewValue(conflict.extracted_value)}</dd></div><div><dt>{conflict.comparison_source.replaceAll('_', ' ')}</dt><dd>{reviewValue(conflict.configured_value)}</dd></div></dl>{conflict.status === 'unresolved' && <label><span>Resolution</span><select value={conflictDecisions[conflict.id] ?? ''} onChange={(event) => { setConflictDecisions((value) => ({ ...value, [conflict.id]: event.target.value })); }}><option value="">Review required</option><option value="accepted_bill">Accept uploaded bill value</option><option value="accepted_configured">Keep configured value</option><option value="dismissed">Dismiss with recorded review</option></select></label>}</article>)}</div> : <EmptyState title="No detected conflicts" message="Publication still requires explicit field review and rate-engine validation." />}
+        {current.conflicts.length ? <div className="conflict-list">{current.conflicts.map((conflict) => <article key={conflict.id}><header><strong>{conflict.field_key.replaceAll('_', ' ')}</strong><StatusPill status={conflict.status === 'unresolved' ? 'failed' : 'healthy'} label={conflict.status.replaceAll('_', ' ')} /></header><dl><div><dt>Uploaded bill</dt><dd>{reviewValue(conflict.extracted_value)}</dd></div><div><dt>{conflict.comparison_source.replaceAll('_', ' ')}</dt><dd>{reviewValue(conflict.configured_value)}</dd></div></dl>{conflict.status === 'unresolved' && <label><span>Resolution</span><select value={conflictDecisions[conflict.id] ?? ''} onChange={(event) => { setConflictDecisions((value) => ({ ...value, [conflict.id]: event.target.value })); }}><option value="">Review required</option><option value="accepted_bill">Accept uploaded bill value</option><option value="accepted_configured">Keep configured value</option><option value="dismissed">Dismiss with recorded review</option></select></label>}</article>)}</div> : <EmptyState title="No detected conflicts" message="Applying values still requires explicit field review and rate-engine validation." />}
       </Panel>
     </div>}
 
     {step === 6 && current && <Panel title="Rate calculation preview" eyebrow="Step 7 · Exact engine result">
-      {comparison.isLoading ? <LoadingState label="Calculating with the linked draft…" /> : comparison.error ? <ErrorState error={comparison.error} /> : !comparison.data?.available ? <EmptyState title="Preview not yet available" message={comparison.data?.reason ?? 'Complete the draft rate rules and cycle fields.'} action={<Link className="button secondary" to={`/rates/${current.rate_plan_id}/versions/${current.rate_version_id}`}>Complete rate draft</Link>} /> : <>
+      {comparison.isLoading ? <LoadingState label="Calculating with the linked draft…" /> : comparison.error ? <ErrorState error={comparison.error} /> : !comparison.data?.available ? <EmptyState title="Preview not yet available" message={comparison.data?.reason ?? 'Review and correct the extracted rate rules and cycle fields.'} action={<button className="button secondary" onClick={() => { setStep(4) }}>Review extracted rate rules</button>} /> : <>
         <section className="bill-comparison-hero">
           <article><span>Calculated energy subtotal</span><strong>{comparison.data.display?.calculated_energy_subtotal}</strong><small>Existing exact rate engine</small></article>
           <article><span>Derived blended rate</span><strong>{comparison.data.display?.blended_energy_rate}</strong><small>Four-decimal display only</small></article>
@@ -637,11 +671,23 @@ export function BillImportPage() {
     </div>}
 
     {step === 8 && current && <div className="bill-import-columns">
-      <Panel title="Validate and publish rate" eyebrow="Step 9 · Explicit immutable change">
+      <Panel title="Validate and apply reviewed tariff" eyebrow="Step 9 · Custom Plan draft merge">
         <StatusPill status={current.status === 'ready_to_publish' || current.status === 'published' ? 'healthy' : 'failed'} label={current.status.replaceAll('_', ' ')} />
-        <p className="panel-copy">Validation uses the existing rate engine. Publication creates an immutable effective-dated version, then the existing assignment service applies it to {current.utility_account_name}.</p>
+        <p className="panel-copy">Choose every value deliberately. Applying changes only the unsaved Custom Plan editor draft; it does not publish, activate, or assign a rate.</p>
+        {linkedDraft.isLoading ? <LoadingState label="Loading the reviewed linked rate draft…" /> : linkedDraft.error ? <ErrorState error={linkedDraft.error} retry={() => { void linkedDraft.refetch() }} /> : linkedDraft.data ? <div className="bill-draft-choice-list">
+          {editableDraftFields.map(([key, label]) => {
+            const choice = draftChoices[key] ?? 'keep'
+            return <article key={key}>
+              <div><strong>{label}</strong><small>Current: {reviewValue(currentDraft[key]) || 'blank'} · Extracted: {reviewValue(linkedDraft.data.document[key]) || 'blank'}</small></div>
+              <label><span className="sr-only">{label} choice</span><select aria-label={`${label} choice`} value={choice} onChange={(event) => { setDraftChoices((value) => ({ ...value, [key]: event.target.value as 'import' | 'keep' | 'manual' })) }}><option value="keep">Keep current draft</option><option value="import">Use reviewed extraction</option><option value="manual">Enter manually</option></select></label>
+              {choice === 'manual' && <label><span className="sr-only">Manual {label}</span><input aria-label={`Manual ${label}`} value={manualDraftValues[key] ?? reviewValue(currentDraft[key])} onChange={(event) => { setManualDraftValues((value) => ({ ...value, [key]: event.target.value })) }} /></label>}
+            </article>
+          })}
+          <article><div><strong>Complete tariff rules</strong><small>Pricing model, exact tiers, billing-cycle thresholds, TOU schedules, charges, provider mode, and cost scope</small></div><label><span className="sr-only">Complete tariff rules choice</span><select aria-label="Complete tariff rules choice" value={draftChoices.tariff_rules ?? 'keep'} onChange={(event) => { setDraftChoices((value) => ({ ...value, tariff_rules: event.target.value as 'import' | 'keep' })) }}><option value="keep">Keep current draft rules</option><option value="import">Use reviewed extracted rules</option></select></label></article>
+          <article><div><strong>Source evidence references</strong><small>Sanitized evidence remains linked to the import; choose whether to copy its source label and note into this editor draft.</small></div><label><span className="sr-only">Source evidence choice</span><select aria-label="Source evidence choice" value={draftChoices.source_evidence ?? 'keep'} onChange={(event) => { setDraftChoices((value) => ({ ...value, source_evidence: event.target.value as 'import' | 'keep' })) }}><option value="keep">Keep current source fields</option><option value="import">Use imported evidence fields</option></select></label></article>
+        </div> : <EmptyState title="No linked rate draft" message="Review or reprocess the import so a separate rate-plan draft is available." />}
         {validate.data && <div className="validation-compact"><strong>{validate.data.validation.valid ? 'Rate-engine validation passed' : 'Validation failed'}</strong>{[...validate.data.validation.errors, ...validate.data.validation.warnings].map((issue) => <span key={`${issue.code}-${issue.path}`}>{issue.message} · {issue.path}</span>)}</div>}
-        <div className="inline-actions"><button className="button secondary" disabled={validate.isPending} onClick={() => { validate.mutate(); }}><FileSearch size={15} /> Validate draft</button><button className="button primary" disabled={publish.isPending || current.status !== 'ready_to_publish' || !validate.data?.validation.valid} onClick={() => { if (window.confirm(`Publish and assign this reviewed rate to ${current.utility_account_name}?`)) publish.mutate() }}><CheckCircle2 size={15} /> Publish and assign</button></div>
+        <div className="inline-actions"><button className="button secondary" disabled={validate.isPending} onClick={() => { validate.mutate(); }}><FileSearch size={15} /> Validate reviewed draft</button><button className="button primary" disabled={!linkedDraft.data || !['ready_to_publish', 'published'].includes(current.status) || !validate.data?.validation.valid} onClick={applyImportedRateDraft}><FileUp size={15} /> Apply selected values to Custom Plan</button></div>
       </Panel>
       <Panel title="Import billing cycle" eyebrow="Separate bill-specific record">
         <p className="panel-copy">This records exact cycle dates and utility-reported cumulative usage separately. It never overwrites immutable monitored readings.</p>

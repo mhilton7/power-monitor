@@ -1658,6 +1658,57 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
   font-size: .8rem;
 }
 
+.bill-import-editor-workspace {
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  margin-bottom: 1rem;
+  padding: 1rem;
+}
+
+.bill-import-workspace-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.bill-import-workspace-header h2 {
+  margin: .15rem 0;
+}
+
+.bill-import-workspace-header p {
+  color: var(--muted);
+  margin: 0;
+}
+
+.bill-draft-choice-list {
+  display: grid;
+  gap: .6rem;
+  margin: 1rem 0;
+}
+
+.bill-draft-choice-list article {
+  align-items: center;
+  border: 1px solid var(--border, #29473c);
+  border-radius: .65rem;
+  display: grid;
+  gap: .7rem;
+  grid-template-columns: minmax(14rem, 1fr) minmax(12rem, .55fr) minmax(12rem, .55fr);
+  padding: .7rem;
+}
+
+.bill-draft-choice-list article > div {
+  display: grid;
+  gap: .2rem;
+  min-width: 0;
+}
+
+.bill-draft-choice-list article small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .bill-import-footer {
   align-items: center;
   background: color-mix(in srgb, var(--surface, #12261f) 94%, transparent);
@@ -1691,9 +1742,16 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
   .confidence-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .bill-draft-choice-list article {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 560px) {
+  .bill-import-workspace-header {
+    flex-direction: column;
+  }
   .bill-cycle-grid,
   .bill-comparison-hero,
   .bill-difference-grid,

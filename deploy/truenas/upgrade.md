@@ -48,6 +48,22 @@ verified backup. After migration, upload a non-production password-free test
 bill, confirm that automatic activation is disabled, inspect page evidence,
 and delete the test original through the dashboard retention control.
 
+For the bill-import integration and user-administration cleanup release,
+migration `20260724_0011` adds the indexed active/disabled/removed user
+lifecycle, removal/restoration evidence, former-access summaries, protected
+bootstrap state, and the `users.disable`, `users.remove`, and `users.restore`
+permissions. It preserves all current users and maps the existing `is_active`
+state without deleting role, site, audit, authorship, or ownership history. No
+dataset, secret, service, capability, network, host port, or image privilege is
+added. After upgrade, open **Users & Access**, verify the bootstrap
+Administrator is marked protected, disable and re-enable a non-production test
+user, then remove and restore that test identity. Confirm restoration leaves it
+disabled and unassigned. Open **Rates > Custom plan > Import from utility
+bill** and verify a non-production PDF can be reviewed without losing a value
+already entered in the editor. The former `/rates/import-bill` bookmark and
+Administration-local user routes should redirect into their canonical
+workspaces rather than render a separate page.
+
 For the Users & Access / Dashboard & Login Text release, migration
 `20260720_0005` adds permission definitions, role revisions/permissions,
 user-site scope, session reauthentication timestamps, and interface-text

@@ -12,11 +12,19 @@ unclaim sensors without deleting their readings, calculations, alerts, or audit
 history. Removed hardware can be re-enrolled only with a new token and secret.
 
 The integrated **Users & Access** workspace provides server-enforced granular
-permissions, custom roles, site scope, session revocation, and last-administrator
-protection. **Dashboard & Login Text** provides a safe approved-text catalog with
+permissions, custom roles, site scope, session revocation, reversible Disable,
+audited soft Remove/Restore, and recovery-administrator protection. It is the
+only user-management interface; legacy Administration user routes redirect
+there. **Dashboard & Login Text** provides a safe approved-text catalog with
 draft, responsive preview, immutable publish, defaults, and rollback. See
 [user management](docs/USER_MANAGEMENT.md), [permissions](docs/PERMISSIONS.md),
 [site access](docs/SITE_ACCESS.md), and [interface text](docs/INTERFACE_TEXT.md).
+
+Utility-bill PDF import is integrated directly into **Rates > Custom plan** as
+an optional, selective prefill assistant. Existing draft fields are preserved,
+bill-specific cycle data stays separate, and no upload publishes or assigns a
+rate. The legacy `/rates/import-bill` bookmark redirects into the editor. See
+[utility-bill imports](docs/UTILITY_BILL_IMPORTS.md).
 
 **Status Indicators & Layout** adds a server-owned inventory of compact status
 surfaces with permission-aware global/page/role/breakpoint placement, responsive

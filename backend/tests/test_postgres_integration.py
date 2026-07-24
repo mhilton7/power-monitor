@@ -88,7 +88,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 ORDER BY direction
                 """
             )
-            assert revision == "20260724_0010"
+            assert revision == "20260724_0011"
             assert table_count == 96
             assert dict(migrated) == {
                 "lifecycle_status": "decommissioned",
@@ -107,7 +107,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260724_0010"
+                "20260724_0011"
             )
 
             await connection.execute("DROP SCHEMA public CASCADE")
@@ -132,14 +132,20 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             )
             await migrate("upgrade", "head")
             prior_user = await connection.fetchrow(
-                "SELECT all_sites, access_revision FROM users WHERE id = 'user-prior-schema'"
+                "SELECT all_sites, access_revision, lifecycle_state, is_protected "
+                "FROM users WHERE id = 'user-prior-schema'"
             )
-            assert dict(prior_user) == {"all_sites": True, "access_revision": 1}
+            assert dict(prior_user) == {
+                "all_sites": True,
+                "access_revision": 1,
+                "lifecycle_state": "active",
+                "is_protected": True,
+            }
             assert (
                 await connection.fetchval(
                     "SELECT count(*) FROM role_permissions WHERE role_name = 'admin'"
                 )
-                == 52
+                == 55
             )
             status_state = await connection.fetchrow(
                 """
@@ -161,7 +167,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260724_0010"
+                "20260724_0011"
             )
             assert (
                 await connection.fetchval(

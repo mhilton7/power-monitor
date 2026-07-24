@@ -1,5 +1,31 @@
 # Power Monitor Server 1.0.0
 
+## Bill-import integration and user-administration cleanup
+
+- Moves the complete utility-bill workflow into **Rates > Custom plan** while
+  reusing the existing upload, extraction/OCR, evidence, rate-draft,
+  billing-cycle, validation, and retention services.
+- Adds field-level keep/import/manual decisions so in-progress custom-plan
+  values remain intact. Applying extracted tariff values updates only the
+  editor draft; billing-cycle data remains a separate explicit import and no
+  bill upload publishes or assigns a plan.
+- Redirects `/rates/import-bill` into the editor with the importer open and
+  adds a route error boundary, visible retry state, and explicit importer empty
+  states. This fixes the previous blank result when a rejected lazy editor
+  chunk escaped the route tree.
+- Removes the redundant Administration-local **Users & roles** interface and
+  redirects its legacy routes to the main-sidebar **Users & Access** workspace.
+  Add-user, custom-role, access, site-scope, session, and audit functionality
+  remain available in the canonical page.
+- Separates reversible Disable from audited soft Remove. Remove revokes
+  sessions, clears active role/site assignments, reserves the identity, and
+  preserves audit/authorship/ownership evidence. Restore returns the identity
+  disabled and unassigned. Self-removal, protected bootstrap accounts, and the
+  final recovery-capable Administrator are server-protected.
+- Adds append-only Alembic revision `20260724_0011` and the granular
+  `users.disable`, `users.remove`, and `users.restore` permissions. No service,
+  database, secret, dataset, capability, or host port was added.
+
 ## Utility bill PDF import and formatting update
 
 - Adds a private administrator-only utility-bill workflow that validates local
@@ -85,7 +111,7 @@ Highlights include unique device enrollment and rotation, bidirectional HMAC/rep
 
 TrueNAS Community Edition 25.10 is a first-class target through Apps > Install via YAML. The release includes a no-build, `linux/amd64`, digest-pinned production template; Caddy-only host publication; internal database networking; numeric dataset ACL guidance; file-backed secrets and a one-time administrator setup token; internal-CA, user-certificate, and public-ACME configurations; an optional NET_RAW-only ICMP overlay; nightly encrypted backups with automated clean-database restore; and a full deployed multi-device workflow gate.
 
-Database migration: `20260724_0010`. Images: `power-monitor-api:1.0.0`, `power-monitor-frontend:1.0.0`, and `power-monitor-backup:1.0.0`.
+Database migration: `20260724_0011`. Images: `power-monitor-api:1.0.0`, `power-monitor-frontend:1.0.0`, and `power-monitor-backup:1.0.0`.
 
 The software provides monitored-energy cost estimates and is not a revenue-grade meter or an exact reproduction of a utility bill. Validation with real ESP32-S3/PZEM hardware remains an installation responsibility.
 
@@ -120,3 +146,18 @@ devices, accepted 90 historical readings, resolved an SCE calculation,
 persisted 2 utility accounts and 1 canonical network rule, verified all 5
 backup artifacts, and restored a clean 96-table database. The deployment-mode
 TrueNAS render and optional ICMP overlay also passed fail-closed validation.
+
+Final bill-integration/user-lifecycle verification on 2026-07-24 passed 118
+portable Python tests, the separate PostgreSQL 17 migration gate, and the
+100-device/18,000-reading resilience test. The frontend passed 32
+unit/component tests, all 37 Chromium scenarios, TypeScript, lint, and the
+production Node 24 image build. Fresh API, frontend, and backup images passed
+their production builds; Python and npm audits found no known vulnerabilities.
+
+The final digest-pinned seven-service TrueNAS-style gate completed migration
+`20260724_0011`, reported every service healthy, published only TCP 8443,
+enrolled 3 signed devices, accepted 90 readings, resolved an SCE calculation,
+persisted 2 utility accounts and 1 canonical network CIDR, verified all 5
+encrypted backup artifacts, and restored a clean 96-table database. The
+standard Compose stack also migrated its populated database to the new revision
+and passed a separate logical backup/clean-restore verification.

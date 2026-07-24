@@ -17,6 +17,8 @@ const accessPermissions = [
   ['overview.view', 'Dashboard', 'View overview', false], ['sites.view', 'Sites', 'View sites', false],
   ['devices.view', 'Devices', 'View devices', false], ['devices.manage', 'Devices', 'Manage devices', false],
   ['users.view', 'Administration', 'View users', true], ['users.manage', 'Administration', 'Manage users', true],
+  ['users.disable', 'Administration', 'Disable and enable users', true], ['users.remove', 'Administration', 'Remove users', true],
+  ['users.restore', 'Administration', 'Restore users', true],
   ['roles.view', 'Administration', 'View roles', true], ['roles.manage', 'Administration', 'Manage roles', true],
   ['interface_text.view', 'Administration', 'View interface text', true], ['interface_text.manage', 'Administration', 'Manage interface text', true],
   ['status_indicators.view', 'Administration', 'View status layouts', false], ['status_indicators.manage', 'Administration', 'Manage status layouts', true],
@@ -131,6 +133,37 @@ async function mockApplication(page: Page, roles: string[] = ['admin'], initiall
   let jobPolls = 0
   let userAccessRevision = 1
   let managedUserRoles = ['viewer']
+  let managedUserStatus: 'active' | 'disabled' | 'removed' = 'active'
+  let removedUserRoles = ['viewer']
+  const managedUserPayload = (detail = false) => {
+    const removed = managedUserStatus === 'removed'
+    const activeRoles = removed ? [] : managedUserRoles
+    const permissions = activeRoles.includes('operator') ? ['overview.view', 'sites.view', 'devices.view', 'devices.manage'] : activeRoles.length ? ['overview.view', 'sites.view', 'devices.view'] : []
+    return {
+      id: 'user-2',
+      email: 'viewer@example.test',
+      display_name: 'Dashboard Viewer',
+      roles: activeRoles,
+      is_active: managedUserStatus === 'active',
+      status: managedUserStatus,
+      all_sites: false,
+      sites: removed ? [] : [site],
+      site_ids: removed ? [] : ['site-1'],
+      permissions,
+      permission_count: permissions.length,
+      mfa_enabled: false,
+      last_login_at: '2026-07-19T10:00:00Z',
+      active_session_count: removed ? 0 : 2,
+      created_at: '2026-07-02T00:00:00Z',
+      access_revision: userAccessRevision,
+      protected_administrator: false,
+      protected_account: false,
+      removed_at: removed ? '2026-07-24T09:00:00Z' : undefined,
+      removal_reason: removed ? 'Contract ended' : undefined,
+      former_access: removed ? { roles: removedUserRoles, all_sites: false, site_ids: ['site-1'] } : undefined,
+      ...(detail ? { sessions: removed ? [] : [{ id: 'session-2', created_at: '2026-07-20T08:00:00Z', last_seen_at: '2026-07-20T10:00:00Z', expires_at: '2026-07-21T10:00:00Z', source_ip: '192.168.0.20', user_agent: 'Browser' }], permission_sources: removed ? {} : { viewer: ['overview.view', 'sites.view', 'devices.view'] } } : {}),
+    }
+  }
   let textRevision = 0
   let textDraftRevision = 0
   let textPreviewedRevision = 0
@@ -205,11 +238,15 @@ async function mockApplication(page: Page, roles: string[] = ['admin'], initiall
       { id: 'operator', display_name: 'Operator', description: 'Assigned-site operations', built_in: true, archived: false, revision: 1, permissions: ['overview.view', 'sites.view', 'devices.view', 'devices.manage'], assigned_user_count: 0, created_at: '2026-07-01T00:00:00Z', updated_at: '2026-07-01T00:00:00Z' },
     ] }
     else if (path === '/api/v1/admin/users' && request.method() === 'GET') body = { users: [
-      { ...session(roles).user, is_active: true, status: 'active', all_sites: true, sites: [], site_ids: [], permissions: accessPermissions.map((item) => item.code), permission_count: accessPermissions.length, mfa_enabled: true, last_login_at: '2026-07-20T10:00:00Z', active_session_count: 1, created_at: '2026-07-01T00:00:00Z', access_revision: 1, protected_administrator: true },
-      { id: 'user-2', email: 'viewer@example.test', display_name: 'Dashboard Viewer', roles: managedUserRoles, is_active: true, status: 'active', all_sites: false, sites: [site], site_ids: ['site-1'], permissions: managedUserRoles.includes('operator') ? ['overview.view', 'sites.view', 'devices.view', 'devices.manage'] : ['overview.view', 'sites.view', 'devices.view'], permission_count: managedUserRoles.includes('operator') ? 4 : 3, mfa_enabled: false, last_login_at: '2026-07-19T10:00:00Z', active_session_count: 2, created_at: '2026-07-02T00:00:00Z', access_revision: userAccessRevision, protected_administrator: false },
+      { ...session(roles).user, is_active: true, status: 'active', all_sites: true, sites: [], site_ids: [], permissions: accessPermissions.map((item) => item.code), permission_count: accessPermissions.length, mfa_enabled: true, last_login_at: '2026-07-20T10:00:00Z', active_session_count: 1, created_at: '2026-07-01T00:00:00Z', access_revision: 1, protected_administrator: true, protected_account: true },
+      managedUserPayload(),
     ] }
-    else if (path === '/api/v1/admin/users/user-2' && request.method() === 'GET') body = { id: 'user-2', email: 'viewer@example.test', display_name: 'Dashboard Viewer', roles: managedUserRoles, is_active: true, status: 'active', all_sites: false, sites: [site], site_ids: ['site-1'], permissions: managedUserRoles.includes('operator') ? ['overview.view', 'sites.view', 'devices.view', 'devices.manage'] : ['overview.view', 'sites.view', 'devices.view'], permission_count: managedUserRoles.includes('operator') ? 4 : 3, mfa_enabled: false, last_login_at: '2026-07-19T10:00:00Z', active_session_count: 2, created_at: '2026-07-02T00:00:00Z', access_revision: userAccessRevision, protected_administrator: false, sessions: [{ id: 'session-2', created_at: '2026-07-20T08:00:00Z', last_seen_at: '2026-07-20T10:00:00Z', expires_at: '2026-07-21T10:00:00Z', source_ip: '192.168.0.20', user_agent: 'Browser' }], permission_sources: { viewer: ['overview.view', 'sites.view', 'devices.view'] } }
-    else if (path === '/api/v1/admin/users/user-2/access' && request.method() === 'PUT') { const update = JSON.parse(request.postData() ?? '{}') as { role_ids: string[] }; managedUserRoles = update.role_ids; userAccessRevision += 1; body = { id: 'user-2', email: 'viewer@example.test', display_name: 'Dashboard Viewer', roles: managedUserRoles, is_active: true, status: 'active', all_sites: false, sites: [site], site_ids: ['site-1'], permissions: ['overview.view', 'sites.view', 'devices.view', 'devices.manage'], permission_count: 4, mfa_enabled: false, active_session_count: 0, created_at: '2026-07-02T00:00:00Z', access_revision: userAccessRevision, protected_administrator: false, sessions_revoked: 2 } }
+    else if (path === '/api/v1/admin/users/user-2' && request.method() === 'GET') body = managedUserPayload(true)
+    else if (path === '/api/v1/admin/users/user-2/access' && request.method() === 'PUT') { const update = JSON.parse(request.postData() ?? '{}') as { role_ids: string[] }; managedUserRoles = update.role_ids; userAccessRevision += 1; body = { ...managedUserPayload(true), sessions_revoked: 2 } }
+    else if (path === '/api/v1/admin/users/user-2/disable' && request.method() === 'POST') { managedUserStatus = 'disabled'; userAccessRevision += 1; body = { changed: true, sessions_revoked: 2, user: managedUserPayload() } }
+    else if (path === '/api/v1/admin/users/user-2/enable' && request.method() === 'POST') { managedUserStatus = 'active'; userAccessRevision += 1; body = { changed: true, sessions_revoked: 0, user: managedUserPayload() } }
+    else if (path === '/api/v1/admin/users/user-2/remove' && request.method() === 'POST') { removedUserRoles = [...managedUserRoles]; managedUserStatus = 'removed'; userAccessRevision += 1; body = { changed: true, sessions_revoked: 2, user: managedUserPayload() } }
+    else if (path === '/api/v1/admin/users/user-2/restore' && request.method() === 'POST') { managedUserRoles = []; managedUserStatus = 'disabled'; userAccessRevision += 1; body = { changed: true, sessions_revoked: 0, user: managedUserPayload() } }
     else if (path === '/api/v1/admin/users/user-2/access-history') body = { events: [{ id: 'audit-1', occurred_at: '2026-07-20T10:00:00Z', actor_id: 'user-1', action: 'user.access_updated', outcome: 'success', details: { reason: 'Operational assignment' } }] }
     else if (path === '/api/v1/admin/users/user-2/revoke-sessions') body = { sessions_revoked: 2 }
     else if (path === '/api/v1/admin/interface-text/catalog') body = {
@@ -579,9 +616,9 @@ test('admin can create an enrollment token without seeing a permanent secret', a
   await expect(page.getByText('Permanent device secrets are never shown here.')).toBeVisible()
 })
 
-test('administrator can create and remove local users', async ({ page }) => {
+test('Users & Access is the canonical user creation and removal workflow', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/admin')
+  await page.goto('/administration/users-access')
   await page.getByRole('button', { name: /Add user/ }).click()
   await page.getByLabel('Display name').fill('Energy Analyst')
   await page.getByLabel('Email address').fill('analyst@example.test')
@@ -591,10 +628,42 @@ test('administrator can create and remove local users', async ({ page }) => {
   await createRequest
 
   const viewerRow = page.getByRole('row').filter({ hasText: 'Dashboard Viewer' })
-  const removeRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/users/user-2') && request.method() === 'DELETE')
-  await viewerRow.getByRole('button', { name: 'Remove' }).click()
-  await viewerRow.getByRole('button', { name: 'Remove', exact: true }).click()
+  await viewerRow.getByRole('button', { name: 'View access' }).click()
+  const accessDialog = page.getByRole('dialog', { name: 'User access details' })
+  await accessDialog.getByRole('button', { name: 'Remove user' }).click()
+  const removalDialog = page.getByRole('dialog', { name: 'remove user' })
+  await removalDialog.getByLabel(/Reason/).fill('Contract ended')
+  const removeUserButton = removalDialog.getByRole('button', { name: 'Remove user' })
+  await expect(removeUserButton).toBeDisabled()
+  await removalDialog.getByLabel(/exact email address/).fill('not-the-user@example.test')
+  await expect(removeUserButton).toBeDisabled()
+  await removalDialog.getByLabel(/exact email address/).fill('viewer@example.test')
+  await removalDialog.getByLabel('Current password').fill('Production-Password-42!')
+  const removeRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/admin/users/user-2/remove') && request.method() === 'POST')
+  await removeUserButton.click()
   await removeRequest
+  await expect(page.getByText(/User removed.*history was preserved/)).toBeVisible()
+
+  await page.getByRole('combobox', { name: 'Status', exact: true }).selectOption('removed')
+  await expect(page.getByRole('row').filter({ hasText: 'Dashboard Viewer' })).toContainText('Removed')
+  await accessDialog.getByRole('button', { name: 'Restore' }).click()
+  const restoreDialog = page.getByRole('dialog', { name: 'restore user' })
+  await restoreDialog.getByLabel(/Reason/).fill('Returning contractor')
+  const restoreRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/admin/users/user-2/restore') && request.method() === 'POST')
+  await restoreDialog.getByRole('button', { name: 'Restore user' }).click()
+  await restoreRequest
+  await expect(page.getByText(/restored in a disabled, unassigned state/i)).toBeVisible()
+})
+
+test('legacy user-management routes redirect to Users & Access', async ({ page }) => {
+  await mockApplication(page)
+  for (const route of ['/admin?tab=users', '/administration/users', '/administration/users-roles', '/administration/roles']) {
+    await page.goto(route)
+    await expect(page).toHaveURL(/\/administration\/users-access$/)
+    await expect(page.getByRole('heading', { name: 'Users & Access' })).toBeVisible()
+  }
+  await page.goto('/admin?tab=users&search=viewer&status=disabled&unsafe=discarded')
+  await expect(page).toHaveURL('/administration/users-access?search=viewer&status=disabled')
 })
 
 test('administrator previews effective access and promotes a site-scoped user', async ({ page }) => {

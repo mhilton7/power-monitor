@@ -1,5 +1,45 @@
 # Testing and release gates
 
+## Bill integration and user lifecycle acceptance (2026-07-24)
+
+The focused release gate passed Ruff lint/format, strict mypy, OpenAPI
+generation/checking, JSON Schema/protocol contracts, repository secret
+scanning, and Python/npm dependency audits with no known vulnerabilities. The
+portable backend, worker, and simulator suite passed 118 tests; the three
+intentionally gated tests were then run separately.
+
+PostgreSQL 17 upgraded the complete chain to `20260724_0011`, downgraded and
+reapplied the released revisions, upgraded a populated prior schema, and clean
+installed the final schema. It retained 96 public tables, granted all 55
+Administrator permissions, preserved the prior Administrator as an active
+protected identity, and finished with the expected status-layout revision. The
+separate resilience gate enrolled 100 simulated devices and accepted 18,000
+backfill readings with retry and resource checks.
+
+The frontend passed a locked install, lint, TypeScript checking, 32
+unit/component tests, the Node 24 production container build, and all 37
+Chromium end-to-end scenarios. Coverage includes selective bill-to-editor
+merging, current-draft preservation, separate billing-cycle import, managed
+source conflicts, actionable empty states, a deliberately failed lazy editor
+chunk, old bill-route redirection, canonical user creation, distinct
+disable/remove/restore actions, removed-user filtering, legacy user-route
+redirection, and the existing manual custom-plan validation/activation flow.
+
+Fresh API, frontend, and backup images built successfully. The standard Compose
+stack migrated its existing database from `20260724_0010` to
+`20260724_0011`; API, worker, PostgreSQL, frontend, and gateway all reported
+healthy. A fresh five-artifact logical backup passed checksums and restored a
+clean 96-table database at the new revision.
+
+The final deployment-mode TrueNAS render passed fail-closed validation and the
+complete disposable seven-service workflow with digest-pinned fresh images,
+strict internal-CA TLS, and only TCP 8443 published. The one-shot migration
+completed, every health check passed, three signed devices enrolled, 90
+historical readings were accepted, an SCE calculation resolved, two utility
+accounts and one canonical network CIDR persisted, all five encrypted backup
+artifacts verified, and a clean-database restore completed at
+`20260724_0011`.
+
 ## Utility bill PDF import and formatting acceptance (2026-07-24)
 
 The release passed Ruff lint/format, strict mypy, OpenAPI generation/checking,

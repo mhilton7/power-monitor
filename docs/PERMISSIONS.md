@@ -1,6 +1,13 @@
 # Permission reference
 
-Permissions are stable server identifiers. Display-text customization never renames them. Dependencies are validated server-side, including `users.manage` → `users.view`, `roles.manage` → `roles.view`, `rates.approve_candidates` → `rates.review_candidates` and `rates.view`, `backups.restore` → `backups.view`, `interface_text.manage` → `interface_text.view`, and `status_indicators.manage` → `status_indicators.view`.
+Permissions are stable server identifiers. Display-text customization never
+renames them. Dependencies are validated server-side, including `users.manage`
+→ `users.view`; `users.disable`, `users.remove`, and `users.restore` →
+`users.manage` and `users.view`;
+`roles.manage` → `roles.view`; `rates.approve_candidates` →
+`rates.review_candidates` and `rates.view`; `backups.restore` →
+`backups.view`; `interface_text.manage` → `interface_text.view`; and
+`status_indicators.manage` → `status_indicators.view`.
 
 | Area | Permission codes |
 |---|---|
@@ -9,7 +16,7 @@ Permissions are stable server identifiers. Display-text customization never rena
 | Rates | `rates.view`, `rates.manage_custom`, `rates.manage_sources`, `rates.check_sources`, `rates.review_candidates`, `rates.approve_candidates`, `rates.assign` |
 | Alerts | `alerts.view`, `alerts.acknowledge`, `alerts.manage_rules`, `alerts.manage_delivery` |
 | Backup/logs | `backups.view`, `backups.create`, `backups.restore`, `logs.export` |
-| Administration | `users.view`, `users.manage`, `users.manage_protected`, `roles.view`, `roles.manage`, `audit.view`, `settings.view`, `settings.manage`, `interface_text.view`, `interface_text.manage`, `status_indicators.view`, `status_indicators.manage` |
+| Administration | `users.view`, `users.manage`, `users.disable`, `users.remove`, `users.restore`, `users.manage_protected`, `roles.view`, `roles.manage`, `audit.view`, `settings.view`, `settings.manage`, `interface_text.view`, `interface_text.manage`, `status_indicators.view`, `status_indicators.manage` |
 
 ## Built-in matrix
 

@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { lazy, Suspense, type ReactNode } from 'react'
+import { Component, lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { hasPermission } from './access'
 import { api } from './api'
 import { Layout } from './components/Layout'
 import { StatusIndicatorProvider } from './components/StatusIndicators'
-import { LoadingState } from './components/UI'
+import { ErrorState, LoadingState } from './components/UI'
 import { InterfaceTextProvider } from './interfaceText'
 import { AccessDeniedPage } from './pages/AccessDeniedPage'
 import { AuthPage } from './pages/AuthPage'
@@ -22,7 +22,6 @@ const UsagePage = lazy(() => import('./pages/UsagePage').then((module) => ({ def
 const CostsPage = lazy(() => import('./pages/CostsPage').then((module) => ({ default: module.CostsPage })))
 const RatesPage = lazy(() => import('./pages/RatesPage').then((module) => ({ default: module.RatesPage })))
 const RateEditorPage = lazy(() => import('./pages/RateEditorPage').then((module) => ({ default: module.RateEditorPage })))
-const BillImportPage = lazy(() => import('./pages/BillImportPage').then((module) => ({ default: module.BillImportPage })))
 const RateSourcesPage = lazy(() => import('./pages/RateSourcesPage').then((module) => ({ default: module.RateSourcesPage })))
 const ReportsPage = lazy(() => import('./pages/ReportsPage').then((module) => ({ default: module.ReportsPage })))
 const TopologyPage = lazy(() => import('./pages/TopologyPage').then((module) => ({ default: module.TopologyPage })))
@@ -35,15 +34,57 @@ function Guard({ session, permission, children }: { session: Session; permission
   return hasPermission(session, permission) ? children : <AccessDeniedPage permission={permission} />
 }
 
+class WorkspaceErrorBoundary extends Component<{ children: ReactNode; resetKey: string }, { error?: Error }> {
+  state: { error?: Error } = {}
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  componentDidUpdate(previous: Readonly<{ children: ReactNode; resetKey: string }>) {
+    if (this.state.error && previous.resetKey !== this.props.resetKey) {
+      this.setState({ error: undefined })
+    }
+  }
+
+  render() {
+    if (this.state.error) {
+      return <ErrorState error={this.state.error} retry={() => { window.location.reload() }} />
+    }
+    return this.props.children
+  }
+}
+
+function LegacyBillImportRedirect() {
+  const location = useLocation()
+  const params = new URLSearchParams(location.search)
+  params.set('bill_import', 'open')
+  return <Navigate to={`/rates/new?${params.toString()}`} replace />
+}
+
+function LegacyUserManagementRedirect() {
+  const location = useLocation()
+  const current = new URLSearchParams(location.search)
+  const preserved = new URLSearchParams()
+  for (const key of ['search', 'status', 'role', 'site', 'mfa']) {
+    for (const value of current.getAll(key)) preserved.append(key, value)
+  }
+  const query = preserved.toString()
+  return <Navigate to={`/administration/users-access${query ? `?${query}` : ''}`} replace />
+}
+
 function ProtectedApp({ session }: { session: Session }) {
   const location = useLocation()
   if (!session.authenticated) return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />
   const canManageRates = hasPermission(session, 'rates.manage_custom')
   const canManageBills = hasPermission(session, 'utility_bills.manage')
+  const legacyAdminTab = new URLSearchParams(location.search).get('tab')
+  const legacyUserTab = ['users', 'users-roles', 'roles'].includes(legacyAdminTab ?? '')
   return (
     <InterfaceTextProvider>
       <StatusIndicatorProvider>
         <Layout session={session}>
+        <WorkspaceErrorBoundary resetKey={`${location.pathname}${location.search}`}>
         <Suspense fallback={<LoadingState label="Opening this workspace…" />}>
         <Routes>
         <Route path="/" element={<Guard session={session} permission="overview.view"><DashboardPage canEnroll={hasPermission(session, 'enrollment.manage')} /></Guard>} />
@@ -54,14 +95,17 @@ function ProtectedApp({ session }: { session: Session }) {
         <Route path="/usage" element={<Guard session={session} permission="usage.view"><UsagePage /></Guard>} />
         <Route path="/costs" element={<Guard session={session} permission="costs.view"><CostsPage canManageBills={canManageBills} /></Guard>} />
         <Route path="/rates" element={<Guard session={session} permission="rates.view"><RatesPage canManage={canManageRates} canImportBills={canManageBills} /></Guard>} />
-        <Route path="/rates/new" element={<Guard session={session} permission="rates.manage_custom"><RateEditorPage canManage /></Guard>} />
-        <Route path="/rates/import-bill" element={<Guard session={session} permission="utility_bills.manage"><BillImportPage /></Guard>} />
-        <Route path="/rates/:planId/versions/:versionId" element={<Guard session={session} permission="rates.view"><RateEditorPage canManage={canManageRates} /></Guard>} />
+        <Route path="/rates/new" element={<Guard session={session} permission="rates.manage_custom"><RateEditorPage canManage canImportBills={canManageBills} /></Guard>} />
+        <Route path="/rates/import-bill" element={<Guard session={session} permission="utility_bills.manage"><LegacyBillImportRedirect /></Guard>} />
+        <Route path="/rates/:planId/versions/:versionId" element={<Guard session={session} permission="rates.view"><RateEditorPage canManage={canManageRates} canImportBills={canManageBills} /></Guard>} />
         <Route path="/rates/sources" element={<Guard session={session} permission="rates.manage_sources"><RateSourcesPage /></Guard>} />
         <Route path="/alerts" element={<Guard session={session} permission="alerts.view"><AlertsPage /></Guard>} />
         <Route path="/enrollment" element={<Guard session={session} permission="enrollment.view"><EnrollmentPage /></Guard>} />
         <Route path="/reports" element={<Guard session={session} permission="history.export"><ReportsPage /></Guard>} />
-        <Route path="/admin" element={<Guard session={session} permission="settings.view"><AdminPage currentUserId={session.user?.id} /></Guard>} />
+        <Route path="/admin" element={legacyUserTab ? <LegacyUserManagementRedirect /> : <Guard session={session} permission="settings.view"><AdminPage /></Guard>} />
+        <Route path="/administration/users" element={<LegacyUserManagementRedirect />} />
+        <Route path="/administration/users-roles" element={<LegacyUserManagementRedirect />} />
+        <Route path="/administration/roles" element={<LegacyUserManagementRedirect />} />
         <Route path="/administration/users-access" element={<Guard session={session} permission="users.view"><UsersAccessPage session={session} /></Guard>} />
         <Route path="/administration/interface-text" element={<Guard session={session} permission="interface_text.view"><InterfaceTextPage canManage={hasPermission(session, 'interface_text.manage')} /></Guard>} />
         <Route path="/administration/status-indicators" element={<Guard session={session} permission="status_indicators.view"><StatusIndicatorsPage canManage={hasPermission(session, 'status_indicators.manage')} /></Guard>} />
@@ -69,6 +113,7 @@ function ProtectedApp({ session }: { session: Session }) {
         <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </Suspense>
+        </WorkspaceErrorBoundary>
         </Layout>
       </StatusIndicatorProvider>
     </InterfaceTextProvider>

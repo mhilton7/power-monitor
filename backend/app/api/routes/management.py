@@ -2522,7 +2522,11 @@ async def _target_user_scope_allowed(session: DbSession, principal: Principal, u
 @router.get("/users")
 async def list_users(principal: Principal, session: DbSession) -> list[dict[str, Any]]:
     _permission(principal, "users.view")
-    users = list(await session.scalars(select(User).order_by(User.email)))
+    users = list(
+        await session.scalars(
+            select(User).where(User.lifecycle_state != "removed").order_by(User.email)
+        )
+    )
     output: list[dict[str, Any]] = []
     for user in users:
         if not principal.all_sites and (
@@ -2561,7 +2565,15 @@ async def create_user(
             "weak_password",
         )
     email = str(payload.email).lower()
-    if await session.scalar(select(User.id).where(func.lower(User.email) == email)):
+    existing_user = await session.scalar(select(User).where(func.lower(User.email) == email))
+    if existing_user:
+        if existing_user.lifecycle_state == "removed":
+            raise ProblemError(
+                409,
+                "Removed user already exists",
+                "Restore the removed identity instead of creating a duplicate account",
+                "user_removed_restore_required",
+            )
         raise ProblemError(
             409,
             "User already exists",
@@ -2573,6 +2585,7 @@ async def create_user(
         display_name=payload.display_name,
         password_hash=hash_password(payload.password),
         password_changed_at=datetime.now(UTC),
+        lifecycle_state="active",
     )
     session.add(user)
     await session.flush()
@@ -2634,6 +2647,13 @@ async def admin_password_reset(
     user = await session.scalar(select(User).where(User.id == user_id).with_for_update())
     if user is None:
         raise ProblemError(404, "User not found", "User does not exist", "user_missing")
+    if user.lifecycle_state == "removed":
+        raise ProblemError(
+            409,
+            "User is removed",
+            "Restore the user before resetting the password",
+            "user_removed",
+        )
     if not await _target_user_scope_allowed(session, principal, user):
         raise ProblemError(404, "User not found", "User does not exist", "user_missing")
     if "admin" in await user_role_names(session, user.id):
@@ -2665,7 +2685,7 @@ async def deactivate_user(
     session: DbSession,
 ) -> Response:
     """Disable a user while retaining their audit and ownership history."""
-    _permission(principal, "users.manage")
+    _permission(principal, "users.disable")
     user = await session.scalar(select(User).where(User.id == user_id).with_for_update())
     if user is None:
         raise ProblemError(404, "User not found", "User does not exist", "user_missing")
@@ -2680,6 +2700,13 @@ async def deactivate_user(
         )
     if not user.is_active:
         return Response(status_code=204)
+    if user.is_protected:
+        raise ProblemError(
+            409,
+            "Protected bootstrap account",
+            "The protected bootstrap account cannot be disabled",
+            "protected_account",
+        )
 
     is_admin = "admin" in await user_role_names(session, user.id)
     if is_admin:
@@ -2694,6 +2721,7 @@ async def deactivate_user(
             )
 
     user.is_active = False
+    user.lifecycle_state = "disabled"
     user.access_revision += 1
     await revoke_user_sessions(session, user.id)
     session.add(

@@ -204,7 +204,7 @@ export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: S
           </dl>
           {account.rate_context.next_assignment && <p className="inline-notice"><CalendarClock size={15} /> Next: {account.rate_context.next_assignment.plan} on {formatTime(account.rate_context.next_assignment.effective_from)}</p>}
           <footer className="account-actions">
-            <Link className="button ghost" to={`/rates/import-bill?account_id=${encodeURIComponent(account.id)}`}><FileUp size={14} /> Upload current bill</Link>
+            <Link className="button ghost" to={`/rates/new?bill_import=open&account_id=${encodeURIComponent(account.id)}`}><FileUp size={14} /> Upload current bill</Link>
             <button className="button ghost" onClick={() => { setExpanded(expanded === account.id ? undefined : account.id); }}>View {expanded === account.id ? 'less' : 'details'}</button>
             <button className="button ghost" onClick={() => { setExpanded(account.id); }}><Pencil size={14} /> Manage</button>
             <button className="button ghost" disabled={recalculate.isPending} onClick={() => { recalculate.mutate(account.id); }}><RefreshCw size={14} /> Recalculate costs</button>

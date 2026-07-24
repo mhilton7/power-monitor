@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import { Archive, BellRing, Database, Network, ShieldCheck, Users } from 'lucide-react'
+import { Archive, BellRing, Database, Network, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { ApplicationLogs } from '../components/ApplicationLogs'
 import { NetworkPolicyPanel } from '../components/NetworkPolicyPanel'
 import { NotificationSettings } from '../components/NotificationSettings'
-import { UserManagement } from '../components/UserManagement'
 import { UtilityAccountsPanel } from '../components/UtilityAccountsPanel'
 import { EmptyState, ErrorState, formatTime, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
 import type { SensorNetworkPolicy, Site } from '../types'
@@ -15,7 +14,6 @@ interface Backup { id: string; started_at: string; completed_at?: string; status
 interface Audit { id: string; occurred_at: string; actor_type: string; actor_id?: string; action: string; object_type?: string; object_id?: string; outcome: string; details: Record<string, unknown> }
 
 const tabs = [
-  ['Users & roles', Users],
   ['Sites & accounts', Database],
   ['Notifications', BellRing],
   ['Backups', Archive],
@@ -23,10 +21,10 @@ const tabs = [
   ['Security & audit', ShieldCheck],
 ] as const
 
-export function AdminPage({ currentUserId }: { currentUserId?: string }) {
+export function AdminPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const initialTab = tabParam === 'sites-accounts' ? 'Sites & accounts' : tabParam === 'server-network' ? 'Server & network' : 'Users & roles'
+  const initialTab = tabParam === 'notifications' ? 'Notifications' : tabParam === 'backups' ? 'Backups' : tabParam === 'server-network' ? 'Server & network' : tabParam === 'security-audit' ? 'Security & audit' : 'Sites & accounts'
   const [tab, setTab] = useState<(typeof tabs)[number][0]>(initialTab)
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api<Site[]>('/api/v1/sites'), enabled: tab === 'Sites & accounts' || tab === 'Server & network' })
   const policies = useQuery({ queryKey: ['network-policies'], queryFn: () => api<SensorNetworkPolicy[]>('/api/v1/admin/network/policies'), enabled: tab === 'Sites & accounts' })
@@ -35,20 +33,25 @@ export function AdminPage({ currentUserId }: { currentUserId?: string }) {
 
   function selectTab(label: (typeof tabs)[number][0]) {
     setTab(label)
-    const value = label === 'Sites & accounts' ? 'sites-accounts' : label === 'Server & network' ? 'server-network' : ''
+    const values: Record<(typeof tabs)[number][0], string> = {
+      'Sites & accounts': 'sites-accounts',
+      Notifications: 'notifications',
+      Backups: 'backups',
+      'Server & network': 'server-network',
+      'Security & audit': 'security-audit',
+    }
+    const value = values[label]
     setSearchParams(value ? { tab: value } : {})
   }
 
   return (
     <>
-      <PageTitle eyebrow="System administration" title="Administration" description="Manage local users, site boundaries, utility accounts, sensor networks, verified backups, and security evidence." />
+      <PageTitle eyebrow="System administration" title="Administration" description="Manage site boundaries, utility accounts, sensor networks, notifications, verified backups, and security evidence." />
       <div className="admin-layout">
         <aside className="admin-tabs" role="tablist" aria-label="Administration sections">
           {tabs.map(([label, Icon]) => <button key={label} role="tab" aria-selected={tab === label} onClick={() => { selectTab(label); }}><Icon size={18} />{label}</button>)}
         </aside>
         <div className="admin-content">
-          {tab === 'Users & roles' && <UserManagement currentUserId={currentUserId} />}
-
           {tab === 'Sites & accounts' && (
             <>
               <Panel title="Physical sites" eyebrow="Timezone and explicit network boundary">

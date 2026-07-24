@@ -42,7 +42,7 @@ export function CostsPage({ canManageBills = false }: { canManageBills?: boolean
       eyebrow="Estimated account charges"
       title="Costs"
       description="Energy charges remain separate from fixed charges, credits, provider adjustments, and reconciled utility totals."
-      actions={canManageBills && account ? <Link className="button secondary" to={latestBill ? `/rates/import-bill?bill_id=${latestBill.id}` : `/rates/import-bill?account_id=${account.id}`}><ReceiptText size={15} /> Compare with uploaded bill</Link> : undefined}
+      actions={canManageBills && account ? <Link className="button secondary" to={latestBill ? `/rates/new?bill_import=open&bill_id=${latestBill.id}` : `/rates/new?bill_import=open&account_id=${account.id}`}><ReceiptText size={15} /> Compare with uploaded bill</Link> : undefined}
     />
     {!account ? <Panel><EmptyState title="No utility account" message="Create an account and assign a rate before account costs can be estimated." action={<Link className="button primary" to="/admin?tab=sites-accounts">Configure utility account <ArrowUpRight size={15} /></Link>} /></Panel>
       : status.isLoading ? <LoadingState label="Calculating billing-cycle costs..." />
@@ -99,7 +99,7 @@ function CostsContent({ status, latestBill, canManageBills }: { status: TierStat
       </dl>
       {status.utility_bill_comparison.reference && <p className="panel-copy">Evidence: {status.utility_bill_comparison.reference}</p>}
     </Panel>}
-    {canManageBills && <Panel title="Uploaded bill history" eyebrow="Private administrator evidence" actions={<Link className="button secondary" to={latestBill ? `/rates/import-bill?bill_id=${latestBill.id}` : '/rates/import-bill'}>{latestBill ? 'Open latest comparison' : 'Upload and compare'}</Link>}><p className="panel-copy">{latestBill ? `Latest import is ${latestBill.status.replaceAll('_', ' ')}. Open it to review exact energy-subtotal and complete-bill differences.` : 'Upload a current utility bill to create separate rate and billing-cycle drafts and compare them after review.'}</p></Panel>}
+    {canManageBills && <Panel title="Uploaded bill history" eyebrow="Private administrator evidence" actions={<Link className="button secondary" to={latestBill ? `/rates/new?bill_import=open&bill_id=${latestBill.id}` : '/rates/new?bill_import=open'}>{latestBill ? 'Open latest comparison' : 'Upload and compare'}</Link>}><p className="panel-copy">{latestBill ? `Latest import is ${latestBill.status.replaceAll('_', ' ')}. Open it inside Custom Plan to review exact energy-subtotal and complete-bill differences.` : 'Upload a current utility bill inside Custom Plan to create separate rate and billing-cycle drafts and compare them after review.'}</p></Panel>}
     <p className="billing-disclosure"><strong>Estimate, not utility bill.</strong> {status.disclosure}</p>
   </>
 }

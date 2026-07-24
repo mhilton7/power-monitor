@@ -222,6 +222,27 @@ PERMISSION_DEFINITIONS = (
         True,
     ),
     _permission(
+        "users.disable",
+        "Administration",
+        "Disable and enable users",
+        "Temporarily suspend and re-enable local user accounts.",
+        True,
+    ),
+    _permission(
+        "users.remove",
+        "Administration",
+        "Remove users",
+        "Safely deprovision local users while preserving historical identity records.",
+        True,
+    ),
+    _permission(
+        "users.restore",
+        "Administration",
+        "Restore removed users",
+        "Restore removed identities to a disabled, unassigned state for explicit review.",
+        True,
+    ),
+    _permission(
         "users.manage_protected",
         "Administration",
         "Manage protected administrators",
@@ -323,6 +344,9 @@ BUILTIN_ROLE_LABELS = {
 
 PERMISSION_DEPENDENCIES: dict[str, frozenset[str]] = {
     "users.manage": frozenset({"users.view"}),
+    "users.disable": frozenset({"users.manage", "users.view"}),
+    "users.remove": frozenset({"users.manage", "users.view"}),
+    "users.restore": frozenset({"users.manage", "users.view"}),
     "users.manage_protected": frozenset({"users.manage", "users.view"}),
     "roles.manage": frozenset({"roles.view"}),
     "rates.manage_custom": frozenset({"rates.view"}),
@@ -540,3 +564,30 @@ async def active_admin_count(
     if lock:
         query = query.with_for_update(of=UserRole)
     return len(list(await session.scalars(query)))
+
+
+async def active_recovery_administrator_count(
+    session: AsyncSession, *, excluding_user_id: str | None = None, lock: bool = False
+) -> int:
+    """Count active, all-site users who can safely administer the full user lifecycle."""
+    query = select(User).where(
+        User.is_active.is_(True),
+        User.lifecycle_state == "active",
+        User.all_sites.is_(True),
+    )
+    if excluding_user_id:
+        query = query.where(User.id != excluding_user_id)
+    if lock:
+        query = query.with_for_update()
+    required = {
+        "users.manage",
+        "roles.manage",
+        "users.disable",
+        "users.remove",
+        "users.restore",
+    }
+    count = 0
+    for user in await session.scalars(query):
+        if required.issubset(await effective_permissions(session, user.id)):
+            count += 1
+    return count

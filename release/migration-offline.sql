@@ -2575,5 +2575,64 @@ INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'util
 
 UPDATE alembic_version SET version_num='20260724_0010' WHERE alembic_version.version_num = '20260723_0009';
 
+-- Running upgrade 20260724_0010 -> 20260724_0011
+
+ALTER TABLE users ADD COLUMN lifecycle_state VARCHAR(16) DEFAULT 'active' NOT NULL;
+
+ALTER TABLE users ADD COLUMN is_protected BOOLEAN DEFAULT false NOT NULL;
+
+ALTER TABLE users ADD COLUMN removed_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE users ADD COLUMN removed_by VARCHAR(36);
+
+ALTER TABLE users ADD CONSTRAINT fk_users_removed_by_users FOREIGN KEY(removed_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE users ADD COLUMN removal_reason VARCHAR(500);
+
+ALTER TABLE users ADD COLUMN restored_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE users ADD COLUMN restored_by VARCHAR(36);
+
+ALTER TABLE users ADD CONSTRAINT fk_users_restored_by_users FOREIGN KEY(restored_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE users ADD COLUMN removed_role_ids JSON DEFAULT '[]'::json NOT NULL;
+
+ALTER TABLE users ADD COLUMN removed_site_ids JSON DEFAULT '[]'::json NOT NULL;
+
+ALTER TABLE users ADD COLUMN removed_all_sites BOOLEAN DEFAULT false NOT NULL;
+
+ALTER TABLE users ADD CONSTRAINT ck_users_user_lifecycle_state CHECK (lifecycle_state IN ('active','disabled','removed'));
+
+CREATE INDEX ix_users_lifecycle_state ON users (lifecycle_state);
+
+CREATE INDEX ix_users_removed_at ON users (removed_at);
+
+UPDATE users SET lifecycle_state = CASE WHEN is_active THEN 'active' ELSE 'disabled' END;
+
+UPDATE users
+        SET is_protected = true
+        WHERE id = (
+            SELECT users.id
+            FROM users
+            JOIN user_roles ON user_roles.user_id = users.id
+            WHERE user_roles.role_name = 'admin'
+            ORDER BY users.created_at, users.id
+            LIMIT 1
+        );
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('users.disable', 'Administration', 'Disable and enable users', 'Temporarily suspend and re-enable local user accounts.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'users.disable');
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('users.remove', 'Administration', 'Remove users', 'Safely deprovision local users while preserving historical identity records.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'users.remove');
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('users.restore', 'Administration', 'Restore removed users', 'Restore removed identities to a disabled, unassigned state for explicit review.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'users.restore');
+
+UPDATE alembic_version SET version_num='20260724_0011' WHERE alembic_version.version_num = '20260724_0010';
+
 COMMIT;
 

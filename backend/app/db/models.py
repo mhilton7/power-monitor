@@ -97,10 +97,26 @@ class User(TimestampMixin, Base):
     display_name: Mapped[str] = mapped_column(String(120))
     password_hash: Mapped[str] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    lifecycle_state: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    is_protected: Mapped[bool] = mapped_column(Boolean, default=False)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     all_sites: Mapped[bool] = mapped_column(Boolean, default=True)
     access_revision: Mapped[int] = mapped_column(Integer, default=1)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    removed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    removal_reason: Mapped[str | None] = mapped_column(String(500))
+    restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    restored_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    removed_role_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    removed_site_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    removed_all_sites: Mapped[bool] = mapped_column(Boolean, default=False)
+    __table_args__ = (
+        CheckConstraint(
+            "lifecycle_state IN ('active','disabled','removed')",
+            name="user_lifecycle_state",
+        ),
+    )
 
 
 class UserRole(Base):

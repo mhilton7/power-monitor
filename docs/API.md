@@ -26,10 +26,19 @@ and returns an audited provenance-rich CSV. See [History](HISTORY.md).
 
 Human access administration uses `/api/v1/admin/users`,
 `/api/v1/admin/roles`, and `/api/v1/admin/permissions`, including user-access
-revision updates, enable/disable, idempotent session revocation, access history,
-custom-role cloning/revision/archive, and server catalog dependencies. High-risk
-mutations use `POST /api/v1/auth/reauthenticate` and a bounded confirmation
-window. Every mutation requires the existing session and CSRF proof.
+revision updates, distinct enable/disable, idempotent session revocation, safe
+soft removal/restoration, access history, custom-role cloning/revision/archive,
+and server catalog dependencies. `GET /api/v1/admin/users` excludes removed
+identities by default; use `status=removed` or `include_removed=true` only with
+`users.view`. Lifecycle actions are explicit `POST` subresources:
+`/disable`, `/enable`, `/remove`, and `/restore`. Remove requires
+`users.remove`, current revision, typed identity confirmation, a reason,
+high-risk confirmation, and current-password/TOTP reauthentication. Restore
+requires `users.restore` and returns the identity disabled and unassigned. The
+legacy `DELETE /api/v1/users/{user_id}` remains a reversible disable for API
+compatibility and is not a hard-delete endpoint. High-risk mutations use
+`POST /api/v1/auth/reauthenticate` and a bounded confirmation window. Every
+mutation requires the existing session and CSRF proof.
 
 Published presentation values use authenticated `GET /api/v1/interface-text`.
 The unauthenticated `GET /api/v1/public/interface-text` returns only registered
@@ -76,6 +85,12 @@ identifier. Upload and review reuse the existing job, artifact, rate-source,
 custom-rate, assignment, cycle, audit, RBAC, and CSRF services. The upload job
 is readable through `GET /api/v1/jobs/{job_id}`. See [Utility-bill PDF
 imports](UTILITY_BILL_IMPORTS.md).
+
+These bill-import endpoints remain unchanged after the frontend integration.
+The browser now invokes them from the existing custom-plan editor; applying
+selected extracted fields updates that editor draft and does not invoke the
+publish-and-assign compatibility endpoint. Billing-cycle import remains a
+separate explicit mutation.
 
 Log exports accept date values rather than filesystem names, limit selection to
 the retained 90-day window and known service identifiers, and return a streamed

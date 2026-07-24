@@ -76,7 +76,7 @@ export function RatesPage({
         actions={canManage && <>
           <button className="button secondary" disabled={check.isPending} onClick={() => { check.mutate(); }}><RefreshCw size={16} className={check.isPending ? 'spin' : ''} /> Check SCE now</button>
           <button className="button secondary" onClick={() => navigate('/rates/sources')}><Settings2 size={16} /> Rate source settings</button>
-          {canImportBills && <button className="button secondary" onClick={() => navigate('/rates/import-bill')}><Upload size={16} /> Import from utility bill</button>}
+          {canImportBills && <button className="button secondary" onClick={() => navigate('/rates/new?bill_import=open')}><Upload size={16} /> Import from utility bill</button>}
           <button className="button primary" onClick={() => navigate('/rates/new')}><Plus size={17} /> Custom plan</button>
         </>}
       />

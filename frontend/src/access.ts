@@ -8,7 +8,8 @@ const ADMIN_FALLBACK = new Set([
   'rates.review_candidates', 'rates.approve_candidates', 'rates.assign', 'alerts.view',
   'alerts.acknowledge', 'alerts.manage_rules', 'alerts.manage_delivery', 'enrollment.view',
   'enrollment.manage', 'sites.view', 'sites.manage', 'backups.view', 'logs.export',
-  'users.view', 'users.manage', 'roles.view', 'roles.manage', 'audit.view',
+  'users.view', 'users.manage', 'users.disable', 'users.remove', 'users.restore',
+  'roles.view', 'roles.manage', 'audit.view',
   'settings.view', 'settings.manage', 'interface_text.view', 'interface_text.manage',
   'status_indicators.view', 'status_indicators.manage',
 ])

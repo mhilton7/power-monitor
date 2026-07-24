@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import path from 'node:path'
+import { emptyRateDocument } from '../src/rates'
 
 const account = {
   id: 'account-1',
@@ -186,6 +187,46 @@ const comparison = {
   disclosure: 'Energy subtotal and complete utility bill remain separate.',
 }
 
+const importedRateDocument = {
+  ...emptyRateDocument(),
+  plan_name: 'DOMESTIC',
+  plan_code: 'D',
+  utility: 'Southern California Edison',
+  description: 'Reviewed utility-bill tariff draft',
+  effective_from: '2026-07-22',
+  pricing_model: 'tiered' as const,
+  tiers: [
+    {
+      tier_id: 'tier-1',
+      name: 'Tier 1',
+      order: 0,
+      lower_bound_inclusive_kwh: '0',
+      upper_bound_exclusive_kwh: '579',
+      lower_bound_multiplier: null,
+      upper_bound_multiplier: null,
+      price_per_kwh: '0.30000000',
+      tou_prices: {},
+      season: null,
+      source_citation: 'utility-bill:bill-1',
+    },
+    {
+      tier_id: 'tier-2',
+      name: 'Tier 2',
+      order: 1,
+      lower_bound_inclusive_kwh: '579',
+      upper_bound_exclusive_kwh: null,
+      lower_bound_multiplier: null,
+      upper_bound_multiplier: null,
+      price_per_kwh: '0.40000000',
+      tou_prices: {},
+      season: null,
+      source_citation: 'utility-bill:bill-1',
+    },
+  ],
+  source_label: 'Reviewed utility bill bill-1',
+  source_note: 'Sanitized evidence artifact artifact-1',
+}
+
 async function mockApplication(page: Page, initialBill = baseBill) {
   let bill = structuredClone(initialBill)
   const requests: string[] = []
@@ -239,6 +280,28 @@ async function mockApplication(page: Page, initialBill = baseBill) {
       }
     } else if (apiPath === '/api/v1/utility-accounts') {
       body = [account]
+    } else if (apiPath.startsWith('/api/v1/rates/versions/')) {
+      body = {
+        version: {
+          id: apiPath.split('/').at(-1),
+          version: 1,
+          status: 'draft',
+          effective_from: importedRateDocument.effective_from,
+        },
+        document: importedRateDocument,
+      }
+    } else if (apiPath === '/api/v1/rates/plans' && request.method() === 'POST') {
+      body = {
+        plan: {
+          id: 'custom-plan-1',
+          versions: [{
+            id: 'custom-version-1',
+            version: 1,
+            status: 'draft',
+            effective_from: importedRateDocument.effective_from,
+          }],
+        },
+      }
     } else if (
       request.method() === 'POST'
       && apiPath === `/api/v1/admin/utility-accounts/${account.id}/bill-imports`
@@ -290,13 +353,6 @@ async function mockApplication(page: Page, initialBill = baseBill) {
         blocking_warnings: bill.blocking_warnings,
         validation: { valid: true, errors: [], warnings: [] },
       }
-    } else if (apiPath.endsWith('/publish-and-assign') && request.method() === 'POST') {
-      bill = { ...bill, status: 'published', revision: bill.revision + 1 }
-      body = {
-        status: 'published',
-        rate_version_id: bill.rate_version_id,
-        rate_assignment_id: 'assignment-1',
-      }
     } else if (apiPath.endsWith('/import-billing-cycle') && request.method() === 'POST') {
       bill = {
         ...bill,
@@ -322,13 +378,16 @@ async function mockApplication(page: Page, initialBill = baseBill) {
   return requests
 }
 
-test('reviews separate bill drafts, previews readable exact values, and publishes explicitly', async ({ page }) => {
+test('reviews separate bill outputs and selectively merges them into the existing Custom Plan draft', async ({ page }) => {
   const requests = await mockApplication(page)
   page.on('dialog', (dialog) => dialog.accept())
 
-  await page.goto('/rates/import-bill?account_id=account-1')
+  await page.goto('/rates/new')
+  await page.getByLabel('Plan name').fill('My preserved custom draft')
+  await page.getByLabel('Plan code').fill('KEEP-ME')
+  await page.getByRole('button', { name: 'Import utility bill' }).click()
   await expect(page.getByRole('heading', { name: 'Import utility bill' })).toBeVisible()
-  await page.getByRole('button', { name: /Next/ }).click()
+  await page.getByLabel('Utility bill import', { exact: true }).getByRole('button', { name: 'Next' }).click()
 
   const fixture = path.resolve(
     process.cwd(),
@@ -366,24 +425,37 @@ test('reviews separate bill drafts, previews readable exact values, and publishe
   await page.getByRole('button', { name: 'Save reviewed fields and outputs' }).click()
   await expect(page.getByText(/ready for rate-engine validation/i)).toBeVisible()
 
-  await page.getByRole('button', { name: /Publish & assign/ }).click()
-  await page.getByRole('button', { name: 'Validate draft' }).click()
-  await expect(page.getByText('Rate-engine validation passed')).toBeVisible()
-  await page.getByRole('button', { name: 'Publish and assign' }).click()
-  await expect(page.getByText(/Immutable rate version published and assigned/i)).toBeVisible()
-  await page.getByRole('button', { name: 'Import reviewed billing cycle' }).click()
-  await expect(page.getByText(/without overwriting monitored readings/i)).toBeVisible()
-
-  await page.getByRole('button', { name: /Review outputs/ }).click()
   await page.getByRole('button', { name: 'Delete original now' }).click()
   await expect(page.getByText(/original PDF was removed/i)).toBeVisible()
   await expect(page.getByText(/Sanitized evidence, normalized values, and audit history remain/i)).toBeVisible()
 
+  await page.getByRole('button', { name: /Apply to custom draft/ }).click()
+  await page.getByRole('button', { name: 'Validate reviewed draft' }).click()
+  await expect(page.getByText('Rate-engine validation passed')).toBeVisible()
+  await page.getByRole('button', { name: 'Import reviewed billing cycle' }).click()
+  await expect(page.getByText(/without overwriting monitored readings/i)).toBeVisible()
+  await page.getByLabel('Plan code choice').selectOption('import')
+  await page.getByLabel('Complete tariff rules choice').selectOption('import')
+  await page.getByLabel('Source evidence choice').selectOption('import')
+  await page.getByRole('button', { name: 'Apply selected values to Custom Plan' }).click()
+
+  await expect(page.getByText(/applied to this unsaved Custom Plan draft/i)).toBeVisible()
+  await expect(page.getByLabel('Plan name')).toHaveValue('My preserved custom draft')
+  await expect(page.getByLabel('Plan code')).toHaveValue('D')
+  const saveRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/rates/plans') && request.method() === 'POST')
+  await page.getByRole('button', { name: 'Save draft' }).click()
+  const savedDocument = JSON.parse((await saveRequest).postData() ?? '{}') as { plan_name: string; plan_code: string; pricing_model: string; tiers: unknown[]; source_label: string }
+  expect(savedDocument.plan_name).toBe('My preserved custom draft')
+  expect(savedDocument.plan_code).toBe('D')
+  expect(savedDocument.pricing_model).toBe('tiered')
+  expect(savedDocument.tiers).toHaveLength(2)
+  expect(savedDocument.source_label).toContain('Reviewed utility bill')
+
   expect(requests).toContain('POST /api/v1/admin/utility-accounts/account-1/bill-imports')
   expect(requests).toContain('PUT /api/v1/admin/utility-bill-imports/bill-1/review')
-  expect(requests).toContain('POST /api/v1/admin/utility-bill-imports/bill-1/publish-and-assign')
   expect(requests).toContain('POST /api/v1/admin/utility-bill-imports/bill-1/import-billing-cycle')
   expect(requests).toContain('DELETE /api/v1/admin/utility-bill-imports/bill-1/original')
+  expect(requests).not.toContain('POST /api/v1/admin/utility-bill-imports/bill-1/publish-and-assign')
 })
 
 test('keeps an unresolved official-source conflict visible and blocks publication', async ({ page }) => {
@@ -411,7 +483,9 @@ test('keeps an unresolved official-source conflict visible and blocks publicatio
   await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto('/rates/import-bill?account_id=account-1')
-  await page.getByRole('button', { name: /Next/ }).click()
+  await expect(page).toHaveURL(/\/rates\/new\?.*bill_import=open/)
+  await expect(page.getByRole('heading', { name: 'Import utility bill' })).toBeVisible()
+  await page.getByLabel('Utility bill import', { exact: true }).getByRole('button', { name: 'Next' }).click()
   const fixture = path.resolve(
     process.cwd(),
     '../backend/tests/fixtures/bills/text-tiered-bill.pdf',
@@ -424,9 +498,30 @@ test('keeps an unresolved official-source conflict visible and blocks publicatio
   await expect(page.getByText('$0.40/kWh')).toBeVisible()
   await expect(page.getByText('$0.38/kWh')).toBeVisible()
 
-  await page.getByRole('button', { name: /Publish & assign/ }).click()
-  await page.getByRole('button', { name: 'Validate draft' }).click()
-  await expect(page.getByRole('button', { name: 'Publish and assign' })).toBeDisabled()
+  await page.getByRole('button', { name: /Apply to custom draft/ }).click()
+  await page.getByRole('button', { name: 'Validate reviewed draft' }).click()
+  await expect(page.getByRole('button', { name: 'Apply selected values to Custom Plan' })).toBeDisabled()
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
   expect(overflow).toBeLessThanOrEqual(1)
+})
+
+test('shows actionable importer empty states instead of a blank workspace', async ({ page }) => {
+  await mockApplication(page)
+  await page.route('**/api/v1/utility-accounts', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: '[]' })
+  })
+  await page.goto('/rates/new?bill_import=open')
+  await expect(page.getByRole('heading', { name: 'Import utility bill' })).toBeVisible()
+  await expect(page.getByText('No utility account')).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Create utility account' })).toBeVisible()
+})
+
+test('a failed editor chunk renders a recoverable error rather than a blank page', async ({ page }) => {
+  await mockApplication(page)
+  await page.route('**/assets/RateEditorPage-*.js', async (route) => {
+    await route.abort('failed')
+  })
+  await page.goto('/rates/new?bill_import=open')
+  await expect(page.getByRole('alert')).toContainText('Something needs attention')
+  await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
 })

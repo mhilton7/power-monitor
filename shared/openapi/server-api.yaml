@@ -799,9 +799,16 @@ paths:
         schema:
           anyOf:
           - type: string
-            pattern: ^(active|disabled)$
+            pattern: ^(active|disabled|removed)$
           - type: 'null'
           title: Status
+      - name: include_removed
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Include Removed
       - name: role
         in: query
         required: false
@@ -1040,6 +1047,107 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Disable User Api V1 Admin Users  User Id  Disable
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/users/{user_id}/remove:
+    post:
+      tags:
+      - users and access
+      summary: Remove User
+      operationId: remove_user_api_v1_admin_users__user_id__remove_post
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: User Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRemovalRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Remove User Api V1 Admin Users  User Id  Remove Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/users/{user_id}/restore:
+    post:
+      tags:
+      - users and access
+      summary: Restore User
+      operationId: restore_user_api_v1_admin_users__user_id__restore_post
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: User Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRestoreRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Restore User Api V1 Admin Users  User Id  Restore
                   Post
         '422':
           description: Validation Error
@@ -13174,6 +13282,54 @@ components:
       - password
       - roles
       title: UserCreate
+    UserRemovalRequest:
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+        confirmation:
+          type: string
+          maxLength: 320
+          minLength: 1
+          title: Confirmation
+        expected_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected Revision
+        confirm_high_risk:
+          type: boolean
+          title: Confirm High Risk
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - reason
+      - confirmation
+      - expected_revision
+      title: UserRemovalRequest
+    UserRestoreRequest:
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+        expected_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected Revision
+        confirm_high_risk:
+          type: boolean
+          title: Confirm High Risk
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - reason
+      - expected_revision
+      title: UserRestoreRequest
     UserStatusChange:
       properties:
         reason:
@@ -13186,6 +13342,12 @@ components:
           type: boolean
           title: Confirm High Risk
           default: false
+        expected_revision:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Expected Revision
       additionalProperties: false
       type: object
       title: UserStatusChange

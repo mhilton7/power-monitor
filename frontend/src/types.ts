@@ -413,7 +413,7 @@ export interface AccessRole {
 
 export interface ManagedUser extends User {
   is_active: boolean
-  status: 'active' | 'disabled'
+  status: 'active' | 'disabled' | 'removed'
   all_sites: boolean
   sites: Array<{ id: string; name: string }>
   site_ids: string[]
@@ -425,6 +425,17 @@ export interface ManagedUser extends User {
   created_at: string
   access_revision: number
   protected_administrator: boolean
+  protected_account: boolean
+  removed_at?: string
+  removed_by?: string
+  removal_reason?: string
+  restored_at?: string
+  restored_by?: string
+  former_access?: {
+    roles: string[]
+    all_sites: boolean
+    site_ids: string[]
+  }
   sessions?: Array<{
     id: string
     created_at: string

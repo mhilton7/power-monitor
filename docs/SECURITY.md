@@ -4,7 +4,20 @@
 
 The system assumes hostile browser traffic, replayed device traffic, compromised LAN peers, malicious pull targets, tampered firmware, and database disclosure. Caddy provides TLS; API security headers include HSTS, restrictive CSP, frame denial, MIME sniff protection, no-referrer, and no-store for sensitive responses.
 
-Passwords use Argon2id. Browser sessions are random, server-stored, expiring, revocable, HttpOnly, Secure, and SameSite; mutations require a CSRF proof. Login throttling and audit events apply. Server-defined granular permissions and site scope are recalculated on each request; hiding frontend controls is never the security boundary. Material access/role changes revoke affected sessions. Last-administrator, self-lockout, protected-administrator, actor-permission, actor-site, archived-role, dependency, and optimistic-revision checks run server-side. Optional TOTP secrets are encrypted. No default credentials exist.
+Passwords use Argon2id. Browser sessions are random, server-stored, expiring,
+revocable, HttpOnly, Secure, and SameSite; mutations require a CSRF proof. Login
+throttling and audit events apply. Server-defined granular permissions and site
+scope are recalculated on each request; hiding frontend controls is never the
+security boundary. Material access/role changes revoke affected sessions.
+Disable is reversible and preserves access assignments; Remove is an explicit
+soft-deprovisioning transition that revokes sessions and removes active
+role/site assignments without deleting the stable identity or historical
+references. Restoration returns the identity disabled and unassigned, and old
+sessions never revive. Last-recovery-administrator, self-removal,
+protected-bootstrap-administrator, actor-permission, actor-site, archived-role,
+dependency, reauthentication, typed-confirmation, and optimistic-revision
+checks run server-side. Optional TOTP secrets are encrypted. No default
+credentials exist.
 
 The semantic sign-in form permits standards-based browser password managers,
 but autofill is never an authentication boundary. Native credential values are

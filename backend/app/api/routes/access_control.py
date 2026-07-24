@@ -13,7 +13,7 @@ from app.access import (
     BUILTIN_ROLE_LABELS,
     PERMISSION_CATALOG,
     PERMISSION_DEPENDENCIES,
-    active_admin_count,
+    active_recovery_administrator_count,
     custom_role_identifier,
     effective_permissions,
     explicit_site_ids,
@@ -39,7 +39,13 @@ from app.db.models import (
     UserRole,
 )
 from app.problem import ProblemError
-from app.schemas import RoleWrite, UserAccessUpdate, UserStatusChange
+from app.schemas import (
+    RoleWrite,
+    UserAccessUpdate,
+    UserRemovalRequest,
+    UserRestoreRequest,
+    UserStatusChange,
+)
 
 router = APIRouter(prefix="/api/v1/admin", tags=["users and access"])
 _high_risk_attempts: dict[str, deque[float]] = defaultdict(deque)
@@ -101,9 +107,15 @@ async def _role_payload(session: DbSession, role: Role) -> dict[str, Any]:
 async def _target_scope_allowed(session: DbSession, principal: Principal, user: User) -> bool:
     if principal.all_sites:
         return True
-    if user.all_sites:
+    all_sites = user.removed_all_sites if user.lifecycle_state == "removed" else user.all_sites
+    site_ids = (
+        set(user.removed_site_ids)
+        if user.lifecycle_state == "removed"
+        else set(await explicit_site_ids(session, user.id))
+    )
+    if all_sites:
         return False
-    return set(await explicit_site_ids(session, user.id)).issubset(principal.site_ids)
+    return site_ids.issubset(principal.site_ids)
 
 
 async def _user_payload(session: DbSession, user: User, *, detail: bool = False) -> dict[str, Any]:
@@ -136,7 +148,7 @@ async def _user_payload(session: DbSession, user: User, *, detail: bool = False)
         "email": user.email,
         "display_name": user.display_name,
         "is_active": user.is_active,
-        "status": "active" if user.is_active else "disabled",
+        "status": user.lifecycle_state,
         "roles": roles,
         "all_sites": user.all_sites,
         "sites": sites,
@@ -148,7 +160,20 @@ async def _user_payload(session: DbSession, user: User, *, detail: bool = False)
         "active_session_count": active_sessions,
         "created_at": user.created_at,
         "access_revision": user.access_revision,
-        "protected_administrator": "admin" in roles,
+        "protected_administrator": user.is_protected or "admin" in roles,
+        "protected_account": user.is_protected,
+        "removed_at": user.removed_at,
+        "removed_by": user.removed_by,
+        "removal_reason": user.removal_reason,
+        "restored_at": user.restored_at,
+        "restored_by": user.restored_by,
+        "former_access": {
+            "roles": list(user.removed_role_ids),
+            "all_sites": user.removed_all_sites,
+            "site_ids": list(user.removed_site_ids),
+        }
+        if user.lifecycle_state == "removed"
+        else None,
     }
     if detail:
         payload["sessions"] = [
@@ -229,7 +254,8 @@ async def list_managed_users(
     principal: Principal,
     session: DbSession,
     search: str | None = Query(default=None, max_length=160),
-    status: str | None = Query(default=None, pattern="^(active|disabled)$"),
+    status: str | None = Query(default=None, pattern="^(active|disabled|removed)$"),
+    include_removed: bool = False,
     role: str | None = Query(default=None, max_length=32),
     site_id: str | None = Query(default=None, max_length=36),
     mfa_enabled: bool | None = None,
@@ -246,7 +272,9 @@ async def list_managed_users(
             )
         )
     if status:
-        query = query.where(User.is_active.is_(status == "active"))
+        query = query.where(User.lifecycle_state == status)
+    elif not include_removed:
+        query = query.where(User.lifecycle_state != "removed")
     users = []
     for user in await session.scalars(query):
         if not await _target_scope_allowed(session, principal, user):
@@ -285,6 +313,13 @@ async def update_user_access(
     _require(principal, "users.manage")
     _rate_limit(principal, "user-access")
     user = await _load_manageable_user(session, principal, user_id, lock=True)
+    if user.lifecycle_state == "removed":
+        raise ProblemError(
+            409,
+            "User is removed",
+            "Restore the user before assigning roles or site access",
+            "user_removed",
+        )
     if user.access_revision != payload.expected_revision:
         raise ProblemError(
             409,
@@ -350,7 +385,8 @@ async def update_user_access(
     removes_admin = "admin" in prior_roles and "admin" not in requested_roles
     if (
         removes_admin
-        and await active_admin_count(session, excluding_user_id=user.id, lock=True) == 0
+        and await active_recovery_administrator_count(session, excluding_user_id=user.id, lock=True)
+        == 0
     ):
         await _audit_denial(
             session,
@@ -395,7 +431,8 @@ async def update_user_access(
         require_recent_reauthentication(principal.session.reauthenticated_at)
     if (
         self_restriction
-        and await active_admin_count(session, excluding_user_id=user.id, lock=True) == 0
+        and await active_recovery_administrator_count(session, excluding_user_id=user.id, lock=True)
+        == 0
     ):
         raise ProblemError(
             409,
@@ -451,27 +488,78 @@ async def _set_user_active(
     principal: Principal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _require(principal, "users.manage")
+    _require(principal, "users.disable")
     _rate_limit(principal, "user-status")
     user = await _load_manageable_user(session, principal, user_id, lock=True)
+    if user.lifecycle_state == "removed":
+        raise ProblemError(
+            409,
+            "User is removed",
+            "Restore the user before changing sign-in status",
+            "user_removed",
+        )
+    if payload.expected_revision is not None and user.access_revision != payload.expected_revision:
+        raise ProblemError(
+            409,
+            "User status changed",
+            "Reload the user before applying your change",
+            "access_revision_conflict",
+        )
     roles = await user_role_names(session, user.id)
-    if not active and "admin" in roles:
-        if await active_admin_count(session, excluding_user_id=user.id, lock=True) == 0:
-            await _audit_denial(
-                session,
-                request,
-                principal,
-                action="user.disable_rejected",
-                object_type="user",
-                object_id=user.id,
-                code="last_admin_required",
-            )
-            raise ProblemError(
-                409,
-                "Last administrator is protected",
-                "Create another active administrator before disabling this account",
-                "last_admin_required",
-            )
+    if active and not roles:
+        raise ProblemError(
+            409,
+            "User access is not assigned",
+            "Assign at least one role before enabling sign-in",
+            "user_access_required",
+        )
+    permissions = await effective_permissions(session, user.id)
+    recovery_permissions = {
+        "users.manage",
+        "roles.manage",
+        "users.disable",
+        "users.remove",
+        "users.restore",
+    }
+    recovery_administrator = (
+        user.is_active and user.all_sites and recovery_permissions.issubset(permissions)
+    )
+    if (
+        not active
+        and recovery_administrator
+        and await active_recovery_administrator_count(session, excluding_user_id=user.id, lock=True)
+        == 0
+    ):
+        await _audit_denial(
+            session,
+            request,
+            principal,
+            action="user.disable_rejected",
+            object_type="user",
+            object_id=user.id,
+            code="last_admin_required",
+        )
+        raise ProblemError(
+            409,
+            "Last administrator is protected",
+            "Create another active administrator before disabling this account",
+            "last_admin_required",
+        )
+    if not active and user.id == principal.user.id:
+        raise ProblemError(
+            409,
+            "Self-disable prevented",
+            "Use another administrator account to disable this user",
+            "self_deactivation_forbidden",
+        )
+    if not active and user.is_protected:
+        raise ProblemError(
+            409,
+            "Protected bootstrap account",
+            "The protected bootstrap account cannot be disabled",
+            "protected_account",
+        )
+    if not active and ("admin" in roles or recovery_administrator):
         if not payload.confirm_high_risk:
             raise ProblemError(
                 409,
@@ -480,15 +568,11 @@ async def _set_user_active(
                 "high_risk_confirmation_required",
             )
         require_recent_reauthentication(principal.session.reauthenticated_at)
-    if not active and user.id == principal.user.id:
-        raise ProblemError(
-            409,
-            "Self-disable prevented",
-            "Use another administrator account to disable this user",
-            "self_deactivation_forbidden",
-        )
-    changed = user.is_active is not active
+    changed = user.is_active is not active or user.lifecycle_state != (
+        "active" if active else "disabled"
+    )
     user.is_active = active
+    user.lifecycle_state = "active" if active else "disabled"
     revoked = await revoke_user_sessions(session, user.id) if not active else 0
     if changed:
         user.access_revision += 1
@@ -547,6 +631,223 @@ async def disable_user(
     )
 
 
+@router.post("/users/{user_id}/remove")
+async def remove_user(
+    user_id: str,
+    payload: UserRemovalRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _require(principal, "users.remove")
+    _rate_limit(principal, "user-remove")
+    user = await _load_manageable_user(session, principal, user_id, lock=True)
+    if user.lifecycle_state == "removed":
+        return {
+            "changed": False,
+            "sessions_revoked": 0,
+            "user": await _user_payload(session, user),
+        }
+    if user.access_revision != payload.expected_revision:
+        raise ProblemError(
+            409,
+            "User access changed",
+            "Reload the user before removing the account",
+            "access_revision_conflict",
+        )
+    confirmation = payload.confirmation.strip()
+    if confirmation.lower() != user.email.lower() and confirmation != user.id[-8:]:
+        raise ProblemError(
+            422,
+            "Removal confirmation does not match",
+            "Enter the user's exact email address or final eight ID characters",
+            "removal_confirmation_mismatch",
+        )
+    if user.id == principal.user.id:
+        await _audit_denial(
+            session,
+            request,
+            principal,
+            action="user.remove_rejected",
+            object_type="user",
+            object_id=user.id,
+            code="self_removal_forbidden",
+        )
+        raise ProblemError(
+            409,
+            "Self-removal prevented",
+            "Use another administrator account to remove this user",
+            "self_removal_forbidden",
+        )
+    if user.is_protected:
+        await _audit_denial(
+            session,
+            request,
+            principal,
+            action="user.remove_rejected",
+            object_type="user",
+            object_id=user.id,
+            code="protected_account",
+        )
+        raise ProblemError(
+            409,
+            "Protected bootstrap account",
+            "The protected bootstrap account cannot be removed",
+            "protected_account",
+        )
+    roles = sorted(await user_role_names(session, user.id))
+    permissions = sorted(await effective_permissions(session, user.id))
+    site_ids = sorted(await explicit_site_ids(session, user.id))
+    recovery_permissions = {
+        "users.manage",
+        "roles.manage",
+        "users.disable",
+        "users.remove",
+        "users.restore",
+    }
+    recovery_administrator = (
+        user.is_active and user.all_sites and recovery_permissions.issubset(permissions)
+    )
+    if (
+        recovery_administrator
+        and await active_recovery_administrator_count(session, excluding_user_id=user.id, lock=True)
+        == 0
+    ):
+        await _audit_denial(
+            session,
+            request,
+            principal,
+            action="user.remove_rejected",
+            object_type="user",
+            object_id=user.id,
+            code="last_admin_required",
+        )
+        raise ProblemError(
+            409,
+            "Last administrator is protected",
+            "Create another active all-site administrator before removing this account",
+            "last_admin_required",
+        )
+    if not payload.confirm_high_risk:
+        raise ProblemError(
+            409,
+            "Protected confirmation required",
+            "Confirm that this user should be removed",
+            "high_risk_confirmation_required",
+        )
+    require_recent_reauthentication(principal.session.reauthenticated_at)
+
+    revoked = await revoke_user_sessions(session, user.id)
+    await session.execute(delete(UserRole).where(UserRole.user_id == user.id))
+    await replace_user_sites(session, user.id, set())
+    now = datetime.now(UTC)
+    user.removed_role_ids = roles
+    user.removed_site_ids = site_ids
+    user.removed_all_sites = user.all_sites
+    user.all_sites = False
+    user.is_active = False
+    user.lifecycle_state = "removed"
+    user.removed_at = now
+    user.removed_by = principal.user.id
+    user.removal_reason = payload.reason
+    user.restored_at = None
+    user.restored_by = None
+    user.access_revision += 1
+    session.add(
+        audit_event(
+            action="user.removed",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="user",
+            object_id=user.id,
+            details={
+                "reason": payload.reason,
+                "sessions_revoked": revoked,
+                "former_roles": roles,
+                "former_permissions": permissions,
+                "former_all_sites": user.removed_all_sites,
+                "former_site_ids": site_ids,
+                "identity_preserved": True,
+            },
+        )
+    )
+    await session.commit()
+    return {
+        "changed": True,
+        "sessions_revoked": revoked,
+        "user": await _user_payload(session, user),
+    }
+
+
+@router.post("/users/{user_id}/restore")
+async def restore_user(
+    user_id: str,
+    payload: UserRestoreRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _require(principal, "users.restore")
+    _rate_limit(principal, "user-restore")
+    user = await _load_manageable_user(session, principal, user_id, lock=True)
+    if user.lifecycle_state != "removed":
+        if user.restored_at is not None and user.removed_at is not None:
+            return {
+                "changed": False,
+                "sessions_revoked": 0,
+                "user": await _user_payload(session, user),
+            }
+        raise ProblemError(
+            409,
+            "User is not removed",
+            "Only removed users can be restored",
+            "user_not_removed",
+        )
+    if user.access_revision != payload.expected_revision:
+        raise ProblemError(
+            409,
+            "User lifecycle changed",
+            "Reload the user before restoring the account",
+            "access_revision_conflict",
+        )
+    if not payload.confirm_high_risk:
+        raise ProblemError(
+            409,
+            "Restore confirmation required",
+            "Confirm that the retained identity should be restored in a disabled state",
+            "high_risk_confirmation_required",
+        )
+    user.lifecycle_state = "disabled"
+    user.is_active = False
+    user.all_sites = False
+    user.restored_at = datetime.now(UTC)
+    user.restored_by = principal.user.id
+    user.access_revision += 1
+    session.add(
+        audit_event(
+            action="user.restored",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="user",
+            object_id=user.id,
+            details={
+                "reason": payload.reason,
+                "status": "disabled",
+                "roles_restored": False,
+                "sites_restored": False,
+            },
+        )
+    )
+    await session.commit()
+    return {
+        "changed": True,
+        "sessions_revoked": 0,
+        "user": await _user_payload(session, user),
+    }
+
+
 @router.post("/users/{user_id}/revoke-sessions")
 async def revoke_sessions(
     user_id: str,
@@ -589,9 +890,12 @@ async def user_access_history(
                         "user.access_updated",
                         "user.enabled",
                         "user.disabled",
+                        "user.removed",
+                        "user.restored",
                         "user.sessions_revoked",
                         "user.access_change_rejected",
                         "user.disable_rejected",
+                        "user.remove_rejected",
                     }
                 ),
             )

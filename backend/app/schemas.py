@@ -690,6 +690,20 @@ class UserAccessUpdate(ApiModel):
 class UserStatusChange(ApiModel):
     reason: str | None = Field(default=None, max_length=500)
     confirm_high_risk: bool = False
+    expected_revision: int | None = Field(default=None, ge=1)
+
+
+class UserRemovalRequest(ApiModel):
+    reason: str = Field(min_length=3, max_length=500)
+    confirmation: str = Field(min_length=1, max_length=320)
+    expected_revision: int = Field(ge=1)
+    confirm_high_risk: bool = False
+
+
+class UserRestoreRequest(ApiModel):
+    reason: str = Field(min_length=3, max_length=500)
+    expected_revision: int = Field(ge=1)
+    confirm_high_risk: bool = False
 
 
 class RoleWrite(ApiModel):
