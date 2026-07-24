@@ -80,6 +80,22 @@ function safeConfiguration(value?: StatusLayoutConfiguration): StatusLayoutConfi
   return value ? structuredClone(value) : undefined
 }
 
+export function repairUnsupportedIndicatorZones(
+  value: StatusLayoutConfiguration,
+  definitions: StatusIndicatorDefinition[],
+): { configuration: StatusLayoutConfiguration; repairCount: number } {
+  const configuration = structuredClone(value)
+  const registry = new Map(definitions.map((definition) => [definition.key, definition]))
+  let repairCount = 0
+  configuration.items = configuration.items.map((item) => {
+    const definition = registry.get(item.indicator_key)
+    if (!definition || (item.zone && definition.allowed_zones.includes(item.zone))) return item
+    repairCount += 1
+    return { ...item, zone: definition.default_zone }
+  })
+  return { configuration, repairCount }
+}
+
 export function StatusIndicatorsPage({ canManage }: { canManage: boolean }) {
   const queryClient = useQueryClient()
   const catalog = useQuery({
@@ -113,11 +129,15 @@ export function StatusIndicatorsPage({ canManage }: { canManage: boolean }) {
   const [draggedKey, setDraggedKey] = useState<string>()
   const importRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    if (!configuration && draft.data?.configuration) setConfiguration(safeConfiguration(draft.data.configuration))
-  }, [configuration, draft.data?.configuration])
-
   const definitions = useMemo(() => catalog.data?.indicators ?? [], [catalog.data?.indicators])
+  useEffect(() => {
+    if (configuration || !draft.data?.configuration || !catalog.data) return
+    const repaired = repairUnsupportedIndicatorZones(draft.data.configuration, definitions)
+    setConfiguration(repaired.configuration)
+    if (repaired.repairCount) {
+      setMessage(`${repaired.repairCount} saved placement ${repaired.repairCount === 1 ? 'was' : 'were'} updated to the current registered zone. Save the draft to retain this compatibility repair.`)
+    }
+  }, [catalog.data, configuration, definitions, draft.data?.configuration])
   const currentItems = useMemo(() => definitions.map((definition) => ({
     definition,
     item: configuration ? effectiveItem(configuration, definition, scopePage, scopeRole, scopeBreakpoint) : undefined,
@@ -245,7 +265,9 @@ export function StatusIndicatorsPage({ canManage }: { canManage: boolean }) {
     }),
     onSuccess: async (result) => {
       setPreview(result)
-      setMessage(`${previewBreakpoint} preview updated for ${previewRole}.`)
+      setMessage((current) => current.includes('saved placement')
+        ? current
+        : `${previewBreakpoint} preview updated for ${previewRole}.`)
       await queryClient.invalidateQueries({ queryKey: ['status-indicators', 'draft'] })
     },
   })

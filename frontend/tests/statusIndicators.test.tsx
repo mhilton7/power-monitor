@@ -1,9 +1,11 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { pageFromPath, StatusIndicatorZone } from '../src/components/StatusIndicators'
+import { repairUnsupportedIndicatorZones } from '../src/pages/StatusIndicatorsPage'
 import type {
   StatusDensity,
   StatusIndicatorDefinition,
+  StatusLayoutConfiguration,
   StatusIndicatorValue,
   StatusLayoutItem,
   StatusResolvedLayout,
@@ -151,5 +153,26 @@ describe('status route mapping', () => {
     expect(pageFromPath('/rates/sources')).toBe('rate_sources')
     expect(pageFromPath('/administration/status-indicators')).toBe('administration')
     expect(pageFromPath('/administration/system-health')).toBe('system_health')
+  })
+})
+
+describe('status layout editor compatibility', () => {
+  it('repairs a saved zone removed from the current indicator registry before previewing', () => {
+    const currentDefinition = definition('data.energy_today', 'Energy today')
+    const configuration: StatusLayoutConfiguration = {
+      schema_version: 'power-monitor-status-layout/1.0',
+      registry_version: 'status-indicators/1.0',
+      personalization_enabled: false,
+      items: [{
+        ...item('data.energy_today', 'Energy today'),
+        zone: 'workspace_header',
+      }],
+    }
+
+    const repaired = repairUnsupportedIndicatorZones(configuration, [currentDefinition])
+
+    expect(repaired.repairCount).toBe(1)
+    expect(repaired.configuration.items[0]?.zone).toBe('page_summary')
+    expect(configuration.items[0]?.zone).toBe('workspace_header')
   })
 })

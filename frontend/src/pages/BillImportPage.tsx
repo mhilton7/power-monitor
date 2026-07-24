@@ -20,6 +20,7 @@ import {
   formatDecimalDetail,
   formatEnergy,
   formatEnergyRate,
+  formatStructuredLabel,
   formatTierRange,
 } from '../formatters'
 import type { UtilityAccount } from '../types'
@@ -253,6 +254,42 @@ const confidenceStatus = (confidence: string) => {
   return 'failed'
 }
 
+interface RuntimeBillImport extends Partial<Omit<BillImport, 'normalized' | 'cycle_draft'>> {
+  normalized?: Partial<BillImport['normalized']>
+  cycle_draft?: Partial<CycleDraft>
+}
+
+function normalizeBillImport(value: BillImport): BillImport {
+  const candidate = value as unknown as RuntimeBillImport
+  const cycleDraft = candidate.cycle_draft
+    ? {
+        ...(candidate.cycle_draft as CycleDraft),
+        status: candidate.cycle_draft.status || 'draft',
+        usage_by_tier: Array.isArray(candidate.cycle_draft.usage_by_tier) ? candidate.cycle_draft.usage_by_tier : [],
+        usage_by_tou: Array.isArray(candidate.cycle_draft.usage_by_tou) ? candidate.cycle_draft.usage_by_tou : [],
+        meter_records: Array.isArray(candidate.cycle_draft.meter_records) ? candidate.cycle_draft.meter_records : [],
+      }
+    : undefined
+  return {
+    ...value,
+    status: candidate.status || 'review_required',
+    source_role: candidate.source_role || 'supporting',
+    extraction_method: candidate.extraction_method || 'unavailable',
+    parser_version: candidate.parser_version || 'unavailable',
+    page_count: Number.isFinite(candidate.page_count) && Number(candidate.page_count) > 0 ? Number(candidate.page_count) : 1,
+    blocking_warnings: Array.isArray(candidate.blocking_warnings) ? candidate.blocking_warnings : [],
+    extraction_warnings: Array.isArray(candidate.extraction_warnings) ? candidate.extraction_warnings : [],
+    fields: Array.isArray(candidate.fields) ? candidate.fields : [],
+    conflicts: Array.isArray(candidate.conflicts) ? candidate.conflicts : [],
+    normalized: {
+      account: candidate.normalized?.account ?? {},
+      rate_plan: candidate.normalized?.rate_plan ?? {},
+      billing_cycle: candidate.normalized?.billing_cycle ?? {},
+    },
+    cycle_draft: cycleDraft,
+  }
+}
+
 function saveBlob(blob: Blob, filename: string) {
   const href = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -293,6 +330,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
     queryKey: ['utility-bill-import', billId],
     queryFn: () => api<BillImport>(`/api/v1/admin/utility-bill-imports/${billId}`),
     enabled: Boolean(billId),
+    select: normalizeBillImport,
   })
   const comparison = useQuery({
     queryKey: ['utility-bill-comparison', billId],
@@ -473,7 +511,11 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
       billing_cycle: BillField[]
       rate_plan: BillField[]
     } = { account: [], billing_cycle: [], rate_plan: [] }
-    for (const field of bill.data?.fields ?? []) groups[field.output_kind].push(field)
+    for (const field of bill.data?.fields ?? []) {
+      if (String(field.output_kind) === 'account') groups.account.push(field)
+      else if (String(field.output_kind) === 'billing_cycle') groups.billing_cycle.push(field)
+      else if (String(field.output_kind) === 'rate_plan') groups.rate_plan.push(field)
+    }
     return groups
   }, [bill.data?.fields])
   const current = bill.data
@@ -559,7 +601,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
     {step === 0 && <Panel title="Select utility account" eyebrow="Step 1 · Account scope">
       {!accounts.data?.length ? <EmptyState title="No utility account" message="Create a utility account before importing its bill." action={<Link className="button primary" to="/billing/accounts">Create utility account</Link>} /> : <>
         <label className="bill-account-select"><span>Utility account</span><select value={accountId} onChange={(event) => { setAccountId(event.target.value); setBillId(''); setSearchParams({ account_id: event.target.value }) }}>{accounts.data.map((account) => <option value={account.id} key={account.id}>{account.site_name} · {account.name}</option>)}</select></label>
-        {selectedAccount && <dl className="detail-list bill-account-context"><div><dt>Utility</dt><dd>{selectedAccount.utility_name}</dd></div><div><dt>Provider</dt><dd>{selectedAccount.provider_mode.replaceAll('_', ' ')}</dd></div><div><dt>Timezone</dt><dd>{selectedAccount.timezone}</dd></div><div><dt>Current plan</dt><dd>{selectedAccount.rate_context.current_plan ?? 'Not assigned'}</dd></div></dl>}
+        {selectedAccount && <dl className="detail-list bill-account-context"><div><dt>Utility</dt><dd>{selectedAccount.utility_name}</dd></div><div><dt>Provider</dt><dd>{formatStructuredLabel(selectedAccount.provider_mode)}</dd></div><div><dt>Timezone</dt><dd>{selectedAccount.timezone}</dd></div><div><dt>Current plan</dt><dd>{selectedAccount.rate_context.current_plan ?? 'Not assigned'}</dd></div></dl>}
       </>}
     </Panel>}
 
@@ -577,7 +619,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
         </form>
       </Panel>
       <Panel title="Prior imports" eyebrow="Billing-cycle history">
-        {history.isLoading ? <LoadingState /> : history.error ? <ErrorState error={history.error} /> : history.data?.length ? <div className="bill-history-list">{history.data.map((item) => <button type="button" key={item.id} onClick={() => { selectBill(item.id); }}><span><strong>{item.utility_account_name}</strong><small>{formatTime(item.created_at)} · {item.extraction_method} · {item.page_count} page{item.page_count === 1 ? '' : 's'}</small></span><StatusPill status={item.status === 'published' ? 'healthy' : item.status === 'ready_to_publish' ? 'pending' : 'failed'} label={item.status.replaceAll('_', ' ')} /></button>)}</div> : <EmptyState title="No uploaded bills" message="The first import for this account will appear here." />}
+        {history.isLoading ? <LoadingState /> : history.error ? <ErrorState error={history.error} /> : history.data?.length ? <div className="bill-history-list">{history.data.map((item) => <button type="button" key={item.id} onClick={() => { selectBill(item.id); }}><span><strong>{item.utility_account_name}</strong><small>{formatTime(item.created_at)} · {formatStructuredLabel(item.extraction_method)} · {item.page_count} page{item.page_count === 1 ? '' : 's'}</small></span><StatusPill status={item.status === 'published' ? 'healthy' : item.status === 'ready_to_publish' ? 'pending' : 'failed'} label={formatStructuredLabel(item.status)} /></button>)}</div> : <EmptyState title="No uploaded bills" message="The first import for this account will appear here." />}
       </Panel>
     </div>}
 
@@ -586,7 +628,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
         <dl className="detail-list">
           <div><dt>SHA-256</dt><dd><code title={current.content_sha256}>{current.content_sha256}</code></dd></div>
           <div><dt>Pages</dt><dd>{current.page_count}</dd></div>
-          <div><dt>Extraction</dt><dd>{current.extraction_method.replaceAll('_', ' ')}</dd></div>
+          <div><dt>Extraction</dt><dd>{formatStructuredLabel(current.extraction_method)}</dd></div>
           <div><dt>Parser</dt><dd>{current.parser_version}</dd></div>
           <div><dt>Automatic activation</dt><dd>Disabled</dd></div>
         </dl>
@@ -597,7 +639,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
         {[...current.extraction_warnings, ...current.blocking_warnings].map((warning, index) => <p className="billing-warning" key={`${warning.code}-${index}`}><AlertTriangle size={15} /><span>{warning.message ?? warning.code}</span></p>)}
       </Panel>
       <Panel title={`Evidence page ${selectedPage}`} eyebrow="Source excerpts and coordinates" actions={<select aria-label="Evidence page" value={selectedPage} onChange={(event) => { setSelectedPage(Number(event.target.value)); }}>{Array.from({ length: current.page_count }, (_, index) => <option value={index + 1} key={index + 1}>Page {index + 1}</option>)}</select>}>
-        {evidence.isLoading ? <LoadingState /> : evidence.error ? <ErrorState error={evidence.error} /> : evidence.data?.fields.length ? <div className="evidence-list">{evidence.data.fields.map((field) => <article key={field.field_key}><header><strong>{field.field_key.replaceAll('_', ' ')}</strong><StatusPill status={confidenceStatus(field.confidence)} label={field.confidence.replaceAll('_', ' ')} /></header><blockquote>{field.source_excerpt || 'No retained excerpt'}</blockquote><small>{field.method} · {field.text_region ? JSON.stringify(field.text_region) : 'coordinates unavailable'}</small></article>)}</div> : <EmptyState title="No fields on this page" message="Other pages may contain the extracted evidence." />}
+        {evidence.isLoading ? <LoadingState /> : evidence.error ? <ErrorState error={evidence.error} /> : evidence.data?.fields.length ? <div className="evidence-list">{evidence.data.fields.map((field) => <article key={field.field_key}><header><strong>{formatStructuredLabel(field.field_key)}</strong><StatusPill status={confidenceStatus(field.confidence)} label={formatStructuredLabel(field.confidence)} /></header><blockquote>{field.source_excerpt || 'No retained excerpt'}</blockquote><small>{formatStructuredLabel(field.method)} · {field.text_region ? JSON.stringify(field.text_region) : 'coordinates unavailable'}</small></article>)}</div> : <EmptyState title="No fields on this page" message="Other pages may contain the extracted evidence." />}
       </Panel>
     </div>}
 
@@ -611,7 +653,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
           <div><dt>Energy subtotal</dt><dd>{formatCurrency(current.cycle_draft.energy_subtotal)}</dd></div>
           <div><dt>Complete bill total</dt><dd>{formatCurrency(current.cycle_draft.full_bill_total)}</dd></div>
           <div><dt>Current / projected tier</dt><dd>{current.cycle_draft.current_tier ?? 'Unavailable'} / {current.cycle_draft.projected_tier ?? 'Unavailable'}</dd></div>
-          <div><dt>Import state</dt><dd>{current.cycle_draft.status.replaceAll('_', ' ')}</dd></div>
+          <div><dt>Import state</dt><dd>{formatStructuredLabel(current.cycle_draft.status)}</dd></div>
         </dl>
         <p className="panel-copy">This bill-specific record remains separate from recurring tariff rules. Credits, taxes, and unexplained adjustments are not copied into the rate plan automatically.</p>
       </Panel>}
@@ -627,14 +669,14 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
     {step === 5 && current && <div className="bill-import-columns">
       <Panel title="Confidence review" eyebrow="Step 6 · Administrator confirmation">
         <div className="confidence-summary">
-          {['administrator_confirmed', 'high', 'medium', 'low', 'missing'].map((confidence) => <article key={confidence}><span>{confidence.replaceAll('_', ' ')}</span><strong>{current.fields.filter((field) => field.confidence === confidence).length}</strong></article>)}
+          {['administrator_confirmed', 'high', 'medium', 'low', 'missing'].map((confidence) => <article key={confidence}><span>{formatStructuredLabel(confidence)}</span><strong>{current.fields.filter((field) => field.confidence === confidence).length}</strong></article>)}
         </div>
         <label><span>Threshold interpretation</span><select value={threshold} onChange={(event) => { setThreshold(event.target.value as ThresholdInterpretation); }}><option value="unknown">Unknown — requires administrator review</option><option value="fixed_cycle_threshold">Fixed billing-cycle threshold</option><option value="daily_baseline">Derived from daily baseline</option><option value="baseline_multiplier">Derived from baseline multiplier</option></select></label>
         <label><span>Uploaded bill source role</span><select value={sourceRole} onChange={(event) => { setSourceRole(event.target.value as SourceRole); }}><option value="supporting">Supporting source</option><option value="authoritative_account_specific">Authoritative account-specific source</option><option value="reference_only">Reference only</option></select></label>
         <p className="field-help">A displayed threshold does not prove whether it is fixed, baseline-derived, seasonal, or account-specific.</p>
       </Panel>
       <Panel title="Source conflicts" eyebrow="Current configuration and managed evidence">
-        {current.conflicts.length ? <div className="conflict-list">{current.conflicts.map((conflict) => <article key={conflict.id}><header><strong>{conflict.field_key.replaceAll('_', ' ')}</strong><StatusPill status={conflict.status === 'unresolved' ? 'failed' : 'healthy'} label={conflict.status.replaceAll('_', ' ')} /></header><dl><div><dt>Uploaded bill</dt><dd>{reviewValue(conflict.extracted_value)}</dd></div><div><dt>{conflict.comparison_source.replaceAll('_', ' ')}</dt><dd>{reviewValue(conflict.configured_value)}</dd></div></dl>{conflict.status === 'unresolved' && <label><span>Resolution</span><select value={conflictDecisions[conflict.id] ?? ''} onChange={(event) => { setConflictDecisions((value) => ({ ...value, [conflict.id]: event.target.value })); }}><option value="">Review required</option><option value="accepted_bill">Accept uploaded bill value</option><option value="accepted_configured">Keep configured value</option><option value="dismissed">Dismiss with recorded review</option></select></label>}</article>)}</div> : <EmptyState title="No detected conflicts" message="Applying values still requires explicit field review and rate-engine validation." />}
+        {current.conflicts.length ? <div className="conflict-list">{current.conflicts.map((conflict) => <article key={conflict.id}><header><strong>{formatStructuredLabel(conflict.field_key)}</strong><StatusPill status={conflict.status === 'unresolved' ? 'failed' : 'healthy'} label={formatStructuredLabel(conflict.status)} /></header><dl><div><dt>Uploaded bill</dt><dd>{reviewValue(conflict.extracted_value)}</dd></div><div><dt>{formatStructuredLabel(conflict.comparison_source)}</dt><dd>{reviewValue(conflict.configured_value)}</dd></div></dl>{conflict.status === 'unresolved' && <label><span>Resolution</span><select value={conflictDecisions[conflict.id] ?? ''} onChange={(event) => { setConflictDecisions((value) => ({ ...value, [conflict.id]: event.target.value })); }}><option value="">Review required</option><option value="accepted_bill">Accept uploaded bill value</option><option value="accepted_configured">Keep configured value</option><option value="dismissed">Dismiss with recorded review</option></select></label>}</article>)}</div> : <EmptyState title="No detected conflicts" message="Applying values still requires explicit field review and rate-engine validation." />}
       </Panel>
     </div>}
 
@@ -646,7 +688,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
           <article><span>Utility energy subtotal</span><strong>{comparison.data.display?.utility_energy_subtotal ?? 'Unavailable'}</strong><small>Extracted bill evidence</small></article>
           <article><span>Complete utility bill</span><strong>{comparison.data.display?.utility_full_bill_total ?? 'Unavailable'}</strong><small>Not interchangeable with energy subtotal</small></article>
         </section>
-        <dl className="bill-difference-grid"><div><dt>Energy-subtotal difference</dt><dd>{comparison.data.display?.energy_subtotal_difference ?? 'Unavailable'}</dd></div><div><dt>Complete-bill difference</dt><dd>{comparison.data.display?.complete_bill_difference ?? 'Unavailable'}</dd></div><div><dt>Extraction confidence</dt><dd>{comparison.data.extraction_confidence?.replaceAll('_', ' ')}</dd></div><div><dt>Calculation correctness</dt><dd>{comparison.data.calculation_correctness?.replaceAll('_', ' ')}</dd></div></dl>
+        <dl className="bill-difference-grid"><div><dt>Energy-subtotal difference</dt><dd>{comparison.data.display?.energy_subtotal_difference ?? 'Unavailable'}</dd></div><div><dt>Complete-bill difference</dt><dd>{comparison.data.display?.complete_bill_difference ?? 'Unavailable'}</dd></div><div><dt>Extraction confidence</dt><dd>{formatStructuredLabel(comparison.data.extraction_confidence)}</dd></div><div><dt>Calculation correctness</dt><dd>{formatStructuredLabel(comparison.data.calculation_correctness)}</dd></div></dl>
         <p className="billing-disclosure">{comparison.data.disclosure}</p>
         <details className="exact-details"><summary>Exact unrounded comparison values</summary><pre>{JSON.stringify(comparison.data.exact, null, 2)}</pre></details>
       </>}
@@ -672,7 +714,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
 
     {step === 8 && current && <div className="bill-import-columns">
       <Panel title="Validate and apply reviewed tariff" eyebrow="Step 9 · Custom Plan draft merge">
-        <StatusPill status={current.status === 'ready_to_publish' || current.status === 'published' ? 'healthy' : 'failed'} label={current.status.replaceAll('_', ' ')} />
+        <StatusPill status={current.status === 'ready_to_publish' || current.status === 'published' ? 'healthy' : 'failed'} label={formatStructuredLabel(current.status)} />
         <p className="panel-copy">Choose every value deliberately. Applying changes only the unsaved Custom Plan editor draft; it does not publish, activate, or assign a rate.</p>
         {linkedDraft.isLoading ? <LoadingState label="Loading the reviewed linked rate draft…" /> : linkedDraft.error ? <ErrorState error={linkedDraft.error} retry={() => { void linkedDraft.refetch() }} /> : linkedDraft.data ? <div className="bill-draft-choice-list">
           {editableDraftFields.map(([key, label]) => {
@@ -691,7 +733,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
       </Panel>
       <Panel title="Import billing cycle" eyebrow="Separate bill-specific record">
         <p className="panel-copy">This records exact cycle dates and utility-reported cumulative usage separately. It never overwrites immutable monitored readings.</p>
-        <dl className="detail-list"><div><dt>Cycle</dt><dd>{current.cycle_draft?.starts_at && current.cycle_draft.ends_at ? formatBillingPeriod(current.cycle_draft.starts_at, current.cycle_draft.ends_at) : 'Unavailable'}</dd></div><div><dt>Reported usage</dt><dd>{formatEnergy(current.cycle_draft?.total_usage_kwh)}</dd></div><div><dt>Authority</dt><dd>{sourceRole.replaceAll('_', ' ')}</dd></div><div><dt>Status</dt><dd>{current.cycle_draft?.status.replaceAll('_', ' ')}</dd></div></dl>
+        <dl className="detail-list"><div><dt>Cycle</dt><dd>{current.cycle_draft?.starts_at && current.cycle_draft.ends_at ? formatBillingPeriod(current.cycle_draft.starts_at, current.cycle_draft.ends_at) : 'Unavailable'}</dd></div><div><dt>Reported usage</dt><dd>{formatEnergy(current.cycle_draft?.total_usage_kwh)}</dd></div><div><dt>Authority</dt><dd>{formatStructuredLabel(sourceRole)}</dd></div><div><dt>Status</dt><dd>{formatStructuredLabel(current.cycle_draft?.status)}</dd></div></dl>
         <button className="button secondary" disabled={importCycle.isPending || !['ready_to_publish', 'published'].includes(current.status) || current.cycle_draft?.status === 'imported'} onClick={() => { importCycle.mutate(); }}><FileUp size={15} /> Import reviewed billing cycle</button>
       </Panel>
       <Panel title="Workflow record" eyebrow="Evidence retained">
@@ -728,7 +770,7 @@ function FieldReviewPanel({
     {!fields.length ? <EmptyState title="No fields extracted" message="Missing required values remain publication blockers." /> : <div className="bill-field-list">{fields.map((field) => {
       const action = actions[field.id] ?? 'review'
       return <article key={field.id} className={`bill-field bill-confidence-${field.confidence}`}>
-        <header><div><strong>{field.field_key.replaceAll('.', ' · ').replaceAll('_', ' ')}</strong><small>Page {field.page_number ?? 'unknown'} · {field.extraction_method} · parser {field.parser_version}</small></div><StatusPill status={confidenceStatus(field.confidence)} label={field.confidence.replaceAll('_', ' ')} /></header>
+        <header><div><strong>{formatStructuredLabel(field.field_key)}</strong><small>Page {field.page_number ?? 'unknown'} · {formatStructuredLabel(field.extraction_method)} · parser {field.parser_version || 'unavailable'}</small></div><StatusPill status={confidenceStatus(field.confidence)} label={formatStructuredLabel(field.confidence)} /></header>
         <dl><div><dt>Extracted</dt><dd>{reviewValue(field.raw_value) || 'Missing'}</dd></div><div><dt>Normalized</dt><dd>{reviewValue(field.normalized_value) || 'Missing'}</dd></div></dl>
         {field.source_excerpt && <blockquote>{field.source_excerpt}</blockquote>}
         {field.warnings.map((warning, index) => <p className="field-warning" key={`${warning.code}-${index}`}><AlertTriangle size={13} /> {warning.message ?? warning.code}</p>)}

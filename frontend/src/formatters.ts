@@ -108,3 +108,17 @@ export function formatDecimalDetail(value: DecimalDisplayValue) {
   if (value === null || value === undefined || value === '') return 'Unavailable'
   return String(value)
 }
+
+export function formatStructuredLabel(
+  value: unknown,
+  fallback = 'Unavailable',
+) {
+  if (typeof value !== 'string') return fallback
+  const label = value.trim()
+  if (!label) return fallback
+  return label
+    .replaceAll('.', ' · ')
+    .replaceAll('_', ' ')
+    .replaceAll('-', ' ')
+    .replace(/\s+/g, ' ')
+}

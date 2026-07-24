@@ -6,6 +6,7 @@ import {
   formatEnergy,
   formatEnergyRate,
   formatPercentage,
+  formatStructuredLabel,
   formatTierRange,
 } from '../src/formatters'
 
@@ -44,5 +45,13 @@ describe('shared exact-value display formatters', () => {
     ]) {
       expect(output).not.toMatch(/\u00e2\u20ac|\u00ef\u00bf\u00bd|\ufffd/)
     }
+  })
+
+  it('formats structured labels without crashing on incomplete API data', () => {
+    expect(formatStructuredLabel('administrator_confirmed')).toBe('administrator confirmed')
+    expect(formatStructuredLabel('rate-plan.threshold_basis')).toBe('rate plan · threshold basis')
+    expect(formatStructuredLabel(undefined)).toBe('Unavailable')
+    expect(formatStructuredLabel('')).toBe('Unavailable')
+    expect(formatStructuredLabel(null, 'Not reported')).toBe('Not reported')
   })
 })

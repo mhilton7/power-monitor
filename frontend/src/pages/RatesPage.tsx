@@ -108,7 +108,7 @@ export function RatesPage({
               {version && <>
                 <dl className="rate-meta"><div><dt>Effective</dt><dd>{version.effective_from}</dd></div><div><dt>Source checked</dt><dd>{version.source_checked_at?.slice(0, 10) ?? 'Manual'}</dd></div><div><dt>Version</dt><dd>v{version.version}</dd></div><div><dt>Integrity</dt><dd title={version.integrity_sha256}>{version.integrity_sha256.slice(0, 10)}…</dd></div></dl>
                 <div className="source-note"><ClipboardCheck size={17} /><p>{version.source_label || (plan.plan_kind === 'custom' ? 'Administrator-defined plan' : 'SCE archived evidence')}</p></div>
-                <footer><button className="link-button" onClick={() => navigate(`/billing/rate-plans/${plan.id}/versions/${version.id}`)}>View details</button><div>
+                <footer className="rate-card-actions"><button className="link-button rate-card-details" onClick={() => navigate(`/billing/rate-plans/${plan.id}/versions/${version.id}`)}>View details</button><div className="rate-card-action-group">
                   <button className="button ghost" onClick={() => void exportVersion(version.id, plan.code)}><FileJson size={15} /> Export</button>
                   {canManage && <CanonicalAction id="rate_plan.clone" surface="resource_row" resourceKey={plan.id}><button className="button secondary" disabled={clone.isPending} onClick={() => { clone.mutate(plan.id); }}><Copy size={15} /> Clone</button></CanonicalAction>}
                   {canManage && version.status !== 'draft' && <button className="button primary" onClick={() => navigate(`/billing/accounts?rate_version_id=${encodeURIComponent(version.id)}`)}><Plus size={15} /> Assign to utility account</button>}

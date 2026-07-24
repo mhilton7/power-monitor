@@ -1158,7 +1158,14 @@ test('six-workspace shell and complete site lifecycle stay canonical, audited, a
   await wizard.getByRole('button', { name: /Continue/ }).click()
   await wizard.getByLabel('IANA timezone').fill('America/Denver')
   await wizard.getByRole('button', { name: /Continue/ }).click()
-  await wizard.getByRole('radio', { name: /explicit private-network policy/ }).check()
+  const siteNetworkRadio = wizard.getByRole('radio', { name: /explicit private-network policy/ })
+  const siteNetworkRadioBox = await siteNetworkRadio.boundingBox()
+  expect(siteNetworkRadioBox).not.toBeNull()
+  expect(siteNetworkRadioBox?.width).toBeLessThanOrEqual(20)
+  expect(siteNetworkRadioBox?.height).toBeLessThanOrEqual(20)
+  await expect(wizard.locator('.site-wizard-steps [aria-current="step"]')).toContainText('Network policy')
+  expect(await wizard.locator('.site-wizard-steps').evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true)
+  await siteNetworkRadio.check()
   await wizard.getByRole('button', { name: /Continue/ }).click()
   await wizard.getByRole('button', { name: /Continue/ }).click()
   await wizard.getByRole('radio', { name: /Configure later/ }).check()
@@ -1288,23 +1295,37 @@ test('administrator configures an effective utility account and explicit private
   await page.goto('/billing/accounts?rate_version_id=rate-version-official')
   await expect(page.getByText('No utility account configured')).toBeVisible()
   await page.getByRole('button', { name: 'Create utility account' }).first().click()
-  await page.getByLabel('Account display name').fill('Upland main electric')
-  await page.getByRole('button', { name: /Next/ }).click()
+  const accountWizard = page.locator('.account-wizard')
+  await expect(page.getByRole('dialog', { name: 'Utility Setup' })).toBeVisible()
+  await expect(accountWizard.locator('.wizard-steps [aria-current="step"]')).toContainText('Utility Setup')
+  await expect(accountWizard.getByText('Utility Setup')).toHaveCount(2)
+  await expect(accountWizard.getByText('Account identity')).toHaveCount(0)
+  expect(await accountWizard.locator('.wizard-steps').evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true)
+  await accountWizard.getByLabel('Account display name').fill('Upland main electric')
+  await accountWizard.getByRole('button', { name: /Next/ }).click()
   await expect(page.getByRole('dialog', { name: 'Utility & provider' })).toBeVisible()
-  await page.getByRole('button', { name: /Next/ }).click()
+  await accountWizard.getByRole('button', { name: /Next/ }).click()
   await expect(page.getByRole('dialog', { name: 'Billing details' })).toBeVisible()
-  await page.getByLabel('Billing-cycle start day').fill('17')
-  await page.getByRole('button', { name: /Next/ }).click()
+  await accountWizard.getByLabel('Billing-cycle start day').fill('17')
+  await accountWizard.getByRole('button', { name: /Next/ }).click()
   await expect(page.getByRole('dialog', { name: 'Rate & version' })).toBeVisible()
-  await expect(page.getByLabel('Published rate plan and version')).toHaveValue('rate-version-official')
-  await expect(page.getByText('On Peak $0.58/kWh')).toBeVisible()
-  await page.getByRole('button', { name: /Next/ }).click()
-  await expect(page.getByRole('radio', { name: /Energy-only monitored scope/ })).toBeChecked()
-  await page.getByRole('button', { name: /Next/ }).click()
+  await expect(accountWizard.getByLabel('Published rate plan and version')).toHaveValue('rate-version-official')
+  await expect(accountWizard.getByText('On Peak $0.58/kWh')).toBeVisible()
+  await accountWizard.getByRole('button', { name: /Next/ }).click()
+  const costScopeRadio = accountWizard.getByRole('radio', { name: /Energy-only monitored scope/ })
+  await expect(costScopeRadio).toBeChecked()
+  const costScopeRadioBox = await costScopeRadio.boundingBox()
+  const costScopeTextBox = await accountWizard.getByText('Energy-only monitored scope').boundingBox()
+  expect(costScopeRadioBox).not.toBeNull()
+  expect(costScopeTextBox).not.toBeNull()
+  expect(costScopeRadioBox?.width).toBeLessThanOrEqual(20)
+  expect(costScopeRadioBox?.height).toBeLessThanOrEqual(20)
+  expect((costScopeRadioBox?.x ?? 0) + (costScopeRadioBox?.width ?? 0)).toBeLessThanOrEqual((costScopeTextBox?.x ?? 0) + 1)
+  await accountWizard.getByRole('button', { name: /Next/ }).click()
   await expect(page.getByRole('dialog', { name: 'Adjustments' })).toBeVisible()
-  await page.getByRole('button', { name: /Next/ }).click()
+  await accountWizard.getByRole('button', { name: /Next/ }).click()
   await expect(page.getByRole('dialog', { name: 'Review & create' })).toBeVisible()
-  await page.getByRole('button', { name: 'Confirm and create' }).click()
+  await accountWizard.getByRole('button', { name: 'Confirm and create' }).click()
   await expect(page.getByText('Utility account created and rate assignment activated.')).toBeVisible()
   const account = page.locator('.utility-account-card').filter({ hasText: 'Upland main electric' })
   await expect(account).toContainText('TOU-D 4 PM to 9 PM')
@@ -1342,6 +1363,49 @@ test('administrator configures an effective utility account and explicit private
 
   await page.setViewportSize({ width: 390, height: 844 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+})
+
+test('billing cards, workspace tabs, and network policy controls stay within their containers', async ({ page }) => {
+  await mockApplication(page)
+  await page.setViewportSize({ width: 600, height: 900 })
+  await page.goto('/billing/rate-plans')
+
+  const footer = page.locator('.rate-card-actions').first()
+  const footerBox = await footer.boundingBox()
+  const actionBoxes = await footer.locator('button').evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const box = button.getBoundingClientRect()
+      return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }
+    }),
+  )
+  expect(footerBox).not.toBeNull()
+  for (const box of actionBoxes) {
+    expect(box.left).toBeGreaterThanOrEqual((footerBox?.x ?? 0) - 1)
+    expect(box.right).toBeLessThanOrEqual((footerBox?.x ?? 0) + (footerBox?.width ?? 0) + 1)
+  }
+  for (let left = 0; left < actionBoxes.length; left += 1) {
+    for (let right = left + 1; right < actionBoxes.length; right += 1) {
+      const first = actionBoxes[left]
+      const second = actionBoxes[right]
+      if (!first || !second) continue
+      const overlapWidth = Math.min(first.right, second.right) - Math.max(first.left, second.left)
+      const overlapHeight = Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top)
+      expect(overlapWidth > 1 && overlapHeight > 1).toBe(false)
+    }
+  }
+
+  const tabBar = page.locator('.workspace-tab-bar')
+  expect(await tabBar.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+
+  await page.setViewportSize({ width: 1100, height: 900 })
+  await page.goto('/administration/sites-network?view=network')
+  const policyRadio = page.getByRole('radio', { name: /Allow listed private networks only/ }).first()
+  const radioBox = await policyRadio.boundingBox()
+  expect(radioBox?.width).toBeLessThanOrEqual(18)
+  expect(radioBox?.height).toBeLessThanOrEqual(18)
+  const savePolicy = page.getByRole('button', { name: 'Save policy' })
+  expect((await savePolicy.boundingBox())?.width).toBeGreaterThanOrEqual(128)
 })
 
 test('disabled controls in rate details use a disabled cursor, not a busy spinner', async ({ page }) => {
@@ -1547,6 +1611,74 @@ test('administrator configures, previews, publishes, and restores a self-correct
   await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   await captureStatusLayout(page, 'published-mobile.png')
+})
+
+test('status editor repairs a placement removed from the current registry before automatic preview', async ({ page }) => {
+  await mockApplication(page)
+  const configuration = defaultStatusConfiguration()
+  const savedEnergy = configuration.items.find((item) =>
+    item.indicator_key === 'data.energy_today'
+    && item.page === '*'
+    && item.role === '*'
+    && item.breakpoint === 'default',
+  )
+  if (!savedEnergy) throw new Error('Expected the energy indicator fixture')
+  savedEnergy.zone = 'page_summary'
+  const strictDefinitions = statusDefinitions.map((definition) =>
+    definition.key === 'data.energy_today'
+      ? { ...definition, allowed_zones: ['overview_summary'] }
+      : definition,
+  )
+  await page.route('**/api/v1/admin/status-indicators/catalog', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        registry_version: 'status-indicators/1.0',
+        schema_version: 'power-monitor-status-layout/1.0',
+        published_revision: 1,
+        indicators: strictDefinitions,
+        zones: statusZones,
+        pages: statusPages,
+        breakpoints: ['desktop', 'tablet', 'mobile'],
+        roles: [{ id: 'admin', label: 'Administrator' }],
+        new_indicator_keys: [],
+        excluded_status_surfaces: [],
+      }),
+    })
+  })
+  await page.route('**/api/v1/admin/status-indicators/draft', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        exists: true,
+        base_revision: 1,
+        draft_revision: 1,
+        configuration,
+        critical_hidden: [],
+      }),
+    })
+  })
+  const previewRequest = page.waitForRequest((request) =>
+    request.url().endsWith('/api/v1/admin/status-indicators/preview')
+    && request.method() === 'POST',
+  )
+  await page.goto('/administration/interface?view=layout')
+  const previewPayload = JSON.parse((await previewRequest).postData() ?? '{}') as {
+    configuration: ReturnType<typeof defaultStatusConfiguration>
+  }
+  const repairedEnergy = previewPayload.configuration.items.find((item) =>
+    item.indicator_key === 'data.energy_today'
+    && item.page === '*'
+    && item.role === '*'
+    && item.breakpoint === 'default',
+  )
+  expect(repairedEnergy?.zone).toBe('overview_summary')
+  await expect(page.getByText(/saved placement was updated to the current registered zone/i)).toBeVisible()
+  await expect(page.getByText('The indicator cannot be placed in that zone')).toHaveCount(0)
 })
 
 test('normal pages stay compact, metrics are unique, and System Health owns diagnostics', async ({ page }) => {

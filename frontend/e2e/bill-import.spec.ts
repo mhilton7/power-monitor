@@ -505,6 +505,28 @@ test('keeps an unresolved official-source conflict visible and blocks publicatio
   expect(overflow).toBeLessThanOrEqual(1)
 })
 
+test('keeps the importer usable when an older API omits optional display labels', async ({ page }) => {
+  const compatibilityBill = {
+    ...baseBill,
+    extraction_method: undefined as unknown as string,
+    parser_version: undefined as unknown as string,
+  }
+  await mockApplication(page, compatibilityBill)
+  await page.goto('/billing/rate-plans/new?bill_import=open')
+  await page.getByLabel('Utility bill import', { exact: true }).getByRole('button', { name: 'Next' }).click()
+  const fixture = path.resolve(
+    process.cwd(),
+    '../backend/tests/fixtures/bills/text-tiered-bill.pdf',
+  )
+  await page.getByLabel('Utility-bill PDF').setInputFiles(fixture)
+  await page.getByRole('button', { name: 'Upload and create drafts' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Document inspection' })).toBeVisible()
+  await expect(page.getByText('Extraction', { exact: true }).locator('..')).toContainText('unavailable')
+  await expect(page.getByText('Parser', { exact: true }).locator('..')).toContainText('unavailable')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
 test('shows actionable importer empty states instead of a blank workspace', async ({ page }) => {
   await mockApplication(page)
   await page.route('**/api/v1/utility-accounts', async (route) => {
