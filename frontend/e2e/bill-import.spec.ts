@@ -547,3 +547,37 @@ test('a failed editor chunk renders a recoverable error rather than a blank page
   await expect(page.getByRole('alert')).toContainText('Something needs attention')
   await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
 })
+
+test('captures the legacy account current_plan crash with source and component stacks', async ({ page }) => {
+  await mockApplication(page)
+  await page.route('**/api/v1/utility-accounts', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify([{
+        id: account.id,
+        site_id: account.site_id,
+        name: account.name,
+        timezone: account.timezone,
+        currency: account.currency,
+        billing_cycle_start_day: account.billing_cycle_start_day,
+        generation_provider: account.generation_provider,
+        active_rate_version_id: null,
+      }]),
+    })
+  })
+  const browserDiagnostics: string[] = []
+  page.on('pageerror', (error) => {
+    browserDiagnostics.push(`pageerror: ${error.stack ?? error.message}`)
+  })
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserDiagnostics.push(`console: ${message.text()}`)
+  })
+
+  await page.goto('http://127.0.0.1:5190/billing/rate-plans/new')
+  await page.getByRole('button', { name: 'Import rate plan from bill' }).click()
+  await expect(page.getByRole('alert')).toContainText(
+    "Cannot read properties of undefined (reading 'current_plan')",
+  )
+  expect(browserDiagnostics.join('\n')).toContain('BillImportWorkspace')
+  console.log(`[current-plan-reproduction]\n${browserDiagnostics.join('\n')}`)
+})
