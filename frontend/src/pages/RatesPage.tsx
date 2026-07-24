@@ -1,7 +1,8 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { CheckCircle2, ClipboardCheck, Copy, Download, FileJson, Plus, RefreshCw, Settings2, Upload } from 'lucide-react'
+import { CheckCircle2, ClipboardCheck, Copy, FileJson, Plus, RefreshCw, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { CanonicalAction } from '../actions'
 import { api } from '../api'
 import { EmptyState, ErrorState, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
 import type { ManagedRatePlan, PricingModel } from '../rates'
@@ -30,7 +31,6 @@ function downloadJson(filename: string, value: unknown) {
 
 export function RatesPage({
   canManage,
-  canImportBills = false,
 }: {
   canManage: boolean
   canImportBills?: boolean
@@ -64,7 +64,7 @@ export function RatesPage({
     const body = new FormData()
     body.append('upload', file)
     const result = await api<{ plan_id: string; version_id: string }>('/api/v1/rates/import', { method: 'POST', body })
-    void navigate(`/rates/${result.plan_id}/versions/${result.version_id}`)
+    void navigate(`/billing/rate-plans/${result.plan_id}/versions/${result.version_id}`)
   }
 
   return (
@@ -74,10 +74,8 @@ export function RatesPage({
         title="Rate plans"
         description="Effective-dated, source-backed versions preserve historical estimates while new utility changes remain reviewable."
         actions={canManage && <>
-          <button className="button secondary" disabled={check.isPending} onClick={() => { check.mutate(); }}><RefreshCw size={16} className={check.isPending ? 'spin' : ''} /> Check SCE now</button>
-          <button className="button secondary" onClick={() => navigate('/rates/sources')}><Settings2 size={16} /> Rate source settings</button>
-          {canImportBills && <button className="button secondary" onClick={() => navigate('/rates/new?bill_import=open')}><Upload size={16} /> Import from utility bill</button>}
-          <button className="button primary" onClick={() => navigate('/rates/new')}><Plus size={17} /> Custom plan</button>
+          <CanonicalAction id="rate_source.check" surface="workspace_header"><button className="button secondary" disabled={check.isPending} onClick={() => { check.mutate(); }}><RefreshCw size={16} className={check.isPending ? 'spin' : ''} /> Check SCE now</button></CanonicalAction>
+          <CanonicalAction id="rate_plan.create_custom" surface="workspace_header"><button className="button primary" onClick={() => navigate('/billing/rate-plans/new')}><Plus size={17} /> Create custom plan</button></CanonicalAction>
         </>}
       />
 
@@ -110,10 +108,10 @@ export function RatesPage({
               {version && <>
                 <dl className="rate-meta"><div><dt>Effective</dt><dd>{version.effective_from}</dd></div><div><dt>Source checked</dt><dd>{version.source_checked_at?.slice(0, 10) ?? 'Manual'}</dd></div><div><dt>Version</dt><dd>v{version.version}</dd></div><div><dt>Integrity</dt><dd title={version.integrity_sha256}>{version.integrity_sha256.slice(0, 10)}…</dd></div></dl>
                 <div className="source-note"><ClipboardCheck size={17} /><p>{version.source_label || (plan.plan_kind === 'custom' ? 'Administrator-defined plan' : 'SCE archived evidence')}</p></div>
-                <footer><button className="link-button" onClick={() => navigate(`/rates/${plan.id}/versions/${version.id}`)}>View details</button><div>
+                <footer><button className="link-button" onClick={() => navigate(`/billing/rate-plans/${plan.id}/versions/${version.id}`)}>View details</button><div>
                   <button className="button ghost" onClick={() => void exportVersion(version.id, plan.code)}><FileJson size={15} /> Export</button>
-                  {canManage && <button className="button secondary" disabled={clone.isPending} onClick={() => { clone.mutate(plan.id); }}><Copy size={15} /> Clone</button>}
-                  {canManage && version.status !== 'draft' && <button className="button primary" onClick={() => navigate(`/admin?tab=sites-accounts&rate_version_id=${encodeURIComponent(version.id)}`)}><Plus size={15} /> Assign to utility account</button>}
+                  {canManage && <CanonicalAction id="rate_plan.clone" surface="resource_row" resourceKey={plan.id}><button className="button secondary" disabled={clone.isPending} onClick={() => { clone.mutate(plan.id); }}><Copy size={15} /> Clone</button></CanonicalAction>}
+                  {canManage && version.status !== 'draft' && <button className="button primary" onClick={() => navigate(`/billing/accounts?rate_version_id=${encodeURIComponent(version.id)}`)}><Plus size={15} /> Assign to utility account</button>}
                   {canManage && version.status === 'draft' && <button className="button primary" disabled={activate.isPending} onClick={() => { activate.mutate(version.id); }}><CheckCircle2 size={15} /> Activate</button>}
                 </div></footer>
               </>}
@@ -123,12 +121,11 @@ export function RatesPage({
       ) : <EmptyState title={query.data?.length ? 'No matching rate plans' : 'No rate plans'} message={query.data?.length ? 'Choose another pricing model filter.' : 'Run first-time initialization to install effective-dated SCE presets.'} />}
 
       <p className="rate-disclaimer">This estimate is not an SCE bill. Rates shown may differ when generation is provided by a CCA or Direct Access provider.</p>
-      <p className="cross-page-setup"><strong>Plans in this library are not assigned automatically.</strong> <button className="link-button" onClick={() => navigate('/admin?tab=sites-accounts')}>Configure utility account</button></p>
+      <p className="cross-page-setup"><strong>Plans in this library are not assigned automatically.</strong> <button className="link-button" onClick={() => navigate('/billing/accounts')}>Configure utility account</button></p>
 
       {canManage && <Panel title="Plan portability" eyebrow="Controlled import and export" actions={<>
         <input ref={importInput} className="sr-only" type="file" accept="application/json,.json" onChange={(event) => void importPlan(event.target.files?.[0])} />
         <button className="button secondary" onClick={() => importInput.current?.click()}><Upload size={15} /> Import plan</button>
-        <button className="button ghost" onClick={() => navigate('/rates/sources')}><Download size={15} /> Evidence archive</button>
       </>}><p className="panel-copy">Imports are schema-validated, size-limited, and always created as inactive drafts. Exports contain exact decimal strings and no credentials.</p></Panel>}
 
       <Panel title="Activation checklist" eyebrow="Before calculating costs"><div className="checklist"><div><span>1</span><p><strong>Verify the plan code</strong><small>Find it on the current SCE bill.</small></p></div><div><span>2</span><p><strong>Review archived evidence</strong><small>Confirm source dates, exact prices, and any conflicts.</small></p></div><div><span>3</span><p><strong>Set the cost scope</strong><small>One-CT devices default to energy-only.</small></p></div><div><span>4</span><p><strong>Configure provider adjustments</strong><small>CCA and Direct Access generation remain explicit.</small></p></div></div></Panel>

@@ -73,10 +73,10 @@ export function UsagePage() {
       title="Usage"
       description="Account-authoritative energy is allocated chronologically through the exact billing cycle and its configured tiers."
     />
-    {!account ? <Panel><EmptyState title="No utility account" message="Create a utility account, assign a rate, and select an account-usage authority before tier progress can be shown." action={<Link className="button primary" to="/admin?tab=sites-accounts">Configure utility account <ArrowUpRight size={15} /></Link>} /></Panel>
+    {!account ? <Panel><EmptyState title="No utility account" message="Create a utility account, assign a rate, and select an account-usage authority before tier progress can be shown." action={<Link className="button primary" to="/billing/accounts">Configure utility account <ArrowUpRight size={15} /></Link>} /></Panel>
       : status.isLoading ? <LoadingState label="Allocating billing-cycle usage..." />
         : status.error ? <ErrorState error={status.error} retry={() => void status.refetch()} />
-          : !status.data?.available ? <Panel><EmptyState title="Tier usage is not available" message={status.data?.warnings[0] ?? 'The current account does not have a tiered rate and complete-account usage authority.'} action={<Link className="button primary" to="/admin?tab=sites-accounts">Complete account setup <ArrowUpRight size={15} /></Link>} /></Panel>
+          : !status.data?.available ? <Panel><EmptyState title="Tier usage is not available" message={status.data?.warnings[0] ?? 'The current account does not have a tiered rate and complete-account usage authority.'} action={<Link className="button primary" to="/billing/accounts">Complete account setup <ArrowUpRight size={15} /></Link>} /></Panel>
             : <UsageContent status={status.data} />}
   </>
 }

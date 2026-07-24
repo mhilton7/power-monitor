@@ -55,9 +55,10 @@ from app.db.models import (
     UserRole,
     Utility,
     UtilityAccount,
+    UtilityAccountSiteAssignment,
 )
 from app.history import MAX_HISTORY_BUCKETS, history_csv, query_history
-from app.network_policy import policy_cidrs, policy_for_site, policy_summary
+from app.network_policy import ensure_site_policies, policy_cidrs, policy_for_site, policy_summary
 from app.problem import ProblemError
 from app.schemas import (
     AggregateSetCreate,
@@ -117,6 +118,10 @@ async def list_sites(principal: Viewer, session: DbSession) -> list[Site]:
     query = select(Site).order_by(Site.name)
     if not principal.all_sites:
         query = query.where(Site.id.in_(principal.site_ids))
+    if {"sites.edit", "sites.manage"}.intersection(principal.permissions):
+        query = query.where(Site.lifecycle_state != "removed")
+    else:
+        query = query.where(Site.lifecycle_state == "active")
     return list(await session.scalars(query))
 
 
@@ -128,8 +133,14 @@ async def create_site(
     session: DbSession,
 ) -> Site:
     _permission(principal, "sites.manage")
-    site = Site(**payload.model_dump())
+    site = Site(**payload.model_dump(exclude_none=True))
     session.add(site)
+    await session.flush()
+    if not await session.scalar(
+        select(Site.id).where(Site.is_default.is_(True), Site.id != site.id)
+    ):
+        site.is_default = True
+    await ensure_site_policies(session, site)
     session.add(
         audit_event(
             action="site.created",
@@ -157,8 +168,16 @@ async def update_site(
     site = await session.get(Site, site_id)
     if site is None:
         raise ProblemError(404, "Site not found", "Site does not exist", "site_missing")
-    for key, value in payload.model_dump().items():
+    for key, value in payload.model_dump(exclude_none=True).items():
+        if key == "code" and value != site.code:
+            raise ProblemError(
+                409,
+                "Stable site code",
+                "Use the reviewed site-management workflow for identity changes",
+                "site_code_immutable",
+            )
         setattr(site, key, value)
+    site.revision += 1
     session.add(
         audit_event(
             action="site.updated",
@@ -182,34 +201,26 @@ async def delete_site(
     site = await session.get(Site, site_id)
     if site is None:
         raise ProblemError(404, "Site not found", "Site does not exist", "site_missing")
-    references = 0
-    for model in (UtilityAccount, Circuit, Device):
-        references += int(
-            await session.scalar(
-                select(func.count()).select_from(model).where(model.site_id == site.id)
-            )
-            or 0
-        )
-    if references:
-        raise ProblemError(
-            409,
-            "Site is in use",
-            "Remove the site's accounts, circuits, and devices first",
-            "site_in_use",
-        )
     session.add(
         audit_event(
-            action="site.deleted",
+            action="site.hard_delete_blocked",
             actor_type="user",
             actor_id=principal.user.id,
             request=request,
             object_type="site",
             object_id=site.id,
+            outcome="blocked",
+            details={"use": f"/api/v1/admin/sites/{site.id}/remove"},
         )
     )
-    await session.delete(site)
     await session.commit()
-    return Response(status_code=204)
+    raise ProblemError(
+        409,
+        "Use safe site removal",
+        "Review dependencies and use the soft-removal lifecycle endpoint",
+        "site_soft_removal_required",
+        extra={"remove_endpoint": f"/api/v1/admin/sites/{site.id}/remove"},
+    )
 
 
 @router.get("/utility-accounts")
@@ -266,8 +277,28 @@ async def create_utility_account(
             422, "Invalid account", "site_id and name are required", "invalid_account"
         )
     _site_allowed(principal, str(values["site_id"]))
+    site = await session.get(Site, str(values["site_id"]))
+    if site is None or site.lifecycle_state != "active":
+        raise ProblemError(
+            409,
+            "Active site required",
+            "Enable the site before creating new utility-account assignments",
+            "site_not_assignable",
+        )
     account = UtilityAccount(utility_id=utility.id, **values)
     session.add(account)
+    await session.flush()
+    now = datetime.now(UTC)
+    session.add(
+        UtilityAccountSiteAssignment(
+            utility_account_id=account.id,
+            site_id=account.site_id,
+            effective_from=now,
+            assigned_by=principal.user.id,
+            reason="Initial utility-account assignment",
+            created_at=now,
+        )
+    )
     session.add(
         audit_event(
             action="utility_account.created",
@@ -745,6 +776,13 @@ async def create_enrollment_token(
         if site is None:
             raise ProblemError(
                 404, "Site not found", "The selected site does not exist", "site_missing"
+            )
+        if site.lifecycle_state != "active":
+            raise ProblemError(
+                409,
+                "Active site required",
+                "Enable the site before creating enrollment assignments",
+                "site_not_assignable",
             )
         ingress_policy = await policy_for_site(session, site, "device_ingress")
         ingress_cidrs = await policy_cidrs(session, ingress_policy.id)

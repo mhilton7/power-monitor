@@ -27,13 +27,13 @@ export function DevicesPage() {
               <thead><tr><th>Device</th><th>Status</th><th>Live power</th><th>Subsystems</th><th>Connection</th><th>Last seen</th><th aria-label="Open" /></tr></thead>
               <tbody>{rows.map((device) => (
                 <tr key={device.id}>
-                  <td><Link className="device-cell" to={`/devices/${device.id}`}><span><RadioTower /></span><p><strong>{device.name}</strong><small>{device.measurement_role} · {device.ct_rating_amps} A CT</small></p></Link></td>
+                  <td><Link className="device-cell" to={`/monitoring/devices/${device.id}`}><span><RadioTower /></span><p><strong>{device.name}</strong><small>{device.measurement_role} · {device.ct_rating_amps} A CT</small></p></Link></td>
                   <td><StatusPill status={device.status} /></td>
                   <td><strong>{formatNumber(device.current_watts)} W</strong></td>
                   <td><div className="mini-indicators"><span className={device.pzem_ok ? 'ok' : 'bad'}>PZ</span><span className={device.sd_ok ? 'ok' : 'bad'}>SD</span><span className={device.time_trusted ? 'ok' : 'bad'}>TM</span><span className={device.backlog ? 'warn' : 'ok'}>SQ</span></div></td>
                   <td><span className="connection"><Wifi size={15} /> {device.connection_mode}{device.rssi_dbm ? ` · ${device.rssi_dbm} dBm` : ''}</span></td>
                   <td><time title={device.last_seen_at}>{formatTime(device.last_seen_at)}</time></td>
-                  <td><Link className="icon-button" aria-label={`Open ${device.name}`} to={`/devices/${device.id}`}><ChevronRight /></Link></td>
+                  <td><Link className="icon-button" aria-label={`Open ${device.name}`} to={`/monitoring/devices/${device.id}`}><ChevronRight /></Link></td>
                 </tr>
               ))}</tbody>
             </table>

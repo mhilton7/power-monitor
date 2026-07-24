@@ -10,7 +10,7 @@ existing user, custom-role, effective-access, session, site-scope, and audit
 tools. The legacy query routes `/admin?tab=users`, `users-roles`, or `roles`,
 plus `/administration/users`, `/administration/users-roles`, and
 `/administration/roles`, use replace-style redirects to
-`/administration/users-access`. Safe search/filter query parameters are
+`/administration/access` (`/administration/users-access` redirects for compatibility). Safe search/filter query parameters are
 preserved. The redirect never mounts a second list or duplicates API requests.
 
 ## Feature-parity inventory

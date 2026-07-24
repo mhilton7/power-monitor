@@ -1,6 +1,6 @@
 # Status Indicators & Layout administration
 
-Open **Administration > Status Indicators & Layout**. Users with
+Open **Administration > Interface > Status Indicators & Layout**. Users with
 `status_indicators.view` can inspect the published registry, effective layout,
 scope precedence, exclusions, current preview, and revision history. Users with
 `status_indicators.manage` can edit a draft, but the server remains the final

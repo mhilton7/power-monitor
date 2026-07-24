@@ -1,6 +1,6 @@
 # Custom rate plans
 
-Open **Rates > Custom plan** to use the editor: identity and scope, pricing and
+Open **Billing > Rate Plans > Custom Plan** to use the editor: identity and scope, pricing and
 tiers, seasons and day schedules, adjustments, then validation and activation.
 Incomplete schedules can be saved as drafts; blocking gaps, overlaps, missing
 annual coverage, invalid dates, or unsupported decimal values prevent

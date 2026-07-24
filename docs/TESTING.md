@@ -1,5 +1,49 @@
 # Testing and release gates
 
+## Modern workspace and site-lifecycle acceptance (2026-07-24)
+
+The portable gate passes Ruff lint and formatting, strict mypy, 122 Python
+tests with the three intentionally deployment/load-gated cases skipped,
+generated OpenAPI drift checking, JSON Schema/protocol contracts, and the
+repository secret scan. Site tests cover create/edit/default, disable/enable,
+dependency review, effective-dated sensor/account transfer, archive, user
+access termination, soft removal, restore-to-disabled, scope/RBAC, optimistic
+revision conflicts, retained history, last/default protections, and audit
+evidence.
+
+The frontend passes lint, TypeScript, 39 unit/component tests, a Vite production
+build, and all 38 Chromium end-to-end scenarios. The E2E lifecycle creates a
+second site, changes its default/name/state, removes a dependency-bearing site
+after explicit archive/access resolution, validates selector fallback and
+historical retention, restores it disabled, checks audit history and duplicate
+action identities, and renders at 1440, 1024, 768, and 390 px. Existing bill
+import, rates, user lifecycle, enrollment, alerts, status-layout, History,
+network, and login/autofill scenarios remain green.
+
+The separately enabled PostgreSQL 17 gate passed populated initial-schema
+upgrade, downgrade/re-upgrade, populated prior-schema upgrade, and clean
+installation at `20260724_0012` with 98 public tables and 63 Administrator
+permissions. The 100-device resilience gate accepted 18,000 three-hour
+backfill readings, accepted zero duplicates on a complete retry, used 12.37
+MiB peak traced memory, and completed the first backfill in 71.181 seconds.
+
+Fresh API/worker, frontend, and backup images built successfully. The standard
+Compose stack migrated its populated database to `20260724_0012`; PostgreSQL,
+API, worker, frontend, and gateway reported healthy. A five-artifact logical
+backup passed SHA-256 verification and clean-database restoration with 98
+tables and three status-layout revisions. Python and npm production dependency
+audits found no known vulnerabilities, and regenerated CycloneDX SBOMs and the
+release checksum manifest validate.
+
+The digest-pinned seven-service TrueNAS deployment render passed deployment
+validation and the complete Docker Desktop workflow. Only TCP 18443 on the
+gateway was published; migration completed before API/worker startup; every
+long-running service was healthy; three simulated signed devices contributed
+90 readings; SCE rate calculation, two utility accounts, and one canonical
+network CIDR persisted; all five encrypted backup artifacts verified; and the
+backup restored into a clean database at `20260724_0012`. The disposable
+containers, networks, volumes, CA, and generated test secrets were removed.
+
 ## Bill integration and user lifecycle acceptance (2026-07-24)
 
 The focused release gate passed Ruff lint/format, strict mypy, OpenAPI
@@ -169,7 +213,7 @@ tables and a preserved prior layout plus the corrected immutable revision.
 The frontend passed a clean `npm ci`, lint, TypeScript, 22 unit/component tests,
 30 Chromium end-to-end and accessibility scenarios, and the production build.
 Those tests assert that API, database, and worker health render only on
-**Administration > System Health**; normal pages have no duplicate
+**Administration > Security > System Health**; normal pages have no duplicate
 `metric_identity`; Overview and History have one honest no-data state; measured
 zero remains distinct from unavailable data; and desktop/mobile layouts do not
 overflow.

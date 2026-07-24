@@ -25,6 +25,7 @@ from app.bills.service import (
 from app.db.models import (
     RateSourceArtifact,
     UtilityAccount,
+    UtilityBillCycleDraft,
     UtilityBillExtractedField,
     UtilityBillExtractionRevision,
     UtilityBillImport,
@@ -235,6 +236,9 @@ async def list_utility_bill_imports(
         except ProblemError:
             continue
         payload = await import_payload(session, bill)
+        cycle = await session.scalar(
+            select(UtilityBillCycleDraft).where(UtilityBillCycleDraft.bill_import_id == bill.id)
+        )
         visible.append(
             {
                 key: payload[key]
@@ -255,6 +259,20 @@ async def list_utility_bill_imports(
                     "blocking_warnings",
                     "created_at",
                     "updated_at",
+                )
+            }
+            | {
+                "billing_cycle": (
+                    {
+                        "starts_at": cycle.starts_at,
+                        "ends_at": cycle.ends_at,
+                        "total_usage_kwh": cycle.total_usage_kwh,
+                        "estimated_total": cycle.full_bill_total,
+                        "status": cycle.status,
+                        "billing_cycle_id": cycle.billing_cycle_id,
+                    }
+                    if cycle
+                    else None
                 )
             }
         )

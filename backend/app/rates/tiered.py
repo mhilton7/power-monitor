@@ -1004,7 +1004,7 @@ def _unavailable_status(
         "estimated_total_bill": None,
         "projected_total_bill": None,
         "warnings": [reason],
-        "configuration_action": "/admin?tab=sites-accounts",
+        "configuration_action": "/billing/accounts",
         "disclosure": "Tier status is unavailable; the server does not guess account usage.",
     }
 

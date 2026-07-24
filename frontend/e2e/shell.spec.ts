@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { emptyRateDocument } from '../src/rates'
+import type { AdminSite, SiteDependencySummary } from '../src/types'
 
 const session = (roles: string[] = ['admin']) => ({
   authenticated: true,
@@ -39,52 +40,52 @@ const textDefinitions = [
   ['footer.dashboard', 'Footer & Support', 'Power Monitor Server', 'Dashboard footer text', 'authenticated', 160],
 ].map(([key, section, defaultValue, label, visibility, maxLength]) => ({ key, section, default: defaultValue, label, description: `${String(label)} description`, field_type: 'text', required: true, visibility, max_length: Number(maxLength), min_length: 1, line_breaks: false, url_companion: false, markdown: false, blank_allowed: false, preview_location: 'dashboard', current_value: defaultValue, published_revision: 0 }))
 
-const statusZones = ['global_header_left', 'global_header_center', 'global_header_right', 'sidebar_upper', 'sidebar_lower', 'global_footer', 'page_header_primary', 'page_header_secondary', 'page_status_row', 'page_summary_strip', 'page_footer', 'overview_site_state', 'overview_site_summary', 'history_context', 'diagnostics_summary', 'mobile_header', 'mobile_status_strip', 'mobile_status_drawer']
+const statusZones = ['top_bar', 'overview_summary', 'workspace_header', 'page_summary', 'mobile_status_drawer', 'administration_diagnostics']
 const statusPages = ['overview', 'devices', 'device_detail', 'topology', 'usage', 'history', 'costs', 'rates', 'rate_sources', 'alerts', 'enrollment', 'administration', 'system_health', 'backups']
 const statusDefinition = (key: string, label: string, category: string, zone: string, order: number, pages = statusPages, permission = 'overview.view', criticalFallback?: string) => ({
-  key, default_label: label, description: `${label} status from existing server data.`, category, data_source: key, current_value_schema: { status: 'string', display_value: 'string' }, severity_capability: ['info', 'success', 'warning', 'critical', 'unknown'], default_enabled: true, default_zone: zone, allowed_zones: statusZones, default_order: order, supported_pages: pages, global_shell_support: zone.startsWith('global'), minimum_display_width: 140, preferred_display_width: 220, presentations: ['compact', 'standard', 'detailed'], icon_supported: true, label_supported: true, value_supported: true, freshness_supported: true, role_visibility_supported: true, permission_required: permission, configurable: true, critical_fallback: criticalFallback, renderer: key.includes('power') || key.includes('peak') ? 'power' : key.includes('count') || key.includes('online') || key.includes('offline') ? 'count' : 'health', icon: key.includes('alert') ? 'bell' : key.includes('power') ? 'zap' : 'activity', metric_identity: ({ 'data.live_connection': 'data.live_state', 'data.current_power': 'power.current', 'alerts.active_count': 'alerts.active_count', 'device.online_count': 'devices.online', 'device.offline_count': 'devices.offline', 'device.synchronized_count': 'data.synchronization', 'data.energy_today': 'energy.today', 'data.recent_peak': 'power.recent_peak', 'data.aggregate_coverage': 'data.coverage' } as Record<string, string>)[key] ?? key, canonical_priority: 300, allow_duplicate: false, suppress_when_empty: true, hide_in_zero_data_state: false, diagnostics_only: key.startsWith('system.'), registry_version: 'status-indicators/1.0',
+  key, default_label: label, description: `${label} status from existing server data.`, category, data_source: key, current_value_schema: { status: 'string', display_value: 'string' }, severity_capability: ['info', 'success', 'warning', 'critical', 'unknown'], default_enabled: true, default_zone: zone, allowed_zones: statusZones, default_order: order, supported_pages: pages, global_shell_support: zone === 'top_bar', minimum_display_width: 140, preferred_display_width: 220, presentations: ['compact', 'standard', 'detailed'], icon_supported: true, label_supported: true, value_supported: true, freshness_supported: true, role_visibility_supported: true, permission_required: permission, configurable: true, critical_fallback: criticalFallback, renderer: key.includes('power') || key.includes('peak') ? 'power' : key.includes('count') || key.includes('online') || key.includes('offline') ? 'count' : 'health', icon: key.includes('alert') ? 'bell' : key.includes('power') ? 'zap' : 'activity', metric_identity: ({ 'data.live_connection': 'data.live_state', 'data.current_power': 'power.current', 'alerts.active_count': 'alerts.active_count', 'device.online_count': 'devices.online', 'device.offline_count': 'devices.offline', 'device.synchronized_count': 'data.synchronization', 'data.energy_today': 'energy.today', 'data.recent_peak': 'power.recent_peak', 'data.aggregate_coverage': 'data.coverage' } as Record<string, string>)[key] ?? key, canonical_priority: 300, allow_duplicate: false, suppress_when_empty: true, hide_in_zero_data_state: false, diagnostics_only: key.startsWith('system.'), registry_version: 'status-indicators/1.0',
 })
 const statusDefinitions = [
-  statusDefinition('data.live_connection', 'Live data', 'Live data', 'global_header_center', 10, statusPages, 'overview.view', 'Device disconnect alerts remain active.'),
-  statusDefinition('data.current_power', 'Current load', 'Live data', 'global_header_center', 20),
-  statusDefinition('alerts.active_count', 'Active alerts', 'Alerts', 'global_header_right', 10, statusPages, 'alerts.view', 'Alerts remain on Alerts & Notifications.'),
-  statusDefinition('alerts.critical_count', 'Critical alerts', 'Alerts', 'page_summary_strip', 10, ['alerts'], 'alerts.view', 'Critical alerts remain in the timeline.'),
-  statusDefinition('alerts.warning_count', 'Warning alerts', 'Alerts', 'page_summary_strip', 20, ['alerts'], 'alerts.view'),
-  statusDefinition('alerts.enabled_rule_count', 'Rules enabled', 'Alerts', 'page_summary_strip', 30, ['alerts'], 'alerts.view'),
-  statusDefinition('alerts.disconnect_rule_state', 'Disconnect alerts', 'Alerts', 'page_summary_strip', 40, ['alerts'], 'alerts.view', 'Heartbeat monitoring remains active.'),
-  statusDefinition('device.online_count', 'Devices online', 'Devices', 'page_status_row', 10, ['overview', 'devices'], 'devices.view', 'Device status remains on Devices.'),
-  statusDefinition('device.offline_count', 'Offline or stale', 'Devices', 'page_status_row', 20, ['overview', 'devices'], 'devices.view', 'Disconnect alerts remain active.'),
-  statusDefinition('device.synchronized_count', 'Synchronized', 'Devices', 'page_summary_strip', 50, ['overview', 'devices'], 'devices.view'),
-  statusDefinition('data.energy_today', 'Energy today', 'Energy', 'overview_site_summary', 10, ['overview']),
-  statusDefinition('cost.today', 'Estimated today', 'Costs', 'overview_site_summary', 20, ['overview']),
-  statusDefinition('energy.billing_cycle', 'Billing-cycle energy', 'Energy', 'overview_site_summary', 30, ['overview']),
-  statusDefinition('cost.billing_cycle_estimate', 'Cycle estimate', 'Costs', 'overview_site_summary', 40, ['overview']),
-  statusDefinition('rate.current_plan', 'Current rate plan', 'Rates', 'page_status_row', 30, ['rates'], 'rates.view'),
-  statusDefinition('rate.current_period', 'Current rate period', 'Rates', 'page_summary_strip', 20, ['rates'], 'rates.view'),
-  statusDefinition('rate.current_price', 'Current energy price', 'Rates', 'page_summary_strip', 25, ['rates'], 'rates.view'),
-  statusDefinition('rate.source_health', 'Rate source health', 'Rates', 'page_status_row', 10, ['rates', 'rate_sources'], 'rates.view'),
-  statusDefinition('rate.update_pending', 'Rate update pending', 'Rates', 'page_status_row', 20, ['rates', 'rate_sources'], 'rates.view'),
-  statusDefinition('rate.last_successful_check', 'Last source check', 'Rates', 'page_summary_strip', 10, ['rates', 'rate_sources'], 'rates.manage_sources'),
-  statusDefinition('rate.next_scheduled_check', 'Next source check', 'Rates', 'page_summary_strip', 20, ['rates', 'rate_sources'], 'rates.manage_sources'),
-  statusDefinition('rate.review_policy', 'Review policy', 'Rates', 'page_summary_strip', 30, ['rates', 'rate_sources'], 'rates.manage_sources'),
-  statusDefinition('data.recent_peak', 'Recent peak', 'Energy', 'page_summary_strip', 30, ['overview', 'history']),
-  statusDefinition('rate.current_context', 'Rate context', 'Rates', 'history_context', 20, ['overview', 'history'], 'rates.view'),
-  statusDefinition('system.api_health', 'API', 'System', 'diagnostics_summary', 10, ['system_health'], 'settings.view'),
-  statusDefinition('system.database_health', 'Database', 'System', 'diagnostics_summary', 20, ['system_health'], 'settings.view'),
-  statusDefinition('system.worker_health', 'Worker', 'System', 'diagnostics_summary', 30, ['system_health'], 'settings.view', 'Worker alerts and diagnostics remain active.'),
+  statusDefinition('data.live_connection', 'Live data', 'Live data', 'top_bar', 10, statusPages, 'overview.view', 'Device disconnect alerts remain active.'),
+  statusDefinition('data.current_power', 'Current load', 'Live data', 'top_bar', 20),
+  statusDefinition('alerts.active_count', 'Active alerts', 'Alerts', 'top_bar', 30, statusPages, 'alerts.view', 'Alerts remain on Alerts & Notifications.'),
+  statusDefinition('alerts.critical_count', 'Critical alerts', 'Alerts', 'page_summary', 10, ['alerts'], 'alerts.view', 'Critical alerts remain in the timeline.'),
+  statusDefinition('alerts.warning_count', 'Warning alerts', 'Alerts', 'page_summary', 20, ['alerts'], 'alerts.view'),
+  statusDefinition('alerts.enabled_rule_count', 'Rules enabled', 'Alerts', 'page_summary', 30, ['alerts'], 'alerts.view'),
+  statusDefinition('alerts.disconnect_rule_state', 'Disconnect alerts', 'Alerts', 'page_summary', 40, ['alerts'], 'alerts.view', 'Heartbeat monitoring remains active.'),
+  statusDefinition('device.online_count', 'Devices online', 'Devices', 'page_summary', 10, ['overview', 'devices'], 'devices.view', 'Device status remains on Devices.'),
+  statusDefinition('device.offline_count', 'Offline or stale', 'Devices', 'page_summary', 20, ['overview', 'devices'], 'devices.view', 'Disconnect alerts remain active.'),
+  statusDefinition('device.synchronized_count', 'Synchronized', 'Devices', 'page_summary', 50, ['overview', 'devices'], 'devices.view'),
+  statusDefinition('data.energy_today', 'Energy today', 'Energy', 'overview_summary', 10, ['overview']),
+  statusDefinition('cost.today', 'Estimated today', 'Costs', 'overview_summary', 20, ['overview']),
+  statusDefinition('energy.billing_cycle', 'Billing-cycle energy', 'Energy', 'overview_summary', 30, ['overview']),
+  statusDefinition('cost.billing_cycle_estimate', 'Cycle estimate', 'Costs', 'overview_summary', 40, ['overview']),
+  statusDefinition('rate.current_plan', 'Current rate plan', 'Rates', 'page_summary', 30, ['rates'], 'rates.view'),
+  statusDefinition('rate.current_period', 'Current rate period', 'Rates', 'page_summary', 20, ['rates'], 'rates.view'),
+  statusDefinition('rate.current_price', 'Current energy price', 'Rates', 'page_summary', 25, ['rates'], 'rates.view'),
+  statusDefinition('rate.source_health', 'Rate source health', 'Rates', 'page_summary', 10, ['rates', 'rate_sources'], 'rates.view'),
+  statusDefinition('rate.update_pending', 'Rate update pending', 'Rates', 'page_summary', 20, ['rates', 'rate_sources'], 'rates.view'),
+  statusDefinition('rate.last_successful_check', 'Last source check', 'Rates', 'page_summary', 10, ['rates', 'rate_sources'], 'rates.manage_sources'),
+  statusDefinition('rate.next_scheduled_check', 'Next source check', 'Rates', 'page_summary', 20, ['rates', 'rate_sources'], 'rates.manage_sources'),
+  statusDefinition('rate.review_policy', 'Review policy', 'Rates', 'page_summary', 30, ['rates', 'rate_sources'], 'rates.manage_sources'),
+  statusDefinition('data.recent_peak', 'Recent peak', 'Energy', 'page_summary', 30, ['overview', 'history']),
+  statusDefinition('rate.current_context', 'Rate context', 'Rates', 'page_summary', 35, ['overview', 'history'], 'rates.view'),
+  statusDefinition('system.api_health', 'API', 'System', 'administration_diagnostics', 10, ['system_health'], 'settings.view'),
+  statusDefinition('system.database_health', 'Database', 'System', 'administration_diagnostics', 20, ['system_health'], 'settings.view'),
+  statusDefinition('system.worker_health', 'Worker', 'System', 'administration_diagnostics', 30, ['system_health'], 'settings.view', 'Worker alerts and diagnostics remain active.'),
 ]
 const defaultStatusConfiguration = () => ({
   schema_version: 'power-monitor-status-layout/1.0' as const,
   registry_version: 'status-indicators/1.0', personalization_enabled: false as const,
   items: [
     ...statusDefinitions.map((definition) => ({ indicator_key: definition.key, page: '*', role: '*', breakpoint: 'default', visible: !['data.recent_peak'].includes(definition.key), zone: definition.default_zone, order: definition.default_order, density: 'standard', show_icon: true, show_label: true, show_value: true, show_freshness: true, show_severity: true, show_tooltip: true })),
-    { indicator_key: 'data.live_connection', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_site_state', order: 20, density: 'compact' },
-    { indicator_key: 'data.current_power', page: 'overview', role: '*', breakpoint: 'default', visible: false, zone: 'global_header_center', order: 20, density: 'standard' },
-    { indicator_key: 'device.online_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_site_state', order: 10, density: 'compact' },
-    { indicator_key: 'device.offline_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_site_state', order: 30, density: 'compact' },
-    { indicator_key: 'device.synchronized_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_site_summary', order: 50, density: 'standard' },
-    { indicator_key: 'alerts.active_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_site_summary', order: 60, density: 'standard' },
-    { indicator_key: 'rate.current_context', page: 'overview', role: '*', breakpoint: 'default', visible: false, zone: 'overview_site_summary', order: 70, density: 'standard' },
+    { indicator_key: 'data.live_connection', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_summary', order: 20, density: 'compact' },
+    { indicator_key: 'data.current_power', page: 'overview', role: '*', breakpoint: 'default', visible: false, zone: 'top_bar', order: 20, density: 'standard' },
+    { indicator_key: 'device.online_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_summary', order: 10, density: 'compact' },
+    { indicator_key: 'device.offline_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_summary', order: 30, density: 'compact' },
+    { indicator_key: 'device.synchronized_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_summary', order: 50, density: 'standard' },
+    { indicator_key: 'alerts.active_count', page: 'overview', role: '*', breakpoint: 'default', visible: true, zone: 'overview_summary', order: 60, density: 'standard' },
+    { indicator_key: 'rate.current_context', page: 'overview', role: '*', breakpoint: 'default', visible: false, zone: 'overview_summary', order: 70, density: 'standard' },
   ],
 })
 
@@ -117,7 +118,7 @@ function resolveMockStatus(configuration: ReturnType<typeof defaultStatusConfigu
     const state = matches.reduce((value, item) => ({ ...value, ...item }), configuration.items.find((item) => item.indicator_key === definition.key) ?? { visible: definition.default_enabled, zone: definition.default_zone, order: definition.default_order })
     if (!state.visible) return []
     let zone = state.zone
-    if (breakpoint === 'mobile' && !matches.some((item) => item.breakpoint === 'mobile' && item.zone)) zone = zone.startsWith('global_header') ? 'mobile_header' : ['page_status_row', 'overview_site_state', 'history_context', 'diagnostics_summary'].includes(zone) ? 'mobile_status_strip' : 'mobile_status_drawer'
+    if (breakpoint === 'mobile' && !matches.some((item) => item.breakpoint === 'mobile' && item.zone) && zone !== 'top_bar') zone = 'mobile_status_drawer'
     return [{ ...state, indicator_key: definition.key, zone, definition }]
   })
   return { schema_version: 'power-monitor-status-layout/1.0', registry_version: 'status-indicators/1.0', published_revision: 1, page: pageName, roles: [role], breakpoint, zones: statusZones.map((key) => ({ key, items: items.filter((item) => item.zone === key).sort((a, b) => Number(a.order) - Number(b.order)) })).filter((zone) => zone.items.length), warnings: [], personalization_enabled: false }
@@ -181,6 +182,111 @@ async function mockApplication(page: Page, roles: string[] = ['admin'], initiall
     { id: 'ingress-policy-1', site_id: site.id, site_name: site.name, direction: 'device_ingress', mode: 'legacy_authenticated_any', revision: 1, migration_notice_pending: true, migrated_from_legacy: true, effective_summary: 'Legacy signed ingress · review required', cidrs: [] as Array<Record<string, unknown>> },
     { id: 'pull-policy-1', site_id: site.id, site_name: site.name, direction: 'server_pull', mode: 'deny_all', revision: 1, migration_notice_pending: true, migrated_from_legacy: true, effective_summary: 'Device network access denied', cidrs: [] as Array<Record<string, unknown>> },
   ]
+  const dependencySummary = (
+    siteId: string,
+    revision: number,
+    state: SiteDependencySummary['state'],
+    isDefault: boolean,
+    withResources = false,
+  ): SiteDependencySummary => ({
+    site_id: siteId,
+    revision,
+    state,
+    default_site: isDefault,
+    active: {
+      sensors: withResources ? [{ id: 'device-garage', name: 'Garage meter', status: 'online', latest_reading_at: '2026-07-20T19:05:00Z' }] : [],
+      utility_accounts: withResources ? [{ id: 'account-garage', name: 'Garage electric', status: 'active' }] : [],
+      users: withResources ? [{ id: 'user-2', email: 'viewer@example.test', display_name: 'Dashboard Viewer' }] : [],
+      alerts: withResources ? 1 : 0,
+      enrollment_tokens: 0,
+      jobs: 0,
+    },
+    retained: {
+      raw_readings: withResources ? 1440 : 0,
+      history_start: withResources ? '2026-07-01T00:00:00Z' : undefined,
+      history_end: withResources ? '2026-07-20T19:05:00Z' : undefined,
+      circuits: withResources ? 1 : 0,
+      billing_cycles: withResources ? 1 : 0,
+      alerts: withResources ? 2 : 0,
+      audit_history: true,
+      costs_and_rate_assignments: withResources,
+    },
+    required_actions: withResources
+      ? [
+          { resource: 'sensors', count: 1, actions: ['transfer', 'archive'] },
+          { resource: 'utility_accounts', count: 1, actions: ['transfer', 'archive'] },
+          { resource: 'users', count: 1, actions: ['end_access'] },
+        ]
+      : [],
+    blockers: isDefault ? [{ code: 'default_site', message: 'Select another default site before removal.' }] : [],
+    resolved: !withResources && !isDefault,
+  })
+  const adminSite = (
+    id: string,
+    name: string,
+    code: string,
+    isDefault: boolean,
+    withResources = false,
+  ): AdminSite => {
+    const dependencies = dependencySummary(id, 1, 'active', isDefault, withResources)
+    return {
+      id,
+      name,
+      code,
+      description: withResources ? 'Detached garage monitoring boundary.' : 'Primary monitored property.',
+      location_label: withResources ? 'Garage' : 'Upland',
+      organization: 'Power Monitor',
+      timezone: 'America/Los_Angeles',
+      currency: 'USD',
+      locale: 'en-US',
+      unit_system: 'imperial',
+      allowed_cidrs: [],
+      allowed_domains: [],
+      allow_public_polling: false,
+      lifecycle_state: 'active',
+      is_default: isDefault,
+      revision: 1,
+      created_at: '2026-07-01T00:00:00Z',
+      updated_at: '2026-07-20T19:05:00Z',
+      sensor_count: dependencies.active.sensors.length,
+      utility_account_count: dependencies.active.utility_accounts.length,
+      assigned_user_count: dependencies.active.users.length,
+      active_alert_count: dependencies.active.alerts,
+      latest_reading_at: dependencies.retained.history_end,
+      configuration_health: withResources ? 'ready' : 'warning',
+      network_policy_summary: 'Signed private ingress; server pull denied',
+      network_policies: [],
+      dependencies,
+    }
+  }
+  let managedSites: AdminSite[] = [
+    adminSite('site-1', 'Upland Site', 'upland-site', true),
+    adminSite('site-garage', 'Garage Site', 'garage-site', false, true),
+  ]
+  const siteAudits = new Map<string, Array<{ id: string; occurred_at: string; action: string; outcome: string; actor_id: string; details: Record<string, unknown> }>>(
+    managedSites.map((value) => [value.id, [{
+      id: `audit-${value.id}-created`,
+      occurred_at: value.created_at,
+      action: 'site.created',
+      outcome: 'success',
+      actor_id: 'user-1',
+      details: { revision: 1 },
+    }]]),
+  )
+  const replaceManagedSite = (updated: AdminSite) => {
+    managedSites = managedSites.map((value) => value.id === updated.id ? updated : value)
+    return updated
+  }
+  const recordSiteAudit = (siteId: string, action: string, revision: number) => {
+    siteAudits.set(siteId, [{
+      id: `audit-${siteId}-${action}-${revision}`,
+      occurred_at: '2026-07-24T19:05:00Z',
+      action,
+      outcome: 'success',
+      actor_id: 'user-1',
+      details: { revision },
+    }, ...(siteAudits.get(siteId) ?? [])])
+  }
   const statusRevisions = [{ id: 'status-revision-1', revision: 1, registry_version: 'status-indicators/1.0', created_by: 'user-1', created_at: '2026-07-20T10:00:00Z', reason: 'Compiled current layout' }]
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
@@ -262,7 +368,172 @@ async function mockApplication(page: Page, roles: string[] = ['admin'], initiall
     else if (path === '/api/v1/admin/interface-text/preview') { textPreviewedRevision = textDraftRevision; body = { draft_revision: textDraftRevision, values: { ...publishedText, ...textDraft } } }
     else if (path === '/api/v1/admin/interface-text/publish') { publishedText = { ...publishedText, ...textDraft }; textRevision += 1; textDraft = {}; textDraftRevision = 0; textPreviewedRevision = 0; body = { id: `revision-${textRevision}`, revision: textRevision, values: publishedText, overrides: publishedText, changed_key_count: Object.keys(publishedText).length, created_at: '2026-07-20T10:00:00Z', created_by: 'user-1' } }
     else if (path === '/api/v1/admin/interface-text/revisions') body = { revisions: textRevision ? [{ id: `revision-${textRevision}`, revision: textRevision, created_by: 'user-1', created_at: '2026-07-20T10:00:00Z', reason: 'Dashboard update', changed_key_count: Object.keys(publishedText).length }] : [] }
-    else if (path === '/api/v1/sites') body = [site]
+    else if (path === '/api/v1/admin/sites' && request.method() === 'GET') {
+      const status = url.searchParams.get('status') ?? 'current'
+      const search = (url.searchParams.get('search') ?? '').toLowerCase()
+      body = managedSites.filter((value) => {
+        if (status === 'current' && value.lifecycle_state === 'removed') return false
+        if (!['current', 'all'].includes(status) && value.lifecycle_state !== status) return false
+        return !search || `${value.name} ${value.code} ${value.timezone} ${value.location_label ?? ''}`.toLowerCase().includes(search)
+      })
+    }
+    else if (path === '/api/v1/admin/sites' && request.method() === 'POST') {
+      const value = JSON.parse(request.postData() ?? '{}') as {
+        name: string
+        code: string
+        description?: string
+        location_label?: string
+        organization?: string
+        timezone: string
+        currency: string
+        locale: string
+        unit_system: 'imperial' | 'metric'
+        make_default: boolean
+        create_utility_account_after: boolean
+      }
+      const id = `site-${managedSites.length + 1}`
+      if (value.make_default) {
+        managedSites = managedSites.map((current) => ({
+          ...current,
+          is_default: false,
+          revision: current.revision + 1,
+          dependencies: { ...current.dependencies, revision: current.revision + 1, default_site: false, blockers: [] },
+        }))
+      }
+      const created: AdminSite = {
+        ...adminSite(id, value.name, value.code, value.make_default),
+        description: value.description,
+        location_label: value.location_label,
+        organization: value.organization,
+        timezone: value.timezone,
+        currency: value.currency,
+        locale: value.locale,
+        unit_system: value.unit_system,
+      }
+      managedSites = [...managedSites, created]
+      siteAudits.set(id, [{
+        id: `audit-${id}-created`,
+        occurred_at: '2026-07-24T19:05:00Z',
+        action: 'site.created',
+        outcome: 'success',
+        actor_id: 'user-1',
+        details: { revision: 1 },
+      }])
+      body = { ...created, next_step: value.create_utility_account_after ? 'create_utility_account' : 'site_details' }
+    }
+    else if (path.match(/^\/api\/v1\/admin\/sites\/[^/]+$/) && request.method() === 'PUT') {
+      const id = path.split('/').at(-1) ?? ''
+      const current = managedSites.find((value) => value.id === id)
+      const value = JSON.parse(request.postData() ?? '{}') as Partial<AdminSite>
+      if (current) {
+        const revision = current.revision + 1
+        body = replaceManagedSite({
+          ...current,
+          ...value,
+          revision,
+          updated_at: '2026-07-24T19:05:00Z',
+          dependencies: { ...current.dependencies, revision },
+        })
+        recordSiteAudit(id, 'site.updated', revision)
+      }
+    }
+    else if (path.match(/^\/api\/v1\/admin\/sites\/[^/]+\/set-default$/) && request.method() === 'POST') {
+      const id = path.split('/').at(-2) ?? ''
+      managedSites = managedSites.map((current) => {
+        const revision = current.revision + 1
+        return {
+          ...current,
+          is_default: current.id === id,
+          revision,
+          dependencies: {
+            ...current.dependencies,
+            revision,
+            default_site: current.id === id,
+            blockers: current.id === id ? [{ code: 'default_site', message: 'Select another default site before removal.' }] : [],
+            resolved: current.id !== id && current.dependencies.required_actions.length === 0,
+          },
+        }
+      })
+      const updated = managedSites.find((value) => value.id === id)
+      if (updated) {
+        recordSiteAudit(id, 'site.default_changed', updated.revision)
+        body = updated
+      }
+    }
+    else if (path.match(/^\/api\/v1\/admin\/sites\/[^/]+\/dependencies$/) && request.method() === 'GET') {
+      body = managedSites.find((value) => value.id === path.split('/').at(-2))?.dependencies ?? {}
+    }
+    else if (path.match(/^\/api\/v1\/admin\/sites\/[^/]+\/transfer-resources$/) && request.method() === 'POST') {
+      const id = path.split('/').at(-2) ?? ''
+      const current = managedSites.find((value) => value.id === id)
+      if (current) {
+        const revision = current.revision + 1
+        const dependencies: SiteDependencySummary = {
+          ...current.dependencies,
+          revision,
+          active: { sensors: [], utility_accounts: [], users: [], alerts: 0, enrollment_tokens: 0, jobs: 0 },
+          required_actions: [],
+          resolved: !current.is_default,
+        }
+        const updated = replaceManagedSite({
+          ...current,
+          revision,
+          sensor_count: 0,
+          utility_account_count: 0,
+          assigned_user_count: 0,
+          active_alert_count: 0,
+          dependencies,
+        })
+        recordSiteAudit(id, 'site.dependencies_resolved', revision)
+        body = { site: updated, resolution: { sensors: 1, utility_accounts: 1, users: 1 } }
+      }
+    }
+    else if (path.match(/^\/api\/v1\/admin\/sites\/[^/]+\/(disable|enable|remove|restore)$/) && request.method() === 'POST') {
+      const values = path.split('/')
+      const id = values.at(-2) ?? ''
+      const action = values.at(-1) ?? ''
+      const current = managedSites.find((value) => value.id === id)
+      if (current) {
+        const revision = current.revision + 1
+        const lifecycleState = action === 'enable' ? 'active' : action === 'restore' ? 'disabled' : action === 'remove' ? 'removed' : 'disabled'
+        const dependencies = dependencySummary(id, revision, lifecycleState, current.is_default, false)
+        body = replaceManagedSite({
+          ...current,
+          lifecycle_state: lifecycleState,
+          revision,
+          is_default: action === 'remove' ? false : current.is_default,
+          dependencies,
+          removed_at: action === 'remove' ? '2026-07-24T19:05:00Z' : current.removed_at,
+          restored_at: action === 'restore' ? '2026-07-24T19:05:00Z' : current.restored_at,
+        })
+        recordSiteAudit(id, `site.${action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : action === 'remove' ? 'removed' : 'restored'}`, revision)
+      }
+    }
+    else if (path.match(/^\/api\/v1\/admin\/sites\/[^/]+\/audit$/) && request.method() === 'GET') {
+      body = siteAudits.get(path.split('/').at(-2) ?? '') ?? []
+    }
+    else if (path === '/api/v1/sites') {
+      body = managedSites
+        .filter((value) => value.lifecycle_state === 'active')
+        .map((value) => ({
+          id: value.id,
+          name: value.name,
+          code: value.code,
+          description: value.description,
+          location_label: value.location_label,
+          organization: value.organization,
+          timezone: value.timezone,
+          currency: value.currency,
+          locale: value.locale,
+          unit_system: value.unit_system,
+          allowed_cidrs: value.allowed_cidrs,
+          allowed_domains: value.allowed_domains,
+          allow_public_polling: value.allow_public_polling,
+          lifecycle_state: value.lifecycle_state,
+          is_default: value.is_default,
+          revision: value.revision,
+        }))
+    }
     else if (path === '/api/v1/sites/site-1/setup-readiness') body = {
       monitoring: { state: 'no_sensors_enrolled', device_count: 0 },
       rate_and_cost: utilityAccounts.length
@@ -452,6 +723,15 @@ async function captureStatusLayout(page: Page, filename: string) {
   })
 }
 
+async function captureModernUi(page: Page, filename: string) {
+  if (process.env.CAPTURE_MODERN_UI_SCREENSHOTS !== '1') return
+  await page.evaluate(() => { window.scrollTo(0, 0) })
+  await page.screenshot({
+    path: `../docs/screenshots/modern-ui/${filename}`,
+    fullPage: true,
+  })
+}
+
 test('unauthenticated users see a secure sign-in surface', async ({ page }) => {
   await page.route('**/api/v1/auth/session', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ authenticated: false, bootstrap_required: false }) }))
   await page.goto('/')
@@ -496,7 +776,7 @@ test('Chrome-compatible native credential values submit by click and leave the l
   const payload = JSON.parse((await loginRequest).postData() ?? '{}') as Record<string, unknown>
   expect(payload).toMatchObject({ email: 'chrome.autofill@example.test', password: credentialValue })
   await expect(form).toHaveCount(0)
-  await expect(page).toHaveURL(/\/$/)
+  await expect(page).toHaveURL(/\/overview$/)
   await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
 })
 
@@ -550,15 +830,16 @@ test('viewer sees fleet evidence and an in-app denial for restricted pages', asy
   await expect(page.getByText('960 W', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('link', { name: /Enroll sensor/ })).toHaveCount(0)
   await page.goto('/enrollment')
-  await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible()
-  await page.goto('/admin')
-  await expect(page.getByRole('heading', { name: 'Access denied' })).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('This page is restricted')
+  await page.goto('/administration/access')
+  await expect(page.getByRole('alert')).toContainText('This page is restricted')
 })
 
 test('history combines sensors, shows TOU cost provenance, selects a range, and exports CSV', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/history')
-  await expect(page.getByRole('heading', { name: 'History & comparison' })).toBeVisible()
+  await page.goto('/analytics/history')
+  await expect(page.getByRole('heading', { name: 'Analytics' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'History' })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('combobox', { name: 'Scope', exact: true }).selectOption('devices')
   await page.getByRole('button', { name: 'Select all eligible sensors' }).click()
   await expect(page.getByText('2 selected')).toBeVisible()
@@ -587,19 +868,19 @@ test('history combines sensors, shows TOU cost provenance, selects a range, and 
 
 test('topology shows an explicitly confirmed overlap warning', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/topology')
-  await expect(page.getByRole('heading', { name: 'Site & circuit topology' })).toBeVisible()
+  await page.goto('/monitoring/topology')
+  await expect(page.getByRole('heading', { name: 'Monitoring' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Topology' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText('Potential overlap was explicitly confirmed.')).toBeVisible()
   await expect(page.getByText('Never summed by default')).toBeVisible()
 })
 
 test('cost workspace is available from navigation and routing', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/')
-  await expect(page.getByRole('link', { name: 'Costs' })).toBeVisible()
-  await page.getByRole('link', { name: 'Costs' }).click()
-  await expect(page).toHaveURL(/\/costs$/)
-  await expect(page.getByRole('heading', { name: 'Costs', exact: true })).toBeVisible()
+  await page.goto('/analytics/costs')
+  await expect(page).toHaveURL(/\/analytics\/costs$/)
+  await expect(page.getByRole('heading', { name: 'Analytics', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Costs' })).toHaveAttribute('aria-selected', 'true')
 })
 
 test('admin can create an enrollment token without seeing a permanent secret', async ({ page }) => {
@@ -659,17 +940,17 @@ test('legacy user-management routes redirect to Users & Access', async ({ page }
   await mockApplication(page)
   for (const route of ['/admin?tab=users', '/administration/users', '/administration/users-roles', '/administration/roles']) {
     await page.goto(route)
-    await expect(page).toHaveURL(/\/administration\/users-access$/)
-    await expect(page.getByRole('heading', { name: 'Users & Access' })).toBeVisible()
+    await expect(page).toHaveURL(/\/administration\/access$/)
+    await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible()
   }
   await page.goto('/admin?tab=users&search=viewer&status=disabled&unsafe=discarded')
-  await expect(page).toHaveURL('/administration/users-access?search=viewer&status=disabled')
+  await expect(page).toHaveURL('/administration/access?search=viewer&status=disabled')
 })
 
 test('administrator previews effective access and promotes a site-scoped user', async ({ page }) => {
   await mockApplication(page)
   await page.goto('/administration/users-access')
-  await expect(page.getByRole('heading', { name: 'Users & Access' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible()
   await page.getByLabel('Search users').fill('Dashboard Viewer')
   const row = page.getByRole('row').filter({ hasText: 'Dashboard Viewer' })
   await expect(row).toContainText('3 effective')
@@ -695,7 +976,7 @@ test('administrator previews effective access and promotes a site-scoped user', 
 test('administrator drafts, previews, and publishes safe login text', async ({ page }) => {
   await mockApplication(page)
   await page.goto('/administration/interface-text')
-  await expect(page.getByRole('heading', { name: 'Dashboard & Login Text' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible()
   await page.getByRole('tab', { name: 'Login Screen' }).click()
   await page.getByLabel('Login heading').fill('Welcome to the Upland energy dashboard')
   const draftRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/admin/interface-text/draft') && request.method() === 'PUT')
@@ -744,8 +1025,8 @@ test('administrator removes a claimed sensor with exact confirmation and can vie
 
 test('administrator can configure SMTP and notification timing', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/admin')
-  await page.getByRole('tab', { name: 'Notifications' }).click()
+  await page.goto('/administration/notifications')
+  await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible()
   await page.getByRole('button', { name: 'Configure SMTP' }).click()
   await page.getByLabel('SMTP host').fill('smtp.example.com')
   await page.getByLabel('Username').fill('mailer')
@@ -768,9 +1049,9 @@ test('administrator can configure SMTP and notification timing', async ({ page }
 
 test('rate manager creates, validates, activates, and assigns a custom TOU plan', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/rates')
-  await expect(page.getByRole('heading', { name: 'Rate plans' })).toBeVisible()
-  await page.getByRole('button', { name: /Custom plan/ }).click()
+  await page.goto('/billing/rate-plans')
+  await expect(page.getByRole('heading', { name: 'Billing' })).toBeVisible()
+  await page.getByRole('button', { name: /Create custom plan/i }).click()
   await page.getByLabel('Plan name').fill('Weekday and weekend test plan')
   await page.getByLabel('Plan code').fill('CUSTOM-E2E')
   await page.getByRole('button', { name: /Next/ }).click()
@@ -790,7 +1071,7 @@ test('rate manager creates, validates, activates, and assigns a custom TOU plan'
   await expect(page.getByText('Whole-account items are ignored')).toBeVisible()
   await page.getByRole('button', { name: /Next/ }).click()
   await page.getByRole('button', { name: /Save draft/ }).click()
-  await expect(page).toHaveURL(/\/rates\/custom-plan-1\/versions\/custom-version-1/)
+  await expect(page).toHaveURL(/\/billing\/rate-plans\/custom-plan-1\/versions\/custom-version-1/)
   await page.getByRole('button', { name: 'Validate', exact: true }).click()
   await expect(page.getByText('Ready to activate')).toBeVisible()
   await page.getByRole('button', { name: 'Activate', exact: true }).click()
@@ -804,7 +1085,7 @@ test('rate manager creates, validates, activates, and assigns a custom TOU plan'
 
 test('administrator monitors an SCE job and reviews candidate evidence', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/rates/sources')
+  await page.goto('/billing/rate-sources')
   await page.getByRole('button', { name: /Check SCE now/ }).click()
   await expect(page.getByText('SCE check succeeded')).toBeVisible({ timeout: 8_000 })
   await page.getByRole('button', { name: /TOU-D-4-9PM/ }).click()
@@ -818,7 +1099,7 @@ test('administrator monitors an SCE job and reviews candidate evidence', async (
 
 test('rate source settings save, confirm, and survive a fresh reload', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/rates/sources')
+  await page.goto('/billing/rate-sources')
   await page.getByLabel('Activation policy').selectOption('auto_activate_verified')
   await page.getByLabel('Enable strict automatic activation').check()
   const updateRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/admin/rate-source-settings') && request.method() === 'PATCH')
@@ -834,7 +1115,7 @@ test('rate source settings save, confirm, and survive a fresh reload', async ({ 
 
 test('administrator adds an approved SCE source and can queue its first scrape', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/rates/sources')
+  await page.goto('/billing/rate-sources')
   await page.getByRole('button', { name: 'Add source' }).click()
   await page.getByLabel('Source name').fill('SCE comparison page')
   await page.getByLabel('Official SCE HTTPS URL').fill('https://www.sce.com/save-money/rates-financing/rate-plan-comparison')
@@ -852,26 +1133,141 @@ test('administrator adds an approved SCE source and can queue its first scrape',
   await expect(page.getByText('SCE comparison page')).toBeVisible()
 })
 
-test('administration cards and status pills stay inside settings panels', async ({ page }) => {
+test('six-workspace shell and complete site lifecycle stay canonical, audited, and responsive', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await mockApplication(page)
+  await page.goto('/administration/sites-network')
+  await expect(page.locator('.sidebar nav a')).toHaveCount(6)
+  await expect(page.locator('.sidebar nav a')).toHaveText([
+    'Overview',
+    'Monitoring',
+    'Analytics',
+    'Billing',
+    'Alerts',
+    'Administration',
+  ])
+  await expect(page.getByRole('button', { name: 'Physical Sites' })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('button', { name: 'Add site' })).toHaveCount(1)
+  await captureModernUi(page, 'sites-desktop-wide-before.png')
+
+  await page.getByRole('button', { name: 'Add site' }).click()
+  const wizard = page.getByRole('dialog', { name: 'Add physical site' })
+  await wizard.getByLabel('Site display name').fill('Workshop Site')
+  await expect(wizard.getByLabel('Stable site code')).toHaveValue('workshop-site')
+  await wizard.getByLabel(/Description/).fill('Detached workshop energy boundary.')
+  await wizard.getByRole('button', { name: /Continue/ }).click()
+  await wizard.getByLabel('IANA timezone').fill('America/Denver')
+  await wizard.getByRole('button', { name: /Continue/ }).click()
+  await wizard.getByRole('radio', { name: /explicit private-network policy/ }).check()
+  await wizard.getByRole('button', { name: /Continue/ }).click()
+  await wizard.getByRole('button', { name: /Continue/ }).click()
+  await wizard.getByRole('radio', { name: /Configure later/ }).check()
+  await wizard.getByRole('button', { name: /Continue/ }).click()
+  await wizard.getByRole('checkbox', { name: /reviewed the site identity/ }).check()
+  await wizard.getByRole('button', { name: 'Create site' }).click()
+  await expect(page.getByRole('status')).toContainText('Site created.')
+
+  let details = page.getByRole('dialog', { name: 'Physical site details' })
+  await expect(details.getByRole('heading', { name: 'Workshop Site' })).toBeVisible()
+  await captureModernUi(page, 'sites-desktop-wide-after-create.png')
+  await details.getByRole('button', { name: 'Set as default' }).click()
+  await expect(page.getByRole('status')).toContainText('Default site updated.')
+  await expect(details.getByText('Default site')).toBeVisible()
+  await details.getByRole('button', { name: 'Edit' }).click()
+  await details.getByLabel('Display name').fill('Workshop Energy Site')
+  await details.getByLabel('Change reason').fill('Use the approved facility name')
+  await details.getByRole('button', { name: 'Save site' }).click()
+  await expect(page.getByRole('status')).toContainText('Site details updated.')
+  await expect(details.getByRole('heading', { name: 'Workshop Energy Site' })).toBeVisible()
+
+  await details.getByRole('button', { name: 'Disable' }).click()
+  let lifecycle = page.getByRole('dialog', { name: 'disable site' })
+  await lifecycle.getByLabel('Reason').fill('Temporary maintenance')
+  await lifecycle.getByRole('button', { name: 'Disable site', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('Site disabled.')
+  await details.getByRole('button', { name: 'Enable' }).click()
+  lifecycle = page.getByRole('dialog', { name: 'enable site' })
+  await lifecycle.getByLabel('Reason').fill('Maintenance complete')
+  await lifecycle.getByRole('button', { name: 'Enable site', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('Site enabled.')
+  await details.getByRole('tab', { name: 'Audit history' }).click()
+  await expect(details.getByText('site.updated')).toBeVisible()
+  await details.getByRole('button', { name: 'Close site details' }).click()
+
+  const uplandRow = page.locator('.site-row').filter({ hasText: 'Upland Site' })
+  await uplandRow.getByRole('button', { name: 'View details' }).click()
+  details = page.getByRole('dialog', { name: 'Physical site details' })
+  await details.getByRole('button', { name: 'Set as default' }).click()
+  await expect(details.getByText('Default site')).toBeVisible()
+  await details.getByRole('button', { name: 'Close site details' }).click()
+
+  const garageRow = page.locator('.site-row').filter({ hasText: 'Garage Site' })
+  await garageRow.getByRole('button', { name: 'View details' }).click()
+  details = page.getByRole('dialog', { name: 'Physical site details' })
+  await details.getByRole('button', { name: 'Remove site' }).click()
+  lifecycle = page.getByRole('dialog', { name: 'remove site' })
+  await expect(lifecycle.getByText('Historical records are retained')).toBeVisible()
+  await lifecycle.getByLabel('Sensors action for Garage meter').selectOption('archive')
+  await lifecycle.getByLabel('Utility accounts action for Garage electric').selectOption('archive')
+  await lifecycle.getByRole('checkbox', { name: /Dashboard Viewer/ }).check()
+  await lifecycle.getByLabel('Removal reason').fill('Garage merged into the primary boundary')
+  await lifecycle.getByRole('button', { name: 'Resolve selected dependencies' }).click()
+  await expect(page.getByRole('status')).toContainText('Site dependencies resolved.')
+  await lifecycle.getByLabel('Type exact site name or code').fill('Garage Site')
+  await lifecycle.getByRole('checkbox', { name: /reviewed retained history/ }).check()
+  await lifecycle.getByRole('button', { name: 'Remove site', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('Site removed from active navigation.')
+  await expect(page.getByLabel('Current site').locator('option')).not.toContainText(['Garage Site'])
+  await expect(details).toHaveCount(0)
+
+  await page.locator('.site-list-controls select').first().selectOption('removed')
+  details = page.getByRole('dialog', { name: 'Physical site details' })
+  await expect(details.getByRole('heading', { name: 'Garage Site' })).toBeVisible()
+  await details.getByRole('button', { name: 'Restore site' }).click()
+  lifecycle = page.getByRole('dialog', { name: 'restore site' })
+  await lifecycle.getByLabel('Reason').fill('Restoring for administrator review')
+  await lifecycle.getByRole('checkbox', { name: /review users, network policy/ }).check()
+  await lifecycle.getByRole('button', { name: 'Restore site', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('Site restored in a disabled state.')
+  await expect(page.getByLabel('Current site').locator('option')).not.toContainText(['Garage Site'])
+  await expect(details).toHaveCount(0)
+
+  const duplicateActions = await page.locator('.action-scope').first().evaluate((root) => {
+    const counts = new Map<string, number>()
+    root.querySelectorAll<HTMLElement>('[data-action-id]:not([hidden])').forEach((element) => {
+      const action = element.dataset.actionId ?? ''
+      const resource = element.dataset.actionResource ?? ''
+      const identity = resource ? `${action}:${resource}` : action
+      counts.set(identity, (counts.get(identity) ?? 0) + 1)
+    })
+    return [...counts.entries()].filter(([, count]) => count > 1)
+  })
+  expect(duplicateActions).toEqual([])
+
+  for (const viewport of [
+    { width: 1024, height: 900, name: 'sites-desktop-compact.png' },
+    { width: 768, height: 1024, name: 'sites-tablet.png' },
+    { width: 390, height: 844, name: 'sites-mobile.png' },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/administration/sites-network')
+    await expect(page.getByRole('button', { name: 'Physical Sites' })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('button', { name: 'Add site' })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+    await captureModernUi(page, viewport.name)
+  }
+})
+
+test('administration workspaces and status pills stay inside their containers', async ({ page }) => {
   await page.setViewportSize({ width: 1512, height: 768 })
   await mockApplication(page)
-  await page.goto('/admin')
-  await page.getByRole('tab', { name: 'Sites & accounts' }).click()
-  const siteCard = page.locator('.admin-card').first()
-  const sitePanel = siteCard.locator('xpath=ancestor::section[1]')
-  const [siteCardBox, sitePanelBox, siteStatusBox] = await Promise.all([
-    siteCard.boundingBox(),
-    sitePanel.boundingBox(),
-    siteCard.locator('.status').boundingBox(),
-  ])
-  expect(siteCardBox).not.toBeNull()
-  expect(sitePanelBox).not.toBeNull()
-  expect(siteStatusBox).not.toBeNull()
-  expect((siteCardBox?.x ?? 0) + (siteCardBox?.width ?? 0)).toBeLessThanOrEqual((sitePanelBox?.x ?? 0) + (sitePanelBox?.width ?? 0))
-  expect((siteStatusBox?.x ?? 0) + (siteStatusBox?.width ?? 0)).toBeLessThanOrEqual((siteCardBox?.x ?? 0) + (siteCardBox?.width ?? 0))
+  await page.goto('/administration/sites-network')
+  await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Physical Sites' })).toHaveAttribute('aria-current', 'page')
+  await expect(page.locator('.admin-tabs')).toHaveCount(0)
 
-  await page.goto('/administration/system-health')
-  const diagnostic = page.locator('[data-status-zone="diagnostics_summary"]')
+  await page.goto('/administration/security?view=health')
+  const diagnostic = page.locator('[data-status-zone="administration_diagnostics"]')
   const diagnosticCard = diagnostic.locator('.status-indicator').first()
   const [diagnosticBox, diagnosticCardBox, diagnosticStatusBox] = await Promise.all([
     diagnostic.boundingBox(),
@@ -889,7 +1285,7 @@ test('administration cards and status pills stay inside settings panels', async 
 
 test('administrator configures an effective utility account and explicit private sensor network', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/admin?tab=sites-accounts&rate_version_id=rate-version-official')
+  await page.goto('/billing/accounts?rate_version_id=rate-version-official')
   await expect(page.getByText('No utility account configured')).toBeVisible()
   await page.getByRole('button', { name: 'Create utility account' }).first().click()
   await page.getByLabel('Account display name').fill('Upland main electric')
@@ -919,7 +1315,7 @@ test('administrator configures an effective utility account and explicit private
     await page.screenshot({ path: '../docs/screenshots/utility-account-management.png', fullPage: true })
   }
 
-  await page.getByRole('tab', { name: 'Server & network' }).click()
+  await page.goto('/administration/sites-network?view=network')
   await expect(page.getByRole('heading', { name: 'Sensor network policy' })).toBeVisible()
   await page.getByRole('tab', { name: 'Server pull access' }).click()
   await expect(page.getByText('Device network access denied')).toBeVisible()
@@ -950,7 +1346,7 @@ test('administrator configures an effective utility account and explicit private
 
 test('disabled controls in rate details use a disabled cursor, not a busy spinner', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/rates')
+  await page.goto('/billing/rate-plans')
   await page.getByRole('button', { name: 'View details' }).click()
   const previous = page.getByRole('button', { name: 'Previous' })
   await expect(previous).toBeDisabled()
@@ -961,10 +1357,9 @@ test('disabled controls in rate details use a disabled cursor, not a busy spinne
   expect(disabledCursors).not.toContain('wait')
 })
 
-test('administrator downloads a seven-day application-log export from Backups', async ({ page }) => {
+test('administrator downloads a seven-day application-log export from Data Management', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/admin')
-  await page.getByRole('tab', { name: 'Backups' }).click()
+  await page.goto('/administration/data')
   await expect(page.getByRole('heading', { name: 'Application logs' })).toBeVisible()
   await expect(page.getByText('90 days', { exact: true })).toBeVisible()
   await expect(page.getByLabel('Start date')).toHaveValue('2026-07-14')
@@ -988,28 +1383,28 @@ test('dashboard copy is corrected without exposing protocol or footer status tex
   await expect(page.getByText('100%', { exact: true })).toBeVisible()
   await expect(page.locator('[data-indicator-key="rate.current_plan"]')).toHaveCount(0)
   await expect(page.locator('[data-indicator-key="rate.current_period"]')).toHaveCount(0)
-  await page.goto('/rates')
+  await page.goto('/billing/rate-plans')
   await expect(page.locator('[data-indicator-key="rate.current_plan"]')).toContainText('Upland SCE account')
   await expect(page.locator('[data-indicator-key="rate.current_period"]')).toContainText('On-peak')
   await expect(page.locator('[data-indicator-key="rate.current_price"]')).toContainText('$0.58/kWh')
-  await page.goto('/devices')
-  await expect(page.getByRole('heading', { name: 'Device Management' })).toBeVisible()
-  await expect(page.getByText('Sensor health and general data')).toBeVisible()
+  await page.goto('/monitoring/devices')
+  await expect(page.getByRole('heading', { name: 'Monitoring', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Devices' })).toHaveAttribute('aria-selected', 'true')
   await captureDashboardCorrection(page, 'device-management.png')
   await expect(page.getByText(/pm-protocol\/1\.0\.0/i)).toHaveCount(0)
   await expect(page.getByText(/server protected/i)).toHaveCount(0)
   await expect(page.getByText(/multi-sensor fleet/i)).toHaveCount(0)
   await expect(page.getByText(/signed heartbeats.*local custody/i)).toHaveCount(0)
   await page.goto('/alerts')
-  await expect(page.getByRole('heading', { name: 'Alerts & Notifications' })).toBeVisible()
-  await expect(page).toHaveTitle('Alerts & Notifications · Power Monitor')
+  await expect(page.getByRole('heading', { name: 'Alerts', exact: true })).toBeVisible()
+  await expect(page).toHaveTitle('Alerts · Power Monitor')
   await expect(page.getByText(/Evidence, debounce, resolution, acknowledgement/)).toHaveCount(0)
   await captureDashboardCorrection(page, 'alerts-and-notifications.png')
 })
 
 test('search and dropdown controls keep compact pointer focus and visible keyboard focus', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/devices')
+  await page.goto('/monitoring/devices')
   const search = page.getByPlaceholder('Search devices')
   const initialBox = await search.boundingBox()
   await search.click()
@@ -1065,13 +1460,20 @@ test('mobile navigation opens with keyboard-operable controls', async ({ page })
   await menu.focus()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Devices' })).toBeVisible()
+  const drawerBox = await page.locator('.sidebar-open').boundingBox()
+  expect(drawerBox?.width).toBeGreaterThanOrEqual(250)
+  await expect(page.locator('.sidebar-open')).toHaveCSS('transform', 'none')
+  await expect(page.getByRole('link', { name: 'Monitoring' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Current site', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Manage sites' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
+  await captureModernUi(page, 'sites-mobile-drawer.png')
 })
 
 test('administrator configures, previews, publishes, and restores a self-correcting status layout', async ({ page }) => {
   await mockApplication(page)
-  await page.goto('/administration/status-indicators')
-  await expect(page.getByRole('heading', { name: 'Status Indicators & Layout' })).toBeVisible()
+  await page.goto('/administration/interface?view=layout')
+  await expect(page.getByRole('heading', { name: 'Administration', exact: true })).toBeVisible()
   await expect(page.getByText('Monitoring remains active', { exact: true })).toBeVisible()
   await captureStatusLayout(page, 'default-desktop.png')
 
@@ -1082,7 +1484,7 @@ test('administrator configures, previews, publishes, and restores a self-correct
   await expect(page.locator('.disabled-indicator-grid').getByText('Energy today', { exact: true })).toBeVisible()
 
   const offline = page.locator('.status-config-list > article[data-indicator-key="device.offline_count"]')
-  await offline.getByLabel('Zone').selectOption('page_summary_strip')
+  await offline.getByLabel('Zone').selectOption('page_summary')
   await offline.getByRole('button', { name: 'Move to beginning' }).click()
   await expect(page.getByText('Offline or stale moved first.')).toBeAttached()
 
@@ -1104,11 +1506,7 @@ test('administrator configures, previews, publishes, and restores a self-correct
   await page.getByLabel('Scenario').selectOption('long_label')
   await expect(page.getByText(/deliberately long translated indicator label/i)).toBeVisible()
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
-  const zoomOverflow = await page.locator('body *').evaluateAll((elements) => elements
-    .filter((element) => element.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
-    .slice(0, 10)
-    .map((element) => `${element.tagName.toLowerCase()}.${element.getAttribute('class') ?? ''}: ${element.textContent?.trim().slice(0, 60)}`))
-  expect(zoomOverflow).toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   await page.evaluate(() => { document.documentElement.style.fontSize = '' })
   await captureStatusLayout(page, 'long-label-desktop.png')
 
@@ -1133,7 +1531,7 @@ test('administrator configures, previews, publishes, and restores a self-correct
   await page.goto('/alerts')
   await expect(page.getByText('Synchronization backlog')).toBeVisible()
 
-  await page.goto('/administration/status-indicators')
+  await page.goto('/administration/interface?view=layout')
   const revisionOne = page.locator('.revision-list article').filter({ hasText: 'Revision 1' })
   page.once('dialog', (dialog) => dialog.accept())
   await revisionOne.getByRole('button', { name: 'Restore' }).click()
@@ -1143,7 +1541,9 @@ test('administrator configures, previews, publishes, and restores a self-correct
 
   await page.setViewportSize({ width: 375, height: 760 })
   await page.reload()
-  await expect(page.locator('[data-status-zone="mobile_status_strip"]')).toBeVisible()
+  await expect(page.getByRole('button', { name: /More status/ })).toBeVisible()
+  await page.getByRole('button', { name: /More status/ }).click()
+  await expect(page.locator('[data-status-zone="mobile_status_drawer"]')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Power Dashboard' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
   await captureStatusLayout(page, 'published-mobile.png')
@@ -1151,7 +1551,19 @@ test('administrator configures, previews, publishes, and restores a self-correct
 
 test('normal pages stay compact, metrics are unique, and System Health owns diagnostics', async ({ page }) => {
   await mockApplication(page)
-  const normalRoutes = ['/', '/devices', '/topology', '/history', '/rates', '/alerts', '/enrollment', '/admin', '/administration/users-access', '/administration/interface-text', '/administration/status-indicators']
+  const normalRoutes = [
+    '/overview',
+    '/monitoring/devices',
+    '/monitoring/topology',
+    '/analytics/history',
+    '/billing/rate-plans',
+    '/alerts',
+    '/monitoring/enrollment',
+    '/administration/sites-network',
+    '/administration/access',
+    '/administration/interface?view=text',
+    '/administration/interface?view=layout',
+  ]
   for (const route of normalRoutes) {
     await page.goto(route)
     await expect(page.locator('[data-status-zone="global_status_row"]')).toHaveCount(0)
@@ -1164,24 +1576,26 @@ test('normal pages stay compact, metrics are unique, and System Health owns diag
   }
 
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Site Summary' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'overview summary' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Device contribution' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Operational status' })).toBeVisible()
   await captureStatusLayout(page, 'overview-reporting-desktop.png')
 
-  await page.goto('/history')
+  await page.goto('/analytics/history')
   await expect(page.locator('[data-metric-identity="data.coverage"]')).toHaveCount(1)
   await expect(page.locator('[data-metric-identity="power.recent_peak"]')).toHaveCount(1)
   await expect(page.locator('[data-indicator-key="rate.current_context"]')).toHaveCount(1)
   await captureStatusLayout(page, 'history-data-desktop.png')
 
-  await page.goto('/enrollment')
-  await expect(page.getByRole('heading', { name: 'Multi-device enrollment' })).toBeVisible()
+  await page.goto('/monitoring/enrollment')
+  await expect(page.getByRole('heading', { name: 'Monitoring', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Enrollment' })).toHaveAttribute('aria-selected', 'true')
   await captureStatusLayout(page, 'enrollment-desktop.png')
 
-  await page.goto('/administration/system-health')
-  await expect(page.getByRole('heading', { name: 'System Health' })).toBeVisible()
-  await expect(page.locator('[data-status-zone="diagnostics_summary"]')).toBeVisible()
+  await page.goto('/administration/security?view=health')
+  await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'System Health' })).toHaveAttribute('aria-current', 'page')
+  await expect(page.locator('[data-status-zone="administration_diagnostics"]')).toBeVisible()
   await expect(page.locator('[data-indicator-key="system.api_health"]')).toBeVisible()
   await expect(page.locator('[data-indicator-key="system.database_health"]')).toBeVisible()
   await expect(page.locator('[data-indicator-key="system.worker_health"]')).toBeVisible()
@@ -1209,7 +1623,7 @@ test('System Health makes an operational failure visible without restoring the g
       }),
     })
   })
-  await page.goto('/administration/system-health')
+  await page.goto('/administration/security?view=health')
   const worker = page.locator('[data-indicator-key="system.worker_health"]')
   await expect(worker).toContainText('Failed')
   await expect(worker).toHaveClass(/severity-critical/)
@@ -1248,7 +1662,7 @@ test('Overview and History use one clear no-data state and preserve measured zer
   await page.route('**/api/v1/history/query', async (route) => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ scope: { type: 'device', display_name: 'Garage HVAC', site_id: 'site-1', site_name: 'Upland Site', timezone: 'America/Los_Angeles', included_device_ids: ['device-1'], included_device_names: ['Garage HVAC'], excluded_device_ids: [], mixed_rates: false }, display_mode: 'combined', metrics: ['energy_kwh', 'energy_cost'], bucket: '1h', summary: { start_utc: '2026-07-21T03:00:00Z', end_utc: '2026-07-21T05:00:00Z', coverage_percent: '0', contributing_sensor_count: 0, tou_breakdown: {} }, combined: [], individual: [], rate_versions_used: [], warnings: [], total_buckets: 0, page: 1, page_size: 100 }) })
   })
-  await page.goto('/history')
+  await page.goto('/analytics/history')
   await expect(page.getByText('No readings in this range', { exact: true })).toBeVisible()
   await expect(page.locator('.history-summary-grid')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Interval details' })).toHaveCount(0)

@@ -18,7 +18,7 @@ Status is evidence-based: signed heartbeat age, device API result, meter, storag
 Dashboard presentation is also server-resolved. Status and summary definitions
 carry stable metric identities; the resolver enforces one canonical instance
 per page, role, and breakpoint. Normal pages do not carry infrastructure-health
-cards. Those diagnostics are restricted to Administration > System Health while
+cards. Those diagnostics are restricted to Administration > Security > System Health while
 readiness probes and alert evaluation remain part of the existing health and
 worker paths.
 

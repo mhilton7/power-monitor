@@ -52,7 +52,7 @@ This preserves the existing TOU behavior for non-tiered plans.
 
 ## Custom plans and previews
 
-Open **Rates > Custom plan**, choose **Pricing & tiers**, and select a pricing
+Open **Billing > Rate Plans > Custom Plan**, choose **Pricing & tiers**, and select a pricing
 model. For tiered plans, select the threshold basis, enter its evidence, and
 add/reorder/clone/remove tiers. The editor maintains adjacent boundaries and
 keeps the last tier open ended. Hybrid plans additionally require the existing

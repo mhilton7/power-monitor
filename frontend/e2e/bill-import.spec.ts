@@ -382,10 +382,10 @@ test('reviews separate bill outputs and selectively merges them into the existin
   const requests = await mockApplication(page)
   page.on('dialog', (dialog) => dialog.accept())
 
-  await page.goto('/rates/new')
+  await page.goto('/billing/rate-plans/new')
   await page.getByLabel('Plan name').fill('My preserved custom draft')
   await page.getByLabel('Plan code').fill('KEEP-ME')
-  await page.getByRole('button', { name: 'Import utility bill' }).click()
+  await page.getByRole('button', { name: 'Import rate plan from bill' }).click()
   await expect(page.getByRole('heading', { name: 'Import utility bill' })).toBeVisible()
   await page.getByLabel('Utility bill import', { exact: true }).getByRole('button', { name: 'Next' }).click()
 
@@ -483,7 +483,7 @@ test('keeps an unresolved official-source conflict visible and blocks publicatio
   await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto('/rates/import-bill?account_id=account-1')
-  await expect(page).toHaveURL(/\/rates\/new\?.*bill_import=open/)
+  await expect(page).toHaveURL(/\/billing\/rate-plans\/new\?.*bill_import=open/)
   await expect(page.getByRole('heading', { name: 'Import utility bill' })).toBeVisible()
   await page.getByLabel('Utility bill import', { exact: true }).getByRole('button', { name: 'Next' }).click()
   const fixture = path.resolve(
@@ -510,7 +510,7 @@ test('shows actionable importer empty states instead of a blank workspace', asyn
   await page.route('**/api/v1/utility-accounts', async (route) => {
     await route.fulfill({ contentType: 'application/json', body: '[]' })
   })
-  await page.goto('/rates/new?bill_import=open')
+  await page.goto('/billing/rate-plans/new?bill_import=open')
   await expect(page.getByRole('heading', { name: 'Import utility bill' })).toBeVisible()
   await expect(page.getByText('No utility account')).toBeVisible()
   await expect(page.getByRole('link', { name: 'Create utility account' })).toBeVisible()
@@ -521,7 +521,7 @@ test('a failed editor chunk renders a recoverable error rather than a blank page
   await page.route('**/assets/RateEditorPage-*.js', async (route) => {
     await route.abort('failed')
   })
-  await page.goto('/rates/new?bill_import=open')
+  await page.goto('/billing/rate-plans/new?bill_import=open')
   await expect(page.getByRole('alert')).toContainText('Something needs attention')
   await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
 })

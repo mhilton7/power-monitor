@@ -144,7 +144,15 @@ async def ensure_default_reference_data(
             )
     site = await session.scalar(select(Site).where(Site.name == site_name))
     if site is None:
-        site = Site(name=site_name, timezone="America/Los_Angeles")
+        site = Site(
+            name=site_name,
+            timezone="America/Los_Angeles",
+            currency="USD",
+            locale="en-US",
+            unit_system="imperial",
+            lifecycle_state="active",
+            is_default=True,
+        )
         session.add(site)
         await session.flush()
     existing_plan = await session.scalar(select(RatePlan.id).limit(1))

@@ -243,7 +243,7 @@ async def clone_rate_plan(
     return {
         "plan_id": plan.id,
         "version_id": clone.id,
-        "editor_url": f"/rates/{plan.id}/versions/{clone.id}",
+        "editor_url": f"/billing/rate-plans/{plan.id}/versions/{clone.id}",
     }
 
 

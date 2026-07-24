@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -20,6 +21,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,6 +30,12 @@ from app.db.base import Base, TimestampMixin
 
 def new_uuid() -> str:
     return str(uuid.uuid4())
+
+
+def default_site_code(context: Any) -> str:
+    name = str(context.get_current_parameters().get("name") or "site").lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", name).strip("-")[:60] or "site"
+    return f"{slug}-{uuid.uuid4().hex[:8]}"
 
 
 class Role(Base):
@@ -265,10 +273,42 @@ class Site(TimestampMixin, Base):
     __tablename__ = "sites"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     name: Mapped[str] = mapped_column(String(160), unique=True)
+    code: Mapped[str] = mapped_column(
+        String(80), unique=True, index=True, default=default_site_code
+    )
+    description: Mapped[str | None] = mapped_column(Text)
+    location_label: Mapped[str | None] = mapped_column(String(160))
+    organization: Mapped[str | None] = mapped_column(String(160))
     timezone: Mapped[str] = mapped_column(String(64), default="America/Los_Angeles")
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
+    locale: Mapped[str] = mapped_column(String(32), default="en-US")
+    unit_system: Mapped[str] = mapped_column(String(16), default="imperial")
     allowed_cidrs: Mapped[list[str]] = mapped_column(JSON, default=list)
     allowed_domains: Mapped[list[str]] = mapped_column(JSON, default=list)
     allow_public_polling: Mapped[bool] = mapped_column(Boolean, default=False)
+    lifecycle_state: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    disabled_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    removed_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    removal_reason: Mapped[str | None] = mapped_column(String(500))
+    restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    restored_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    __table_args__ = (
+        CheckConstraint(
+            "lifecycle_state IN ('active','disabled','removed')",
+            name="site_lifecycle_state",
+        ),
+        CheckConstraint("length(currency) = 3", name="site_currency"),
+        CheckConstraint("unit_system IN ('imperial','metric')", name="site_unit_system"),
+        CheckConstraint("revision > 0", name="site_revision_positive"),
+    )
 
 
 class Utility(TimestampMixin, Base):
@@ -316,6 +356,33 @@ class UtilityAccount(TimestampMixin, Base):
             "cost_scope_default IN "
             "('energy_only','allocated_account_estimate','full_account_estimate')",
             name="utility_account_cost_scope",
+        ),
+    )
+
+
+class UtilityAccountSiteAssignment(Base):
+    __tablename__ = "utility_account_site_assignments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    utility_account_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
+    )
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.id", ondelete="RESTRICT"), index=True)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    assigned_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    reason: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "effective_to IS NULL OR effective_to > effective_from",
+            name="utility_account_site_assignment_window",
+        ),
+        Index(
+            "uq_utility_account_site_assignment_open",
+            "utility_account_id",
+            unique=True,
+            postgresql_where=text("effective_to IS NULL"),
+            sqlite_where=text("effective_to IS NULL"),
         ),
     )
 
@@ -493,6 +560,33 @@ class Device(TimestampMixin, Base):
             "cost_scope IN ('energy_only','allocated_account','full_account')", name="cost_scope"
         ),
         CheckConstraint("ct_rating_amps > 0", name="ct_rating"),
+    )
+
+
+class DeviceSiteAssignment(Base):
+    __tablename__ = "device_site_assignments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("devices.id", ondelete="RESTRICT"), index=True
+    )
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.id", ondelete="RESTRICT"), index=True)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    assigned_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    reason: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "effective_to IS NULL OR effective_to > effective_from",
+            name="device_site_assignment_window",
+        ),
+        Index(
+            "uq_device_site_assignment_open",
+            "device_id",
+            unique=True,
+            postgresql_where=text("effective_to IS NULL"),
+            sqlite_where=text("effective_to IS NULL"),
+        ),
     )
 
 

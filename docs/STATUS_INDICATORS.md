@@ -34,7 +34,7 @@ it never publishes automatically.
 `overview_site_state`, `overview_site_summary`, `history_context`, and
 `diagnostics_summary` are semantic zones. The retired full-width global status
 row is not a valid target. API, database, and worker indicators are
-diagnostics-only and render at **Administration > System Health**.
+diagnostics-only and render at **Administration > Security > System Health**.
 
 The following surfaces are deliberately excluded:
 

@@ -6,7 +6,7 @@ Choose the matching bundled plan, inspect its effective and checked dates, open 
 
 Enter a monthly baseline allocation only when verified from the account and only attach it to an explicitly complete `full_account` aggregate. A branch/one-CT device remains `energy_only`. Select SCE generation or configure CCA/Direct Access separately so generation is not double charged. Enter CARE/FERA, taxes, climate credits, and other bill adjustments only when known.
 
-Create the persisted account under **Administration > Sites & accounts**. Select the published
+Create the persisted account under **Billing > Utility Accounts**. Select the published
 rate version and an effective date rather than treating a library plan's published state as an
 assignment. For CCA, SCE normally remains the delivery utility while the named community choice
 provider supplies generation; for Direct Access, record the reviewed generation contract. Every

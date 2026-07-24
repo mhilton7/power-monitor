@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, CalendarClock, ChevronLeft, ChevronRight, CircleDollarSign, FileUp, Pencil, Plus, RefreshCw, X } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Archive, CalendarClock, ChevronLeft, ChevronRight, CircleDollarSign, Pencil, Plus, RefreshCw, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { CanonicalAction } from '../actions'
 import { api, ApiError } from '../api'
-import { formatEnergyRate } from '../formatters'
+import { formatBillingPeriod, formatCurrency, formatEnergy, formatEnergyRate } from '../formatters'
 import type { ManagedRatePlan, ManagedRateVersion } from '../rates'
 import type { AggregateSet, Device, Site, TierStatus, UtilityAccount } from '../types'
 import { EmptyState, ErrorState, LoadingState, Panel, StatusPill, formatTime } from './UI'
@@ -13,6 +13,23 @@ type AdjustmentComponent = 'cca_generation' | 'direct_access' | 'baseline_credit
 interface WizardAdjustment { component: AdjustmentComponent; value: string; unit: 'per_kwh' | 'fixed' | 'percent'; provenance: string; effectiveFrom: string; effectiveTo: string }
 interface VersionContext { current_period?: string; current_price_per_kwh?: string; next_period?: string; next_price_per_kwh?: string; next_period_at?: string; provider_mode: string; account_adjustments: Array<{ name: string; component: string; value: string; unit: string; scope: string }> }
 interface SetupReadiness { monitoring: { state: string; device_count: number; latest_signed_heartbeat_at?: string }; rate_and_cost: { state: string; cost_state: string; account_count: number; effective_account_count: number; cost_ready_account_count: number; pending_candidate_count: number } }
+interface UtilityBillSummary {
+  id: string
+  utility_account_id: string
+  utility_account_name: string
+  status: string
+  source_role: string
+  extraction_method: string
+  created_at: string
+  billing_cycle?: {
+    starts_at?: string
+    ends_at?: string
+    total_usage_kwh?: string
+    estimated_total?: string
+    status: string
+    billing_cycle_id?: string
+  }
+}
 const isTierStatus = (value: unknown): value is TierStatus => (
   typeof value === 'object'
   && value !== null
@@ -83,13 +100,27 @@ function readableScope(scope: CostScope) {
   return 'Complete utility-account estimate'
 }
 
-export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: Site[]; initialRateVersionId?: string }) {
+export function UtilityAccountsPanel({
+  sites,
+  initialRateVersionId,
+  initialSiteId,
+  openCreate = false,
+  canViewBills = false,
+}: {
+  sites: Site[]
+  initialRateVersionId?: string
+  initialSiteId?: string
+  openCreate?: boolean
+  canViewBills?: boolean
+}) {
   const queryClient = useQueryClient()
-  const [selectedSiteId, setSelectedSiteId] = useState(sites[0]?.id ?? '')
+  const initialSite = sites.some((site) => site.id === initialSiteId) ? initialSiteId : sites[0]?.id
+  const [selectedSiteId, setSelectedSiteId] = useState(initialSite ?? '')
   const [wizard, setWizard] = useState<WizardState>()
   const [step, setStep] = useState(0)
   const [success, setSuccess] = useState('')
   const [expanded, setExpanded] = useState<string>()
+  const openedFromRoute = useRef(false)
   const siteId = selectedSiteId || sites[0]?.id || ''
   const accounts = useQuery({
     queryKey: ['utility-accounts', siteId],
@@ -98,6 +129,11 @@ export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: S
   })
   const readiness = useQuery({ queryKey: ['setup-readiness', siteId], queryFn: () => api<SetupReadiness>(`/api/v1/sites/${siteId}/setup-readiness`), enabled: Boolean(siteId) })
   const rates = useQuery({ queryKey: ['managed-rates'], queryFn: () => api<ManagedRatePlan[]>('/api/v1/rates/plans') })
+  const bills = useQuery({
+    queryKey: ['utility-bill-imports', 'billing-overview'],
+    queryFn: () => api<UtilityBillSummary[]>('/api/v1/admin/utility-bill-imports'),
+    enabled: canViewBills,
+  })
   const versions = useMemo(() => approvedVersions(rates.data ?? []), [rates.data])
   const selectedVersion = versions.find((item) => item.version.id === wizard?.versionId)
   const selectedContext = useQuery({ queryKey: ['rate-version-current-context', wizard?.versionId], queryFn: () => api<VersionContext>(`/api/v1/rates/versions/${wizard?.versionId}/current-context`), enabled: Boolean(wizard?.versionId && step === 3) })
@@ -155,7 +191,7 @@ export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: S
     onSuccess: (result) => { setSuccess(`Cost recalculation queued for ${result.queued_runs} unfinalized run${result.queued_runs === 1 ? '' : 's'}.`); },
   })
 
-  function openWizard() {
+  const openWizard = useCallback(() => {
     const value = initialWizard(siteId)
     value.versionId = versions.some((item) => item.version.id === initialRateVersionId)
       ? initialRateVersionId ?? ''
@@ -164,7 +200,13 @@ export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: S
     setStep(0)
     setSuccess('')
     create.reset()
-  }
+  }, [create, initialRateVersionId, siteId, versions])
+
+  useEffect(() => {
+    if (!openCreate || openedFromRoute.current || !siteId || rates.isLoading) return
+    openedFromRoute.current = true
+    openWizard()
+  }, [openCreate, openWizard, rates.isLoading, siteId])
 
   function validStep(value: WizardState) {
     if (step === 0) return Boolean(value.siteId && value.name.trim())
@@ -182,12 +224,37 @@ export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: S
     else create.mutate(wizard)
   }
 
+  const siteAccounts = accounts.data ?? []
+  const effectiveAccounts = siteAccounts.filter(
+    (account) => account.rate_context.state === 'rate_configured_effective',
+  )
+  const rateNames = [...new Set(effectiveAccounts.map((account) => account.rate_context.current_plan).filter(Boolean))]
+  const prices = [...new Set(effectiveAccounts.map((account) => account.rate_context.current_price_per_kwh).filter(Boolean))]
+  const recentBills = (bills.data ?? [])
+    .filter((bill) => siteAccounts.some((account) => account.id === bill.utility_account_id))
+    .slice(0, 8)
+
   return <>
-    <Panel title="Utility accounts" eyebrow="Rate and cost setup" actions={<button className="button primary" onClick={openWizard}><Plus size={16} /> Create utility account</button>}>
+    <Panel
+      title="Utility accounts"
+      eyebrow="Rate and cost setup"
+      actions={(
+        <CanonicalAction id="utility_account.create" surface="panel_header">
+          <button className="button primary" onClick={openWizard}><Plus size={16} /> Create utility account</button>
+        </CanonicalAction>
+      )}
+    >
       <div className="account-toolbar">
         <label><span>Physical site</span><select value={siteId} onChange={(event) => { setSelectedSiteId(event.target.value); }}>{sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>
         <p>Sensors measure energy. Utility accounts independently determine the rate period and cost.</p>
       </div>
+      {!accounts.isLoading && !accounts.error && (
+        <section className="billing-summary-grid" aria-label="Billing summary">
+          <article><span>Active Utility Accounts</span><strong>{siteAccounts.length}</strong><small>{siteAccounts.length ? `for ${sites.find((site) => site.id === siteId)?.name ?? 'selected site'}` : 'No accounts configured'}</small></article>
+          <article><span>Current Rate</span><strong>{rateNames.length === 1 ? rateNames[0] : rateNames.length > 1 ? 'Multiple configured plans' : 'Not configured'}</strong><small>{effectiveAccounts.length ? `${effectiveAccounts.length} effective account${effectiveAccounts.length === 1 ? '' : 's'}` : 'Assign an effective rate version'}</small></article>
+          <article><span>Current Energy Price</span><strong>{prices.length === 1 ? formatEnergyRate(prices[0], { currency: effectiveAccounts[0]?.currency }) : prices.length > 1 ? 'Varies by account' : 'Unavailable'}</strong><small>{prices.length ? 'Evaluated at the current local time' : 'No effective price context'}</small></article>
+        </section>
+      )}
       {readiness.data && <div className="setup-readiness-grid"><article><span>Monitoring setup</span><strong>{readiness.data.monitoring.state.replaceAll('_', ' ')}</strong><small>{readiness.data.monitoring.device_count} enrolled sensor{readiness.data.monitoring.device_count === 1 ? '' : 's'}{readiness.data.monitoring.latest_signed_heartbeat_at ? ` · last signed heartbeat ${formatTime(readiness.data.monitoring.latest_signed_heartbeat_at)}` : ''}</small></article><article><span>Rate setup</span><strong>{readiness.data.rate_and_cost.state.replaceAll('_', ' ')}</strong><small>{readiness.data.rate_and_cost.effective_account_count} of {readiness.data.rate_and_cost.account_count} accounts currently effective{readiness.data.rate_and_cost.pending_candidate_count ? ` · ${readiness.data.rate_and_cost.pending_candidate_count} candidate awaiting approval` : ''}</small></article><article><span>Cost setup</span><strong>{readiness.data.rate_and_cost.cost_state.replaceAll('_', ' ')}</strong><small>{readiness.data.rate_and_cost.cost_ready_account_count} account{readiness.data.rate_and_cost.cost_ready_account_count === 1 ? '' : 's'} ready for calculation</small></article></div>}
       {success && <p className="form-success" role="status">{success}</p>}
       {accounts.isLoading ? <LoadingState /> : accounts.error ? <ErrorState error={accounts.error} /> : accounts.data?.length ? <div className="utility-account-list">
@@ -204,10 +271,13 @@ export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: S
           </dl>
           {account.rate_context.next_assignment && <p className="inline-notice"><CalendarClock size={15} /> Next: {account.rate_context.next_assignment.plan} on {formatTime(account.rate_context.next_assignment.effective_from)}</p>}
           <footer className="account-actions">
-            <Link className="button ghost" to={`/rates/new?bill_import=open&account_id=${encodeURIComponent(account.id)}`}><FileUp size={14} /> Upload current bill</Link>
             <button className="button ghost" onClick={() => { setExpanded(expanded === account.id ? undefined : account.id); }}>View {expanded === account.id ? 'less' : 'details'}</button>
-            <button className="button ghost" onClick={() => { setExpanded(account.id); }}><Pencil size={14} /> Manage</button>
-            <button className="button ghost" disabled={recalculate.isPending} onClick={() => { recalculate.mutate(account.id); }}><RefreshCw size={14} /> Recalculate costs</button>
+            <CanonicalAction id="utility_account.manage" surface="resource_row" resourceKey={account.id}>
+              <button className="button ghost" onClick={() => { setExpanded(account.id); }}><Pencil size={14} /> Manage</button>
+            </CanonicalAction>
+            <CanonicalAction id="utility_account.recalculate" surface="resource_row" resourceKey={account.id}>
+              <button className="button ghost" disabled={recalculate.isPending} onClick={() => { recalculate.mutate(account.id); }}><RefreshCw size={14} /> Recalculate costs</button>
+            </CanonicalAction>
             <button className="button ghost danger-text" disabled={archive.isPending} onClick={() => { if (window.confirm(`Archive ${account.name}? Historical assignments and costs will remain.`)) archive.mutate(account.id) }}><Archive size={14} /> Archive</button>
           </footer>
           {expanded === account.id && <>
@@ -215,7 +285,31 @@ export function UtilityAccountsPanel({ sites, initialRateVersionId }: { sites: S
             <UsageAuthorityManager account={account} onSaved={async (message) => { setSuccess(message); await queryClient.invalidateQueries({ queryKey: ['utility-accounts'] }) }} />
           </>}
         </article>)}
-      </div> : <EmptyState title="No utility account configured" message="Create a utility account to assign a rate plan, determine the current time-of-use period, and calculate energy costs for this site." action={<button className="button primary" onClick={openWizard}><Plus size={16} /> Create utility account</button>} />}
+      </div> : <EmptyState title="No utility account configured" message="Use Create utility account above to assign a rate plan, determine the current time-of-use period, and calculate energy costs for this site." />}
+      {canViewBills && (
+        <section className="recent-bills">
+          <header><div><span className="plan-code">Reviewed account evidence</span><h3>Recent bills and statements</h3></div></header>
+          {bills.isLoading ? <LoadingState label="Loading recent statements…" />
+            : bills.error ? <ErrorState error={bills.error} />
+              : recentBills.length ? (
+                <div className="responsive-table">
+                  <table>
+                    <thead><tr><th>Bill period</th><th>Account</th><th>Usage</th><th>Estimated total</th><th>Status</th><th>Imported on</th></tr></thead>
+                    <tbody>{recentBills.map((bill) => (
+                      <tr key={bill.id}>
+                        <td>{formatBillingPeriod(bill.billing_cycle?.starts_at, bill.billing_cycle?.ends_at)}</td>
+                        <td>{bill.utility_account_name}</td>
+                        <td>{formatEnergy(bill.billing_cycle?.total_usage_kwh)}</td>
+                        <td>{formatCurrency(bill.billing_cycle?.estimated_total, { currency: siteAccounts.find((account) => account.id === bill.utility_account_id)?.currency })}</td>
+                        <td><StatusPill status={bill.billing_cycle?.status ?? bill.status} /></td>
+                        <td>{formatTime(bill.created_at)}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              ) : <p className="field-help">No reviewed bill or statement evidence is attached to this site yet.</p>}
+        </section>
+      )}
     </Panel>
 
     {wizard && <div className="modal-backdrop modal-top" onMouseDown={(event) => { if (event.currentTarget === event.target) setWizard(undefined) }}>

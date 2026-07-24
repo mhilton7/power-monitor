@@ -15,6 +15,15 @@ Sensor network APIs are under `/api/v1/admin/network/policies`, `/cidrs`, `/test
 permissions. See [Utility accounts](UTILITY_ACCOUNTS.md) and
 [Sensor network policy](SENSOR_NETWORK_POLICY.md).
 
+Reviewed physical-site lifecycle APIs are under `/api/v1/admin/sites`.
+They provide filtered list/detail, create/edit, set-default, disable/enable,
+dependency inventory and resolution, soft remove, restore, and site audit
+history. Mutations use specific `sites.*` permissions, CSRF, site scope,
+optimistic revision checks, exact confirmation for removal, and immutable audit
+evidence. Sensor and utility-account transfers create effective-dated
+assignment rows; raw readings and historical cost/bill evidence are never
+rewritten. See [Site management](SITE_MANAGEMENT.md).
+
 `GET /api/v1/readings/history` remains backward compatible for one device,
 circuit, site, or aggregate selector. `POST /api/v1/history/query` is the bounded
 scope-aware interface for aligned multi-sensor series and historically effective

@@ -1,8 +1,37 @@
 # Power Monitor Server 1.0.0
 
+## Modern six-workspace UI and physical-site lifecycle update
+
+- Replaces the overloaded page sidebar with exactly six role-aware workspaces:
+  Overview, Monitoring, Analytics, Billing, Alerts, and Administration. Child
+  pages use one horizontal workspace tab bar, mobile/collapsed navigation stays
+  accessible, and legacy routes retain safe replace-style redirects.
+- Adds a canonical action registry with owner workspace, permission, approved
+  surfaces, route, audit identity, and runtime/test duplicate detection. Bill
+  import is no longer a standalone Billing tab: the Custom Plan editor owns rate
+  extraction while utility-account detail owns statement import.
+- Adds complete Physical Sites management under **Administration > Sites &
+  Network**: six-step creation, detail/edit, default selection,
+  disable/enable, dependency-aware soft removal, restore-to-disabled, scoped
+  audit history, and selector invalidation/fallback.
+- Preserves readings and historical cost/bill evidence. Sensor and
+  utility-account transfers are effective-dated; archives and ended user access
+  are explicit. Last-active and default sites cannot be removed, stale
+  revisions fail closed, and restoration never silently reactivates access.
+- Adds append-only Alembic revision `20260724_0012`, granular site permissions,
+  lifecycle metadata, effective-dated assignment tables, and a system status
+  layout revision mapping older placements to six semantic zones. No service,
+  database, secret, dataset, capability, or host port is added.
+- Final verification passed 122 portable Python tests plus separate PostgreSQL
+  17, 100-device/18,000-reading, and seven-service TrueNAS gates; 39 frontend
+  unit/component and 38 Chromium E2E scenarios; production builds for all
+  three application images; migration/contract/static Compose checks; a
+  five-artifact backup and clean restore; and dependency audits with no known
+  vulnerabilities.
+
 ## Bill-import integration and user-administration cleanup
 
-- Moves the complete utility-bill workflow into **Rates > Custom plan** while
+- Moves the complete utility-bill workflow into **Billing > Rate Plans > Custom Plan** while
   reusing the existing upload, extraction/OCR, evidence, rate-draft,
   billing-cycle, validation, and retention services.
 - Adds field-level keep/import/manual decisions so in-progress custom-plan
@@ -63,7 +92,7 @@
   utility interval/daily/cycle/bill imports, exact billing-cycle dates,
   duplicate/overlap/gap detection, conflict policy, and reconciliation evidence.
 - Integrates tier progress and scope-aware account costs with Overview, Rates,
-  Sites & accounts, Usage, Costs, and History. Current tier/price remains
+  Utility Accounts, Usage, Costs, and History. Current tier/price remains
   unavailable rather than showing a false zero when complete account context is
   missing.
 - Adds append-only Alembic revision `20260723_0009`, the shared deterministic
@@ -72,8 +101,8 @@
 
 ## Utility account and sensor network policy update
 
-- Adds the complete utility-account lifecycle inside **Administration > Sites
-  & accounts**: seven-step creation, multiple accounts per site, effective-dated
+- Adds the complete utility-account lifecycle inside **Billing > Utility
+  Accounts**: seven-step creation, multiple accounts per site, effective-dated
   rate assignments, explicit energy/full/allocated cost scopes, separately
   sourced adjustments, readiness states, recalculation, and archival.
 - Makes rate-library states and cross-page setup actions explicit, and resolves
@@ -95,7 +124,7 @@
 - Adds server-enforced granular permissions, custom role revisions, user-site
   scope, session revocation, short-lived reauthentication, and protected last-
   administrator/self-change safeguards.
-- Adds the integrated `/administration/users-access` workspace with user filters,
+- Adds the integrated `/administration/access` workspace with user filters,
   effective-access/session/audit detail, role/site diff preview, status actions,
   and custom-role lifecycle.
 - Adds the approved interface-text catalog, public login subset with compiled

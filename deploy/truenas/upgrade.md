@@ -58,11 +58,31 @@ dataset, secret, service, capability, network, host port, or image privilege is
 added. After upgrade, open **Users & Access**, verify the bootstrap
 Administrator is marked protected, disable and re-enable a non-production test
 user, then remove and restore that test identity. Confirm restoration leaves it
-disabled and unassigned. Open **Rates > Custom plan > Import from utility
+disabled and unassigned. Open **Billing > Rate Plans > Custom Plan > Import from utility
 bill** and verify a non-production PDF can be reviewed without losing a value
 already entered in the editor. The former `/rates/import-bill` bookmark and
 Administration-local user routes should redirect into their canonical
 workspaces rather than render a separate page.
+
+For the modern workspace and Physical Sites release, migration
+`20260724_0012` adds site lifecycle/default/revision metadata, effective-dated
+device and utility-account site assignments, granular `sites.*` permissions,
+and one system-authored status-layout revision. Existing site UUIDs, users,
+network policies, utility accounts, readings, costs, bills, alerts, and audit
+history are preserved. The migration chooses one existing active site as the
+default when necessary and backfills current assignments without rewriting raw
+readings. It adds no dataset, secret, service, capability, network, port, or
+Compose variable.
+
+After the migration reports success, open **Administration > Sites & Network >
+Physical Sites**. Verify the expected active/default site, inspect every site
+scope, and confirm the top-bar selector. Open **Administration > Interface**
+and preview the published status layout; older revisions remain auditable and
+are mapped into the new semantic zones at render time. Exercise create and
+disable/enable with a non-production site before removing anything. Removal is
+soft but requires explicit dependency transfers/archives, user-access ending,
+an audit reason, and exact confirmation. A restored site returns disabled and
+must be reviewed before Enable.
 
 For the Users & Access / Dashboard & Login Text release, migration
 `20260720_0005` adds permission definitions, role revisions/permissions,
@@ -78,7 +98,7 @@ append-only status-layout revision and draft tables, the current-revision
 pointer, and `status_indicators.view` / `status_indicators.manage` grants. It
 does not add a Compose service, image, dataset, mount, secret, port, capability,
 or environment variable. After the migration succeeds, sign in as an
-Administrator, open **Administration > Status Indicators & Layout**, preview
+Administrator, open **Administration > Interface > Status Indicators & Layout**, preview
 the default desktop/tablet/mobile layouts, and verify that hiding a test
 indicator does not suppress its alert before publishing intentional changes.
 
@@ -88,7 +108,7 @@ creates a new system-authored revision. It moves API/database/worker indicators
 to the diagnostics-only System Health zone, disables legacy duplicate fixed
 placements, updates the current-revision pointer, and records an audit event.
 It does not add a dataset, secret, mount, service, port, capability, or Compose
-variable. After upgrade, verify **Administration > System Health**, then open
+variable. After upgrade, verify **Administration > Security > System Health**, then open
 Overview and History and confirm the Site Summary and single coverage/rate
 context placements. The prior revision remains available for review; restoring
 it through the dashboard creates another immutable revision and the resolver
@@ -103,9 +123,9 @@ mount, service, port, capability, or Compose variable. The migration preserves
 the old behavior exactly: an empty pull CIDR list becomes explicit deny-all;
 existing pull CIDRs are copied; former network-unrestricted signed ingress is
 marked as a review-required legacy mode. After upgrade, open **Administration >
-Server & network**, review both directions for every site, add the intended
+Sites & Network > Network Policy**, review both directions for every site, add the intended
 private sensor VLANs, test one allowed and one blocked address without scanning,
-then save an explicit mode. Open **Sites & accounts** and create or review each
+then save an explicit mode. Open **Billing > Utility Accounts** and create or review each
 utility account, rate assignment, and cost scope. Do not select complete-account
 scope until topology coverage has been verified.
 

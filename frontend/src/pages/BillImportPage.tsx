@@ -557,7 +557,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
     {removeOriginal.error && <ErrorState error={removeOriginal.error} />}
 
     {step === 0 && <Panel title="Select utility account" eyebrow="Step 1 · Account scope">
-      {!accounts.data?.length ? <EmptyState title="No utility account" message="Create a utility account before importing its bill." action={<Link className="button primary" to="/admin?tab=sites-accounts">Create utility account</Link>} /> : <>
+      {!accounts.data?.length ? <EmptyState title="No utility account" message="Create a utility account before importing its bill." action={<Link className="button primary" to="/billing/accounts">Create utility account</Link>} /> : <>
         <label className="bill-account-select"><span>Utility account</span><select value={accountId} onChange={(event) => { setAccountId(event.target.value); setBillId(''); setSearchParams({ account_id: event.target.value }) }}>{accounts.data.map((account) => <option value={account.id} key={account.id}>{account.site_name} · {account.name}</option>)}</select></label>
         {selectedAccount && <dl className="detail-list bill-account-context"><div><dt>Utility</dt><dd>{selectedAccount.utility_name}</dd></div><div><dt>Provider</dt><dd>{selectedAccount.provider_mode.replaceAll('_', ' ')}</dd></div><div><dt>Timezone</dt><dd>{selectedAccount.timezone}</dd></div><div><dt>Current plan</dt><dd>{selectedAccount.rate_context.current_plan ?? 'Not assigned'}</dd></div></dl>}
       </>}

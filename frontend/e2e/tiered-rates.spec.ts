@@ -161,15 +161,17 @@ async function mockApplication(page: Page) {
 test('renders authoritative tier usage and exact account cost evidence', async ({ page }) => {
   await mockApplication(page)
 
-  await page.goto('/usage')
-  await expect(page.getByRole('heading', { name: 'Usage', exact: true })).toBeVisible()
+  await page.goto('/analytics/usage')
+  await expect(page.getByRole('heading', { name: 'Analytics', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Usage' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('heading', { name: 'Usage by tier' })).toBeVisible()
   await expect(page.getByText('951 kWh', { exact: true }).first()).toBeVisible()
   await expect(page.getByRole('cell', { name: '372 kWh' })).toBeVisible()
   await expect(page.getByText('Tier 2', { exact: true }).first()).toBeVisible()
 
-  await page.goto('/costs')
-  await expect(page.getByRole('heading', { name: 'Costs', exact: true })).toBeVisible()
+  await page.goto('/analytics/costs')
+  await expect(page.getByRole('heading', { name: 'Analytics', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Costs' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('heading', { name: 'Energy charge by tier' })).toBeVisible()
   await expect(page.getByText('$322.50', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('Estimate, not utility bill.')).toBeVisible()

@@ -40,7 +40,7 @@ configured.
   current price, billing-cycle energy, and cycle estimate.
 - **Rates** displays flat/TOU/tiered/hybrid model badges and opens the shared
   custom editor and preview.
-- **Sites & accounts** configures the effective assignment, cost scope,
+- **Billing > Utility Accounts** configures the effective assignment, cost scope,
   billing day, usage authority, and imports.
 - **History** keeps single-sensor and multi-sensor electrical behavior. For
   tiered plans it uses persisted chronological allocation context rather than

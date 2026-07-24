@@ -9,7 +9,7 @@ tariff.
 
 ## Create an account
 
-Open **Administration > Sites & accounts**, select the physical site, and choose **Create utility
+Open **Billing > Utility Accounts**, select the physical site, and choose **Create utility
 account**. The seven reviewable steps collect:
 
 1. a display name, optional nickname, and optional masked suffix (the full account number is not
@@ -24,7 +24,7 @@ account**. The seven reviewable steps collect:
 Multiple accounts can belong to one site. Assign each device/circuit/aggregate to the applicable
 account in topology; site membership alone does not decide which meter a sensor represents.
 
-The physical-site card reports both effective network directions and links to **Server & network**.
+The physical-site card reports both effective network directions and links to **Administration > Sites & Network > Network Policy**.
 It is a location/timezone boundary, not a utility account. The rate library is likewise not an
 assignment: **Published · Available** means that a reviewed version may be selected, not that the
 customer is billed on that tariff.

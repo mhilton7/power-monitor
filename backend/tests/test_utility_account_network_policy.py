@@ -74,9 +74,7 @@ async def test_guided_account_creation_rate_context_history_and_archive(
     await bootstrap(api_client)
     site = (await api_client.get("/api/v1/sites")).json()[0]
     empty_readiness = (await api_client.get(f"/api/v1/sites/{site['id']}/setup-readiness")).json()
-    assert empty_readiness["rate_and_cost"]["action"] == (
-        f"/admin?tab=sites-accounts&site={site['id']}"
-    )
+    assert empty_readiness["rate_and_cost"]["action"] == (f"/billing/accounts?site={site['id']}")
     plans = (await api_client.get("/api/v1/rates/plans")).json()
     version = next(
         version

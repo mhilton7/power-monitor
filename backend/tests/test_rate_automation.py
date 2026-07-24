@@ -702,7 +702,7 @@ async def test_rate_management_api_lifecycle_and_async_check(api_client: Any) ->
 
     cloned = await client.post(f"/api/v1/rates/plans/{plan['id']}/clone", headers=csrf(client))
     assert cloned.status_code == 201, cloned.text
-    assert cloned.json()["editor_url"].startswith("/rates/")
+    assert cloned.json()["editor_url"].startswith("/billing/rate-plans/")
 
     sources = await client.get("/api/v1/admin/rate-sources")
     assert sources.status_code == 200

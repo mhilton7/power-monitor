@@ -30,7 +30,7 @@ export function DeviceDetailPage() {
   const heartbeat = detail.latest_heartbeat as { latest?: Record<string, string>; pzem?: Record<string, unknown>; sd?: Record<string, unknown>; time?: Record<string, unknown>; resources?: Record<string, unknown> } | undefined
   return (
     <>
-      <Link className="back-link" to="/devices"><ArrowLeft size={16} /> Device fleet</Link>
+      <Link className="back-link" to="/monitoring/devices"><ArrowLeft size={16} /> Device fleet</Link>
       <PageTitle eyebrow={`${String(device.measurement_role)} monitor`} title={String(device.name)} description={`Identity ${String(device.id)} · ${String(device.connection_mode)} mode`} actions={<StatusPill status={String(device.status)} />} />
       <section className="metric-grid metric-grid-4">
         <Metric label="Live power" value={formatNumber(heartbeat?.latest?.power_w)} unit="W" detail="Latest signed measurement" />
@@ -48,10 +48,9 @@ export function DeviceDetailPage() {
       {tab === 'Health' && <Panel title="Subsystem evidence" eyebrow="Latest report"><pre className="json-view">{JSON.stringify({ pzem: heartbeat?.pzem, sd: heartbeat?.sd, time: heartbeat?.time, resources: heartbeat?.resources }, null, 2)}</pre></Panel>}
       {tab === 'Configuration' && <Panel title="Desired and effective configuration" eyebrow="Immutable versions"><p>Desired version <strong>{String(device.desired_config_version)}</strong>; effective version <strong>{String(device.effective_config_version)}</strong>. CT changes require an explicit warning; hardware pins stay local-only.</p></Panel>}
       {tab === 'Cost attribution' && <Panel title="Cost scope" eyebrow="No automatic account charges"><StatusPill status="healthy" label={String(device.cost_scope)} /><p>This one-CT device receives monitored-load energy charges only unless an administrator assigns a full-account aggregate.</p></Panel>}
-      {tab === 'History' && <Panel title="Measurement history" eyebrow="UTC source · local display"><Link className="button secondary" to={`/history?device_id=${deviceId}`}>Open interactive history</Link></Panel>}
+      {tab === 'History' && <Panel title="Measurement history" eyebrow="UTC source · local display"><Link className="button secondary" to={`/analytics/history?device_id=${deviceId}`}>Open interactive history</Link></Panel>}
       {tab === 'Firmware' && <Panel title="Firmware state" eyebrow="Signed packages only"><p>Installed version <strong>{String(device.firmware_version ?? 'Unknown')}</strong>. Compatible signed deployments are managed from Firmware.</p><Link className="button secondary" to="/firmware">Open firmware management</Link></Panel>}
       {tab === 'Maintenance' && <Panel title="Maintenance actions" eyebrow="Audited and authorized"><p>Reboot, sync retry, credential rotation, replacement, and revocation require operator or administrator privileges and are recorded in the audit log.</p></Panel>}
     </>
   )
 }
-

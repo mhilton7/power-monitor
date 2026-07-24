@@ -15,7 +15,7 @@ The Site Summary is the `overview_site_summary` semantic layout zone. Its
 recommended defaults are Energy today, Estimated today, Billing-cycle energy,
 Cycle estimate, Synchronization, and Active alerts. Administrators can enable,
 disable, reorder, change density, preview, publish, and restore these items from
-**Administration > Status Indicators & Layout**. Available optional items
+**Administration > Interface > Status Indicators & Layout**. Available optional items
 include online devices, recent peak, current rate context, data coverage, and
 latest backup where the current user's permissions allow them.
 

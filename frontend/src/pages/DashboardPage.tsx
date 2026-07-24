@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
+import { CanonicalAction } from '../actions'
 import { api } from '../api'
 import { formatCurrency, formatEnergyRate } from '../formatters'
 import { StatusIndicatorZone, useStatusIndicators } from '../components/StatusIndicators'
@@ -58,7 +59,6 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
   const hasLiveData = data.has_live_data
   const onlinePercent = data.total_devices ? Math.round((reportingDevices / data.total_devices) * 100) : 0
   const contributingDevices = includedDevices.filter((device) => Number(device.current_watts ?? 0) > 0)
-  const hasSiteSummary = Boolean(status.layout?.zones.some((zone) => zone.key === 'overview_site_summary' && zone.items.length))
   const peakIsConfiguredElsewhere = Boolean(status.layout?.zones.some((zone) => zone.items.some((item) => item.definition?.metric_identity === 'power.recent_peak')))
   const backlog = siteDevices.reduce((total, device) => total + device.backlog, 0)
   const hardwareIssues = siteDevices.filter((device) => device.pzem_ok === false || device.sd_ok === false)
@@ -79,30 +79,29 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
         eyebrow="At a glance"
         title="Power Dashboard"
         description="Monitor energy use, costs, device status, and site performance in one place."
-        actions={canEnroll && data.total_devices > 0 ? <Link className="button primary" to="/enrollment">Enroll devices <ArrowUpRight size={17} /></Link> : undefined}
+        actions={canEnroll && data.total_devices > 0 ? <CanonicalAction id="device.enroll" surface="page"><Link className="button primary" to="/monitoring/enrollment">Enroll devices <ArrowUpRight size={17} /></Link></CanonicalAction> : undefined}
       />
+      <StatusIndicatorZone zone="overview_summary" />
 
       {data.total_devices === 0 ? (
         <Panel className="overview-onboarding">
           <EmptyState
             title="No sensors enrolled"
             message="Enroll an ESP32 sensor to begin. Readings and site summaries appear after its first valid signed heartbeat."
-            action={<div className="inline-actions">{canEnroll ? <Link className="button primary" to="/enrollment">Enroll devices <ArrowUpRight size={16} /></Link> : <Link className="button secondary" to="/devices">Open Devices</Link>}{!data.rate_configured && <Link className="button secondary" to="/admin?tab=sites-accounts">Configure utility account <ArrowUpRight size={16} /></Link>}</div>}
+            action={<div className="inline-actions">{canEnroll ? <CanonicalAction id="device.enroll" surface="contextual_link"><Link className="button primary" to="/monitoring/enrollment">Enroll devices <ArrowUpRight size={16} /></Link></CanonicalAction> : <Link className="button secondary" to="/monitoring/devices">Open Devices</Link>}{!data.rate_configured && <Link className="button secondary" to="/billing/accounts">Configure utility account <ArrowUpRight size={16} /></Link>}</div>}
           />
           {data.rate_configured && <dl className="onboarding-rate-context"><div><dt>Current rate plan</dt><dd>{data.current_rate_plan} · v{data.current_rate_version}</dd></div><div><dt>Current rate period</dt><dd>{data.current_tou_bucket ?? 'Account usage required'}</dd></div><div><dt>Current energy price</dt><dd>{data.current_rate_price_per_kwh ? formatEnergyRate(data.current_rate_price_per_kwh) : 'Account tier unavailable'}</dd></div></dl>}
         </Panel>
       ) : <>
         <section className="overview-site-state" aria-label="Current site state">
           <div><Radio aria-hidden="true" /><span><strong>Monitoring {data.total_devices} {data.total_devices === 1 ? 'sensor' : 'sensors'}</strong><small>Selected site aggregate</small></span></div>
-          <StatusIndicatorZone zone="overview_site_state" />
-          {canEnroll && <Link to="/enrollment">Enroll devices <ArrowUpRight size={14} /></Link>}
         </section>
 
         {!hasLiveData && <Panel className="overview-waiting">
           <EmptyState
             title="Waiting for sensor data"
             message="The enrolled sensors have not sent a valid signed heartbeat yet. Keep this page open or review device setup and connectivity."
-            action={<Link className="button secondary" to="/devices">Review devices</Link>}
+            action={<Link className="button secondary" to="/monitoring/devices">Review devices</Link>}
           />
         </Panel>}
 
@@ -121,14 +120,10 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
             </div>
             <footer>
               {!peakIsConfiguredElsewhere && <span data-metric-identity="power.recent_peak">Recent peak <strong>{hasLiveData ? `${formatNumber(data.recent_peak_w)} W` : 'Unavailable'}</strong></span>}
-              <Link to="/history">View history <ArrowUpRight size={14} /></Link>
+              <Link to="/analytics/history">View history <ArrowUpRight size={14} /></Link>
             </footer>
           </article>
         </section>
-
-        {hasLiveData && hasSiteSummary && <Panel eyebrow="General site summary" title="Site Summary" className="overview-site-summary">
-          <StatusIndicatorZone zone="overview_site_summary" />
-        </Panel>}
 
         <div className="dashboard-grid">
           <Panel eyebrow="Live composition" title="Device contribution" className="chart-panel">
@@ -141,18 +136,18 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
           </Panel>
           <Panel eyebrow="Selected site" title="Operational status" className="operational-status">
             {!operationalIssues ? <div className="operational-ok"><CheckCircle2 /><span><strong>Site operating normally</strong><small>Devices are reporting, synchronized, and assigned to a rate.</small></span></div> : <div className="operational-list">
-              {data.online_devices < data.total_devices && <Link to="/devices"><AlertTriangle /><span><strong>Some devices need attention</strong><small>{data.total_devices - data.online_devices} offline or stale</small></span><ArrowUpRight /></Link>}
-              {backlog > 0 && <Link to="/devices"><RefreshCw /><span><strong>Historical readings are synchronizing</strong><small>{backlog} readings reported in the backlog</small></span><ArrowUpRight /></Link>}
-              {hardwareIssues.length > 0 && <Link to="/devices"><AlertTriangle /><span><strong>Sensor hardware issue</strong><small>{hardwareIssues.length} devices report meter or storage trouble</small></span><ArrowUpRight /></Link>}
-              {!data.rate_configured && <Link to="/admin?tab=sites-accounts"><Clock3 /><span><strong>No effective utility rate</strong><small>Configure the utility account and assign a published rate.</small></span><ArrowUpRight /></Link>}
+              {data.online_devices < data.total_devices && <Link to="/monitoring/devices"><AlertTriangle /><span><strong>Some devices need attention</strong><small>{data.total_devices - data.online_devices} offline or stale</small></span><ArrowUpRight /></Link>}
+              {backlog > 0 && <Link to="/monitoring/devices"><RefreshCw /><span><strong>Historical readings are synchronizing</strong><small>{backlog} readings reported in the backlog</small></span><ArrowUpRight /></Link>}
+              {hardwareIssues.length > 0 && <Link to="/monitoring/devices"><AlertTriangle /><span><strong>Sensor hardware issue</strong><small>{hardwareIssues.length} devices report meter or storage trouble</small></span><ArrowUpRight /></Link>}
+              {!data.rate_configured && <Link to="/billing/accounts"><Clock3 /><span><strong>No effective utility rate</strong><small>Configure the utility account and assign a published rate.</small></span><ArrowUpRight /></Link>}
             </div>}
           </Panel>
         </div>
 
-        <Panel eyebrow="Sensor fleet" title="Circuits right now" actions={<Link to="/devices">All devices <ArrowUpRight size={16} /></Link>}>
+        <Panel eyebrow="Sensor fleet" title="Circuits right now" actions={<Link to="/monitoring/devices">All devices <ArrowUpRight size={16} /></Link>}>
           <div className="device-card-grid">
             {siteDevices.slice(0, 8).map((device) => (
-              <Link className="device-card" to={`/devices/${device.id}`} key={device.id}>
+              <Link className="device-card" to={`/monitoring/devices/${device.id}`} key={device.id}>
                 <div className="device-card-head"><span className="device-icon"><Zap /></span><StatusPill status={device.status} /></div>
                 <h3>{device.name}</h3><p>{device.measurement_role} · {device.connection_mode}</p>
                 <strong className="device-watts">{device.last_seen_at ? formatNumber(device.current_watts) : '—'} <small>W</small></strong>
@@ -165,7 +160,7 @@ export function DashboardPage({ canEnroll = false }: { canEnroll?: boolean }) {
           </div>
         </Panel>
       </>}
-      {tierStatus.data?.available && <Panel eyebrow="Current billing cycle" title="Tier progress" className="overview-tier-summary" actions={<Link to="/usage">View usage <ArrowUpRight size={14} /></Link>}>
+      {tierStatus.data?.available && <Panel eyebrow="Current billing cycle" title="Tier progress" className="overview-tier-summary" actions={<Link to="/analytics/usage">View usage <ArrowUpRight size={14} /></Link>}>
         <dl className="overview-tier-grid">
           <div><dt>Current tier</dt><dd>{tierStatus.data.current_tier?.name ?? 'Unavailable'}</dd><small>{tierStatus.data.remaining_kwh ? `${formatNumber(tierStatus.data.remaining_kwh)} kWh to next tier` : 'Highest configured tier'}</small></div>
           <div><dt>Cycle usage</dt><dd>{formatNumber(tierStatus.data.authoritative_usage_kwh)} kWh</dd><small>{tierStatus.data.cycle.days_remaining} days remaining</small></div>

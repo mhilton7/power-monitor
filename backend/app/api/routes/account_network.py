@@ -30,6 +30,7 @@ from app.db.models import (
     Utility,
     UtilityAccount,
     UtilityAccountAdjustment,
+    UtilityAccountSiteAssignment,
 )
 from app.network_policy import (
     POLICY_MODES,
@@ -441,6 +442,13 @@ async def create_site_account(
         raise ProblemError(
             404, "Site not found", "The selected site does not exist", "site_missing"
         )
+    if site.lifecycle_state != "active":
+        raise ProblemError(
+            409,
+            "Active site required",
+            "Enable the site before creating new utility-account assignments",
+            "site_not_assignable",
+        )
     utility_name = (
         "Southern California Edison"
         if payload.utility_provider in {"sce", "cca", "direct_access"}
@@ -473,6 +481,16 @@ async def create_site_account(
     )
     session.add(account)
     await session.flush()
+    session.add(
+        UtilityAccountSiteAssignment(
+            utility_account_id=account.id,
+            site_id=site.id,
+            effective_from=datetime.now(UTC),
+            assigned_by=principal.user.id,
+            reason="Initial utility-account assignment",
+            created_at=datetime.now(UTC),
+        )
+    )
     if payload.cost_scope == "allocated_account_estimate" and not payload.allocation_method:
         raise ProblemError(
             422,
@@ -928,7 +946,7 @@ async def setup_readiness(
             "effective_account_count": len(effective),
             "cost_ready_account_count": cost_ready,
             "pending_candidate_count": pending_rate_candidates,
-            "action": f"/admin?tab=sites-accounts&site={site_id}" if not effective else None,
+            "action": f"/billing/accounts?site={site_id}" if not effective else None,
         },
     }
 

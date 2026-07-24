@@ -1,6 +1,6 @@
 # Sensor network policy
 
-Open **Administration > Server & network** to manage the policy for each physical site. Browser
+Open **Administration > Sites & Network > Network Policy** to manage the policy for each physical site. Browser
 and administrator access is intentionally outside this control.
 
 ![Sensor network policy](screenshots/sensor-network-policy.png)

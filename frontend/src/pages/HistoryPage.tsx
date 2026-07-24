@@ -29,7 +29,6 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ApiError, api, apiDownload, jsonBody } from '../api'
-import { StatusIndicatorZone } from '../components/StatusIndicators'
 import { formatEnergy, formatEnergyRate } from '../formatters'
 import type {
   AggregateSet,
@@ -472,7 +471,6 @@ export function HistoryPage() {
           <Download size={17} /> {exportHistory.isPending ? 'Preparing…' : 'Export CSV'}
         </button>}
       />
-      <StatusIndicatorZone zone="history_context" />
       {downloadMessage && <p className="success-message" role="status"><Check size={16} /> {downloadMessage}</p>}
       {exportHistory.error && <p className="field-error" role="alert">{exportHistory.error instanceof ApiError ? exportHistory.error.problem.detail : 'The export could not be created.'}</p>}
 
@@ -528,7 +526,7 @@ export function HistoryPage() {
           {basePoints.length ? <>
             <p className="sr-only" role="img" aria-label={`History chart for ${queryData.scope.display_name}. ${unavailableNumber(queryData.summary.energy_kwh, 4)} kilowatt-hours and ${unavailableMoney(queryData.summary.energy_cost)} estimated energy cost with ${formatNumber(queryData.summary.coverage_percent, 2)} percent coverage.`} />
             <div className="history-chart"><Chart type="line" data={chartData} options={chartOptions} /></div>
-          </> : <EmptyState title={queryData.scope.included_device_ids.length ? 'No readings in this range' : 'No sensors in this scope'} message={queryData.scope.included_device_ids.length ? 'History appears after durable readings synchronize from sensor storage. Try a wider range or review device connectivity.' : 'Choose another scope or enroll a sensor before requesting historical measurements.'} action={<Link className="button secondary" to={queryData.scope.included_device_ids.length ? '/devices' : '/enrollment'}>{queryData.scope.included_device_ids.length ? 'Review devices' : 'Open enrollment'}</Link>} />}
+          </> : <EmptyState title={queryData.scope.included_device_ids.length ? 'No readings in this range' : 'No sensors in this scope'} message={queryData.scope.included_device_ids.length ? 'History appears after durable readings synchronize from sensor storage. Try a wider range or review device connectivity.' : 'Choose another scope or enroll a sensor before requesting historical measurements.'} action={<Link className="button secondary" to={queryData.scope.included_device_ids.length ? '/monitoring/devices' : '/monitoring/enrollment'}>{queryData.scope.included_device_ids.length ? 'Review devices' : 'Open enrollment'}</Link>} />}
         </Panel>
 
         {selection && queryData.selected_summary && <Panel title="Selected range summary" eyebrow="Server-calculated interval segments">
@@ -556,7 +554,7 @@ export function HistoryPage() {
           </table></div>
           <nav className="history-pagination" aria-label="History table pages"><button className="button secondary compact" disabled={page <= 1} onClick={() => { setPage((current) => Math.max(1, current - 1)) }}><ChevronLeft size={16} /> Previous</button><span>Page {queryData.page} · {queryData.total_buckets} total buckets</span><button className="button secondary compact" disabled={!queryData.next_page} onClick={() => { setPage(queryData.next_page ?? page) }} >Next <ChevronRight size={16} /></button></nav>
         </Panel>}
-        {basePoints.length > 0 && costUnavailable && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost is unavailable for intervals without a historically effective rate or a completed tier recalculation. Electrical measurements remain visible; the server never guesses a price or resets cumulative tier usage per interval. <Link to="/admin?tab=sites-accounts">Configure or recalculate account</Link></p>}
+        {basePoints.length > 0 && costUnavailable && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost is unavailable for intervals without a historically effective rate or a completed tier recalculation. Electrical measurements remain visible; the server never guesses a price or resets cumulative tier usage per interval. <Link to="/billing/accounts">Configure or recalculate account</Link></p>}
         {basePoints.length > 0 && <p className="history-cost-disclosure"><Info size={16} /> Estimated energy cost covers interval energy charges for the selected sensors. It excludes account-level service charges, taxes, credits, and other whole-bill items by default.</p>}
       </>}
     </>

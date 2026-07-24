@@ -1,7 +1,7 @@
 # System Health
 
 API, PostgreSQL, and asynchronous-worker health is available to authorized
-administrators at **Administration > System Health**. These detailed diagnostic
+administrators at **Administration > Security > System Health**. These detailed diagnostic
 cards are intentionally absent from Overview, Devices, Topology, History,
 Rates, Alerts, Enrollment, Backups, and normal administration pages.
 

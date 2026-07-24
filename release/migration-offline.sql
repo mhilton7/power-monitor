@@ -2634,5 +2634,349 @@ INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'user
 
 UPDATE alembic_version SET version_num='20260724_0011' WHERE alembic_version.version_num = '20260724_0010';
 
+-- Running upgrade 20260724_0011 -> 20260724_0012
+
+ALTER TABLE sites ADD COLUMN code VARCHAR(80);
+
+ALTER TABLE sites ADD COLUMN description TEXT;
+
+ALTER TABLE sites ADD COLUMN location_label VARCHAR(160);
+
+ALTER TABLE sites ADD COLUMN organization VARCHAR(160);
+
+ALTER TABLE sites ADD COLUMN currency VARCHAR(3) DEFAULT 'USD' NOT NULL;
+
+ALTER TABLE sites ADD COLUMN locale VARCHAR(32) DEFAULT 'en-US' NOT NULL;
+
+ALTER TABLE sites ADD COLUMN unit_system VARCHAR(16) DEFAULT 'imperial' NOT NULL;
+
+ALTER TABLE sites ADD COLUMN lifecycle_state VARCHAR(16) DEFAULT 'active' NOT NULL;
+
+ALTER TABLE sites ADD COLUMN is_default BOOLEAN DEFAULT false NOT NULL;
+
+ALTER TABLE sites ADD COLUMN disabled_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE sites ADD COLUMN disabled_by VARCHAR(36);
+
+ALTER TABLE sites ADD CONSTRAINT fk_sites_disabled_by_users FOREIGN KEY(disabled_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE sites ADD COLUMN removed_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE sites ADD COLUMN removed_by VARCHAR(36);
+
+ALTER TABLE sites ADD CONSTRAINT fk_sites_removed_by_users FOREIGN KEY(removed_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE sites ADD COLUMN removal_reason VARCHAR(500);
+
+ALTER TABLE sites ADD COLUMN restored_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE sites ADD COLUMN restored_by VARCHAR(36);
+
+ALTER TABLE sites ADD CONSTRAINT fk_sites_restored_by_users FOREIGN KEY(restored_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE sites ADD COLUMN revision INTEGER DEFAULT '1' NOT NULL;
+
+UPDATE sites
+        SET code =
+            COALESCE(
+                NULLIF(
+                    trim(BOTH '-' FROM regexp_replace(lower(name), '[^a-z0-9]+', '-', 'g')),
+                    ''
+                ),
+                'site'
+            ) || '-' || substring(replace(id, '-', '') FROM 1 FOR 8);
+
+ALTER TABLE sites ALTER COLUMN code SET NOT NULL;
+
+UPDATE sites
+        SET is_default = true
+        WHERE id = (
+            SELECT id FROM sites
+            WHERE lifecycle_state = 'active'
+            ORDER BY created_at, id
+            LIMIT 1
+        );
+
+ALTER TABLE sites ADD CONSTRAINT ck_sites_site_lifecycle_state CHECK (lifecycle_state IN ('active','disabled','removed'));
+
+ALTER TABLE sites ADD CONSTRAINT ck_sites_site_currency CHECK (length(currency) = 3);
+
+ALTER TABLE sites ADD CONSTRAINT ck_sites_site_unit_system CHECK (unit_system IN ('imperial','metric'));
+
+ALTER TABLE sites ADD CONSTRAINT ck_sites_site_revision_positive CHECK (revision > 0);
+
+CREATE UNIQUE INDEX ix_sites_code ON sites (code);
+
+CREATE INDEX ix_sites_lifecycle_state ON sites (lifecycle_state);
+
+CREATE INDEX ix_sites_is_default ON sites (is_default);
+
+CREATE INDEX ix_sites_disabled_at ON sites (disabled_at);
+
+CREATE INDEX ix_sites_removed_at ON sites (removed_at);
+
+CREATE INDEX ix_sites_disabled_by ON sites (disabled_by);
+
+CREATE INDEX ix_sites_removed_by ON sites (removed_by);
+
+CREATE UNIQUE INDEX uq_sites_single_active_default ON sites (is_default) WHERE is_default = true AND lifecycle_state = 'active';
+
+CREATE TABLE device_site_assignments (
+    id VARCHAR(36) NOT NULL,
+    device_id VARCHAR(36) NOT NULL,
+    site_id VARCHAR(36) NOT NULL,
+    effective_from TIMESTAMP WITH TIME ZONE NOT NULL,
+    effective_to TIMESTAMP WITH TIME ZONE,
+    assigned_by VARCHAR(36),
+    reason VARCHAR(500),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_device_site_assignments PRIMARY KEY (id),
+    CONSTRAINT ck_device_site_assignments_device_site_assignment_window CHECK (effective_to IS NULL OR effective_to > effective_from),
+    CONSTRAINT fk_device_site_assignments_device_id_devices FOREIGN KEY(device_id) REFERENCES devices (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_device_site_assignments_site_id_sites FOREIGN KEY(site_id) REFERENCES sites (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_device_site_assignments_assigned_by_users FOREIGN KEY(assigned_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_device_site_assignments_device_id ON device_site_assignments (device_id);
+
+CREATE INDEX ix_device_site_assignments_site_id ON device_site_assignments (site_id);
+
+CREATE INDEX ix_device_site_assignments_effective_from ON device_site_assignments (effective_from);
+
+CREATE INDEX ix_device_site_assignments_effective_to ON device_site_assignments (effective_to);
+
+CREATE UNIQUE INDEX uq_device_site_assignment_open ON device_site_assignments (device_id) WHERE effective_to IS NULL;
+
+INSERT INTO device_site_assignments
+            (id, device_id, site_id, effective_from, effective_to,
+             assigned_by, reason, created_at)
+        SELECT
+            id,
+            id,
+            site_id,
+            created_at,
+            NULL,
+            NULL,
+            'System migration: existing device site',
+            CURRENT_TIMESTAMP
+        FROM devices;
+
+CREATE TABLE utility_account_site_assignments (
+    id VARCHAR(36) NOT NULL,
+    utility_account_id VARCHAR(36) NOT NULL,
+    site_id VARCHAR(36) NOT NULL,
+    effective_from TIMESTAMP WITH TIME ZONE NOT NULL,
+    effective_to TIMESTAMP WITH TIME ZONE,
+    assigned_by VARCHAR(36),
+    reason VARCHAR(500),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_utility_account_site_assignments PRIMARY KEY (id),
+    CONSTRAINT ck_utility_account_site_assignments_utility_account_sit_dfef CHECK (effective_to IS NULL OR effective_to > effective_from),
+    CONSTRAINT fk_utility_account_site_assignments_utility_account_id__cf34 FOREIGN KEY(utility_account_id) REFERENCES utility_accounts (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_utility_account_site_assignments_site_id_sites FOREIGN KEY(site_id) REFERENCES sites (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_utility_account_site_assignments_assigned_by_users FOREIGN KEY(assigned_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_utility_account_site_assignments_utility_account_id ON utility_account_site_assignments (utility_account_id);
+
+CREATE INDEX ix_utility_account_site_assignments_site_id ON utility_account_site_assignments (site_id);
+
+CREATE INDEX ix_utility_account_site_assignments_effective_from ON utility_account_site_assignments (effective_from);
+
+CREATE INDEX ix_utility_account_site_assignments_effective_to ON utility_account_site_assignments (effective_to);
+
+CREATE UNIQUE INDEX uq_utility_account_site_assignment_open ON utility_account_site_assignments (utility_account_id) WHERE effective_to IS NULL;
+
+INSERT INTO utility_account_site_assignments
+            (id, utility_account_id, site_id, effective_from, effective_to,
+             assigned_by, reason, created_at)
+        SELECT
+            id,
+            id,
+            site_id,
+            created_at,
+            NULL,
+            NULL,
+            'System migration: existing utility-account site',
+            CURRENT_TIMESTAMP
+        FROM utility_accounts;
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('sites.create', 'Sites and devices', 'Create sites', 'Create a physical site and its initial network-policy boundary.', true);
+
+INSERT INTO role_permissions (role_name, permission_code)
+                SELECT DISTINCT role_name, 'sites.create'
+                FROM role_permissions
+                WHERE permission_code = 'sites.manage'
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions (role_name, permission_code)
+                VALUES ('admin', 'sites.create')
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('sites.edit', 'Sites and devices', 'Edit sites', 'Change assigned-site identity, locale, timezone, and policy assignment.', true);
+
+INSERT INTO role_permissions (role_name, permission_code)
+                SELECT DISTINCT role_name, 'sites.edit'
+                FROM role_permissions
+                WHERE permission_code = 'sites.manage'
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions (role_name, permission_code)
+                VALUES ('admin', 'sites.edit')
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('sites.set_default', 'Sites and devices', 'Set default site', 'Transactionally change the active default site.', true);
+
+INSERT INTO role_permissions (role_name, permission_code)
+                SELECT DISTINCT role_name, 'sites.set_default'
+                FROM role_permissions
+                WHERE permission_code = 'sites.manage'
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions (role_name, permission_code)
+                VALUES ('admin', 'sites.set_default')
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('sites.disable', 'Sites and devices', 'Disable and enable sites', 'Temporarily suspend ordinary access and new assignments for a site.', true);
+
+INSERT INTO role_permissions (role_name, permission_code)
+                SELECT DISTINCT role_name, 'sites.disable'
+                FROM role_permissions
+                WHERE permission_code = 'sites.manage'
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions (role_name, permission_code)
+                VALUES ('admin', 'sites.disable')
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('sites.remove', 'Sites and devices', 'Remove sites', 'Soft-remove a site after reviewing and resolving active dependencies.', true);
+
+INSERT INTO role_permissions (role_name, permission_code)
+                SELECT DISTINCT role_name, 'sites.remove'
+                FROM role_permissions
+                WHERE permission_code = 'sites.manage'
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions (role_name, permission_code)
+                VALUES ('admin', 'sites.remove')
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('sites.restore', 'Sites and devices', 'Restore sites', 'Restore a removed site to a disabled state for explicit review.', true);
+
+INSERT INTO role_permissions (role_name, permission_code)
+                SELECT DISTINCT role_name, 'sites.restore'
+                FROM role_permissions
+                WHERE permission_code = 'sites.manage'
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions (role_name, permission_code)
+                VALUES ('admin', 'sites.restore')
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('sites.transfer_resources', 'Sites and devices', 'Transfer site resources', 'Transfer or archive active site resources before removal.', true);
+
+INSERT INTO role_permissions (role_name, permission_code)
+                SELECT DISTINCT role_name, 'sites.transfer_resources'
+                FROM role_permissions
+                WHERE permission_code = 'sites.manage'
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions (role_name, permission_code)
+                VALUES ('admin', 'sites.transfer_resources')
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('sites.view_audit', 'Sites and devices', 'View site audit history', 'View lifecycle and configuration audit evidence for assigned sites.', true);
+
+INSERT INTO role_permissions (role_name, permission_code)
+                SELECT DISTINCT role_name, 'sites.view_audit'
+                FROM role_permissions
+                WHERE permission_code = 'sites.manage'
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO role_permissions (role_name, permission_code)
+                VALUES ('admin', 'sites.view_audit')
+                ON CONFLICT DO NOTHING;
+
+INSERT INTO status_layout_revisions
+            (id, revision, registry_version, configuration, created_by, created_at,
+             reason, restored_from_id)
+        SELECT
+            '00000000-0000-4000-8000-000000000012',
+            state.current_revision + 1,
+            current.registry_version,
+            jsonb_set(
+                current.configuration::jsonb,
+                '{items}',
+                COALESCE(
+                    (
+                        SELECT jsonb_agg(
+                            item || jsonb_build_object(
+                                'zone',
+                                CASE item->>'zone'
+                                    WHEN 'global_header_left' THEN 'top_bar'
+                                    WHEN 'global_header_center' THEN 'top_bar'
+                                    WHEN 'global_header_right' THEN 'top_bar'
+                                    WHEN 'sidebar_upper' THEN 'mobile_status_drawer'
+                                    WHEN 'sidebar_lower' THEN 'mobile_status_drawer'
+                                    WHEN 'global_footer' THEN 'page_summary'
+                                    WHEN 'page_header_primary' THEN 'workspace_header'
+                                    WHEN 'page_header_secondary' THEN 'workspace_header'
+                                    WHEN 'page_status_row' THEN 'page_summary'
+                                    WHEN 'page_summary_strip' THEN 'page_summary'
+                                    WHEN 'page_footer' THEN 'page_summary'
+                                    WHEN 'overview_site_state' THEN 'overview_summary'
+                                    WHEN 'overview_site_summary' THEN 'overview_summary'
+                                    WHEN 'history_context' THEN 'page_summary'
+                                    WHEN 'diagnostics_summary'
+                                        THEN 'administration_diagnostics'
+                                    WHEN 'mobile_header' THEN 'mobile_status_drawer'
+                                    WHEN 'mobile_status_strip' THEN 'mobile_status_drawer'
+                                    ELSE item->>'zone'
+                                END
+                            )
+                        )
+                        FROM jsonb_array_elements(
+                            COALESCE(current.configuration::jsonb->'items', '[]'::jsonb)
+                        ) AS item
+                    ),
+                    '[]'::jsonb
+                ),
+                true
+            )::json,
+            NULL,
+            CURRENT_TIMESTAMP,
+            'System migration: six-workspace shell and semantic status zones',
+            state.current_revision_id
+        FROM status_layout_state AS state
+        JOIN status_layout_revisions AS current ON current.id = state.current_revision_id
+        WHERE state.id = 'current';
+
+UPDATE status_layout_state
+        SET current_revision_id = '00000000-0000-4000-8000-000000000012',
+            current_revision = current_revision + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 'current'
+          AND EXISTS (
+              SELECT 1 FROM status_layout_revisions
+              WHERE id = '00000000-0000-4000-8000-000000000012'
+          );
+
+INSERT INTO audit_events
+            (id, occurred_at, actor_type, actor_id, action, object_type, object_id,
+             source_ip, outcome, correlation_id, details)
+        VALUES
+            ('00000000-0000-4000-9000-000000000012', CURRENT_TIMESTAMP, 'system', NULL,
+             'site_lifecycle.modern_workspace_migrated', 'status_layout',
+             '00000000-0000-4000-8000-000000000012', NULL, 'success',
+             'migration:20260724_0012',
+             json_build_object(
+                 'summary', 'Added site lifecycle and six-workspace semantic zones',
+                 'previous_revision_preserved', true,
+                 'existing_sites_preserved', true,
+                 'raw_readings_rewritten', false
+             ));
+
+UPDATE alembic_version SET version_num='20260724_0012' WHERE alembic_version.version_num = '20260724_0011';
+
 COMMIT;
 

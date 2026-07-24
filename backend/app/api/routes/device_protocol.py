@@ -21,6 +21,7 @@ from app.db.models import (
     DeviceEvent,
     DeviceHeartbeat,
     DeviceLifecycleEvent,
+    DeviceSiteAssignment,
     DeviceStatusSnapshot,
     EnrollmentToken,
     FirmwareDeployment,
@@ -164,6 +165,13 @@ async def claim_enrollment(
     )
     if site is None:
         raise ProblemError(409, "No site", "Create a site before enrollment", "site_required")
+    if site.lifecycle_state != "active":
+        raise ProblemError(
+            409,
+            "Active site required",
+            "Enable the site before enrolling or reassigning sensors",
+            "site_not_assignable",
+        )
     direct_address = request.client.host if request.client else ""
     try:
         source_ip = effective_client_ip(
@@ -245,6 +253,25 @@ async def claim_enrollment(
         session.add(device)
         config_version = 1
     await session.flush()
+    current_assignment = await session.scalar(
+        select(DeviceSiteAssignment).where(
+            DeviceSiteAssignment.device_id == device.id,
+            DeviceSiteAssignment.effective_to.is_(None),
+        )
+    )
+    if current_assignment is None or current_assignment.site_id != site.id:
+        if current_assignment is not None:
+            current_assignment.effective_to = now
+        session.add(
+            DeviceSiteAssignment(
+                device_id=device.id,
+                site_id=site.id,
+                effective_from=now,
+                assigned_by=token.created_by,
+                reason="Device enrollment",
+                created_at=now,
+            )
+        )
     secret_text = secrets.token_urlsafe(48)
     secret = secret_text.encode()
     fingerprint = hashlib.sha256(secret).hexdigest()

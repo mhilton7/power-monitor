@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -18,6 +19,14 @@ class DeviceProtocolModel(BaseModel):
 def require_aware(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("timestamp must include a UTC offset")
+    return value
+
+
+def require_iana_timezone(value: str) -> str:
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError("timezone must be a valid IANA timezone") from exc
     return value
 
 
@@ -64,14 +73,116 @@ class SessionView(ApiModel):
 
 class SiteCreate(ApiModel):
     name: str = Field(min_length=1, max_length=160)
+    code: str | None = Field(default=None, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=80)
+    description: str | None = Field(default=None, max_length=2000)
+    location_label: str | None = Field(default=None, max_length=160)
+    organization: str | None = Field(default=None, max_length=160)
     timezone: str = "America/Los_Angeles"
+    currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
+    locale: str = Field(default="en-US", pattern=r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
+    unit_system: Literal["imperial", "metric"] = "imperial"
     allowed_cidrs: list[str] = Field(default_factory=list)
     allowed_domains: list[str] = Field(default_factory=list)
     allow_public_polling: bool = False
 
+    _timezone_valid = field_validator("timezone")(require_iana_timezone)
+
 
 class SiteView(SiteCreate):
     id: str
+    code: str
+    lifecycle_state: Literal["active", "disabled", "removed"]
+    is_default: bool
+    revision: int
+    disabled_at: datetime | None = None
+    removed_at: datetime | None = None
+    removal_reason: str | None = None
+    restored_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SiteAdminCreate(SiteCreate):
+    code: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=80)
+    initial_user_ids: list[str] = Field(default_factory=list, max_length=200)
+    make_default: bool = False
+    network_policy_mode: Literal["inherit", "explicit", "existing"] = "inherit"
+    network_policy_id: str | None = None
+    create_utility_account_after: bool = False
+    confirmation: bool
+
+    @model_validator(mode="after")
+    def confirmed_and_consistent(self) -> SiteAdminCreate:
+        if not self.confirmation:
+            raise ValueError("site creation must be explicitly confirmed")
+        if self.network_policy_mode == "existing" and not self.network_policy_id:
+            raise ValueError("network_policy_id is required for an existing policy")
+        return self
+
+
+class SiteAdminUpdate(ApiModel):
+    revision: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=2000)
+    location_label: str | None = Field(default=None, max_length=160)
+    organization: str | None = Field(default=None, max_length=160)
+    timezone: str | None = None
+    currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    locale: str | None = Field(default=None, pattern=r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
+    unit_system: Literal["imperial", "metric"] | None = None
+    timezone_change_confirmed: bool = False
+    reason: str = Field(min_length=3, max_length=500)
+
+    @field_validator("timezone")
+    @classmethod
+    def timezone_valid(cls, value: str | None) -> str | None:
+        return require_iana_timezone(value) if value else value
+
+
+class SiteLifecycleRequest(ApiModel):
+    revision: int = Field(ge=1)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class SiteRemoveRequest(SiteLifecycleRequest):
+    confirmation: str = Field(min_length=1, max_length=160)
+    dependency_reviewed: bool
+
+
+class SiteRestoreRequest(SiteLifecycleRequest):
+    confirm_high_risk: bool
+
+
+class SiteSensorResolution(ApiModel):
+    device_id: str
+    action: Literal["archive", "transfer"]
+    target_site_id: str | None = None
+
+    @model_validator(mode="after")
+    def transfer_has_target(self) -> SiteSensorResolution:
+        if self.action == "transfer" and not self.target_site_id:
+            raise ValueError("target_site_id is required when transferring a sensor")
+        return self
+
+
+class SiteAccountResolution(ApiModel):
+    utility_account_id: str
+    action: Literal["archive", "transfer"]
+    target_site_id: str | None = None
+
+    @model_validator(mode="after")
+    def transfer_has_target(self) -> SiteAccountResolution:
+        if self.action == "transfer" and not self.target_site_id:
+            raise ValueError("target_site_id is required when transferring an account")
+        return self
+
+
+class SiteDependencyResolution(ApiModel):
+    revision: int = Field(ge=1)
+    reason: str = Field(min_length=3, max_length=500)
+    sensors: list[SiteSensorResolution] = Field(default_factory=list, max_length=500)
+    utility_accounts: list[SiteAccountResolution] = Field(default_factory=list, max_length=200)
+    end_user_access_ids: list[str] = Field(default_factory=list, max_length=500)
 
 
 class CircuitCreate(ApiModel):

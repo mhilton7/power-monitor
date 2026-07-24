@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, Copy, KeyRound, Pencil, Plus, Power, RotateCcw, Search, ShieldCheck, Trash2, UserPlus, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { CanonicalAction } from '../actions'
 import { api, ApiError } from '../api'
 import { sessionPermissions } from '../access'
 import type { AccessRole, ManagedUser, PermissionDefinition, Session, Site } from '../types'
@@ -136,7 +137,7 @@ export function UsersAccessPage({ session }: { session: Session }) {
           <Panel
             title="User accounts"
             eyebrow="Server-enforced access"
-            actions={canManageUsers ? <button className="button primary" onClick={() => { setShowCreate(true) }}><UserPlus size={16} /> Add user</button> : undefined}
+            actions={canManageUsers ? <CanonicalAction id="user.add" surface="panel_header"><button className="button primary" onClick={() => { setShowCreate(true) }}><UserPlus size={16} /> Add user</button></CanonicalAction> : undefined}
           >
             <div className="filter-grid access-filters">
               <label className="search-control"><span>Search users</span><div><Search size={16} /><input value={search} onChange={(event) => { setSearch(event.target.value) }} placeholder="Name or email" /></div></label>
@@ -272,18 +273,18 @@ function UserAccessDialog({ user, loading, error, roles, sites, permissions, can
       <div className="access-dialog-actions">
         {canManage && user.status !== 'removed' && <button className="button primary" onClick={() => { setEditing(!editing) }}><Pencil size={16} />{editing ? 'Cancel editing' : 'Edit access'}</button>}
         {canManage && user.status !== 'removed' && <button className="button secondary" onClick={() => { onAction('revoke') }}><KeyRound size={16} />Revoke sessions</button>}
-        {canDisable && user.status !== 'removed' && <button
-          className={`button ${user.is_active ? 'danger' : 'secondary'}`}
-          disabled={user.protected_account || (user.is_active && user.id === currentUserId)}
+        {canDisable && user.status !== 'removed' && (user.is_active ? <CanonicalAction id="user.disable" surface="resource_detail" resourceKey={user.id}><button
+          className="button danger"
+          disabled={user.protected_account || user.id === currentUserId}
           title={user.protected_account ? 'Protected bootstrap accounts cannot be disabled' : user.id === currentUserId ? 'Use another administrator to disable your account' : undefined}
-          onClick={() => { onAction(user.is_active ? 'disable' : 'enable') }}
-        ><Power size={16} />{user.is_active ? 'Disable' : 'Enable'}</button>}
-        {canRemove && user.status !== 'removed' && <button
+          onClick={() => { onAction('disable') }}
+        ><Power size={16} />Disable</button></CanonicalAction> : <button className="button secondary" onClick={() => { onAction('enable') }}><Power size={16} />Enable</button>)}
+        {canRemove && user.status !== 'removed' && <CanonicalAction id="user.remove" surface="resource_detail" resourceKey={user.id}><button
           className="button danger"
           disabled={user.protected_account || user.id === currentUserId}
           title={user.protected_account ? 'Protected bootstrap accounts cannot be removed' : user.id === currentUserId ? 'Use another administrator to remove your account' : undefined}
           onClick={() => { onAction('remove') }}
-        ><Trash2 size={16} />Remove user</button>}
+        ><Trash2 size={16} />Remove user</button></CanonicalAction>}
         {canRestore && user.status === 'removed' && <button className="button secondary" onClick={() => { onAction('restore') }}><RotateCcw size={16} />Restore</button>}
       </div>
       {editing && user.status !== 'removed' ? <form className="access-edit-form" onSubmit={(event) => { event.preventDefault(); save.mutate() }}>

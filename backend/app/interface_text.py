@@ -65,7 +65,7 @@ def _text(
     )
 
 
-TEXT_DEFINITIONS = (
+TEXT_DEFINITIONS: tuple[TextDefinition, ...] = (
     _text(
         "general.application_name",
         "General",
@@ -621,6 +621,57 @@ TEXT_DEFINITIONS = (
         max_length=300,
         preview_location="banner",
     ),
+)
+
+WORKSPACE_TEXT_DEFAULTS = {
+    "workspace.overview.label": "Overview",
+    "workspace.overview.title": "Overview",
+    "workspace.overview.subtitle": "Current power, energy, cost, and operational context.",
+    "workspace.monitoring.label": "Monitoring",
+    "workspace.monitoring.title": "Monitoring",
+    "workspace.monitoring.subtitle": (
+        "Manage sensors, physical relationships, and device enrollment."
+    ),
+    "workspace.monitoring.devices": "Devices",
+    "workspace.monitoring.topology": "Topology",
+    "workspace.monitoring.enrollment": "Enrollment",
+    "workspace.analytics.label": "Analytics",
+    "workspace.analytics.title": "Analytics",
+    "workspace.analytics.subtitle": "Explore usage, historical measurements, and energy costs.",
+    "workspace.analytics.usage": "Usage",
+    "workspace.analytics.history": "History",
+    "workspace.analytics.costs": "Costs",
+    "workspace.billing.label": "Billing",
+    "workspace.billing.title": "Billing",
+    "workspace.billing.subtitle": "Utility pricing, billing cycles, and imported statements.",
+    "workspace.billing.accounts": "Utility Accounts",
+    "workspace.billing.rate_plans": "Rate Plans",
+    "workspace.billing.rate_sources": "Rate Sources",
+    "workspace.alerts.label": "Alerts",
+    "workspace.alerts.title": "Alerts",
+    "workspace.alerts.subtitle": "Review operational alerts and notification delivery.",
+    "workspace.administration.label": "Administration",
+    "workspace.administration.title": "Administration",
+    "workspace.administration.subtitle": (
+        "Manage access, sites, delivery, data, interface, and security."
+    ),
+    "workspace.administration.access": "Access",
+    "workspace.administration.sites_network": "Sites & Network",
+    "workspace.administration.notifications": "Notification Settings",
+    "workspace.administration.data": "Data Management",
+    "workspace.administration.interface": "Interface",
+    "workspace.administration.security": "Security",
+}
+TEXT_DEFINITIONS += tuple(
+    _text(
+        key,
+        "Page Titles & Subtitles",
+        default,
+        key.rsplit(".", 1)[-1].replace("_", " ").title(),
+        "Canonical six-workspace navigation or heading text.",
+        max_length=240 if key.endswith(".subtitle") else 80,
+    )
+    for key, default in WORKSPACE_TEXT_DEFAULTS.items()
 )
 
 TEXT_CATALOG = {item.key: item for item in TEXT_DEFINITIONS}

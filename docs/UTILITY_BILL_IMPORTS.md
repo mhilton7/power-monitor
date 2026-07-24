@@ -1,8 +1,8 @@
 # Utility-bill PDF imports
 
-Administrators open **Rates > Custom plan** and select **Import from utility
+Administrators open **Billing > Rate Plans > Custom Plan** and select **Import from utility
 bill** inside the existing custom-plan editor. **Upload current bill** on an
-account under **Administration > Sites & accounts** opens the same editor with
+account under **Billing > Utility Accounts** opens the same editor with
 the account preselected. The workflow processes a password-free PDF on the
 Power Monitor server and produces two separate reviewed outputs:
 

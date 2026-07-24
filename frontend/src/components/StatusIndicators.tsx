@@ -94,19 +94,22 @@ const StatusContext = createContext<StatusContextValue>({
 })
 
 export function pageFromPath(pathname: string): string {
-  if (pathname === '/') return 'overview'
-  if (/^\/devices\/[^/]+/.test(pathname)) return 'device_detail'
-  if (pathname.startsWith('/devices')) return 'devices'
-  if (pathname.startsWith('/topology')) return 'topology'
-  if (pathname.startsWith('/usage')) return 'usage'
-  if (pathname.startsWith('/history')) return 'history'
-  if (pathname.startsWith('/costs')) return 'costs'
-  if (pathname.startsWith('/rates/sources')) return 'rate_sources'
-  if (pathname.startsWith('/rates')) return 'rates'
+  if (pathname === '/' || pathname.startsWith('/overview')) return 'overview'
+  if (/^\/(monitoring\/)?devices\/[^/]+/.test(pathname)) return 'device_detail'
+  if (pathname.startsWith('/monitoring/devices') || pathname.startsWith('/devices')) return 'devices'
+  if (pathname.startsWith('/monitoring/topology') || pathname.startsWith('/topology')) return 'topology'
+  if (pathname.startsWith('/analytics/usage') || pathname.startsWith('/usage')) return 'usage'
+  if (pathname.startsWith('/analytics/history') || pathname.startsWith('/history')) return 'history'
+  if (pathname.startsWith('/analytics/costs') || pathname.startsWith('/costs')) return 'costs'
+  if (pathname.startsWith('/billing/rate-sources') || pathname.startsWith('/rates/sources')) return 'rate_sources'
+  if (pathname.startsWith('/billing') || pathname.startsWith('/rates')) return 'rates'
   if (pathname.startsWith('/alerts')) return 'alerts'
-  if (pathname.startsWith('/enrollment')) return 'enrollment'
+  if (pathname.startsWith('/monitoring/enrollment') || pathname.startsWith('/enrollment')) return 'enrollment'
   if (pathname.startsWith('/reports')) return 'backups'
-  if (pathname.startsWith('/administration/system-health')) return 'system_health'
+  if (
+    pathname.startsWith('/administration/security')
+    || pathname.startsWith('/administration/system-health')
+  ) return 'system_health'
   return 'administration'
 }
 

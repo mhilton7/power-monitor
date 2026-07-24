@@ -2,7 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { AlertTriangle, CheckCircle2, LoaderCircle, RefreshCw } from 'lucide-react'
 import { formatCurrency } from '../formatters'
 import { useInterfaceText } from '../interfaceText'
-import { StatusIndicatorZone } from './StatusIndicators'
+import { useWorkspacePage } from '../workspaces'
 
 const PAGE_TEXT_KEYS: Record<string, string> = {
   'Power Dashboard': 'overview',
@@ -83,12 +83,16 @@ export function StatusPill({ status, label }: { status: string; label?: string }
 
 export function PageTitle({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description?: string; actions?: ReactNode }) {
   const { text } = useInterfaceText()
+  const inWorkspace = useWorkspacePage()
   const pageKey = PAGE_TEXT_KEYS[title]
   const visibleTitle = pageKey ? text(`pages.${pageKey}.title`, title) : title
   const visibleDescription = pageKey && description ? text(`pages.${pageKey}.subtitle`, description) : description
   useEffect(() => {
     document.title = `${visibleTitle} · ${text('general.browser_title_prefix', 'Power Monitor')}`
   }, [text, visibleTitle])
+  if (inWorkspace) {
+    return actions ? <div className="workspace-context-actions">{actions}</div> : null
+  }
   return (
     <>
       <header className="page-title">
@@ -97,12 +101,8 @@ export function PageTitle({ eyebrow, title, description, actions }: { eyebrow: s
           <h1>{visibleTitle}</h1>
           {visibleDescription && <p>{visibleDescription}</p>}
         </div>
-        <StatusIndicatorZone zone="page_header_primary" className="page-title-status" />
         {actions && <div className="page-actions">{actions}</div>}
       </header>
-      <StatusIndicatorZone zone="page_header_secondary" />
-      <StatusIndicatorZone zone="page_status_row" />
-      <StatusIndicatorZone zone="page_summary_strip" />
     </>
   )
 }

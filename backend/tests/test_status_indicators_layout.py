@@ -251,11 +251,7 @@ def test_layout_engine_collapses_empty_zones_and_handles_responsive_counts() -> 
         breakpoint="mobile",
         revision=1,
     )
-    assert {zone["key"] for zone in mobile["zones"]} <= {
-        "mobile_header",
-        "mobile_status_strip",
-        "mobile_status_drawer",
-    }
+    assert {zone["key"] for zone in mobile["zones"]} <= {"mobile_status_drawer"}
     assert any(zone["key"] == "mobile_status_drawer" for zone in mobile["zones"])
 
     # A retired key stays in raw revision content but is ignored without a placeholder.
@@ -306,7 +302,7 @@ def test_system_health_is_diagnostics_only_and_duplicate_metrics_repair() -> Non
         revision=2,
     )
     diagnostic_zone = next(
-        zone for zone in diagnostics["zones"] if zone["key"] == "diagnostics_summary"
+        zone for zone in diagnostics["zones"] if zone["key"] == "administration_diagnostics"
     )
     assert {item["indicator_key"] for item in diagnostic_zone["items"]} == {
         "system.api_health",
@@ -322,7 +318,7 @@ def test_system_health_is_diagnostics_only_and_duplicate_metrics_repair() -> Non
             "role": "*",
             "breakpoint": "default",
             "visible": True,
-            "zone": "page_status_row",
+            "zone": "page_summary",
             "order": 10,
         }
     )
@@ -473,7 +469,7 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
     configuration = materialize_configuration(draft["configuration"])
     global_item(configuration, "data.energy_today")["visible"] = False
     offline = global_item(configuration, "device.offline_count")
-    offline["zone"] = "page_summary_strip"
+    offline["zone"] = "page_summary"
     offline["order"] = 5
     configuration["items"].append(
         {
@@ -482,7 +478,7 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
             "role": "viewer",
             "breakpoint": "mobile",
             "density": "compact",
-            "zone": "mobile_status_strip",
+            "zone": "mobile_status_drawer",
         }
     )
     saved = await api_client.put(
@@ -535,9 +531,9 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
         for item in zone["items"]
     }
     assert "data.energy_today" not in rendered
-    # The recommended page-specific site-state placement takes precedence over a
-    # global legacy move, preserving the canonical Overview information hierarchy.
-    assert rendered["device.offline_count"][0] == "overview_site_state"
+    # The semantic Overview summary placement takes precedence over a global move,
+    # preserving the canonical Overview information hierarchy.
+    assert rendered["device.offline_count"][0] == "overview_summary"
     assert all(zone["items"] for zone in resolved["zones"])
     # Hiding is presentation-only: the simulated alert remains queryable and counted.
     alerts = await api_client.get("/api/v1/alerts")

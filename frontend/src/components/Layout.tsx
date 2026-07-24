@@ -1,62 +1,154 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Activity,
+  BarChart3,
   Bell,
   ChevronDown,
-  CircuitBoard,
-  History,
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
   House,
-  Gauge,
   LogOut,
   Menu,
   Moon,
-  PanelsTopLeft,
   RadioTower,
-  ReceiptText,
-  ScanLine,
   Settings,
-  ServerCog,
-  SlidersHorizontal,
   Sun,
-  UserRoundCog,
   X,
   Zap,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { sessionPermissions } from '../access'
 import { api } from '../api'
 import { useInterfaceText } from '../interfaceText'
 import type { Session, Site } from '../types'
+import { canOpenWorkspace, WORKSPACES, type WorkspaceId } from '../workspaces'
 import { MobileStatusDrawer, StatusIndicatorZone } from './StatusIndicators'
 
-const navigation = [
-  { to: '/', key: 'navigation.overview', fallback: 'Overview', icon: House, permission: 'overview.view' },
-  { to: '/devices', key: 'navigation.devices', fallback: 'Devices', icon: RadioTower, permission: 'devices.view' },
-  { to: '/topology', key: 'navigation.topology', fallback: 'Topology', icon: CircuitBoard, permission: 'topology.view' },
-  { to: '/history', key: 'navigation.history', fallback: 'History', icon: History, permission: 'history.view' },
-  { to: '/usage', key: 'navigation.usage', fallback: 'Usage', icon: Gauge, permission: 'usage.view' },
-  { to: '/costs', key: 'navigation.costs', fallback: 'Costs', icon: ReceiptText, permission: 'costs.view' },
-  { to: '/rates', key: 'navigation.rates', fallback: 'Rates', icon: Activity, permission: 'rates.view' },
-  { to: '/alerts', key: 'navigation.alerts', fallback: 'Alerts & Notifications', icon: Bell, permission: 'alerts.view' },
-  { to: '/enrollment', key: 'navigation.enrollment', fallback: 'Enrollment', icon: ScanLine, permission: 'enrollment.view' },
-  { to: '/admin', key: 'navigation.administration', fallback: 'Administration', icon: Settings, permission: 'settings.view' },
-  { to: '/administration/users-access', key: 'navigation.users_access', fallback: 'Users & Access', icon: UserRoundCog, permission: 'users.view', nested: true },
-  { to: '/administration/interface-text', key: 'navigation.interface_text', fallback: 'Dashboard & Login Text', icon: SlidersHorizontal, permission: 'interface_text.view', nested: true },
-  { to: '/administration/status-indicators', key: 'navigation.status_indicators', fallback: 'Status Indicators & Layout', icon: PanelsTopLeft, permission: 'status_indicators.view', nested: true },
-  { to: '/administration/system-health', key: 'navigation.system_health', fallback: 'System Health', icon: ServerCog, permission: 'settings.view', nested: true },
-]
+const workspaceIcons = {
+  overview: House,
+  monitoring: RadioTower,
+  analytics: BarChart3,
+  billing: CreditCard,
+  alerts: Bell,
+  administration: Settings,
+} satisfies Record<WorkspaceId, typeof House>
+
+function chooseSafeSite(sites: Site[], requested?: string): string | undefined {
+  const active = sites.filter((site) => !site.lifecycle_state || site.lifecycle_state === 'active')
+  const requestedSite = active.find((site) => site.id === requested)
+  return requestedSite?.id ?? active.find((site) => site.is_default)?.id ?? active[0]?.id
+}
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => (
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(query).matches
+      : false
+  ))
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const media = window.matchMedia(query)
+    const update = () => { setMatches(media.matches) }
+    update()
+    media.addEventListener('change', update)
+    return () => { media.removeEventListener('change', update) }
+  }, [query])
+
+  return matches
+}
+
+export function filterSelectableSites(sites: Site[], selectedSiteId: string | undefined, search: string): Site[] {
+  const term = search.trim().toLocaleLowerCase()
+  if (!term) return sites
+  return sites.filter((site) => (
+    site.id === selectedSiteId
+    || site.name.toLocaleLowerCase().includes(term)
+    || site.code?.toLocaleLowerCase().includes(term)
+  ))
+}
+
+function SiteSwitcher({
+  canManage,
+  onManage,
+  onSearch,
+  onSelect,
+  search,
+  selectedSiteId,
+  sites,
+  visibleSites,
+}: {
+  canManage: boolean
+  onManage?: () => void
+  onSearch: (value: string) => void
+  onSelect: (value: string) => void
+  search: string
+  selectedSiteId?: string
+  sites: Site[]
+  visibleSites: Site[]
+}) {
+  return (
+    <div className="site-switcher">
+      {sites.length > 8 && (
+        <label className="site-search">
+          <span className="sr-only">Search sites</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => { onSearch(event.target.value) }}
+            placeholder="Search sites"
+            autoComplete="off"
+          />
+        </label>
+      )}
+      <label className="site-select">
+        <span>Viewing</span>
+        <select
+          aria-label="Current site"
+          value={selectedSiteId ?? ''}
+          onChange={(event) => { onSelect(event.target.value) }}
+          disabled={!sites.length}
+        >
+          {!sites.length && <option value="">No active sites</option>}
+          {visibleSites.map((site) => <option key={site.id} value={site.id}>{site.name}{site.is_default ? ' · Default' : ''}</option>)}
+        </select>
+        <ChevronDown size={15} aria-hidden="true" />
+      </label>
+      {canManage && <NavLink className="manage-sites-link" to="/administration/sites-network" onClick={onManage}>Manage sites</NavLink>}
+    </div>
+  )
+}
 
 export function Layout({ session, children }: { session: Session; children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const [theme, setTheme] = useState(() => localStorage.getItem('pm-theme') ?? 'light')
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('pm-sidebar-collapsed') === 'true')
+  const [theme, setTheme] = useState(() => localStorage.getItem('pm-theme') ?? 'dark')
   const [siteId, setSiteId] = useState<string | undefined>(() => localStorage.getItem('pm-site-id') ?? undefined)
+  const [siteSearch, setSiteSearch] = useState('')
   const pointerSelectedControl = useRef<HTMLSelectElement | null>(null)
+  const mobileNavigation = useRef<HTMLElement>(null)
+  const menuButton = useRef<HTMLButtonElement>(null)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const location = useLocation()
+  const mobileViewport = useMediaQuery('(max-width: 640px)')
   const { text } = useInterfaceText()
   const permissions = sessionPermissions(session)
-  const sites = useQuery({ queryKey: ['sites'], queryFn: () => api<Site[]>('/api/v1/sites'), enabled: permissions.has('sites.view') })
+  const workspaces = useMemo(() => WORKSPACES.filter((workspace) => canOpenWorkspace(workspace, session)), [session])
+  const sites = useQuery({
+    queryKey: ['sites'],
+    queryFn: () => api<Site[]>('/api/v1/sites'),
+    enabled: permissions.has('sites.view'),
+  })
+  const selectableSites = useMemo(
+    () => (sites.data ?? []).filter((site) => !site.lifecycle_state || site.lifecycle_state === 'active'),
+    [sites.data],
+  )
+  const visibleSites = useMemo(
+    () => filterSelectableSites(selectableSites, siteId, siteSearch),
+    [selectableSites, siteId, siteSearch],
+  )
   const logout = useMutation({
     mutationFn: () => api<void>('/api/v1/auth/logout', { method: 'POST' }),
     onSuccess: async () => {
@@ -64,24 +156,59 @@ export function Layout({ session, children }: { session: Session; children: Reac
       await navigate('/sign-in')
     },
   })
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('pm-theme', theme)
   }, [theme])
   useEffect(() => {
-    const firstSite = sites.data?.[0]
-    if (!firstSite) return
-    const nextSiteId = sites.data?.some((site) => site.id === siteId) ? siteId : firstSite.id
-    if (nextSiteId !== siteId) setSiteId(nextSiteId)
+    localStorage.setItem('pm-sidebar-collapsed', String(collapsed))
+  }, [collapsed])
+  useEffect(() => {
+    const safe = chooseSafeSite(sites.data ?? [], siteId)
+    if (safe !== siteId) setSiteId(safe)
   }, [siteId, sites.data])
   useEffect(() => {
-    if (!siteId) return
+    if (!siteId) {
+      localStorage.removeItem('pm-site-id')
+      return
+    }
     localStorage.setItem('pm-site-id', siteId)
     window.dispatchEvent(new CustomEvent<string>('pm-site-scope-changed', { detail: siteId }))
   }, [siteId])
+  useEffect(() => {
+    setMenuOpen(false)
+  }, [location.pathname])
+  useEffect(() => {
+    if (!menuOpen) return
+    const root = mobileNavigation.current
+    if (!root) return
+    const focusable = [...root.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled])')]
+    focusable[0]?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false)
+        menuButton.current?.focus()
+        return
+      }
+      if (event.key !== 'Tab' || !focusable.length) return
+      const first = focusable[0]
+      const last = focusable.at(-1)
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last?.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first?.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => { document.removeEventListener('keydown', onKeyDown) }
+  }, [menuOpen])
+
   return (
     <div
-      className="app-shell"
+      className={`app-shell ${collapsed ? 'sidebar-collapsed' : ''}`}
       onPointerDownCapture={(event) => {
         pointerSelectedControl.current = event.target instanceof HTMLSelectElement ? event.target : null
       }}
@@ -96,43 +223,90 @@ export function Layout({ session, children }: { session: Session; children: Reac
       }}
     >
       <a href="#main" className="skip-link">Skip to content</a>
-      <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}>
+      <aside
+        className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`}
+        ref={mobileNavigation}
+        aria-label="Application navigation"
+      >
         <div className="brand">
           <span className="brand-mark"><Zap size={22} fill="currentColor" /></span>
-          <div>
+          <div className="brand-text">
             <strong title={text('general.application_name')}>{text('general.application_short_name')}</strong>
             <small title={text('general.organization_tagline')}>{text('general.organization_tagline')}</small>
           </div>
           <button className="icon-button sidebar-close" onClick={() => { setMenuOpen(false) }} aria-label="Close navigation"><X /></button>
         </div>
-        <StatusIndicatorZone zone="sidebar_upper" />
         <nav aria-label="Primary">
-          {navigation
-            .filter((item) => permissions.has(item.permission))
-            .map(({ to, key, fallback, icon: Icon, nested }) => (
-              <NavLink key={to} className={nested ? 'nav-nested' : undefined} to={to} end={to === '/'} onClick={() => { setMenuOpen(false) }} title={text(key, fallback)}>
-                <Icon size={19} aria-hidden="true" />
-                <span>{text(key, fallback)}</span>
+          {workspaces.map((workspace) => {
+            const Icon = workspaceIcons[workspace.id]
+            return (
+              <NavLink
+                key={workspace.id}
+                to={workspace.route}
+                className={({ isActive }) => isActive ? 'active' : undefined}
+                onClick={() => { setMenuOpen(false) }}
+                title={text(workspace.labelKey, workspace.label)}
+              >
+                <Icon size={20} aria-hidden="true" />
+                <span>{text(workspace.labelKey, workspace.label)}</span>
               </NavLink>
-            ))}
+            )
+          })}
         </nav>
-        <StatusIndicatorZone zone="sidebar_lower" />
+        {mobileViewport && (
+          <div className="mobile-drawer-controls">
+            {permissions.has('sites.view') && (
+              <SiteSwitcher
+                canManage={permissions.has('sites.edit')}
+                onManage={() => { setMenuOpen(false) }}
+                onSearch={setSiteSearch}
+                onSelect={(value) => {
+                  setSiteId(value)
+                  setMenuOpen(false)
+                }}
+                search={siteSearch}
+                selectedSiteId={siteId}
+                sites={selectableSites}
+                visibleSites={visibleSites}
+              />
+            )}
+            <div className="mobile-drawer-user">
+              <span>{session.user?.display_name.slice(0, 1).toUpperCase()}</span>
+              <div><strong>{session.user?.display_name}</strong><small>{session.user?.roles.join(' · ')}</small></div>
+              <button type="button" className="icon-button" onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark') }} aria-label="Toggle color theme">
+                {theme === 'dark' ? <Sun /> : <Moon />}
+              </button>
+              <button type="button" className="icon-button" onClick={() => { logout.mutate() }} disabled={logout.isPending} aria-label="Sign out"><LogOut size={17} /></button>
+            </div>
+          </div>
+        )}
+        <button
+          type="button"
+          className="sidebar-collapse"
+          aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+          onClick={() => { setCollapsed((value) => !value) }}
+        >
+          {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          <span>{collapsed ? 'Expand' : 'Collapse'}</span>
+        </button>
       </aside>
       {menuOpen && <button className="nav-scrim" aria-label="Close navigation" onClick={() => { setMenuOpen(false) }} />}
       <div className="app-content">
         <header className="topbar">
-          <button className="icon-button menu-button" onClick={() => { setMenuOpen(true) }} aria-label="Open navigation"><Menu /></button>
-          {permissions.has('sites.view') && <label className="site-select">
-            <span>Viewing</span>
-            <select value={siteId ?? ''} onChange={(event) => { setSiteId(event.target.value) }}>
-              {sites.data?.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
-            </select>
-            <ChevronDown size={15} aria-hidden="true" />
-          </label>}
-          <StatusIndicatorZone zone="global_header_left" className="topbar-status-zone" />
-          <StatusIndicatorZone zone="global_header_center" className="topbar-status-zone" />
-          <div className="topbar-actions">
-            <StatusIndicatorZone zone="global_header_right" className="topbar-status-zone" />
+          <button ref={menuButton} className="icon-button menu-button" onClick={() => { setMenuOpen(true) }} aria-label="Open navigation"><Menu /></button>
+          {permissions.has('sites.view') && !mobileViewport && (
+            <SiteSwitcher
+              canManage={permissions.has('sites.edit')}
+              onSearch={setSiteSearch}
+              onSelect={setSiteId}
+              search={siteSearch}
+              selectedSiteId={siteId}
+              sites={selectableSites}
+              visibleSites={visibleSites}
+            />
+          )}
+          <StatusIndicatorZone zone="top_bar" className="topbar-status-zone" />
+          {!mobileViewport && <div className="topbar-actions">
             <button className="icon-button" onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark') }} aria-label="Toggle color theme">
               {theme === 'dark' ? <Sun /> : <Moon />}
             </button>
@@ -144,14 +318,11 @@ export function Layout({ session, children }: { session: Session; children: Reac
               </div>
               <button onClick={() => { logout.mutate() }} disabled={logout.isPending} aria-label="Sign out"><LogOut size={16} /></button>
             </div>
-          </div>
+          </div>}
         </header>
-        <StatusIndicatorZone zone="mobile_header" />
-        <StatusIndicatorZone zone="mobile_status_strip" />
         <MobileStatusDrawer />
         {text('footer.banner') && <aside className="dashboard-banner" role="status">{text('footer.banner')}</aside>}
-        <main id="main">{children}<StatusIndicatorZone zone="page_footer" /></main>
-        <StatusIndicatorZone zone="global_footer" />
+        <main id="main">{children}</main>
         {(text('footer.dashboard') || text('footer.support_label') || text('footer.copyright')) && (
           <footer className="dashboard-footer">
             <span>{text('footer.dashboard')}</span>

@@ -38,7 +38,7 @@ disable TLS verification or store the password in Power Monitor settings.
 - **SD fault:** stop treating history as durable, repair/replace media on the sensor, preserve event evidence, and do not fabricate lost energy.
 - **Incorrect aggregate:** inspect parent/child and split-phase roles. Never sum a parent with its children; a single service leg is not whole-home.
 - **Unexpected cost:** confirm timezone, interval coverage, effective plan/version, cost scope, billing dates, baseline, fixed-charge count, CCA/DA, taxes, credits, and source date.
-- **Current rate says unavailable:** open **Administration > Sites & accounts**.
+- **Current rate says unavailable:** open **Billing > Utility Accounts**.
   Confirm the account is active, a published version covers the current instant,
   the site timezone is correct, and no overlapping window was rejected. A rate
   can be ready before a sensor; live power cannot.

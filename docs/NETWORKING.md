@@ -13,7 +13,7 @@ CIDR validation, trusted-proxy handling, and the no-scan address test. DNS resul
 connecting to limit rebinding. A signed heartbeat or valid `/api/v1/health` is authoritative;
 ping/TCP/DNS tests only explain connectivity.
 
-The **Sites & accounts** site card shows both ingress and pull summaries and
+The **Administration > Sites & Network** site detail shows both ingress and pull summaries and
 links to the selected site's controls. Browser/administrator reachability is
 not governed by these sensor policies. **Add current private network** uses
 forwarded headers only from configured trusted proxies, proposes at most an

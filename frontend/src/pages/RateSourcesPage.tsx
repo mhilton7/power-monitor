@@ -11,7 +11,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { CanonicalAction } from '../actions'
 import { api } from '../api'
 import {
   EmptyState,
@@ -143,7 +143,6 @@ interface Check {
 }
 
 export function RateSourcesPage() {
-  const navigate = useNavigate()
   const [selected, setSelected] = useState<string>()
   const [rejectReason, setRejectReason] = useState('')
   const [draftSettings, setDraftSettings] = useState<Configuration>()
@@ -277,10 +276,7 @@ export function RateSourcesPage() {
         title="SCE rate sources"
         description="Approved sources are fetched, hashed, archived, parsed, and compared. No candidate changes an active rate without the configured approval workflow."
         actions={
-          <>
-            <button className="button secondary" onClick={() => navigate('/rates')}>
-              Rate plans
-            </button>
+          <CanonicalAction id="rate_source.check" surface="workspace_header">
             <button
               className="button primary"
               disabled={checkAll.isPending}
@@ -288,7 +284,7 @@ export function RateSourcesPage() {
             >
               <RefreshCw size={16} className={checkAll.isPending ? 'spin' : ''} /> Check SCE now
             </button>
-          </>
+          </CanonicalAction>
         }
       />
       {jobId && <div className="job-progress" role="status"><RefreshCw className={['queued', 'running'].includes(syncJob.data?.status ?? 'queued') ? 'spin' : ''} /><div><strong>SCE check {syncJob.data?.status ?? 'queued'}</strong><small>{syncJob.data?.progress.completed ?? 0} of {syncJob.data?.progress.source_ids?.length ?? 4} sources · {syncJob.data?.result?.candidate_count ?? 0} candidates</small>{syncJob.data?.error?.detail && <small>{syncJob.data.error.detail}</small>}</div></div>}
@@ -382,7 +378,7 @@ export function RateSourcesPage() {
       <Panel
         title="Approved source status"
         eyebrow="HTTPS SCE allowlist"
-        actions={<button className="button secondary" type="button" aria-expanded={showSourceForm} onClick={() => { setShowSourceForm((value) => !value); createSource.reset(); }}><Plus size={15} /> Add source</button>}
+        actions={<CanonicalAction id="rate_source.create" surface="panel_header"><button className="button secondary" type="button" aria-expanded={showSourceForm} onClick={() => { setShowSourceForm((value) => !value); createSource.reset(); }}><Plus size={15} /> Add source</button></CanonicalAction>}
       >
         {showSourceForm && (
           <form
@@ -455,7 +451,7 @@ export function RateSourcesPage() {
               </label>
             </article>
           ))}
-        </div> : <EmptyState title="No approved sources" message="Add an official SCE rate page or tariff source, then run a check to create review candidates." action={<button className="button primary" onClick={() => { setShowSourceForm(true) }}><Plus size={15} /> Add source</button>} />}
+        </div> : <EmptyState title="No approved sources" message="Use Add source above to register an official SCE rate page or tariff source, then run a check to create review candidates." />}
       </Panel>
 
       <div className="candidate-layout">

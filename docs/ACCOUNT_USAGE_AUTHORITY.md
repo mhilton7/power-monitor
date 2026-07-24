@@ -38,7 +38,7 @@ complete-account scope and only once per utility account. One-CT devices remain
 
 ## Administration
 
-Open **Administration > Sites & accounts**, select an account, and configure
+Open **Billing > Utility Accounts**, select an account, and configure
 **Account usage authority**. For a measured authority, choose only devices or a
 full-account aggregate assigned to that account. For manual evidence, record
 the cumulative kWh, exact effective timestamp, source note, and idempotency

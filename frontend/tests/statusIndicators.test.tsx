@@ -19,8 +19,8 @@ function definition(key: string, label: string): StatusIndicatorDefinition {
     current_value_schema: { display_value: 'string' },
     severity_capability: ['success', 'warning', 'critical'],
     default_enabled: true,
-    default_zone: 'page_summary_strip',
-    allowed_zones: ['page_summary_strip'],
+    default_zone: 'page_summary',
+    allowed_zones: ['page_summary'],
     default_order: 10,
     supported_pages: ['overview'],
     global_shell_support: false,
@@ -53,7 +53,7 @@ function item(key: string, label: string, density: StatusDensity = 'standard'): 
     role: '*',
     breakpoint: 'default',
     visible: true,
-    zone: 'page_summary_strip',
+    zone: 'page_summary',
     order: 10,
     density,
     show_icon: true,
@@ -74,7 +74,7 @@ function layout(items: StatusLayoutItem[]): StatusResolvedLayout {
     page: 'overview',
     roles: ['admin'],
     breakpoint: 'desktop',
-    zones: items.length ? [{ key: 'page_summary_strip', items }] : [],
+    zones: items.length ? [{ key: 'page_summary', items }] : [],
     warnings: [],
     personalization_enabled: false,
   }
@@ -98,7 +98,7 @@ const values: Record<string, StatusIndicatorValue> = {
 
 describe('status indicator renderer', () => {
   it('omits the semantic zone wrapper when no indicators are visible', () => {
-    const { container } = render(<StatusIndicatorZone zone="page_summary_strip" layout={layout([])} values={{}} />)
+    const { container } = render(<StatusIndicatorZone zone="page_summary" layout={layout([])} values={{}} />)
     expect(container).toBeEmptyDOMElement()
     expect(container.querySelector('[data-status-zone]')).toBeNull()
   })
@@ -108,8 +108,8 @@ describe('status indicator renderer', () => {
     const itemValues = Object.fromEntries(items.map((entry, index) => [entry.indicator_key, {
       status: 'available', severity: 'success', display_value: `${index + 1}`,
     } satisfies StatusIndicatorValue]))
-    const { container } = render(<StatusIndicatorZone zone="page_summary_strip" layout={layout(items)} values={itemValues} />)
-    const zone = container.querySelector('[data-status-zone="page_summary_strip"]')
+    const { container } = render(<StatusIndicatorZone zone="page_summary" layout={layout(items)} values={itemValues} />)
+    const zone = container.querySelector('[data-status-zone="page_summary"]')
     expect(zone?.childElementCount).toBe(count)
     expect(zone?.querySelectorAll('[data-indicator-key]')).toHaveLength(count)
     expect(zone?.querySelectorAll('[data-metric-identity]')).toHaveLength(count)
@@ -117,7 +117,7 @@ describe('status indicator renderer', () => {
 
   it('keeps an accessible name when the visible label is disabled', () => {
     const energy = { ...item('data.energy_today', 'Energy today', 'compact'), show_label: false }
-    render(<StatusIndicatorZone zone="page_summary_strip" layout={layout([energy])} values={values} />)
+    render(<StatusIndicatorZone zone="page_summary" layout={layout([energy])} values={values} />)
     expect(screen.getByRole('article', { name: 'Energy today: 12.5 kWh' })).toBeVisible()
     expect(screen.queryByText('Energy today')).not.toBeInTheDocument()
   })
@@ -127,7 +127,7 @@ describe('status indicator renderer', () => {
       item('data.energy_today', 'Energy today', 'compact'),
       item('device.offline_count', 'Offline devices', 'detailed'),
     ]
-    const { container } = render(<StatusIndicatorZone zone="page_summary_strip" layout={layout(items)} values={values} />)
+    const { container } = render(<StatusIndicatorZone zone="page_summary" layout={layout(items)} values={values} />)
     expect(container.querySelector('.status-density-compact')).toBeInTheDocument()
     expect(container.querySelector('.status-density-detailed')).toHaveTextContent('One signed heartbeat is stale')
     expect(screen.getByText('warning')).toBeVisible()
@@ -136,7 +136,7 @@ describe('status indicator renderer', () => {
   it('renders long labels as content rather than truncating the accessible name', () => {
     const label = 'A deliberately long translated indicator label that tests responsive wrapping safely'
     const longItem = item('data.energy_today', label)
-    render(<StatusIndicatorZone zone="page_summary_strip" layout={layout([longItem])} values={values} />)
+    render(<StatusIndicatorZone zone="page_summary" layout={layout([longItem])} values={values} />)
     expect(screen.getByRole('article', { name: `${label}: 12.5 kWh` })).toBeVisible()
     expect(screen.getByText(label)).toBeVisible()
   })

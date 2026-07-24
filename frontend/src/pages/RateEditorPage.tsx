@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { CanonicalAction } from '../actions'
 import { api } from '../api'
 import { BillImportWorkspace } from './BillImportPage'
 import { ErrorState, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
@@ -245,7 +246,7 @@ export function RateEditorPage({ canManage, canImportBills = false }: { canManag
     },
     onSuccess: (result) => {
       setSaved(result)
-      void navigate(`/rates/${result.planId}/versions/${result.versionId}`, { replace: true })
+      void navigate(`/billing/rate-plans/${result.planId}/versions/${result.versionId}`, { replace: true })
     },
   })
   const validate = useMutation({
@@ -304,7 +305,7 @@ export function RateEditorPage({ canManage, canImportBills = false }: { canManag
         eyebrow={saved ? `Rate version ${query.data?.version.version ?? 1}` : 'New custom plan'}
         title={document.plan_name || 'Custom rate plan'}
         description="Build an exact, effective-dated schedule. Active versions remain immutable; edits are saved only to drafts."
-        actions={<div className="inline-actions">{editable && canImportBills && <button className="button secondary" onClick={() => { setImportOpen(true); setImportNotice('') }}><FileUp size={16} /> Import utility bill</button>}<button className="button secondary" onClick={() => navigate('/rates')}><ArrowLeft size={16} /> Rate plans</button></div>}
+        actions={<div className="inline-actions">{editable && canImportBills && <CanonicalAction id="rate_plan.import_from_bill" surface="resource_detail"><button className="button secondary" onClick={() => { setImportOpen(true); setImportNotice('') }}><FileUp size={16} /> Import rate plan from bill</button></CanonicalAction>}<button className="button secondary" onClick={() => navigate('/billing/rate-plans')}><ArrowLeft size={16} /> Rate plans</button></div>}
       />
       {importNotice && <p className="form-success" role="status">{importNotice}</p>}
       {importOpen && editable && canImportBills && <section className="bill-import-editor-workspace" aria-label="Utility bill import">

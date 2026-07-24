@@ -17,7 +17,7 @@ timezone and normalized to UTC. Decimal strings are retained exactly.
 
 ## Safe workflow
 
-1. In **Sites & accounts**, choose the utility account and **Import usage**.
+1. In **Billing > Utility Accounts**, choose the utility account and **Import usage**.
 2. Select the kind, timezone, source name, and field mapping.
 3. Preview. Review normalized rows, content SHA-256, duplicate state, monitored
    data overlaps, internal gaps/overlaps, cycle impacts, and finalized-cycle

@@ -8454,6 +8454,562 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/sites:
+    get:
+      tags:
+      - site management
+      summary: List Admin Sites
+      operationId: list_admin_sites_api_v1_admin_sites_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(current|active|disabled|removed|all)$
+          default: current
+          title: Status
+      - name: search
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Search
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Admin Sites Api V1 Admin Sites Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - site management
+      summary: Create Admin Site
+      operationId: create_admin_site_api_v1_admin_sites_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteAdminCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Admin Site Api V1 Admin Sites Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/sites/{site_id}:
+    get:
+      tags:
+      - site management
+      summary: Get Admin Site
+      operationId: get_admin_site_api_v1_admin_sites__site_id__get
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Admin Site Api V1 Admin Sites  Site Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - site management
+      summary: Update Admin Site
+      operationId: update_admin_site_api_v1_admin_sites__site_id__put
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteAdminUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Admin Site Api V1 Admin Sites  Site Id  Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/sites/{site_id}/set-default:
+    post:
+      tags:
+      - site management
+      summary: Set Default Site
+      operationId: set_default_site_api_v1_admin_sites__site_id__set_default_post
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteLifecycleRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Set Default Site Api V1 Admin Sites  Site Id  Set
+                  Default Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/sites/{site_id}/disable:
+    post:
+      tags:
+      - site management
+      summary: Disable Site
+      operationId: disable_site_api_v1_admin_sites__site_id__disable_post
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteLifecycleRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Disable Site Api V1 Admin Sites  Site Id  Disable
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/sites/{site_id}/enable:
+    post:
+      tags:
+      - site management
+      summary: Enable Site
+      operationId: enable_site_api_v1_admin_sites__site_id__enable_post
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteLifecycleRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Enable Site Api V1 Admin Sites  Site Id  Enable Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/sites/{site_id}/dependencies:
+    get:
+      tags:
+      - site management
+      summary: Site Dependencies
+      operationId: site_dependencies_api_v1_admin_sites__site_id__dependencies_get
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Site Dependencies Api V1 Admin Sites  Site Id  Dependencies
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/sites/{site_id}/transfer-resources:
+    post:
+      tags:
+      - site management
+      summary: Resolve Site Dependencies
+      operationId: resolve_site_dependencies_api_v1_admin_sites__site_id__transfer_resources_post
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteDependencyResolution'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Resolve Site Dependencies Api V1 Admin Sites  Site
+                  Id  Transfer Resources Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/sites/{site_id}/remove:
+    post:
+      tags:
+      - site management
+      summary: Remove Site
+      operationId: remove_site_api_v1_admin_sites__site_id__remove_post
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteRemoveRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Remove Site Api V1 Admin Sites  Site Id  Remove Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/sites/{site_id}/restore:
+    post:
+      tags:
+      - site management
+      summary: Restore Site
+      operationId: restore_site_api_v1_admin_sites__site_id__restore_post
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SiteRestoreRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Restore Site Api V1 Admin Sites  Site Id  Restore
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/sites/{site_id}/audit:
+    get:
+      tags:
+      - site management
+      summary: Site Audit
+      operationId: site_audit_api_v1_admin_sites__site_id__audit_get
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response Site Audit Api V1 Admin Sites  Site Id  Audit Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/status-indicators/registry:
     get:
       tags:
@@ -12762,6 +13318,201 @@ components:
       required:
       - authenticated
       title: SessionView
+    SiteAccountResolution:
+      properties:
+        utility_account_id:
+          type: string
+          title: Utility Account Id
+        action:
+          type: string
+          enum:
+          - archive
+          - transfer
+          title: Action
+        target_site_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Site Id
+      additionalProperties: false
+      type: object
+      required:
+      - utility_account_id
+      - action
+      title: SiteAccountResolution
+    SiteAdminCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Name
+        code:
+          type: string
+          maxLength: 80
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+          title: Code
+        description:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Description
+        location_label:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Location Label
+        organization:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Organization
+        timezone:
+          type: string
+          title: Timezone
+          default: America/Los_Angeles
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          title: Currency
+          default: USD
+        locale:
+          type: string
+          pattern: ^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$
+          title: Locale
+          default: en-US
+        unit_system:
+          type: string
+          enum:
+          - imperial
+          - metric
+          title: Unit System
+          default: imperial
+        allowed_cidrs:
+          items:
+            type: string
+          type: array
+          title: Allowed Cidrs
+        allowed_domains:
+          items:
+            type: string
+          type: array
+          title: Allowed Domains
+        allow_public_polling:
+          type: boolean
+          title: Allow Public Polling
+          default: false
+        initial_user_ids:
+          items:
+            type: string
+          type: array
+          maxItems: 200
+          title: Initial User Ids
+        make_default:
+          type: boolean
+          title: Make Default
+          default: false
+        network_policy_mode:
+          type: string
+          enum:
+          - inherit
+          - explicit
+          - existing
+          title: Network Policy Mode
+          default: inherit
+        network_policy_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Network Policy Id
+        create_utility_account_after:
+          type: boolean
+          title: Create Utility Account After
+          default: false
+        confirmation:
+          type: boolean
+          title: Confirmation
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - code
+      - confirmation
+      title: SiteAdminCreate
+    SiteAdminUpdate:
+      properties:
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        name:
+          anyOf:
+          - type: string
+            maxLength: 160
+            minLength: 1
+          - type: 'null'
+          title: Name
+        description:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Description
+        location_label:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Location Label
+        organization:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Organization
+        timezone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Timezone
+        currency:
+          anyOf:
+          - type: string
+            pattern: ^[A-Z]{3}$
+          - type: 'null'
+          title: Currency
+        locale:
+          anyOf:
+          - type: string
+            pattern: ^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$
+          - type: 'null'
+          title: Locale
+        unit_system:
+          anyOf:
+          - type: string
+            enum:
+            - imperial
+            - metric
+          - type: 'null'
+          title: Unit System
+        timezone_change_confirmed:
+          type: boolean
+          title: Timezone Change Confirmed
+          default: false
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - revision
+      - reason
+      title: SiteAdminUpdate
     SiteCreate:
       properties:
         name:
@@ -12769,10 +13520,52 @@ components:
           maxLength: 160
           minLength: 1
           title: Name
+        code:
+          anyOf:
+          - type: string
+            maxLength: 80
+            pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+          - type: 'null'
+          title: Code
+        description:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Description
+        location_label:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Location Label
+        organization:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Organization
         timezone:
           type: string
           title: Timezone
           default: America/Los_Angeles
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          title: Currency
+          default: USD
+        locale:
+          type: string
+          pattern: ^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$
+          title: Locale
+          default: en-US
+        unit_system:
+          type: string
+          enum:
+          - imperial
+          - metric
+          title: Unit System
+          default: imperial
         allowed_cidrs:
           items:
             type: string
@@ -12792,6 +13585,128 @@ components:
       required:
       - name
       title: SiteCreate
+    SiteDependencyResolution:
+      properties:
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+        sensors:
+          items:
+            $ref: '#/components/schemas/SiteSensorResolution'
+          type: array
+          maxItems: 500
+          title: Sensors
+        utility_accounts:
+          items:
+            $ref: '#/components/schemas/SiteAccountResolution'
+          type: array
+          maxItems: 200
+          title: Utility Accounts
+        end_user_access_ids:
+          items:
+            type: string
+          type: array
+          maxItems: 500
+          title: End User Access Ids
+      additionalProperties: false
+      type: object
+      required:
+      - revision
+      - reason
+      title: SiteDependencyResolution
+    SiteLifecycleRequest:
+      properties:
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - revision
+      - reason
+      title: SiteLifecycleRequest
+    SiteRemoveRequest:
+      properties:
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+        confirmation:
+          type: string
+          maxLength: 160
+          minLength: 1
+          title: Confirmation
+        dependency_reviewed:
+          type: boolean
+          title: Dependency Reviewed
+      additionalProperties: false
+      type: object
+      required:
+      - revision
+      - reason
+      - confirmation
+      - dependency_reviewed
+      title: SiteRemoveRequest
+    SiteRestoreRequest:
+      properties:
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+        confirm_high_risk:
+          type: boolean
+          title: Confirm High Risk
+      additionalProperties: false
+      type: object
+      required:
+      - revision
+      - reason
+      - confirm_high_risk
+      title: SiteRestoreRequest
+    SiteSensorResolution:
+      properties:
+        device_id:
+          type: string
+          title: Device Id
+        action:
+          type: string
+          enum:
+          - archive
+          - transfer
+          title: Action
+        target_site_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Site Id
+      additionalProperties: false
+      type: object
+      required:
+      - device_id
+      - action
+      title: SiteSensorResolution
     SiteView:
       properties:
         name:
@@ -12799,10 +13714,48 @@ components:
           maxLength: 160
           minLength: 1
           title: Name
+        code:
+          type: string
+          title: Code
+        description:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Description
+        location_label:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Location Label
+        organization:
+          anyOf:
+          - type: string
+            maxLength: 160
+          - type: 'null'
+          title: Organization
         timezone:
           type: string
           title: Timezone
           default: America/Los_Angeles
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          title: Currency
+          default: USD
+        locale:
+          type: string
+          pattern: ^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$
+          title: Locale
+          default: en-US
+        unit_system:
+          type: string
+          enum:
+          - imperial
+          - metric
+          title: Unit System
+          default: imperial
         allowed_cidrs:
           items:
             type: string
@@ -12820,11 +13773,61 @@ components:
         id:
           type: string
           title: Id
+        lifecycle_state:
+          type: string
+          enum:
+          - active
+          - disabled
+          - removed
+          title: Lifecycle State
+        is_default:
+          type: boolean
+          title: Is Default
+        revision:
+          type: integer
+          title: Revision
+        disabled_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Disabled At
+        removed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Removed At
+        removal_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Removal Reason
+        restored_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Restored At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
       additionalProperties: false
       type: object
       required:
       - name
+      - code
       - id
+      - lifecycle_state
+      - is_default
+      - revision
+      - created_at
+      - updated_at
       title: SiteView
     StatusLayoutDraftWrite:
       properties:

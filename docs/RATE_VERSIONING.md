@@ -10,7 +10,7 @@ account assignments. A retroactive activation queues replacement estimates
 only for overlapping, completed runs whose billing cycle is not finalized.
 Finalized cycles and their historical results remain unchanged.
 
-Account administrators use **Administration > Sites & accounts** to create or
+Account administrators use **Billing > Utility Accounts** to create or
 schedule an assignment. The server locks that account while checking the
 effective window, rejects overlap, records the reason and actor, and preserves
 the prior assignment/version IDs. Closing an open prior window at the new

@@ -29,7 +29,7 @@ export function SystemHealthPage() {
         description="Review API, database, and background-worker readiness without crowding normal monitoring pages."
         actions={<Link className="button secondary" to="/alerts">Open alerts <ArrowUpRight size={16} /></Link>}
       />
-      <StatusIndicatorZone zone="diagnostics_summary" />
+      <StatusIndicatorZone zone="administration_diagnostics" />
       <Panel title="Runtime evidence" eyebrow="Authorized diagnostic details">
         {system.isLoading ? <LoadingState label="Checking server health…" /> : system.error ? (
           <ErrorState error={system.error} retry={() => { void system.refetch() }} />

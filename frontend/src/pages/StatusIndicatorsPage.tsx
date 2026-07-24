@@ -16,6 +16,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { CanonicalAction } from '../actions'
 import { api, apiDownload } from '../api'
 import { StatusIndicatorZone } from '../components/StatusIndicators'
 import { ErrorState, LoadingState, PageTitle, Panel, StatusPill, formatTime } from '../components/UI'
@@ -346,7 +347,7 @@ export function StatusIndicatorsPage({ canManage }: { canManage: boolean }) {
         eyebrow="Administration · presentation controls"
         title="Status Indicators & Layout"
         description="Choose which status indicators are visible, where they appear, and how the dashboard reorganizes them across screen sizes."
-        actions={<div className="page-actions"><button className="button secondary" onClick={() => { void exportLayout() }}><Download size={16} /> Export</button>{canManage && <button className="button primary" onClick={() => { save.mutate() }} disabled={save.isPending}><Save size={16} /> Save draft</button>}</div>}
+        actions={<div className="page-actions"><button className="button secondary" onClick={() => { void exportLayout() }}><Download size={16} /> Export</button></div>}
       />
 
       {message && <div className="success-banner" role="status">{message}</div>}
@@ -422,15 +423,9 @@ export function StatusIndicatorsPage({ canManage }: { canManage: boolean }) {
         <div className="preview-controls"><label>Page<select value={previewPage} onChange={(event) => { setPreviewPage(event.target.value) }}>{catalog.data.pages.map((page) => <option key={page} value={page}>{zoneLabel(page)}</option>)}</select></label><label>Role<select value={previewRole} onChange={(event) => { setPreviewRole(event.target.value) }}>{catalog.data.roles.map((role) => <option key={role.id} value={role.id}>{role.label}</option>)}</select></label><label>Viewport<select value={previewBreakpoint} onChange={(event) => { setPreviewBreakpoint(event.target.value as StatusBreakpoint) }}>{catalog.data.breakpoints.map((item) => <option key={item} value={item}>{zoneLabel(item)}</option>)}</select></label><label>Scenario<select value={previewScenario} onChange={(event) => { setPreviewScenario(event.target.value as PreviewScenario) }}><option value="all_defaults">Current draft</option><option value="one_disabled">One disabled</option><option value="two_disabled">Two disabled</option><option value="one_only">One only</option><option value="empty_zone">Empty zone</option><option value="many">Many indicators</option><option value="warning">Warning value</option><option value="critical">Critical value</option><option value="long_label">Long label</option></select></label></div>
         {preview?.layout.warnings.map((warning) => <p className="history-inline-warning" key={`${warning.code}-${warning.indicator_key ?? warning.metric_identity ?? 'layout'}`}><ShieldCheck size={16} /> {warning.message}</p>)}
         <div className={`status-layout-preview preview-${previewBreakpoint}`} data-testid="status-layout-preview">
-          <header><span /><strong>Power Monitor preview</strong><small>{zoneLabel(previewPage)} · {zoneLabel(previewRole)}</small></header>
-          <StatusIndicatorZone zone="global_header_left" layout={preview?.layout} values={preview?.values} />
-          <StatusIndicatorZone zone="global_header_center" layout={preview?.layout} values={preview?.values} />
-          <StatusIndicatorZone zone="global_header_right" layout={preview?.layout} values={preview?.values} />
-          <StatusIndicatorZone zone="mobile_header" layout={preview?.layout} values={preview?.values} />
-          <StatusIndicatorZone zone="mobile_status_strip" layout={preview?.layout} values={preview?.values} />
-          <main><h3>{zoneLabel(previewPage)}</h3><StatusIndicatorZone zone="page_header_primary" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="page_header_secondary" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="page_status_row" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="page_summary_strip" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="overview_site_state" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="overview_site_summary" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="history_context" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="diagnostics_summary" layout={preview?.layout} values={preview?.values} /><div className="preview-content-placeholder"><span /><span /><span /></div><StatusIndicatorZone zone="page_footer" layout={preview?.layout} values={preview?.values} /></main>
-          <StatusIndicatorZone zone="mobile_status_drawer" layout={preview?.layout} values={preview?.values} />
-          <StatusIndicatorZone zone="global_footer" layout={preview?.layout} values={preview?.values} />
+           <header><span /><strong>Power Monitor preview</strong><small>{zoneLabel(previewPage)} · {zoneLabel(previewRole)}</small></header>
+          <StatusIndicatorZone zone="top_bar" layout={preview?.layout} values={preview?.values} />
+          <main><h3>{zoneLabel(previewPage)}</h3><StatusIndicatorZone zone="workspace_header" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="page_summary" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="overview_summary" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="administration_diagnostics" layout={preview?.layout} values={preview?.values} /><StatusIndicatorZone zone="mobile_status_drawer" layout={preview?.layout} values={preview?.values} /><div className="preview-content-placeholder"><span /><span /><span /></div></main>
         </div>
       </Panel>
 
@@ -444,7 +439,7 @@ export function StatusIndicatorsPage({ canManage }: { canManage: boolean }) {
         </Panel>
       </div>
 
-      {canManage && <aside className="sticky-action-bar"><div><span><Move size={16} /> Draft {draft.data.draft_revision || 'not saved'} · Published {catalog.data.published_revision}</span><small>{draft.data.previewed_revision === draft.data.draft_revision && draft.data.exists ? 'Current draft previewed' : 'Preview current draft before publishing'}</small></div><div><button className="button secondary" disabled={save.isPending} onClick={() => { save.mutate() }}><Save size={16} /> Save draft</button><button className="button primary" disabled={!draft.data.exists || draft.data.previewed_revision !== draft.data.draft_revision || publish.isPending} onClick={confirmPublish}>Publish layout</button></div></aside>}
+      {canManage && <aside className="sticky-action-bar"><div><span><Move size={16} /> Draft {draft.data.draft_revision || 'not saved'} · Published {catalog.data.published_revision}</span><small>{draft.data.previewed_revision === draft.data.draft_revision && draft.data.exists ? 'Current draft previewed' : 'Preview current draft before publishing'}</small></div><div><CanonicalAction id="status_layout.save_draft" surface="sticky_footer"><button className="button secondary" disabled={save.isPending} onClick={() => { save.mutate() }}><Save size={16} /> Save draft</button></CanonicalAction><CanonicalAction id="status_layout.publish" surface="sticky_footer"><button className="button primary" disabled={!draft.data.exists || draft.data.previewed_revision !== draft.data.draft_revision || publish.isPending} onClick={confirmPublish}>Publish layout</button></CanonicalAction></div></aside>}
     </>
   )
 }

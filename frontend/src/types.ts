@@ -22,10 +22,82 @@ export interface Session {
 export interface Site {
   id: string
   name: string
+  code?: string
+  description?: string
+  location_label?: string
+  organization?: string
   timezone: string
+  currency?: string
+  locale?: string
+  unit_system?: 'imperial' | 'metric'
   allowed_cidrs: string[]
   allowed_domains: string[]
   allow_public_polling: boolean
+  lifecycle_state?: 'active' | 'disabled' | 'removed'
+  is_default?: boolean
+  revision?: number
+  disabled_at?: string
+  removed_at?: string
+  removal_reason?: string
+  restored_at?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface SiteDependencySummary {
+  site_id: string
+  revision: number
+  state: 'active' | 'disabled' | 'removed'
+  default_site: boolean
+  active: {
+    sensors: Array<{ id: string; name: string; status: string; latest_reading_at?: string }>
+    utility_accounts: Array<{ id: string; name: string; status: string }>
+    users: Array<{ id: string; email: string; display_name: string }>
+    alerts: number
+    enrollment_tokens: number
+    jobs: number
+  }
+  retained: {
+    raw_readings: number
+    history_start?: string
+    history_end?: string
+    circuits: number
+    billing_cycles: number
+    alerts: number
+    audit_history: boolean
+    costs_and_rate_assignments: boolean
+  }
+  required_actions: Array<{ resource: string; count: number; actions: string[] }>
+  blockers: Array<{ code: string; count?: number; message: string }>
+  resolved: boolean
+}
+
+export interface AdminSite extends Site {
+  code: string
+  currency: string
+  locale: string
+  unit_system: 'imperial' | 'metric'
+  lifecycle_state: 'active' | 'disabled' | 'removed'
+  is_default: boolean
+  revision: number
+  created_at: string
+  updated_at: string
+  sensor_count: number
+  utility_account_count: number
+  assigned_user_count: number
+  active_alert_count: number
+  latest_reading_at?: string
+  configuration_health: 'ready' | 'warning'
+  network_policy_summary: string
+  network_policies: Array<{
+    id: string
+    direction: 'device_ingress' | 'server_pull'
+    mode: string
+    revision: number
+    summary: string
+    cidrs: Array<{ id: string; network: string; label: string; enabled: boolean }>
+  }>
+  dependencies: SiteDependencySummary
 }
 
 export interface UtilityAccountRateContext {

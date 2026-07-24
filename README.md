@@ -20,7 +20,16 @@ draft, responsive preview, immutable publish, defaults, and rollback. See
 [user management](docs/USER_MANAGEMENT.md), [permissions](docs/PERMISSIONS.md),
 [site access](docs/SITE_ACCESS.md), and [interface text](docs/INTERFACE_TEXT.md).
 
-Utility-bill PDF import is integrated directly into **Rates > Custom plan** as
+The application shell is organized into exactly six role-aware workspaces:
+**Overview, Monitoring, Analytics, Billing, Alerts, and Administration**.
+Canonical actions prevent duplicate controls, legacy bookmarks redirect safely,
+and complete Physical Site lifecycle management preserves effective-dated
+assignments and history. See the [interface architecture](docs/UI_INFORMATION_ARCHITECTURE.md),
+[action registry](docs/ACTION_REGISTRY.md), and
+[site management](docs/SITE_MANAGEMENT.md).
+
+Utility-bill PDF import is integrated directly into **Billing > Rate Plans >
+Custom plan** as
 an optional, selective prefill assistant. Existing draft fields are preserved,
 bill-specific cycle data stays separate, and no upload publishes or assigns a
 rate. The legacy `/rates/import-bill` bookmark redirects into the editor. See

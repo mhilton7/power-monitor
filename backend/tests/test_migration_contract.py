@@ -56,6 +56,8 @@ def test_initial_migration_is_frozen_and_covers_metadata() -> None:
         "utility_bill_extracted_fields",
         "utility_bill_field_conflicts",
         "utility_bill_cycle_drafts",
+        "device_site_assignments",
+        "utility_account_site_assignments",
     }
     assert "CREATE UNIQUE INDEX" in schema
     assert "ix_raw_site_time" in schema
@@ -194,4 +196,28 @@ def test_user_lifecycle_cleanup_migration_is_additive_and_preserves_identity() -
     assert "users.remove" in revision
     assert "users.restore" in revision
     assert "DROP TABLE" not in revision
+    assert "def downgrade()" in revision
+
+
+def test_modern_workspace_site_lifecycle_migration_preserves_history() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260724_0012_modern_workspaces_site_lifecycle.py"
+    ).read_text()
+    upgrade = revision.split("def downgrade()", maxsplit=1)[0]
+    assert 'down_revision = "20260724_0011"' in revision
+    assert '"device_site_assignments"' in upgrade
+    assert '"utility_account_site_assignments"' in upgrade
+    assert '"lifecycle_state"' in upgrade
+    assert '"sites.set_default"' in upgrade
+    assert '"sites.transfer_resources"' in upgrade
+    assert "INSERT INTO status_layout_revisions" in upgrade
+    assert "WHEN 'global_header_left' THEN 'top_bar'" in upgrade
+    assert "WHEN 'page_header_primary' THEN 'workspace_header'" in upgrade
+    assert "WHEN 'mobile_status_strip' THEN 'mobile_status_drawer'" in upgrade
+    assert "THEN 'administration_diagnostics'" in upgrade
+    assert "'raw_readings_rewritten', false" in upgrade
+    assert "UPDATE raw_readings" not in upgrade
+    assert "DELETE FROM status_layout_revisions" not in upgrade
+    assert "DROP TABLE" not in upgrade
     assert "def downgrade()" in revision
