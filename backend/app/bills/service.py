@@ -90,15 +90,20 @@ def _json_bytes(value: Any) -> bytes:
 
 async def _bill_source(
     session: AsyncSession,
-    account: UtilityAccount,
+    account: UtilityAccount | None,
     user_id: str,
     now: datetime,
 ) -> RateSource:
-    url = f"urn:power-monitor:utility-bill:{account.id}"
+    owner_scope = account.id if account is not None else f"user:{user_id}"
+    url = f"urn:power-monitor:utility-bill:{owner_scope}"
     source = await session.scalar(select(RateSource).where(RateSource.url == url))
     if source is None:
         source = RateSource(
-            name=f"Private utility bills for account {account.id[:8]}",
+            name=(
+                f"Private utility bills for account {account.id[:8]}"
+                if account is not None
+                else "Private unassigned utility-bill imports"
+            ),
             url=url,
             parser_id=PARSER_ID,
             enabled=False,
@@ -129,7 +134,9 @@ def _field_payload(field: ExtractedField) -> dict[str, Any]:
     }
 
 
-def _provider_mode(account: UtilityAccount) -> str:
+def _provider_mode(account: UtilityAccount | None) -> str:
+    if account is None:
+        return "custom_combined"
     return {
         "sce_bundled": "sce_delivery_generation",
         "sce_delivery_generation": "sce_delivery_generation",
@@ -141,8 +148,11 @@ def _provider_mode(account: UtilityAccount) -> str:
 
 def _plan_document(
     extraction: BillExtraction,
-    account: UtilityAccount,
+    account: UtilityAccount | None,
     content_sha256: str,
+    *,
+    timezone: str,
+    currency: str,
 ) -> RatePlanDocument:
     rate = extraction.rate_data
     extracted_tiers = list(rate.get("tiers") or [])
@@ -199,8 +209,8 @@ def _plan_document(
             "plan_code": code,
             "utility": str(rate.get("utility") or "custom"),
             "description": "Administrator-reviewed custom plan drafted from a utility bill.",
-            "currency": str(rate.get("currency") or account.currency),
-            "timezone": account.timezone,
+            "currency": str(rate.get("currency") or currency),
+            "timezone": timezone,
             "pricing_model": document_model,
             "flat_rate_per_kwh": flat_rate,
             "billing_cycle": {
@@ -217,11 +227,13 @@ def _plan_document(
             },
             "tiers": tiers,
             "hybrid_pricing": None,
-            "ownership_scope": "utility_account",
-            "owner_id": account.id,
+            "ownership_scope": "utility_account" if account is not None else "global",
+            "owner_id": account.id if account is not None else None,
             "effective_from": effective_from,
             "effective_through": None,
-            "cost_scope_default": account.cost_scope_default,
+            "cost_scope_default": (
+                account.cost_scope_default if account is not None else "energy_only"
+            ),
             "source_label": "Uploaded utility bill (supporting source)",
             "source_note": notes,
             "provider_mode": _provider_mode(account),
@@ -253,9 +265,11 @@ def _aware_utc(value: datetime) -> datetime:
 async def _configured_conflicts(
     session: AsyncSession,
     bill: UtilityBillImport,
-    account: UtilityAccount,
+    account: UtilityAccount | None,
     extraction: BillExtraction,
 ) -> list[UtilityBillFieldConflict]:
+    if account is None:
+        return []
     conflicts: list[UtilityBillFieldConflict] = []
     version = (
         await session.get(RateVersion, account.active_rate_version_id)
@@ -303,7 +317,7 @@ async def _configured_conflicts(
 async def create_bill_import(
     session: AsyncSession,
     *,
-    account: UtilityAccount,
+    account: UtilityAccount | None,
     content: bytes,
     user_id: str,
     settings: Settings,
@@ -311,15 +325,22 @@ async def create_bill_import(
     retention_mode: str,
     retain_until: datetime | None,
     source_role: str,
+    timezone: str,
+    currency: str,
     runner: Any | None = None,
 ) -> tuple[UtilityBillImport, bool]:
     digest = hashlib.sha256(content).hexdigest()
-    existing = await session.scalar(
-        select(UtilityBillImport).where(
-            UtilityBillImport.utility_account_id == account.id,
-            UtilityBillImport.content_sha256 == digest,
-        )
+    duplicate_query = select(UtilityBillImport).where(
+        UtilityBillImport.content_sha256 == digest,
     )
+    if account is not None:
+        duplicate_query = duplicate_query.where(UtilityBillImport.utility_account_id == account.id)
+    else:
+        duplicate_query = duplicate_query.where(
+            UtilityBillImport.utility_account_id.is_(None),
+            UtilityBillImport.created_by == user_id,
+        )
+    existing = await session.scalar(duplicate_query)
     if existing is not None:
         return existing, True
     now = datetime.now(UTC)
@@ -383,7 +404,7 @@ async def create_bill_import(
     _write_private(sanitized_path, sanitized_text.encode("utf-8"))
     bill = UtilityBillImport(
         job_id=job.id,
-        utility_account_id=account.id,
+        utility_account_id=account.id if account is not None else None,
         artifact_id=artifact.id,
         content_sha256=digest,
         status="review_required",
@@ -451,7 +472,13 @@ async def create_bill_import(
                 **_field_payload(item),
             )
         )
-    document = _plan_document(extraction, account, digest)
+    document = _plan_document(
+        extraction,
+        account,
+        digest,
+        timezone=timezone,
+        currency=currency,
+    )
     plan, version = await create_custom_plan(
         session,
         document,
@@ -475,10 +502,10 @@ async def create_bill_import(
     cycle_draft = UtilityBillCycleDraft(
         bill_import_id=bill.id,
         extraction_revision_id=revision.id,
-        utility_account_id=account.id,
+        utility_account_id=account.id if account is not None else None,
         status="draft",
-        starts_at=_as_utc_date(cycle_data.get("starts_at"), account.timezone),
-        ends_at=_as_utc_date(cycle_data.get("ends_at"), account.timezone),
+        starts_at=_as_utc_date(cycle_data.get("starts_at"), timezone),
+        ends_at=_as_utc_date(cycle_data.get("ends_at"), timezone),
         cycle_days=cycle_data.get("cycle_days"),
         meter_read_date=(
             date.fromisoformat(str(cycle_data["meter_read_date"]))
@@ -587,12 +614,16 @@ async def import_payload(session: AsyncSession, bill: UtilityBillImport) -> dict
     cycle = await session.scalar(
         select(UtilityBillCycleDraft).where(UtilityBillCycleDraft.bill_import_id == bill.id)
     )
-    account = await session.get(UtilityAccount, bill.utility_account_id)
+    account = (
+        await session.get(UtilityAccount, bill.utility_account_id)
+        if bill.utility_account_id is not None
+        else None
+    )
     return {
         "id": bill.id,
         "job_id": bill.job_id,
         "utility_account_id": bill.utility_account_id,
-        "utility_account_name": account.name if account else "Unavailable",
+        "utility_account_name": account.name if account else "Not assigned yet",
         "artifact_id": bill.artifact_id,
         "content_sha256": bill.content_sha256,
         "status": bill.status,
@@ -657,6 +688,7 @@ async def import_payload(session: AsyncSession, bill: UtilityBillImport) -> dict
         "cycle_draft": (
             {
                 "id": cycle.id,
+                "utility_account_id": cycle.utility_account_id,
                 "status": cycle.status,
                 "starts_at": cycle.starts_at,
                 "ends_at": cycle.ends_at,
@@ -1343,9 +1375,13 @@ async def synchronize_rate_draft_from_extraction(
     bill: UtilityBillImport,
 ) -> None:
     version = await session.get(RateVersion, bill.rate_version_id) if bill.rate_version_id else None
-    account = await session.get(UtilityAccount, bill.utility_account_id)
+    account = (
+        await session.get(UtilityAccount, bill.utility_account_id)
+        if bill.utility_account_id is not None
+        else None
+    )
     revision = await latest_extraction_revision(session, bill.id)
-    if version is None or account is None:
+    if version is None:
         return
     extraction = BillExtraction(
         page_count=bill.page_count,
@@ -1362,5 +1398,11 @@ async def synchronize_rate_draft_from_extraction(
         warnings=[],
         blocking_warnings=bill.blocking_warnings,
     )
-    document = _plan_document(extraction, account, bill.content_sha256)
+    document = _plan_document(
+        extraction,
+        account,
+        bill.content_sha256,
+        timezone=account.timezone if account is not None else version.timezone,
+        currency=account.currency if account is not None else version.currency,
+    )
     await update_draft_version(session, version, document)

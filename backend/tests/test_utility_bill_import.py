@@ -280,6 +280,18 @@ async def test_complete_bill_api_workflow_is_reviewed_separate_and_private(
     )
     assert account_response.status_code == 201, account_response.text
     account = account_response.json()
+    context = await api_client.get(
+        "/api/v1/admin/utility-bill-import-context",
+        params={"account_id": account["id"]},
+    )
+    assert context.status_code == 200, context.text
+    context_payload = context.json()
+    assert context_payload["schema_version"] == "utility-account-rate-context/1.0"
+    assert context_payload["account"]["id"] == account["id"]
+    assert context_payload["current_plan"] is not None
+    assert context_payload["current_assignment"] is not None
+    assert context_payload["current_rate_version"] is not None
+    assert "current_period" in context_payload
     content = (FIXTURES / "text-tiered-bill.pdf").read_bytes()
     upload = await api_client.post(
         f"/api/v1/admin/utility-accounts/{account['id']}/bill-imports",
@@ -413,6 +425,78 @@ async def test_complete_bill_api_workflow_is_reviewed_separate_and_private(
     )
     bill_row = await session.get(UtilityBillImport, imported["id"])
     assert bill_row is not None and bill_row.original_deleted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_unassigned_bill_import_extracts_without_plan_or_account(
+    api_client: httpx.AsyncClient,
+    session: Any,
+) -> None:
+    await bootstrap(api_client)
+    context = await api_client.get("/api/v1/admin/utility-bill-import-context")
+    assert context.status_code == 200, context.text
+    assert context.json()["schema_version"] == "utility-account-rate-context/1.0"
+    assert context.json()["generated_client_schema_version"] == context.json()["schema_version"]
+    assert context.json()["account_id"] is None
+    assert context.json()["site_id"] is None
+    assert context.json()["account"] is None
+    assert context.json()["current_plan"] is None
+    assert context.json()["current_assignment"] is None
+    assert context.json()["current_rate_version"] is None
+    assert context.json()["current_period"] is None
+    assert context.json()["readiness"] == {
+        "account_configured": False,
+        "rate_assigned": False,
+        "rate_effective": False,
+    }
+
+    content = (FIXTURES / "text-tiered-bill.pdf").read_bytes()
+    upload = await api_client.post(
+        "/api/v1/admin/utility-bill-imports",
+        params={
+            "timezone": "America/Los_Angeles",
+            "currency": "USD",
+            "retention_mode": "retain",
+            "source_role": "supporting",
+        },
+        headers={
+            **csrf(api_client),
+            "X-Idempotency-Key": "unassigned-bill-import-test",
+        },
+        files={"upload": ("ignored-client-name.pdf", content, "application/pdf")},
+    )
+    assert upload.status_code == 201, upload.text
+    imported = upload.json()
+    assert imported["utility_account_id"] is None
+    assert imported["utility_account_name"] == "Not assigned yet"
+    assert imported["rate_plan_id"]
+    assert imported["rate_version_id"]
+    assert imported["cycle_draft"]["utility_account_id"] is None
+
+    duplicate = await api_client.post(
+        "/api/v1/admin/utility-bill-imports",
+        headers=csrf(api_client),
+        files={"upload": ("renamed.pdf", content, "application/pdf")},
+    )
+    assert duplicate.status_code == 201
+    assert duplicate.json()["id"] == imported["id"]
+    assert duplicate.json()["duplicate"] is True
+
+    publish = await api_client.post(
+        f"/api/v1/admin/utility-bill-imports/{imported['id']}/publish-and-assign",
+        headers=csrf(api_client),
+        json={},
+    )
+    assert publish.status_code == 409
+    assert publish.json()["code"] == "bill_account_context_required"
+    cycle = await api_client.post(
+        f"/api/v1/admin/utility-bill-imports/{imported['id']}/import-billing-cycle",
+        headers=csrf(api_client),
+    )
+    assert cycle.status_code == 409
+    assert cycle.json()["code"] == "bill_account_context_required"
+    row = await session.get(UtilityBillImport, imported["id"])
+    assert row is not None and row.utility_account_id is None
 
 
 @pytest.mark.asyncio

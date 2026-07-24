@@ -25,6 +25,12 @@ the registry, use `latest`, or deploy a tag without its content digest.
 6. Render and validate the new YAML with the new semver tags and digests. Review
    release notes and migration compatibility before saving it.
 
+All application images in the rendered YAML must come from the same release.
+Confirm the API, frontend, worker/migration, backup, and gateway references as a
+set; do not update only the frontend after a bill-import correction. The
+frontend now compares its API/import schema versions with the backend before
+mounting an authenticated workspace and intentionally blocks a mixed release.
+
 ## Upgrade
 
 1. Open **Apps > Installed > power-monitor > Edit > YAML**.
@@ -34,6 +40,21 @@ the registry, use `latest`, or deploy a tag without its content digest.
    worker, backup, and gateway cannot report healthy unless migration exits 0.
 4. Verify every health indicator, the migration log, sign-in, fleet heartbeats,
    historical readings, an SCE rate preview, and the next verified backup.
+
+For the PDF import context-stabilization release, migration `20260724_0013`
+makes the bill import and bill-cycle account reference nullable so tariff
+extraction can start before account assignment. It adds a partial uniqueness
+index for a creator's unassigned artifact hash. Existing account-linked imports
+and their evidence are unchanged. No dataset, secret, service, capability,
+network, mount, or host port is added.
+
+After migration, open **Billing > Rate Plans > Custom Plan > Import rate plan
+from bill** first without an account, then with a non-production account that
+has no assigned plan. Verify both show an upload/setup state rather than a raw
+error. Upload a password-free test bill, refresh the resulting `bill_id` URL,
+and confirm the separate plan and billing-cycle drafts remain available. The
+System Health diagnostic must show matching frontend/backend release and
+`utility-account-rate-context/1.0` schema values.
 
 For the utility-bill PDF import release, migration `20260724_0010` adds
 bill-import, immutable extraction revision, field evidence, conflict, and

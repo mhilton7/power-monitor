@@ -52,6 +52,7 @@ from app.schemas import (
     NetworkCidrWrite,
     NetworkPolicyWrite,
     RateAssignmentWrite,
+    UtilityAccountRateContextView,
     UtilityAccountUpdate,
     UtilityAccountWizardCreate,
     UtilityAdjustmentWrite,
@@ -407,6 +408,143 @@ async def rate_version_current_context(
         "effective_through": version.effective_to,
         **context,
     }
+
+
+@router.get(
+    "/admin/utility-bill-import-context",
+    response_model=UtilityAccountRateContextView,
+)
+async def utility_bill_import_context(
+    principal: Viewer,
+    session: DbSession,
+    settings: AppSettings,
+    account_id: str | None = None,
+) -> UtilityAccountRateContextView:
+    """Return one stable, explicit-null context for Custom Plan bill imports."""
+
+    _permission(principal, "utility_bills.view")
+    account_query = select(UtilityAccount).where(UtilityAccount.status == "active")
+    if principal.site_ids:
+        account_query = account_query.where(UtilityAccount.site_id.in_(principal.site_ids))
+    accounts = list(await session.scalars(account_query.order_by(UtilityAccount.name)))
+    views = [await _account_view(session, account) for account in accounts]
+    summaries = [
+        {
+            "id": account.id,
+            "site_id": account.site_id,
+            "site_name": view["site_name"],
+            "name": account.name,
+            "utility_name": view["utility_name"],
+            "timezone": account.timezone,
+            "currency": account.currency,
+            "provider_mode": account.provider_mode,
+        }
+        for account, view in zip(accounts, views, strict=True)
+    ]
+
+    selected = next((account for account in accounts if account.id == account_id), None)
+    if account_id and selected is None:
+        raise ProblemError(
+            404,
+            "Utility account not found",
+            "The selected active utility account does not exist or is outside your site access",
+            "utility_account_missing",
+        )
+
+    current_assignment = None
+    current_version = None
+    current_plan = None
+    current_period = None
+    if selected is not None:
+        now = datetime.now(UTC)
+        assignments = await _account_assignments(session, selected.id)
+
+        def normalized(value: datetime) -> datetime:
+            return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+        current_assignment = next(
+            (
+                item
+                for item in reversed(assignments)
+                if normalized(item.effective_from) <= now
+                and (item.effective_to is None or normalized(item.effective_to) > now)
+            ),
+            None,
+        )
+        if current_assignment is not None:
+            current_version = await session.get(RateVersion, current_assignment.rate_version_id)
+            current_plan = (
+                await session.get(RatePlan, current_version.rate_plan_id)
+                if current_version is not None
+                else None
+            )
+            if current_version is not None:
+                try:
+                    live = await _version_live_context(session, current_version)
+                except (KeyError, RuntimeError, ValueError):
+                    live = {}
+                label = live.get("current_period")
+                if label is not None:
+                    current_period = {
+                        "label": str(label),
+                        "price_per_kwh": live.get("current_price_per_kwh"),
+                        "currency": current_version.currency,
+                    }
+
+    selected_summary = next(
+        (summary for summary in summaries if summary["id"] == account_id),
+        None,
+    )
+    return UtilityAccountRateContextView.model_validate(
+        {
+            "schema_version": "utility-account-rate-context/1.0",
+            "api_version": "1.0.0",
+            "backend_version": settings.power_monitor_version,
+            "backend_commit": settings.release_commit,
+            "generated_client_schema_version": "utility-account-rate-context/1.0",
+            "account_id": selected.id if selected is not None else None,
+            "site_id": selected.site_id if selected is not None else None,
+            "account": selected_summary,
+            "available_accounts": summaries,
+            "current_plan": (
+                {"id": current_plan.id, "code": current_plan.code, "name": current_plan.name}
+                if current_plan is not None
+                else None
+            ),
+            "current_assignment": (
+                {
+                    "id": current_assignment.id,
+                    "rate_version_id": current_assignment.rate_version_id,
+                    "effective_from": current_assignment.effective_from,
+                    "effective_to": current_assignment.effective_to,
+                }
+                if current_assignment is not None
+                else None
+            ),
+            "current_rate_version": (
+                {
+                    "id": current_version.id,
+                    "version": current_version.version,
+                    "pricing_model": current_version.pricing_model,
+                    "effective_from": current_version.effective_from,
+                    "effective_to": current_version.effective_to,
+                    "status": current_version.status,
+                }
+                if current_version is not None
+                else None
+            ),
+            "current_period": current_period,
+            "readiness": {
+                "account_configured": selected is not None,
+                "rate_assigned": current_assignment is not None and current_version is not None,
+                "rate_effective": (
+                    current_assignment is not None
+                    and current_version is not None
+                    and current_plan is not None
+                ),
+            },
+        }
+    )
 
 
 @router.get("/admin/sites/{site_id}/utility-accounts")

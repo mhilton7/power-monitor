@@ -13,6 +13,17 @@ import {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, apiDownload } from '../api'
+import {
+  AppContractError,
+  getCurrentPlan,
+  getRateContextReadiness,
+  parseUtilityAccountRateContext,
+  resolveImporterMode,
+  toAppError,
+  type AppError,
+  type BillImportState,
+} from '../billImportContext'
+import { AppErrorBoundary } from '../components/AppErrorBoundary'
 import { EmptyState, ErrorState, LoadingState, Panel, StatusPill, formatTime } from '../components/UI'
 import {
   formatBillingPeriod,
@@ -23,7 +34,7 @@ import {
   formatStructuredLabel,
   formatTierRange,
 } from '../formatters'
-import type { UtilityAccount } from '../types'
+import type { UtilityAccountRateContext } from '../generated/utilityAccountRateContext'
 import type { RatePlanDocument } from '../rates'
 
 type RetentionMode = 'retain' | 'retain_until' | 'delete_after_approval'
@@ -94,7 +105,7 @@ interface CycleDraft {
 interface BillImport {
   id: string
   job_id: string
-  utility_account_id: string
+  utility_account_id: string | null
   utility_account_name: string
   artifact_id: string
   content_sha256: string
@@ -107,8 +118,8 @@ interface BillImport {
   retain_until?: string
   original_available: boolean
   original_deleted_at?: string
-  rate_plan_id: string
-  rate_version_id: string
+  rate_plan_id: string | null
+  rate_version_id: string | null
   revision: number
   blocking_warnings: Array<{ code?: string; message?: string; fields?: string[] }>
   extraction_warnings: Array<{ code?: string; message?: string; page?: number }>
@@ -142,7 +153,7 @@ interface BillImport {
 
 interface BillSummary {
   id: string
-  utility_account_id: string
+  utility_account_id: string | null
   utility_account_name: string
   status: string
   extraction_method: string
@@ -299,11 +310,94 @@ function saveBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(href)
 }
 
-export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { currentDraft: RatePlanDocument; onApplyDraft: (document: RatePlanDocument) => void; onClose: () => void }) {
+function ImporterErrorState({
+  error,
+  retry,
+  retrying = false,
+  canContinueWithoutAccount = false,
+  continueWithoutAccount,
+}: {
+  error: AppError
+  retry?: () => void
+  retrying?: boolean
+  canContinueWithoutAccount?: boolean
+  continueWithoutAccount?: () => void
+}) {
+  return (
+    <section className="app-error-boundary" role="alert" data-error-code={error.code}>
+      <AlertTriangle aria-hidden="true" />
+      <div>
+        <h3>{error.title}</h3>
+        <p>{error.message}</p>
+        <p className="diagnostic-note">Reference: <code>{error.correlation_id}</code></p>
+        <div className="inline-actions">
+          {retry && error.retryable && (
+            <button
+              type="button"
+              className="button secondary"
+              disabled={retrying}
+              onClick={retry}
+            >
+              {retrying ? 'Retrying…' : 'Retry'}
+            </button>
+          )}
+          {canContinueWithoutAccount && continueWithoutAccount && (
+            <button
+              type="button"
+              className="button secondary"
+              onClick={continueWithoutAccount}
+            >
+              Continue without account
+            </button>
+          )}
+          <Link className="button secondary" to="/billing/rate-plans">Return to Rate Plans</Link>
+        </div>
+        <details className="technical-details">
+          <summary>Technical details</summary>
+          <p>Code: {error.code}</p>
+          {error.technical_details && <pre>{error.technical_details}</pre>}
+        </details>
+      </div>
+    </section>
+  )
+}
+
+const localNoAccountContext = (): UtilityAccountRateContext => ({
+  schema_version: 'utility-account-rate-context/1.0',
+  api_version: '1.0.0',
+  backend_version: 'unavailable',
+  backend_commit: null,
+  generated_client_schema_version: 'utility-account-rate-context/1.0',
+  account_id: null,
+  site_id: null,
+  account: null,
+  available_accounts: [],
+  current_plan: null,
+  current_assignment: null,
+  current_rate_version: null,
+  current_period: null,
+  readiness: {
+    account_configured: false,
+    rate_assigned: false,
+    rate_effective: false,
+  },
+})
+
+export function BillImportWorkspace({
+  currentDraft,
+  editorMode,
+  onApplyDraft,
+  onClose,
+}: {
+  currentDraft: RatePlanDocument
+  editorMode: 'new_custom_plan' | 'existing_custom_plan_draft'
+  onApplyDraft: (document: RatePlanDocument) => void
+  onClose: () => void
+}) {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const fileInput = useRef<HTMLInputElement>(null)
-  const [step, setStep] = useState(0)
+  const [step, setStep] = useState(searchParams.get('bill_id') ? 2 : 0)
   const [accountId, setAccountId] = useState(searchParams.get('account_id') ?? '')
   const [billId, setBillId] = useState(searchParams.get('bill_id') ?? '')
   const [retentionMode, setRetentionMode] = useState<RetentionMode>('retain')
@@ -317,10 +411,20 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
   const [message, setMessage] = useState('')
   const [draftChoices, setDraftChoices] = useState<Record<string, 'import' | 'keep' | 'manual'>>({})
   const [manualDraftValues, setManualDraftValues] = useState<Record<string, string>>({})
+  const [continueWithoutContext, setContinueWithoutContext] = useState(false)
+  const [contextRetryCount, setContextRetryCount] = useState(0)
+  const uploadKey = useRef<string | null>(null)
 
-  const accounts = useQuery({
-    queryKey: ['utility-accounts', 'bill-import'],
-    queryFn: () => api<UtilityAccount[]>('/api/v1/utility-accounts'),
+  const accountContext = useQuery({
+    queryKey: ['utility-bill-import-context', accountId || 'no-account'],
+    queryFn: async ({ signal }) => {
+      const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : ''
+      return parseUtilityAccountRateContext(
+        await api<unknown>(`/api/v1/admin/utility-bill-import-context${query}`, { signal }),
+      )
+    },
+    retry: false,
+    placeholderData: (previousContext) => previousContext,
   })
   const history = useQuery({
     queryKey: ['utility-bill-imports', accountId],
@@ -349,11 +453,6 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
   })
 
   useEffect(() => {
-    const firstAccount = accounts.data?.[0]
-    if (!accountId && firstAccount) setAccountId(firstAccount.id)
-  }, [accountId, accounts.data])
-
-  useEffect(() => {
     if (!bill.data) return
     setThreshold(bill.data.cycle_draft?.threshold_interpretation ?? 'unknown')
     setSourceRole(bill.data.source_role)
@@ -374,9 +473,19 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
     setCorrections(values)
   }, [bill.data])
 
+  useEffect(() => {
+    if (accountId || !bill.data?.utility_account_id) return
+    setAccountId(bill.data.utility_account_id)
+  }, [accountId, bill.data?.utility_account_id])
+
   const selectBill = (id: string) => {
     setBillId(id)
-    setSearchParams({ bill_id: id })
+    setSearchParams((currentParams) => {
+      const next = new URLSearchParams(currentParams)
+      next.set('bill_id', id)
+      if (accountId) next.set('account_id', accountId)
+      return next
+    })
     setStep(2)
     setMessage('')
   }
@@ -392,14 +501,33 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
       if (retentionMode === 'retain_until' && retainUntil) {
         query.set('retain_until', new Date(retainUntil).toISOString())
       }
+      if (accountId) query.set('account_id', accountId)
+      else {
+        query.set('timezone', currentDraft.timezone)
+        query.set('currency', currentDraft.currency)
+      }
+      const nextUploadKey = uploadKey.current ??
+        `${file.name}:${file.size}:${file.lastModified}:${crypto.randomUUID()}`
+      uploadKey.current = nextUploadKey
       return api<BillImport>(
-        `/api/v1/admin/utility-accounts/${accountId}/bill-imports?${query.toString()}`,
-        { method: 'POST', body },
+        `/api/v1/admin/utility-bill-imports?${query.toString()}`,
+        {
+          method: 'POST',
+          body,
+          headers: { 'X-Idempotency-Key': nextUploadKey },
+        },
       )
     },
     onSuccess: async (result) => {
+      uploadKey.current = null
       setBillId(result.id)
-      setSearchParams({ bill_id: result.id })
+      setSearchParams((currentParams) => {
+        const next = new URLSearchParams(currentParams)
+        next.set('bill_id', result.id)
+        if (accountId) next.set('account_id', accountId)
+        else next.delete('account_id')
+        return next
+      })
       setStep(2)
       setMessage('The PDF was inspected locally. Separate rate-plan and billing-cycle drafts are ready for review.')
       await queryClient.invalidateQueries({ queryKey: ['utility-bill-imports'] })
@@ -504,7 +632,44 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
     },
   })
 
-  const selectedAccount = accounts.data?.find((account) => account.id === accountId)
+  const attachAccount = useMutation({
+    mutationFn: () => {
+      if (!bill.data || !accountId) {
+        throw new Error('A bill import and utility account are required')
+      }
+      return api<BillImport>(
+        `/api/v1/admin/utility-bill-imports/${bill.data.id}/account-context`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            revision: bill.data.revision,
+            account_id: accountId,
+          }),
+        },
+      )
+    },
+    onSuccess: async () => {
+      setMessage('The account context is attached. Rate publication and billing-cycle application still require separate review actions.')
+      await bill.refetch()
+      await history.refetch()
+    },
+  })
+
+  const effectiveContext = continueWithoutContext
+    ? localNoAccountContext()
+    : accountContext.data
+  const availableAccounts = effectiveContext?.available_accounts ?? []
+  const selectedAccount = effectiveContext?.account ?? null
+  const currentPlan = getCurrentPlan(effectiveContext)
+  const readiness = getRateContextReadiness(effectiveContext)
+  const importerMode = resolveImporterMode({
+    accountId: effectiveContext?.account_id ?? (accountId || null),
+    currentPlan,
+    existingDraft: editorMode === 'existing_custom_plan_draft',
+    clonedFromVersionId: currentDraft.cloned_from_rate_version_id,
+    legacyRedirect: searchParams.get('legacy_import') === '1',
+    newCustomPlan: editorMode === 'new_custom_plan',
+  })
   const fieldGroups = useMemo(() => {
     const groups: {
       account: BillField[]
@@ -520,6 +685,36 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
   }, [bill.data?.fields])
   const current = bill.data
   const mayContinue = step < 2 || Boolean(current)
+  const contextError = accountContext.error ? toAppError(accountContext.error) : null
+  const importerState: BillImportState<BillImport> = useMemo(() => {
+    if (!continueWithoutContext && (accountContext.isLoading || accountContext.isFetching)) {
+      return { status: 'initializing', draft: currentDraft }
+    }
+    if (!continueWithoutContext && contextError) {
+      return { status: 'recoverable_error', draft: currentDraft, error: contextError }
+    }
+    if (upload.isPending) {
+      return { status: 'uploading', draft: currentDraft, progress: 25 }
+    }
+    if (billId && bill.isLoading) {
+      return { status: 'extracting', draft: currentDraft, job_id: billId }
+    }
+    if (current) {
+      return { status: 'review', draft: currentDraft, extraction: current }
+    }
+    return { status: 'ready_for_upload', draft: currentDraft, mode: importerMode }
+  }, [
+    accountContext.isFetching,
+    accountContext.isLoading,
+    bill.isLoading,
+    billId,
+    contextError,
+    continueWithoutContext,
+    current,
+    currentDraft,
+    importerMode,
+    upload.isPending,
+  ])
 
   function submitUpload(event: FormEvent) {
     event.preventDefault()
@@ -566,9 +761,6 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
     onClose()
   }
 
-  if (accounts.isLoading) return <LoadingState label="Loading utility accounts…" />
-  if (accounts.error) return <ErrorState error={accounts.error} retry={() => void accounts.refetch()} />
-
   return <>
     <header className="bill-import-workspace-header">
       <div><span className="eyebrow">Private administrator workflow inside Custom Plan</span><h2>Import utility bill</h2><p>Extract account-specific evidence locally, review separate outputs, then choose which reviewed fields enter the unsaved Custom Plan draft.</p></div>
@@ -590,6 +782,42 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
       ))}
     </nav>
 
+    {importerState.status === 'initializing' && (
+      <LoadingState label="Loading utility-account and rate context…" />
+    )}
+    {importerState.status === 'recoverable_error' && (
+      <ImporterErrorState
+        error={importerState.error}
+        retrying={accountContext.isFetching}
+        retry={
+          contextRetryCount < 3
+            ? () => {
+                setContextRetryCount((value) => value + 1)
+                void accountContext.refetch()
+              }
+            : undefined
+        }
+        canContinueWithoutAccount={!(accountContext.error instanceof AppContractError)}
+        continueWithoutAccount={() => {
+          setAccountId('')
+          setContinueWithoutContext(true)
+          setSearchParams((currentParams) => {
+            const next = new URLSearchParams(currentParams)
+            next.delete('account_id')
+            return next
+          })
+        }}
+      />
+    )}
+    {importerState.status === 'uploading' && (
+      <p className="form-success" role="status">
+        Uploading and inspecting the PDF locally… {importerState.progress}%
+      </p>
+    )}
+    {importerState.status === 'extracting' && (
+      <LoadingState label="Loading extracted bill evidence…" />
+    )}
+
     {message && <p className="form-success" role="status">{message}</p>}
     {upload.error && <ErrorState error={upload.error} />}
     {review.error && <ErrorState error={review.error} />}
@@ -597,12 +825,66 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
     {importCycle.error && <ErrorState error={importCycle.error} />}
     {retention.error && <ErrorState error={retention.error} />}
     {removeOriginal.error && <ErrorState error={removeOriginal.error} />}
+    {attachAccount.error && <ErrorState error={attachAccount.error} />}
 
     {step === 0 && <Panel title="Select utility account" eyebrow="Step 1 · Account scope">
-      {!accounts.data?.length ? <EmptyState title="No utility account" message="Create a utility account before importing its bill." action={<Link className="button primary" to="/billing/accounts">Create utility account</Link>} /> : <>
-        <label className="bill-account-select"><span>Utility account</span><select value={accountId} onChange={(event) => { setAccountId(event.target.value); setBillId(''); setSearchParams({ account_id: event.target.value }) }}>{accounts.data.map((account) => <option value={account.id} key={account.id}>{account.site_name} · {account.name}</option>)}</select></label>
-        {selectedAccount && <dl className="detail-list bill-account-context"><div><dt>Utility</dt><dd>{selectedAccount.utility_name}</dd></div><div><dt>Provider</dt><dd>{formatStructuredLabel(selectedAccount.provider_mode)}</dd></div><div><dt>Timezone</dt><dd>{selectedAccount.timezone}</dd></div><div><dt>Current plan</dt><dd>{selectedAccount.rate_context.current_plan ?? 'Not assigned'}</dd></div></dl>}
-      </>}
+      <label className="bill-account-select">
+        <span>Utility account (optional)</span>
+        <select
+          value={accountId}
+          disabled={!continueWithoutContext && !accountContext.data}
+          onChange={(event) => {
+            const nextAccountId = event.target.value
+            setAccountId(nextAccountId)
+            setContinueWithoutContext(false)
+            setContextRetryCount(0)
+            setSearchParams((currentParams) => {
+              const next = new URLSearchParams(currentParams)
+              if (nextAccountId) next.set('account_id', nextAccountId)
+              else next.delete('account_id')
+              return next
+            })
+          }}
+        >
+          <option value="">Continue without an account</option>
+          {availableAccounts.map((account) => (
+            <option value={account.id} key={account.id}>
+              {account.site_name} · {account.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {!accountId && (
+        <div className="setup-callout">
+          <strong>Account assignment is optional during extraction.</strong>
+          <p>Select a utility account later to apply billing-cycle data.</p>
+          {!availableAccounts.length && (
+            <Link className="button secondary" to="/billing/accounts">Create utility account</Link>
+          )}
+        </div>
+      )}
+      {selectedAccount && (
+        <>
+          <dl className="detail-list bill-account-context">
+            <div><dt>Utility</dt><dd>{selectedAccount.utility_name}</dd></div>
+            <div><dt>Provider</dt><dd>{formatStructuredLabel(selectedAccount.provider_mode)}</dd></div>
+            <div><dt>Timezone</dt><dd>{selectedAccount.timezone}</dd></div>
+            <div><dt>Current plan</dt><dd>{currentPlan?.name ?? 'Not assigned'}</dd></div>
+          </dl>
+          {!readiness.rate_assigned && (
+            <p className="privacy-notice">
+              <ShieldCheck size={18} />
+              <span>No rate plan is currently assigned. Imported values will prefill a new custom plan.</span>
+            </p>
+          )}
+          {readiness.rate_assigned && (
+            <p className="privacy-notice">
+              <ShieldCheck size={18} />
+              <span>The assigned plan is comparison context only. It will not be modified.</span>
+            </p>
+          )}
+        </>
+      )}
     </Panel>}
 
     {step === 1 && <div className="bill-import-columns">
@@ -610,12 +892,13 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
         <form className="stack-form" onSubmit={submitUpload}>
           <label><span>Utility-bill PDF</span><input ref={fileInput} type="file" accept="application/pdf,.pdf" required /></label>
           <div className="form-columns">
-            <label><span>Source role</span><select value={sourceRole} onChange={(event) => { setSourceRole(event.target.value as SourceRole); }}><option value="supporting">Supporting source (recommended)</option><option value="authoritative_account_specific">Authoritative account-specific source</option><option value="reference_only">Reference only</option></select></label>
+            <label><span>Source role</span><select value={sourceRole} onChange={(event) => { setSourceRole(event.target.value as SourceRole); }}><option value="supporting">Supporting source (recommended)</option><option value="authoritative_account_specific" disabled={!accountId}>Authoritative account-specific source</option><option value="reference_only">Reference only</option></select></label>
             <label><span>Original PDF retention</span><select value={retentionMode} onChange={(event) => { setRetentionMode(event.target.value as RetentionMode); }}><option value="retain">Retain original</option><option value="retain_until">Retain until date</option><option value="delete_after_approval">Delete after approved extraction</option></select></label>
           </div>
           {retentionMode === 'retain_until' && <label><span>Retain until</span><input type="datetime-local" value={retainUntil} onChange={(event) => { setRetainUntil(event.target.value); }} required /></label>}
           <p className="privacy-notice"><ShieldCheck size={18} /><span>Processing stays on this Power Monitor server. The browser does not store document text. A single bill never activates a rate automatically.</span></p>
-          <button className="button primary" disabled={!accountId || upload.isPending}><FileUp size={16} /> {upload.isPending ? 'Inspecting and extracting…' : 'Upload and create drafts'}</button>
+          {!accountId && <p className="diagnostic-note">Tariff extraction is available now. Account assignment and billing-cycle application remain deferred.</p>}
+          <button className="button primary" disabled={upload.isPending || (!continueWithoutContext && accountContext.error instanceof AppContractError)}><FileUp size={16} /> {upload.isPending ? 'Inspecting and extracting…' : 'Upload and create drafts'}</button>
         </form>
       </Panel>
       <Panel title="Prior imports" eyebrow="Billing-cycle history">
@@ -638,12 +921,38 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
         </div>
         {[...current.extraction_warnings, ...current.blocking_warnings].map((warning, index) => <p className="billing-warning" key={`${warning.code}-${index}`}><AlertTriangle size={15} /><span>{warning.message ?? warning.code}</span></p>)}
       </Panel>
-      <Panel title={`Evidence page ${selectedPage}`} eyebrow="Source excerpts and coordinates" actions={<select aria-label="Evidence page" value={selectedPage} onChange={(event) => { setSelectedPage(Number(event.target.value)); }}>{Array.from({ length: current.page_count }, (_, index) => <option value={index + 1} key={index + 1}>Page {index + 1}</option>)}</select>}>
-        {evidence.isLoading ? <LoadingState /> : evidence.error ? <ErrorState error={evidence.error} /> : evidence.data?.fields.length ? <div className="evidence-list">{evidence.data.fields.map((field) => <article key={field.field_key}><header><strong>{formatStructuredLabel(field.field_key)}</strong><StatusPill status={confidenceStatus(field.confidence)} label={formatStructuredLabel(field.confidence)} /></header><blockquote>{field.source_excerpt || 'No retained excerpt'}</blockquote><small>{formatStructuredLabel(field.method)} · {field.text_region ? JSON.stringify(field.text_region) : 'coordinates unavailable'}</small></article>)}</div> : <EmptyState title="No fields on this page" message="Other pages may contain the extracted evidence." />}
-      </Panel>
+      <AppErrorBoundary
+        scope="PDF evidence viewer"
+        resetKey={`${billId}:${selectedPage}`}
+        onRetry={() => { void evidence.refetch() }}
+        administrator
+      >
+        <Panel title={`Evidence page ${selectedPage}`} eyebrow="Source excerpts and coordinates" actions={<select aria-label="Evidence page" value={selectedPage} onChange={(event) => { setSelectedPage(Number(event.target.value)); }}>{Array.from({ length: current.page_count }, (_, index) => <option value={index + 1} key={index + 1}>Page {index + 1}</option>)}</select>}>
+          {evidence.isLoading ? <LoadingState /> : evidence.error ? <ErrorState error={evidence.error} /> : evidence.data?.fields.length ? <div className="evidence-list">{evidence.data.fields.map((field) => <article key={field.field_key}><header><strong>{formatStructuredLabel(field.field_key)}</strong><StatusPill status={confidenceStatus(field.confidence)} label={formatStructuredLabel(field.confidence)} /></header><blockquote>{field.source_excerpt || 'No retained excerpt'}</blockquote><small>{formatStructuredLabel(field.method)} · {field.text_region ? JSON.stringify(field.text_region) : 'coordinates unavailable'}</small></article>)}</div> : <EmptyState title="No fields on this page" message="Other pages may contain the extracted evidence." />}
+        </Panel>
+      </AppErrorBoundary>
     </div>}
 
     {step === 3 && current && <div className="bill-import-columns">
+      {current.utility_account_id === null && (
+        <Panel title="Account assignment deferred" eyebrow="Safe unassigned import">
+          <p className="panel-copy">Select a utility account above when you are ready to apply billing-cycle evidence. Extracted tariff values and your Custom Plan draft remain available without one.</p>
+          {accountId ? (
+            <button
+              type="button"
+              className="button secondary"
+              disabled={attachAccount.isPending}
+              onClick={() => { attachAccount.mutate() }}
+            >
+              {attachAccount.isPending ? 'Attaching account…' : `Attach ${selectedAccount?.name ?? 'selected account'}`}
+            </button>
+          ) : (
+            <button type="button" className="button secondary" onClick={() => { setStep(0) }}>
+              Select an account
+            </button>
+          )}
+        </Panel>
+      )}
       <FieldReviewPanel title="Account fields" eyebrow="Step 4 · Account matching" fields={fieldGroups.account} actions={fieldActions} corrections={corrections} onAction={(id, action) => { setFieldActions((value) => ({ ...value, [id]: action })); }} onCorrection={(id, value) => { setCorrections((currentValue) => ({ ...currentValue, [id]: value })); }} />
       <FieldReviewPanel title="Billing-cycle fields" eyebrow="Separate cycle draft" fields={fieldGroups.billing_cycle} actions={fieldActions} corrections={corrections} onAction={(id, action) => { setFieldActions((value) => ({ ...value, [id]: action })); }} onCorrection={(id, value) => { setCorrections((currentValue) => ({ ...currentValue, [id]: value })); }} />
       {current.cycle_draft && <Panel title="Billing-cycle draft" eyebrow="Bill-specific output">
@@ -672,7 +981,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
           {['administrator_confirmed', 'high', 'medium', 'low', 'missing'].map((confidence) => <article key={confidence}><span>{formatStructuredLabel(confidence)}</span><strong>{current.fields.filter((field) => field.confidence === confidence).length}</strong></article>)}
         </div>
         <label><span>Threshold interpretation</span><select value={threshold} onChange={(event) => { setThreshold(event.target.value as ThresholdInterpretation); }}><option value="unknown">Unknown — requires administrator review</option><option value="fixed_cycle_threshold">Fixed billing-cycle threshold</option><option value="daily_baseline">Derived from daily baseline</option><option value="baseline_multiplier">Derived from baseline multiplier</option></select></label>
-        <label><span>Uploaded bill source role</span><select value={sourceRole} onChange={(event) => { setSourceRole(event.target.value as SourceRole); }}><option value="supporting">Supporting source</option><option value="authoritative_account_specific">Authoritative account-specific source</option><option value="reference_only">Reference only</option></select></label>
+        <label><span>Uploaded bill source role</span><select value={sourceRole} onChange={(event) => { setSourceRole(event.target.value as SourceRole); }}><option value="supporting">Supporting source</option><option value="authoritative_account_specific" disabled={current.utility_account_id === null}>Authoritative account-specific source</option><option value="reference_only">Reference only</option></select></label>
         <p className="field-help">A displayed threshold does not prove whether it is fixed, baseline-derived, seasonal, or account-specific.</p>
       </Panel>
       <Panel title="Source conflicts" eyebrow="Current configuration and managed evidence">
@@ -734,7 +1043,7 @@ export function BillImportWorkspace({ currentDraft, onApplyDraft, onClose }: { c
       <Panel title="Import billing cycle" eyebrow="Separate bill-specific record">
         <p className="panel-copy">This records exact cycle dates and utility-reported cumulative usage separately. It never overwrites immutable monitored readings.</p>
         <dl className="detail-list"><div><dt>Cycle</dt><dd>{current.cycle_draft?.starts_at && current.cycle_draft.ends_at ? formatBillingPeriod(current.cycle_draft.starts_at, current.cycle_draft.ends_at) : 'Unavailable'}</dd></div><div><dt>Reported usage</dt><dd>{formatEnergy(current.cycle_draft?.total_usage_kwh)}</dd></div><div><dt>Authority</dt><dd>{formatStructuredLabel(sourceRole)}</dd></div><div><dt>Status</dt><dd>{formatStructuredLabel(current.cycle_draft?.status)}</dd></div></dl>
-        <button className="button secondary" disabled={importCycle.isPending || !['ready_to_publish', 'published'].includes(current.status) || current.cycle_draft?.status === 'imported'} onClick={() => { importCycle.mutate(); }}><FileUp size={15} /> Import reviewed billing cycle</button>
+        <button className="button secondary" disabled={importCycle.isPending || current.utility_account_id === null || !['ready_to_publish', 'published'].includes(current.status) || current.cycle_draft?.status === 'imported'} onClick={() => { importCycle.mutate(); }}><FileUp size={15} /> Import reviewed billing cycle</button>
       </Panel>
       <Panel title="Workflow record" eyebrow="Evidence retained">
         <dl className="detail-list"><div><dt>Original PDF</dt><dd>{current.original_available ? 'Private and retained' : `Removed ${formatTime(current.original_deleted_at)}`}</dd></div><div><dt>Sanitized evidence</dt><dd>Retained</dd></div><div><dt>Artifact hash</dt><dd><code>{current.content_sha256}</code></dd></div><div><dt>Exact source value example</dt><dd>{formatDecimalDetail(current.cycle_draft?.energy_subtotal)}</dd></div></dl>

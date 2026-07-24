@@ -2,6 +2,19 @@
 
 ## Utility-bill import or OCR fails
 
+- If the interface reports an incompatible release, update API, frontend,
+  worker/migration, and backup image references together from one rendered
+  release. Do not bypass the compatibility check or reuse a frontend digest
+  with an older API digest.
+- In **Administration > Security > System Health**, compare frontend and
+  backend release/commit values and confirm both report
+  `utility-account-rate-context/1.0`. A stale browser asset should clear after
+  the complete App redeploy; a persistent mismatch means the YAML still mixes
+  image releases.
+- An account without an assigned plan and no selected account are both valid
+  import states. Use the visible Retry action for a transient context request.
+  A correlation ID can be matched to redacted API logs without exposing the
+  bill or account number.
 - Confirm the API workload uses the current immutable image digest. The release
   image contains `pdftoppm`, Tesseract, and English language data.
 - Confirm UID 10001 has Modify/traverse/inherit access to

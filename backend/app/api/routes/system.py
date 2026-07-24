@@ -12,7 +12,6 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
 from sqlalchemy import func, select, text
 
-from app import __version__
 from app.api.deps import DbSession, Viewer
 from app.config import get_settings
 from app.db.models import (
@@ -34,7 +33,7 @@ _time_requests: dict[str, deque[float]] = defaultdict(deque)
 
 @router.get("/health/live")
 async def liveness() -> dict[str, str]:
-    return {"status": "live", "version": __version__}
+    return {"status": "live", "version": get_settings().power_monitor_version}
 
 
 @router.get("/health/ready")
@@ -100,7 +99,10 @@ async def system_info(principal: Viewer, session: DbSession) -> dict[str, Any]:
     )
     return {
         "product": settings.app_name,
-        "version": __version__,
+        "version": settings.power_monitor_version,
+        "release_commit": settings.release_commit,
+        "api_schema_version": "1.0.0",
+        "bill_import_context_schema_version": "utility-account-rate-context/1.0",
         "protocol": settings.protocol_version,
         "python_runtime": "3.13 production image",
         "worker": {
@@ -126,6 +128,19 @@ async def system_info(principal: Viewer, session: DbSession) -> dict[str, Any]:
             "currency": settings.default_currency,
             "heartbeat_seconds": settings.heartbeat_expectation_seconds,
         },
+    }
+
+
+@router.get("/api/v1/system/compatibility")
+async def system_compatibility(principal: Viewer) -> dict[str, Any]:
+    settings = get_settings()
+    return {
+        "product": settings.app_name,
+        "backend_version": settings.power_monitor_version,
+        "backend_commit": settings.release_commit,
+        "api_schema_version": "1.0.0",
+        "bill_import_context_schema_version": "utility-account-rate-context/1.0",
+        "protocol_version": settings.protocol_version,
     }
 
 

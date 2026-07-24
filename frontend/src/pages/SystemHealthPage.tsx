@@ -2,12 +2,21 @@ import { useQuery } from '@tanstack/react-query'
 import { Activity, ArrowUpRight, Clock3, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
+import {
+  FRONTEND_API_SCHEMA_VERSION,
+  FRONTEND_BILL_IMPORT_SCHEMA_VERSION,
+  FRONTEND_BUILD_VERSION,
+  FRONTEND_RELEASE_COMMIT,
+} from '../buildInfo'
 import { StatusIndicatorZone } from '../components/StatusIndicators'
 import { ErrorState, formatTime, LoadingState, PageTitle, Panel } from '../components/UI'
 
 interface SystemInfo {
   product: string
   version: string
+  release_commit: string | null
+  api_schema_version: string
+  bill_import_context_schema_version: string
   protocol: string
   python_runtime: string
   worker: { status: string; last_loop_at?: string; last_success_at?: string }
@@ -36,6 +45,8 @@ export function SystemHealthPage() {
         ) : system.data ? (
           <div className="system-health-details">
             <article><Activity aria-hidden="true" /><span><small>Release</small><strong>{system.data.product} {system.data.version}</strong><em>{system.data.python_runtime}</em></span></article>
+            <article><Activity aria-hidden="true" /><span><small>Frontend build</small><strong>{FRONTEND_BUILD_VERSION}</strong><em>{FRONTEND_RELEASE_COMMIT}</em></span></article>
+            <article><ShieldCheck aria-hidden="true" /><span><small>API schemas</small><strong>{system.data.api_schema_version} / {system.data.bill_import_context_schema_version}</strong><em>Client {FRONTEND_API_SCHEMA_VERSION} / {FRONTEND_BILL_IMPORT_SCHEMA_VERSION}</em></span></article>
             <article><ShieldCheck aria-hidden="true" /><span><small>Device protocol</small><strong>{system.data.protocol}</strong><em>Contract identifier</em></span></article>
             <article><Clock3 aria-hidden="true" /><span><small>Worker activity</small><strong>{formatTime(system.data.worker.last_loop_at)}</strong><em>Last success {formatTime(system.data.worker.last_success_at)}</em></span></article>
           </div>

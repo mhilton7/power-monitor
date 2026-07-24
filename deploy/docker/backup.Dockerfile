@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1.7
 FROM postgres:17.5-bookworm
+ARG APP_VERSION=1.0.0
+ARG RELEASE_COMMIT=development
+LABEL org.opencontainers.image.version=${APP_VERSION} \
+      org.opencontainers.image.revision=${RELEASE_COMMIT}
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates openssl \
     && rm -rf /var/lib/apt/lists/* \

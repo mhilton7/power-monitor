@@ -113,6 +113,14 @@ async function mockApplication(page: Page) {
           roles: ['admin'],
         },
       }
+    } else if (path === '/api/v1/system/compatibility') {
+      body = {
+        backend_version: '1.0.0',
+        backend_commit: 'e2e',
+        api_schema_version: '1.0.0',
+        bill_import_context_schema_version: 'utility-account-rate-context/1.0',
+        protocol_version: 'pm-protocol/1.0.0',
+      }
     } else if (path === '/api/v1/public/interface-text' || path === '/api/v1/interface-text') {
       body = { revision: 0, values: {} }
     } else if (path === '/api/v1/sites') {

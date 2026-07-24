@@ -88,7 +88,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 ORDER BY direction
                 """
             )
-            assert revision == "20260724_0012"
+            assert revision == "20260724_0013"
             assert table_count == 98
             assert dict(migrated) == {
                 "lifecycle_status": "decommissioned",
@@ -107,7 +107,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260724_0012"
+                "20260724_0013"
             )
 
             await connection.execute("DROP SCHEMA public CASCADE")
@@ -167,7 +167,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260724_0012"
+                "20260724_0013"
             )
             assert (
                 await connection.fetchval(

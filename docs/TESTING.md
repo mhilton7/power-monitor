@@ -1,5 +1,61 @@
 # Testing and release gates
 
+## PDF import account-context stabilization acceptance (2026-07-24)
+
+The former production-shaped click path was reproduced with source maps before
+the repair. Chromium recorded
+`TypeError: Cannot read properties of undefined (reading 'current_plan')` in
+`BillImportWorkspace` at `BillImportPage.tsx:560:81`. The response was a
+defined legacy flat utility account with an omitted `rate_context` parent.
+The new regression substitutes that exact legacy response and asserts that no
+page or console exception references `current_plan`.
+
+The portable backend/worker/simulator gate passes Ruff lint/format, strict mypy,
+the complete pytest suite, generated OpenAPI drift checks, JSON Schema,
+generated TypeScript and runtime-parser agreement, HMAC vectors, and a single
+Alembic head. Dedicated tests cover explicit-null contexts with no site/account,
+an account without a rate, an account with an effective rate, unassigned PDF
+upload and content-hash reuse, deferred account attachment, private evidence,
+separate plan/cycle drafts, and no automatic publication or assignment.
+
+The locked frontend install passes lint, TypeScript, 56 unit/component tests,
+and the production Vite build. All 48 Chromium scenarios pass. The bill-import
+matrix covers new/existing/cloned drafts, no account, account without plan,
+account with plan, direct extraction refresh, the legacy redirect, malformed
+contracts, a transient context failure and bounded Retry, a failed lazy chunk,
+manual-draft preservation, and a deterministic account-change/late-response
+race. Browser `pageerror` and console capture report no uncaught exception. The
+reviewed repaired no-account capture is
+`docs/screenshots/utility-bill-import-current-plan-repaired.png`.
+
+PostgreSQL 17 passes populated initial-schema upgrade, downgrade/re-upgrade,
+populated prior-schema upgrade, and clean installation at
+`20260724_0013`, retaining 98 public tables. Fresh API/worker, frontend, and
+backup images build with matching `1.0.0` release/revision labels. The standard
+Compose stack migrated to `0013` and every long-running service reported
+healthy. Its fresh five-artifact logical backup passed checksums and restored
+to a clean database with revision `0013`, 98 tables, and nullable deferred
+bill-account references.
+
+The TrueNAS template, optional ICMP overlay, deployment render, mixed-release
+fail-closed checks, and Docker Compose parse pass. The isolated seven-service
+TrueNAS topology then passed through strict internal-CA TLS with only gateway
+TCP 18443 published. The one-shot migration completed before API/worker startup,
+all health checks passed, three signed simulated devices contributed 90
+readings, SCE calculation resolved, two utility accounts and one canonical
+network CIDR persisted, all five encrypted backup artifacts verified, and the
+backup restored cleanly at `20260724_0013`. The disposable containers,
+networks, volumes, CA, and test secrets were removed.
+
+The locked Python production dependency audit reports no known
+vulnerabilities. The npm production audit currently reports
+`GHSA-qwww-vcr4-c8h2` against React Router 7.18.1. Its affected path is React
+Server Components/server-action processing, which this static SPA does not
+enable. The registry has no stable release outside both that range and the
+older client/redirect advisory range, so the newer version remains pinned until
+an upstream patched stable release is published; dependency automation must
+retest and advance it promptly when available.
+
 ## Modern workspace and site-lifecycle acceptance (2026-07-24)
 
 The portable gate passes Ruff lint and formatting, strict mypy, 122 Python

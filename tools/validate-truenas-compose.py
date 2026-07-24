@@ -100,6 +100,17 @@ def _host_port(entry: Any) -> tuple[int | None, int | None]:
     return None, None
 
 
+def _image_tag(image: Any) -> str | None:
+    if not isinstance(image, str):
+        return None
+    reference = image.split("@", 1)[0]
+    last_slash = reference.rfind("/")
+    last_colon = reference.rfind(":")
+    if last_colon <= last_slash:
+        return None
+    return reference[last_colon + 1 :]
+
+
 def validate_compose(
     document: Any,
     *,
@@ -284,6 +295,46 @@ def validate_compose(
         )
     if expected_pool == "POOL":
         errors.append("--pool must be a real TrueNAS pool name, not POOL")
+
+    api_image = _mapping(services.get("api"), "api", errors).get("image")
+    for service_name in ("worker", "migrate"):
+        if (
+            _mapping(services.get(service_name), service_name, errors).get("image")
+            != api_image
+        ):
+            errors.append(
+                f"{service_name}: image must exactly match the API release image"
+            )
+    release_tags = {
+        service_name: _image_tag(
+            _mapping(services.get(service_name), service_name, errors).get("image")
+        )
+        for service_name in ("api", "frontend", "backup")
+    }
+    if None not in release_tags.values() and len(set(release_tags.values())) != 1:
+        errors.append(
+            "api, frontend, and backup images must use one release version; found "
+            + ", ".join(
+                f"{service_name}={tag}" for service_name, tag in release_tags.items()
+            )
+        )
+    api_release_tag = release_tags["api"]
+    for service_name in ("api", "worker"):
+        environment = _mapping(
+            _mapping(services.get(service_name), service_name, errors).get(
+                "environment"
+            ),
+            f"{service_name}.environment",
+            errors,
+        )
+        if (
+            api_release_tag is not None
+            and environment.get("POWER_MONITOR_VERSION") != api_release_tag
+        ):
+            errors.append(
+                f"{service_name}: POWER_MONITOR_VERSION must match image tag "
+                f"{api_release_tag}"
+            )
 
     postgres_networks = set(
         _sequence(

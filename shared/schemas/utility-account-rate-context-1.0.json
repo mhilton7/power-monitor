@@ -1,0 +1,298 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://power-monitor.local/schemas/utility-account-rate-context-1.0.json",
+  "title": "UtilityAccountRateContext",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "api_version",
+    "backend_version",
+    "backend_commit",
+    "generated_client_schema_version",
+    "account_id",
+    "site_id",
+    "account",
+    "available_accounts",
+    "current_plan",
+    "current_assignment",
+    "current_rate_version",
+    "current_period",
+    "readiness"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "utility-account-rate-context/1.0"
+    },
+    "api_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "backend_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "backend_commit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "generated_client_schema_version": {
+      "const": "utility-account-rate-context/1.0"
+    },
+    "account_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "site_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "account": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/account"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "available_accounts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/account"
+      }
+    },
+    "current_plan": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/plan"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "current_assignment": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/assignment"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "current_rate_version": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/version"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "current_period": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/period"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "readiness": {
+      "$ref": "#/$defs/readiness"
+    }
+  },
+  "$defs": {
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "site_id",
+        "site_name",
+        "name",
+        "utility_name",
+        "timezone",
+        "currency",
+        "provider_mode"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "site_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "site_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "utility_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "provider_mode": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "code",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "rate_version_id",
+        "effective_from",
+        "effective_to"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "rate_version_id": {
+          "type": "string"
+        },
+        "effective_from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "effective_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "pricing_model",
+        "effective_from",
+        "effective_to",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pricing_model": {
+          "type": "string"
+        },
+        "effective_from": {
+          "type": "string",
+          "format": "date"
+        },
+        "effective_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "price_per_kwh",
+        "currency"
+      ],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "price_per_kwh": {
+          "type": [
+            "string",
+            "number",
+            "null"
+          ]
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account_configured",
+        "rate_assigned",
+        "rate_effective"
+      ],
+      "properties": {
+        "account_configured": {
+          "type": "boolean"
+        },
+        "rate_assigned": {
+          "type": "boolean"
+        },
+        "rate_effective": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

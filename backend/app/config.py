@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     app_name: str = "Power Monitor Server"
     power_monitor_version: str = "1.0.0"
+    release_commit: str | None = None
     protocol_version: str = "pm-protocol/1.0.0"
     database_url: str = "postgresql+asyncpg://power_monitor:power_monitor@localhost/power_monitor"
     database_url_file: Path | None = None

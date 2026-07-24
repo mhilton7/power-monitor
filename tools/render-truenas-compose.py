@@ -17,6 +17,15 @@ POOL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 DATASET_RELATIVE_ROOT = "Power/power-monitor"
 
 
+def _image_tag(image: str) -> str:
+    reference = image.split("@", 1)[0]
+    last_slash = reference.rfind("/")
+    last_colon = reference.rfind(":")
+    if last_colon <= last_slash:
+        raise ValueError(f"application image has no version tag: {image}")
+    return reference[last_colon + 1 :]
+
+
 def _load_validator(root: Path) -> ModuleType:
     path = root / "tools" / "validate-truenas-compose.py"
     spec = importlib.util.spec_from_file_location(
@@ -48,6 +57,9 @@ def render(
         services[service_name]["image"] = images["api"]
     for service_name in ("frontend", "backup", "postgres", "gateway"):
         services[service_name]["image"] = images[service_name]
+    release_version = _image_tag(images["api"])
+    for service_name in ("api", "worker"):
+        services[service_name]["environment"]["POWER_MONITOR_VERSION"] = release_version
     template_root = f"/mnt/POOL/{DATASET_RELATIVE_ROOT}/"
     deployment_root = f"/mnt/{pool}/{DATASET_RELATIVE_ROOT}/"
     for service in services.values():

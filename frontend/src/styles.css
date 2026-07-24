@@ -235,6 +235,40 @@ h3 { font-size: 1rem; }
 .state-card > svg { flex: 0 0 auto; color: var(--accent); }
 .state-card p { margin: 3px 0 0; font-size: .78rem; }
 .state-card strong { color: var(--text); }
+
+.app-error-boundary {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 22px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--danger) 6%, var(--panel));
+}
+.app-error-boundary > svg { flex: 0 0 auto; color: var(--danger); }
+.app-error-boundary > div { min-width: 0; flex: 1; }
+.app-error-boundary h1,
+.app-error-boundary h2,
+.app-error-boundary h3 { margin: 0 0 7px; }
+.app-error-boundary p { margin: 0 0 12px; color: var(--muted); }
+.technical-details { max-width: 100%; margin-top: 14px; color: var(--muted); }
+.technical-details pre {
+  max-width: 100%;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.setup-callout {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-soft);
+}
+.setup-callout p { margin: 5px 0 12px; color: var(--muted); }
 .state-error > svg { color: var(--red); }
 .state-error .button { margin-left: 15px; }
 .spin { animation: spin 1s linear infinite; }

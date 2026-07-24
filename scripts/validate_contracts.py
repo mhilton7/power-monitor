@@ -1,9 +1,18 @@
 from __future__ import annotations
 
-from contract_check import validate_openapi, validate_schemas, validate_vectors
+from contract_check import (
+    validate_bill_import_context_contract,
+    validate_openapi,
+    validate_schemas,
+    validate_vectors,
+)
 
 if __name__ == "__main__":
     validate_openapi()
     validate_schemas()
+    validate_bill_import_context_contract()
     validate_vectors()
-    print("OpenAPI documents, JSON Schemas, examples, and HMAC vectors are valid")
+    print(
+        "OpenAPI documents, JSON Schemas, generated bill-import types, "
+        "examples, and HMAC vectors are valid"
+    )

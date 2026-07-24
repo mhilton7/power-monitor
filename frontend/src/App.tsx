@@ -1,11 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
-import { Component, lazy, Suspense, type ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { hasPermission } from './access'
 import { api } from './api'
+import {
+  FRONTEND_API_SCHEMA_VERSION,
+  FRONTEND_BILL_IMPORT_SCHEMA_VERSION,
+} from './buildInfo'
+import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { Layout } from './components/Layout'
 import { StatusIndicatorProvider } from './components/StatusIndicators'
-import { ErrorState, LoadingState } from './components/UI'
+import { LoadingState } from './components/UI'
 import { InterfaceTextProvider } from './interfaceText'
 import { AccessDeniedPage } from './pages/AccessDeniedPage'
 import { AuthPage } from './pages/AuthPage'
@@ -54,27 +59,6 @@ function AnyGuard({
   return permissions.some((permission) => hasPermission(session, permission))
     ? children
     : <AccessDeniedPage permission={permissions.join(' or ')} />
-}
-
-class WorkspaceErrorBoundary extends Component<{ children: ReactNode; resetKey: string }, { error?: Error }> {
-  state: { error?: Error } = {}
-
-  static getDerivedStateFromError(error: Error) {
-    return { error }
-  }
-
-  componentDidUpdate(previous: Readonly<{ children: ReactNode; resetKey: string }>) {
-    if (this.state.error && previous.resetKey !== this.props.resetKey) {
-      this.setState({ error: undefined })
-    }
-  }
-
-  render() {
-    if (this.state.error) {
-      return <ErrorState error={this.state.error} retry={() => { window.location.reload() }} />
-    }
-    return this.props.children
-  }
 }
 
 function CanonicalRedirect({ to, transform }: { to: string; transform?: (params: URLSearchParams) => void }) {
@@ -136,16 +120,101 @@ function InWorkspace({
   return <WorkspaceShell workspaceId={workspaceId} session={session}>{children}</WorkspaceShell>
 }
 
+function ScopedRouteBoundary({
+  scope,
+  children,
+}: {
+  scope: string
+  children: ReactNode
+}) {
+  const location = useLocation()
+  return (
+    <AppErrorBoundary
+      scope={scope}
+      resetKey={`${location.pathname}${location.search}`}
+      onRetry={() => { window.location.reload() }}
+      returnTo="/billing/rate-plans"
+      returnLabel="Return to Rate Plans"
+      administrator
+    >
+      {children}
+    </AppErrorBoundary>
+  )
+}
+
+interface CompatibilityInfo {
+  backend_version: string
+  backend_commit: string | null
+  api_schema_version: string
+  bill_import_context_schema_version: string
+  protocol_version: string
+}
+
+function CompatibilityGate({ children }: { children: ReactNode }) {
+  const compatibility = useQuery({
+    queryKey: ['system-compatibility'],
+    queryFn: () => api<CompatibilityInfo>('/api/v1/system/compatibility'),
+    retry: 1,
+    staleTime: 60_000,
+  })
+  if (compatibility.isLoading) {
+    return <main className="startup"><LoadingState label="Checking release compatibility…" /></main>
+  }
+  const mismatched = compatibility.data && (
+    compatibility.data.api_schema_version !== FRONTEND_API_SCHEMA_VERSION ||
+    compatibility.data.bill_import_context_schema_version !==
+      FRONTEND_BILL_IMPORT_SCHEMA_VERSION
+  )
+  if (compatibility.error || mismatched) {
+    return (
+      <main className="startup">
+        <section className="app-error-boundary" role="alert">
+          <div>
+            <h1>Dashboard and server versions are incompatible</h1>
+            <p>
+              Update the frontend, API, worker, and migration images from the same
+              release, then retry.
+            </p>
+            <div className="inline-actions">
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => { void compatibility.refetch() }}
+              >
+                Retry compatibility check
+              </button>
+            </div>
+            <details className="technical-details">
+              <summary>Technical details</summary>
+              <p>Frontend API schema: {FRONTEND_API_SCHEMA_VERSION}</p>
+              <p>Server API schema: {compatibility.data?.api_schema_version ?? 'unavailable'}</p>
+              <p>Frontend import schema: {FRONTEND_BILL_IMPORT_SCHEMA_VERSION}</p>
+              <p>Server import schema: {compatibility.data?.bill_import_context_schema_version ?? 'unavailable'}</p>
+            </details>
+          </div>
+        </section>
+      </main>
+    )
+  }
+  return children
+}
+
 function ProtectedApp({ session }: { session: Session }) {
   const location = useLocation()
   if (!session.authenticated) return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />
   const canManageRates = hasPermission(session, 'rates.manage_custom')
   const canManageBills = hasPermission(session, 'utility_bills.manage')
   return (
-    <InterfaceTextProvider>
-      <StatusIndicatorProvider>
-        <Layout session={session}>
-          <WorkspaceErrorBoundary resetKey={`${location.pathname}${location.search}`}>
+    <CompatibilityGate>
+      <InterfaceTextProvider>
+        <StatusIndicatorProvider>
+          <Layout session={session}>
+          <AppErrorBoundary
+            scope="Authenticated application workspace"
+            resetKey={`${location.pathname}${location.search}`}
+            onRetry={() => { window.location.reload() }}
+            administrator
+          >
             <Suspense fallback={<LoadingState label="Opening this workspace…" />}>
               <Routes>
                 <Route path="/" element={<Navigate to="/overview" replace />} />
@@ -164,11 +233,11 @@ function ProtectedApp({ session }: { session: Session }) {
                 <Route path="/analytics/costs" element={<InWorkspace session={session} workspaceId="analytics"><Guard session={session} permission="costs.view"><CostsPage canManageBills={canManageBills} /></Guard></InWorkspace>} />
 
                 <Route path="/billing" element={<WorkspaceIndexRedirect session={session} workspaceId="billing" />} />
-                <Route path="/billing/accounts" element={<InWorkspace session={session} workspaceId="billing"><Guard session={session} permission="utility_accounts.view"><BillingAccountsPage canViewBills={hasPermission(session, 'utility_bills.view')} /></Guard></InWorkspace>} />
-                <Route path="/billing/rate-plans" element={<InWorkspace session={session} workspaceId="billing"><Guard session={session} permission="rates.view"><RatesPage canManage={canManageRates} canImportBills={canManageBills} /></Guard></InWorkspace>} />
-                <Route path="/billing/rate-plans/new" element={<InWorkspace session={session} workspaceId="billing"><Guard session={session} permission="rates.manage_custom"><RateEditorPage canManage canImportBills={canManageBills} /></Guard></InWorkspace>} />
-                <Route path="/billing/rate-plans/:planId/versions/:versionId" element={<InWorkspace session={session} workspaceId="billing"><Guard session={session} permission="rates.view"><RateEditorPage canManage={canManageRates} canImportBills={canManageBills} /></Guard></InWorkspace>} />
-                <Route path="/billing/rate-sources" element={<InWorkspace session={session} workspaceId="billing"><Guard session={session} permission="rates.manage_sources"><RateSourcesPage /></Guard></InWorkspace>} />
+                <Route path="/billing/accounts" element={<ScopedRouteBoundary scope="Billing workspace"><InWorkspace session={session} workspaceId="billing"><Guard session={session} permission="utility_accounts.view"><BillingAccountsPage canViewBills={hasPermission(session, 'utility_bills.view')} /></Guard></InWorkspace></ScopedRouteBoundary>} />
+                <Route path="/billing/rate-plans" element={<ScopedRouteBoundary scope="Billing workspace"><InWorkspace session={session} workspaceId="billing"><Guard session={session} permission="rates.view"><RatesPage canManage={canManageRates} canImportBills={canManageBills} /></Guard></InWorkspace></ScopedRouteBoundary>} />
+                <Route path="/billing/rate-plans/new" element={<ScopedRouteBoundary scope="Custom Plan editor"><InWorkspace session={session} workspaceId="billing"><Guard session={session} permission="rates.manage_custom"><RateEditorPage canManage canImportBills={canManageBills} /></Guard></InWorkspace></ScopedRouteBoundary>} />
+                <Route path="/billing/rate-plans/:planId/versions/:versionId" element={<ScopedRouteBoundary scope="Custom Plan editor"><InWorkspace session={session} workspaceId="billing"><Guard session={session} permission="rates.view"><RateEditorPage canManage={canManageRates} canImportBills={canManageBills} /></Guard></InWorkspace></ScopedRouteBoundary>} />
+                <Route path="/billing/rate-sources" element={<ScopedRouteBoundary scope="Billing workspace"><InWorkspace session={session} workspaceId="billing"><Guard session={session} permission="rates.manage_sources"><RateSourcesPage /></Guard></InWorkspace></ScopedRouteBoundary>} />
 
                 <Route path="/alerts" element={<InWorkspace session={session} workspaceId="alerts"><Guard session={session} permission="alerts.view"><AlertsPage /></Guard></InWorkspace>} />
 
@@ -189,7 +258,7 @@ function ProtectedApp({ session }: { session: Session }) {
                 <Route path="/costs" element={<CanonicalRedirect to="/analytics/costs" />} />
                 <Route path="/rates" element={<CanonicalRedirect to="/billing/rate-plans" />} />
                 <Route path="/rates/new" element={<CanonicalRedirect to="/billing/rate-plans/new" />} />
-                <Route path="/rates/import-bill" element={<CanonicalRedirect to="/billing/rate-plans/new" transform={(params) => { params.set('bill_import', 'open') }} />} />
+                <Route path="/rates/import-bill" element={<CanonicalRedirect to="/billing/rate-plans/new" transform={(params) => { params.set('bill_import', 'open'); params.set('legacy_import', '1') }} />} />
                 <Route path="/rates/:planId/versions/:versionId" element={<LegacyRateVersionRedirect />} />
                 <Route path="/rates/sources" element={<CanonicalRedirect to="/billing/rate-sources" />} />
                 <Route path="/reports" element={<CanonicalRedirect to="/analytics/history" transform={(params) => { params.set('export', 'open') }} />} />
@@ -204,10 +273,11 @@ function ProtectedApp({ session }: { session: Session }) {
                 <Route path="*" element={<Navigate to="/overview" replace />} />
               </Routes>
             </Suspense>
-          </WorkspaceErrorBoundary>
-        </Layout>
-      </StatusIndicatorProvider>
-    </InterfaceTextProvider>
+          </AppErrorBoundary>
+          </Layout>
+        </StatusIndicatorProvider>
+      </InterfaceTextProvider>
+    </CompatibilityGate>
   )
 }
 
@@ -224,13 +294,20 @@ function LegacyRateVersionRedirect() {
 }
 
 export default function App() {
+  const location = useLocation()
   const session = useQuery({ queryKey: ['session'], queryFn: () => api<Session>('/api/v1/auth/session'), retry: false })
   if (session.isLoading) return <main className="startup"><LoadingState label="Establishing a secure session…" /></main>
   const value = session.data ?? { authenticated: false, bootstrap_required: false }
   return (
-    <Routes>
-      <Route path="/sign-in" element={value.authenticated ? <Navigate to="/overview" replace /> : <AuthPage bootstrapRequired={value.bootstrap_required} />} />
-      <Route path="/*" element={<ProtectedApp session={value} />} />
-    </Routes>
+    <AppErrorBoundary
+      scope="Application shell"
+      resetKey={`${location.pathname}${location.search}`}
+      onRetry={() => { window.location.reload() }}
+    >
+      <Routes>
+        <Route path="/sign-in" element={value.authenticated ? <Navigate to="/overview" replace /> : <AuthPage bootstrapRequired={value.bootstrap_required} />} />
+        <Route path="/*" element={<ProtectedApp session={value} />} />
+      </Routes>
+    </AppErrorBoundary>
   )
 }

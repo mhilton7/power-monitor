@@ -1272,8 +1272,8 @@ class UtilityBillImport(Base):
     job_id: Mapped[str] = mapped_column(
         ForeignKey("background_jobs.id", ondelete="RESTRICT"), unique=True, index=True
     )
-    utility_account_id: Mapped[str] = mapped_column(
-        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
+    utility_account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True, nullable=True
     )
     artifact_id: Mapped[str] = mapped_column(
         ForeignKey("rate_source_artifacts.id", ondelete="RESTRICT"), unique=True, index=True
@@ -1444,8 +1444,8 @@ class UtilityBillCycleDraft(Base):
     extraction_revision_id: Mapped[str] = mapped_column(
         ForeignKey("utility_bill_extraction_revisions.id", ondelete="RESTRICT"), index=True
     )
-    utility_account_id: Mapped[str] = mapped_column(
-        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
+    utility_account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True, nullable=True
     )
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -26,6 +26,21 @@ The previous bookmark `/rates/import-bill` is retained as a replace-style
 compatibility redirect to `/rates/new?bill_import=open`. It never mounts a
 second importer or editor.
 
+The importer can also start without a selected utility account. Tariff
+extraction and review remain available, while account assignment and
+billing-cycle application are deferred. The server stores such evidence as a
+private, user-scoped source. Selecting an account later explicitly attaches the
+context; it does not publish, assign, or apply either draft.
+
+Account and rate readiness comes from the versioned
+`utility-account-rate-context/1.0` response. Plan, assignment, version, and
+period values are always present as explicit objects or `null`. An account with
+no plan displays a setup state and prefills a new Custom Plan. An account with a
+plan uses it only for comparison. Runtime validation converts malformed
+responses into a recoverable application error instead of allowing raw
+property access. See
+[PDF import context stabilization](PDF_IMPORT_STABILIZATION.md).
+
 ## Blank-page correction
 
 The former route lazy-loaded the standalone bill-import page without a
@@ -39,6 +54,14 @@ error boundary with a **Retry** action. The old URL redirects into the custom
 editor, and every importer state renders a loading, empty, warning, error, or
 review surface rather than returning `null`. Browser regression tests
 deliberately fail the editor chunk and verify the visible error state.
+
+The later `current_plan` regression had a different root cause: the importer
+treated the flat legacy utility-account response as a richer management
+response and dereferenced a missing `rate_context` parent. The importer now
+uses its dedicated explicit-null contract, typed selectors, a discriminated
+state model, bounded Retry, direct-refresh reconstruction, and layered error
+boundaries. It does not depend on sensors, readings, or an already assigned
+rate.
 
 ## Supported documents
 

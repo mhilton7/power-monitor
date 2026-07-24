@@ -2978,5 +2978,15 @@ INSERT INTO audit_events
 
 UPDATE alembic_version SET version_num='20260724_0012' WHERE alembic_version.version_num = '20260724_0011';
 
+-- Running upgrade 20260724_0012 -> 20260724_0013
+
+ALTER TABLE utility_bill_imports ALTER COLUMN utility_account_id DROP NOT NULL;
+
+ALTER TABLE utility_bill_cycle_drafts ALTER COLUMN utility_account_id DROP NOT NULL;
+
+CREATE UNIQUE INDEX uq_utility_bill_import_unassigned_creator_hash ON utility_bill_imports (created_by, content_sha256) WHERE utility_account_id IS NULL;
+
+UPDATE alembic_version SET version_num='20260724_0013' WHERE alembic_version.version_num = '20260724_0012';
+
 COMMIT;
 

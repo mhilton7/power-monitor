@@ -73,6 +73,9 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.version.outputs.value }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
+            RELEASE_COMMIT=${{ github.sha }}
       - shell: bash
         run: |
           echo '${{ matrix.component }}=${{ steps.image.outputs.prefix }}-${{ matrix.component }}:${{ steps.version.outputs.value }}@${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"

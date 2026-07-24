@@ -8,8 +8,14 @@ COPY backend/app ./backend/app
 RUN python -m pip wheel --no-deps --wheel-dir /wheels ./backend
 
 FROM python:3.13.5-slim-bookworm AS runtime
+ARG APP_VERSION=1.0.0
+ARG RELEASE_COMMIT=development
+LABEL org.opencontainers.image.version=${APP_VERSION} \
+      org.opencontainers.image.revision=${RELEASE_COMMIT}
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/srv/backend:/srv
+    PYTHONPATH=/srv/backend:/srv \
+    POWER_MONITOR_VERSION=${APP_VERSION} \
+    RELEASE_COMMIT=${RELEASE_COMMIT}
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/* \

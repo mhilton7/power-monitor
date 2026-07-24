@@ -1,0 +1,20 @@
+{
+  "schema_version": "utility-account-rate-context/1.0",
+  "api_version": "1.0.0",
+  "backend_version": "1.0.0",
+  "backend_commit": null,
+  "generated_client_schema_version": "utility-account-rate-context/1.0",
+  "account_id": null,
+  "site_id": null,
+  "account": null,
+  "available_accounts": [],
+  "current_plan": null,
+  "current_assignment": null,
+  "current_rate_version": null,
+  "current_period": null,
+  "readiness": {
+    "account_configured": false,
+    "rate_assigned": false,
+    "rate_effective": false
+  }
+}

@@ -86,7 +86,13 @@ cycles](BILLING_CYCLES.md), and [Usage imports](USAGE_IMPORTS.md).
 
 Administrator utility-bill PDF import is under
 `/api/v1/admin/utility-bill-imports`. Upload uses
-`POST /api/v1/admin/utility-accounts/{account_id}/bill-imports`; list/detail,
+`POST /api/v1/admin/utility-bill-imports` with an optional `account_id`.
+The account-specific
+`POST /api/v1/admin/utility-accounts/{account_id}/bill-imports` endpoint remains
+compatible. `GET /api/v1/admin/utility-bill-import-context` returns the
+versioned, explicit-null account/rate context used by the importer. An
+unassigned upload may be attached later with
+`PUT /api/v1/admin/utility-bill-imports/{bill_id}/account-context`. List/detail,
 page evidence, authenticated original/sanitized downloads, review corrections,
 rate validation, exact/display comparison, publish-and-assign, separate
 billing-cycle import, retention, and original deletion use the linked import
@@ -100,6 +106,12 @@ The browser now invokes them from the existing custom-plan editor; applying
 selected extracted fields updates that editor draft and does not invoke the
 publish-and-assign compatibility endpoint. Billing-cycle import remains a
 separate explicit mutation.
+
+`GET /api/v1/system/compatibility` reports the backend release/commit, API
+schema, bill-import context schema, and device protocol version. The
+authenticated frontend checks it before mounting workspaces and fails safely
+when a mixed release would consume an incompatible response. See
+[PDF import context stabilization](PDF_IMPORT_STABILIZATION.md).
 
 Log exports accept date values rather than filesystem names, limit selection to
 the retained 90-day window and known service identifiers, and return a streamed

@@ -207,6 +207,68 @@ class UtilityAccountCreate(ApiModel):
     generation_provider: Literal["sce", "cca", "direct_access"] = "sce"
 
 
+class BillImportAccountSummary(ApiModel):
+    id: str
+    site_id: str
+    site_name: str
+    name: str
+    utility_name: str
+    timezone: str
+    currency: str
+    provider_mode: str
+
+
+class BillImportRatePlanSummary(ApiModel):
+    id: str
+    code: str
+    name: str
+
+
+class BillImportRateAssignmentSummary(ApiModel):
+    id: str
+    rate_version_id: str
+    effective_from: datetime
+    effective_to: datetime | None
+
+
+class BillImportRateVersionSummary(ApiModel):
+    id: str
+    version: int
+    pricing_model: str
+    effective_from: date
+    effective_to: date | None
+    status: str
+
+
+class BillImportRatePeriodSummary(ApiModel):
+    label: str
+    price_per_kwh: Decimal | None
+    currency: str
+
+
+class BillImportRateReadiness(ApiModel):
+    account_configured: bool
+    rate_assigned: bool
+    rate_effective: bool
+
+
+class UtilityAccountRateContextView(ApiModel):
+    schema_version: Literal["utility-account-rate-context/1.0"]
+    api_version: str
+    backend_version: str
+    backend_commit: str | None
+    generated_client_schema_version: Literal["utility-account-rate-context/1.0"]
+    account_id: str | None
+    site_id: str | None
+    account: BillImportAccountSummary | None
+    available_accounts: list[BillImportAccountSummary]
+    current_plan: BillImportRatePlanSummary | None
+    current_assignment: BillImportRateAssignmentSummary | None
+    current_rate_version: BillImportRateVersionSummary | None
+    current_period: BillImportRatePeriodSummary | None
+    readiness: BillImportRateReadiness
+
+
 class RateAssignmentWrite(ApiModel):
     rate_version_id: str
     effective_from: datetime

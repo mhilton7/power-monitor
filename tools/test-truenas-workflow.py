@@ -34,7 +34,22 @@ class WorkflowFailure(RuntimeError):
     pass
 
 
-def docker_desktop_runtime_compose(compose: Path, host_root: Path) -> Path:
+def _application_image_tag(image: str) -> str:
+    reference = image.split("@", 1)[0]
+    last_slash = reference.rfind("/")
+    last_colon = reference.rfind(":")
+    if last_colon <= last_slash:
+        raise WorkflowFailure(f"application image has no version tag: {image}")
+    return reference[last_colon + 1 :]
+
+
+def docker_desktop_runtime_compose(
+    compose: Path,
+    host_root: Path,
+    *,
+    project_name: str | None = None,
+    local_application_images: bool = False,
+) -> Path:
     """Translate TrueNAS datasets for a POSIX-compatible Docker Desktop gate."""
     document = yaml.safe_load(compose.read_text(encoding="utf-8"))
     prefix: str | None = None
@@ -46,6 +61,19 @@ def docker_desktop_runtime_compose(compose: Path, host_root: Path) -> Path:
             break
     if prefix is None or not prefix.startswith("/mnt/"):
         raise WorkflowFailure("could not identify the validated TrueNAS bind root")
+    if project_name is not None:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", project_name):
+            raise WorkflowFailure(
+                f"unsafe Docker Desktop project name: {project_name!r}"
+            )
+        document["name"] = project_name
+    if local_application_images:
+        release = _application_image_tag(str(document["services"]["api"]["image"]))
+        document["services"]["api"]["image"] = f"power-monitor-api:{release}"
+        document["services"]["worker"]["image"] = f"power-monitor-api:{release}"
+        document["services"]["migrate"]["image"] = f"power-monitor-api:{release}"
+        document["services"]["frontend"]["image"] = f"power-monitor-frontend:{release}"
+        document["services"]["backup"]["image"] = f"power-monitor-backup:{release}"
     host_root = host_root.resolve()
     if not host_root.is_dir():
         raise WorkflowFailure(
@@ -592,6 +620,15 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="test-only replacement for the already validated /mnt/POOL bind root",
     )
+    parser.add_argument(
+        "--docker-desktop-project-name",
+        help="test-only isolated Compose project name",
+    )
+    parser.add_argument(
+        "--docker-desktop-local-application-images",
+        action="store_true",
+        help="test-only use of same-version locally built application images",
+    )
     return parser.parse_args()
 
 
@@ -605,7 +642,10 @@ def main() -> int:
     if args.docker_desktop_host_root is not None:
         try:
             runtime_compose = docker_desktop_runtime_compose(
-                compose, args.docker_desktop_host_root
+                compose,
+                args.docker_desktop_host_root,
+                project_name=args.docker_desktop_project_name,
+                local_application_images=args.docker_desktop_local_application_images,
             )
             compose = runtime_compose
         except (OSError, KeyError, TypeError, WorkflowFailure, yaml.YAMLError) as exc:

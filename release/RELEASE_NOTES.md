@@ -1,5 +1,26 @@
 # Power Monitor Server 1.0.0
 
+## PDF import account-context stabilization
+
+- Permanently fixes the Custom Plan PDF-import crash caused by interpreting the
+  legacy flat utility-account response as a management response and
+  dereferencing its absent `rate_context.current_plan` parent.
+- Adds the explicit-null, runtime-validated
+  `utility-account-rate-context/1.0` contract across Pydantic, OpenAPI, JSON
+  Schema, generated TypeScript, fixtures, and contract drift checks.
+- Supports no account, account without plan, account with plan, new/existing/
+  cloned drafts, direct refresh, legacy redirect, loading, previous extraction,
+  Retry, and malformed/incompatible response states without blank output.
+- Allows private tariff extraction before account assignment while preserving
+  separate plan and billing-cycle drafts, administrator review, selective field
+  application, PDF/OCR security, immutable published versions, and explicit
+  publish/assign/apply actions.
+- Adds layered correlation-ID error boundaries and release/schema compatibility
+  diagnostics. TrueNAS upgrades must replace every related immutable image from
+  one release.
+- Adds append-only Alembic revision `20260724_0013`. It introduces no service,
+  database, dataset, secret, capability, network, or host port.
+
 ## Modern six-workspace UI and physical-site lifecycle update
 
 - Replaces the overloaded page sidebar with exactly six role-aware workspaces:

@@ -32,6 +32,65 @@ const account = {
   },
 }
 
+const importContext = (selectedAccountId: string | null = null) => ({
+  schema_version: 'utility-account-rate-context/1.0',
+  api_version: '1.0.0',
+  backend_version: '1.0.0',
+  backend_commit: 'e2e',
+  generated_client_schema_version: 'utility-account-rate-context/1.0',
+  account_id: selectedAccountId,
+  site_id: selectedAccountId ? account.site_id : null,
+  account: selectedAccountId
+    ? {
+        id: account.id,
+        site_id: account.site_id,
+        site_name: account.site_name,
+        name: account.name,
+        utility_name: account.utility_name,
+        timezone: account.timezone,
+        currency: account.currency,
+        provider_mode: account.provider_mode,
+      }
+    : null,
+  available_accounts: [{
+    id: account.id,
+    site_id: account.site_id,
+    site_name: account.site_name,
+    name: account.name,
+    utility_name: account.utility_name,
+    timezone: account.timezone,
+    currency: account.currency,
+    provider_mode: account.provider_mode,
+  }],
+  current_plan: selectedAccountId
+    ? { id: 'plan-domestic', code: 'DOMESTIC', name: 'DOMESTIC' }
+    : null,
+  current_assignment: selectedAccountId
+    ? {
+        id: 'assignment-1',
+        rate_version_id: 'version-domestic',
+        effective_from: '2026-07-01T00:00:00Z',
+        effective_to: null,
+      }
+    : null,
+  current_rate_version: selectedAccountId
+    ? {
+        id: 'version-domestic',
+        version: 1,
+        pricing_model: 'tiered',
+        effective_from: '2026-07-01',
+        effective_to: null,
+        status: 'active',
+      }
+    : null,
+  current_period: null,
+  readiness: {
+    account_configured: Boolean(selectedAccountId),
+    rate_assigned: Boolean(selectedAccountId),
+    rate_effective: Boolean(selectedAccountId),
+  },
+})
+
 const thresholdField = {
   id: 'field-threshold',
   output_kind: 'rate_plan',
@@ -249,6 +308,14 @@ async function mockApplication(page: Page, initialBill = baseBill) {
           roles: ['admin'],
         },
       }
+    } else if (apiPath === '/api/v1/system/compatibility') {
+      body = {
+        backend_version: '1.0.0',
+        backend_commit: 'e2e',
+        api_schema_version: '1.0.0',
+        bill_import_context_schema_version: 'utility-account-rate-context/1.0',
+        protocol_version: 'pm-protocol/1.0.0',
+      }
     } else if (apiPath === '/api/v1/public/interface-text' || apiPath === '/api/v1/interface-text') {
       body = { revision: 0, values: {} }
     } else if (apiPath === '/api/v1/sites') {
@@ -278,6 +345,8 @@ async function mockApplication(page: Page, initialBill = baseBill) {
         zones: [],
         warnings: [],
       }
+    } else if (apiPath === '/api/v1/admin/utility-bill-import-context') {
+      body = importContext(url.searchParams.get('account_id'))
     } else if (apiPath === '/api/v1/utility-accounts') {
       body = [account]
     } else if (apiPath.startsWith('/api/v1/rates/versions/')) {
@@ -304,7 +373,7 @@ async function mockApplication(page: Page, initialBill = baseBill) {
       }
     } else if (
       request.method() === 'POST'
-      && apiPath === `/api/v1/admin/utility-accounts/${account.id}/bill-imports`
+      && apiPath === '/api/v1/admin/utility-bill-imports'
     ) {
       body = bill
     } else if (apiPath === '/api/v1/admin/utility-bill-imports' && request.method() === 'GET') {
@@ -451,7 +520,7 @@ test('reviews separate bill outputs and selectively merges them into the existin
   expect(savedDocument.tiers).toHaveLength(2)
   expect(savedDocument.source_label).toContain('Reviewed utility bill')
 
-  expect(requests).toContain('POST /api/v1/admin/utility-accounts/account-1/bill-imports')
+  expect(requests).toContain('POST /api/v1/admin/utility-bill-imports')
   expect(requests).toContain('PUT /api/v1/admin/utility-bill-imports/bill-1/review')
   expect(requests).toContain('POST /api/v1/admin/utility-bill-imports/bill-1/import-billing-cycle')
   expect(requests).toContain('DELETE /api/v1/admin/utility-bill-imports/bill-1/original')
@@ -529,13 +598,149 @@ test('keeps the importer usable when an older API omits optional display labels'
 
 test('shows actionable importer empty states instead of a blank workspace', async ({ page }) => {
   await mockApplication(page)
-  await page.route('**/api/v1/utility-accounts', async (route) => {
-    await route.fulfill({ contentType: 'application/json', body: '[]' })
+  await page.route('**/api/v1/admin/utility-bill-import-context*', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ ...importContext(), available_accounts: [] }),
+    })
   })
   await page.goto('/billing/rate-plans/new?bill_import=open')
   await expect(page.getByRole('heading', { name: 'Import utility bill' })).toBeVisible()
-  await expect(page.getByText('No utility account')).toBeVisible()
+  await expect(page.getByText('Account assignment is optional during extraction.')).toBeVisible()
   await expect(page.getByRole('link', { name: 'Create utility account' })).toBeVisible()
+})
+
+test('opens upload-ready with no account and survives a direct refresh', async ({ page }) => {
+  await mockApplication(page)
+  const consoleErrors: string[] = []
+  page.on('pageerror', (error) => { consoleErrors.push(error.message) })
+  await page.goto('/billing/rate-plans/new?bill_import=open')
+  await expect(page.getByText('Account assignment is optional during extraction.')).toBeVisible()
+  await page.screenshot({
+    path: '../docs/screenshots/utility-bill-import-current-plan-repaired.png',
+    fullPage: true,
+  })
+  await page.getByLabel('Utility bill import', { exact: true }).getByRole('button', { name: 'Next' }).click()
+  await expect(page.getByRole('button', { name: 'Upload and create drafts' })).toBeEnabled()
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Import utility bill' })).toBeVisible()
+  await expect(page.getByText('Account assignment is optional during extraction.')).toBeVisible()
+  expect(consoleErrors).toEqual([])
+})
+
+test('reconstructs a previous extraction from bill_id on direct refresh', async ({ page }) => {
+  await mockApplication(page)
+  await page.goto('/billing/rate-plans/new?bill_import=open&bill_id=bill-1')
+  await expect(page.getByRole('heading', { name: 'Document inspection' })).toBeVisible()
+  await expect(page.getByText(`Evidence page 1`)).toBeVisible()
+  await expect(page.getByText('Automatic activation').locator('..')).toContainText('Disabled')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Document inspection' })).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
+test('renders an account without a plan as valid comparison context', async ({ page }) => {
+  await mockApplication(page)
+  await page.route('**/api/v1/admin/utility-bill-import-context*', async (route) => {
+    const response = importContext(account.id)
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...response,
+        current_plan: null,
+        current_assignment: null,
+        current_rate_version: null,
+        current_period: null,
+        readiness: {
+          account_configured: true,
+          rate_assigned: false,
+          rate_effective: false,
+        },
+      }),
+    })
+  })
+  await page.goto('/billing/rate-plans/new?bill_import=open&account_id=account-1')
+  await expect(page.getByText('No rate plan is currently assigned.')).toBeVisible()
+  await expect(page.getByText('Imported values will prefill a new custom plan.')).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
+test('ignores a late account response after the selection and draft change', async ({ page }) => {
+  await mockApplication(page)
+  await page.route('**/api/v1/admin/utility-bill-import-context*', async (route) => {
+    const selected = new URL(route.request().url()).searchParams.get('account_id')
+    if (selected === account.id) {
+      await new Promise((resolve) => setTimeout(resolve, 350))
+    }
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(importContext(selected)),
+    })
+  })
+  await page.goto('/billing/rate-plans/new')
+  await page.getByLabel('Plan name').fill('Draft survives late context')
+  await page.getByRole('button', { name: 'Import rate plan from bill' }).click()
+  const accountSelect = page.getByLabel('Utility account (optional)')
+  await accountSelect.selectOption(account.id)
+  await accountSelect.selectOption('')
+  await expect(page.getByText('Account assignment is optional during extraction.')).toBeVisible()
+  await page.waitForTimeout(450)
+  await expect(accountSelect).toHaveValue('')
+  await expect(page.getByText('Account assignment is optional during extraction.')).toBeVisible()
+  await page.getByRole('button', { name: 'Close importer' }).click()
+  await expect(page.getByLabel('Plan name')).toHaveValue('Draft survives late context')
+})
+
+test('Retry recovers a transient context failure without losing the Custom Plan draft', async ({ page }) => {
+  await mockApplication(page)
+  let attempts = 0
+  await page.route('**/api/v1/admin/utility-bill-import-context*', async (route) => {
+    attempts += 1
+    if (attempts === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/problem+json',
+        body: JSON.stringify({
+          title: 'Context temporarily unavailable',
+          detail: 'The context service is restarting.',
+          status: 503,
+          code: 'context_temporarily_unavailable',
+          request_id: 'retry-e2e',
+        }),
+      })
+      return
+    }
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(importContext()),
+    })
+  })
+  await page.goto('/billing/rate-plans/new')
+  await page.getByLabel('Plan name').fill('Preserved through retry')
+  await page.getByRole('button', { name: 'Import rate plan from bill' }).click()
+  await expect(page.getByRole('alert')).toContainText('Context temporarily unavailable')
+  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(page.getByText('Account assignment is optional during extraction.')).toBeVisible()
+  await page.getByRole('button', { name: 'Close importer' }).click()
+  await expect(page.getByLabel('Plan name')).toHaveValue('Preserved through retry')
+  expect(attempts).toBe(2)
+})
+
+test('a malformed context produces a typed compatibility error, never a raw property exception', async ({ page }) => {
+  await mockApplication(page)
+  await page.route('**/api/v1/admin/utility-bill-import-context*', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schema_version: 'utility-account-rate-context/1.0',
+        current_plan: null,
+      }),
+    })
+  })
+  await page.goto('/billing/rate-plans/new?bill_import=open')
+  await expect(page.getByRole('alert')).toContainText('Utility-account context is incompatible')
+  await expect(page.getByRole('alert')).not.toContainText('Cannot read properties')
+  await expect(page.getByRole('button', { name: 'Continue without account' })).toHaveCount(0)
 })
 
 test('a failed editor chunk renders a recoverable error rather than a blank page', async ({ page }) => {
@@ -544,11 +749,11 @@ test('a failed editor chunk renders a recoverable error rather than a blank page
     await route.abort('failed')
   })
   await page.goto('/billing/rate-plans/new?bill_import=open')
-  await expect(page.getByRole('alert')).toContainText('Something needs attention')
+  await expect(page.getByRole('alert')).toContainText('could not be opened')
   await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
 })
 
-test('captures the legacy account current_plan crash with source and component stacks', async ({ page }) => {
+test('the legacy flat-account response cannot trigger a current_plan parent crash', async ({ page }) => {
   await mockApplication(page)
   await page.route('**/api/v1/utility-accounts', async (route) => {
     await route.fulfill({
@@ -573,11 +778,10 @@ test('captures the legacy account current_plan crash with source and component s
     if (message.type() === 'error') browserDiagnostics.push(`console: ${message.text()}`)
   })
 
-  await page.goto('http://127.0.0.1:5190/billing/rate-plans/new')
+  await page.goto('/billing/rate-plans/new')
   await page.getByRole('button', { name: 'Import rate plan from bill' }).click()
-  await expect(page.getByRole('alert')).toContainText(
-    "Cannot read properties of undefined (reading 'current_plan')",
-  )
-  expect(browserDiagnostics.join('\n')).toContain('BillImportWorkspace')
-  console.log(`[current-plan-reproduction]\n${browserDiagnostics.join('\n')}`)
+  await expect(page.getByRole('heading', { name: 'Import utility bill' })).toBeVisible()
+  await expect(page.getByText('Account assignment is optional during extraction.')).toBeVisible()
+  expect(browserDiagnostics.join('\n')).not.toContain('current_plan')
+  expect(browserDiagnostics.join('\n')).not.toContain('BillImportWorkspace')
 })

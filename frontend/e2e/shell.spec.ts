@@ -294,6 +294,7 @@ async function mockApplication(page: Page, roles: string[] = ['admin'], initiall
     const path = url.pathname
     let body: unknown = []
     if (path === '/api/v1/auth/session') body = authenticated ? session(roles) : { authenticated: false, bootstrap_required: false }
+    else if (path === '/api/v1/system/compatibility') body = { backend_version: '1.0.0', backend_commit: 'e2e', api_schema_version: '1.0.0', bill_import_context_schema_version: 'utility-account-rate-context/1.0', protocol_version: 'pm-protocol/1.0.0' }
     else if (path === '/api/v1/auth/login') { authenticated = true; body = session(roles) }
     else if (path === '/api/v1/auth/reauthenticate') body = { reauthenticated: true, valid_for_seconds: 300 }
     else if (path === '/api/v1/interface-text') body = { revision: textRevision, values: publishedText }

@@ -31,6 +31,9 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/backend.Dockerfile
+      args:
+        APP_VERSION: ${POWER_MONITOR_VERSION:-1.0.0}
+        RELEASE_COMMIT: ${RELEASE_COMMIT:-development}
     image: power-monitor-api:${POWER_MONITOR_VERSION:-1.0.0}
     command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"]
     env_file: [.env]
@@ -82,6 +85,9 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/frontend.Dockerfile
+      args:
+        APP_VERSION: ${POWER_MONITOR_VERSION:-1.0.0}
+        RELEASE_COMMIT: ${RELEASE_COMMIT:-development}
     image: power-monitor-frontend:${POWER_MONITOR_VERSION:-1.0.0}
     tmpfs:
       - /tmp:size=16m,mode=1777
@@ -125,6 +131,9 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/backup.Dockerfile
+      args:
+        APP_VERSION: ${POWER_MONITOR_VERSION:-1.0.0}
+        RELEASE_COMMIT: ${RELEASE_COMMIT:-development}
     image: power-monitor-backup:${POWER_MONITOR_VERSION:-1.0.0}
     read_only: true
     cap_drop: [ALL]

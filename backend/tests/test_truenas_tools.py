@@ -47,6 +47,20 @@ def test_deployment_validation_rejects_fail_closed_placeholders() -> None:
     assert any("registry owner placeholder" in error for error in errors)
 
 
+def test_deployment_validation_rejects_mixed_application_releases() -> None:
+    validator = _load_tool("validate-truenas-compose.py", "truenas_validator_mixed_release")
+    compose = yaml.safe_load((ROOT / "deploy/truenas/compose.yaml").read_text(encoding="utf-8"))
+    compose["services"]["frontend"]["image"] = compose["services"]["frontend"]["image"].replace(
+        ":1.0.0@", ":1.0.1@"
+    )
+
+    errors = validator.validate_compose(
+        compose, deployment=False, expected_pool=None, gateway_port=8443
+    )
+
+    assert any("one release version" in error for error in errors)
+
+
 def test_secret_generator_produces_high_entropy_file_inventory(tmp_path: Path) -> None:
     generator = _load_tool("generate-secrets.py", "truenas_secret_generator")
     output = tmp_path / "secrets"
@@ -91,6 +105,8 @@ def test_renderer_creates_a_deployment_valid_document() -> None:
     ] + [secret["file"] for secret in rendered["secrets"].values()]
     assert host_paths
     assert all(path.startswith(expected_root) for path in host_paths)
+    assert rendered["services"]["api"]["environment"]["POWER_MONITOR_VERSION"] == "1.0.0"
+    assert rendered["services"]["worker"]["environment"]["POWER_MONITOR_VERSION"] == "1.0.0"
 
     assert (
         validator.validate_compose(
@@ -98,3 +114,45 @@ def test_renderer_creates_a_deployment_valid_document() -> None:
         )
         == []
     )
+
+
+def test_docker_desktop_runtime_uses_an_isolated_same_release_project(
+    tmp_path: Path,
+) -> None:
+    workflow = _load_tool("test-truenas-workflow.py", "truenas_workflow_runtime")
+    renderer = _load_tool("render-truenas-compose.py", "truenas_renderer_runtime")
+    template = yaml.safe_load((ROOT / "deploy/truenas/compose.yaml").read_text(encoding="utf-8"))
+    digest = "2" * 64
+    rendered = renderer.render(
+        template,
+        pool="Apps",
+        gateway_port=9443,
+        site_address="https://127.0.0.1",
+        public_origin="https://127.0.0.1:9443",
+        images={
+            "api": f"ghcr.io/example/power-monitor-api:1.2.3@sha256:{digest}",
+            "frontend": f"ghcr.io/example/power-monitor-frontend:1.2.3@sha256:{digest}",
+            "backup": f"ghcr.io/example/power-monitor-backup:1.2.3@sha256:{digest}",
+            "postgres": f"docker.io/library/postgres:17.5-bookworm@sha256:{digest}",
+            "gateway": f"docker.io/library/caddy:2.10.0-alpine@sha256:{digest}",
+        },
+    )
+    source = tmp_path / "rendered.yaml"
+    source.write_text(yaml.safe_dump(rendered, sort_keys=False), encoding="utf-8")
+    host_root = tmp_path / "host"
+    host_root.mkdir()
+
+    runtime_path = workflow.docker_desktop_runtime_compose(
+        source,
+        host_root,
+        project_name="power-monitor-stabilization-gate",
+        local_application_images=True,
+    )
+    runtime = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
+
+    assert runtime["name"] == "power-monitor-stabilization-gate"
+    assert runtime["services"]["api"]["image"] == "power-monitor-api:1.2.3"
+    assert runtime["services"]["worker"]["image"] == "power-monitor-api:1.2.3"
+    assert runtime["services"]["migrate"]["image"] == "power-monitor-api:1.2.3"
+    assert runtime["services"]["frontend"]["image"] == "power-monitor-frontend:1.2.3"
+    assert runtime["services"]["backup"]["image"] == "power-monitor-backup:1.2.3"

@@ -1572,6 +1572,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-import-context:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: Utility Bill Import Context
+      description: Return one stable, explicit-null context for Custom Plan bill imports.
+      operationId: utility_bill_import_context_api_v1_admin_utility_bill_import_context_get
+      parameters:
+      - name: account_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Account Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UtilityAccountRateContextView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/admin/sites/{site_id}/utility-accounts:
     get:
       tags:
@@ -2549,6 +2586,148 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports:
+    post:
+      tags:
+      - utility bill imports
+      summary: Upload Unassigned Utility Bill
+      operationId: upload_unassigned_utility_bill_api_v1_admin_utility_bill_imports_post
+      parameters:
+      - name: account_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Account Id
+      - name: timezone
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Timezone
+      - name: currency
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            pattern: ^[A-Z]{3}$
+          - type: 'null'
+          title: Currency
+      - name: retention_mode
+        in: query
+        required: false
+        schema:
+          enum:
+          - retain
+          - retain_until
+          - delete_after_approval
+          type: string
+          default: retain
+          title: Retention Mode
+      - name: source_role
+        in: query
+        required: false
+        schema:
+          enum:
+          - supporting
+          - authoritative_account_specific
+          - reference_only
+          type: string
+          default: supporting
+          title: Source Role
+      - name: retain_until
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Retain Until
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_unassigned_utility_bill_api_v1_admin_utility_bill_imports_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Upload Unassigned Utility Bill Api V1 Admin Utility
+                  Bill Imports Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - utility bill imports
+      summary: List Utility Bill Imports
+      operationId: list_utility_bill_imports_api_v1_admin_utility_bill_imports_get
+      parameters:
+      - name: utility_account_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Utility Account Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Utility Bill Imports Api V1 Admin Utility Bill
+                  Imports Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/admin/utility-accounts/{account_id}/bill-imports:
     post:
       tags:
@@ -2631,21 +2810,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/admin/utility-bill-imports:
-    get:
+  /api/v1/admin/utility-bill-imports/{bill_id}/account-context:
+    put:
       tags:
       - utility bill imports
-      summary: List Utility Bill Imports
-      operationId: list_utility_bill_imports_api_v1_admin_utility_bill_imports_get
+      summary: Attach Utility Bill Account
+      operationId: attach_utility_bill_account_api_v1_admin_utility_bill_imports__bill_id__account_context_put
       parameters:
-      - name: utility_account_id
-        in: query
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: X-CSRF-Token
+        in: header
         required: false
         schema:
           anyOf:
           - type: string
           - type: 'null'
-          title: Utility Account Id
+          title: X-Csrf-Token
       - name: pm_session
         in: cookie
         required: false
@@ -2654,18 +2839,22 @@ paths:
           - type: string
           - type: 'null'
           title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillAccountContextWrite'
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: object
-                  additionalProperties: true
-                title: Response List Utility Bill Imports Api V1 Admin Utility Bill
-                  Imports Get
+                type: object
+                additionalProperties: true
+                title: Response Attach Utility Bill Account Api V1 Admin Utility Bill
+                  Imports  Bill Id  Account Context Put
         '422':
           description: Validation Error
           content:
@@ -10055,6 +10244,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/system/compatibility:
+    get:
+      tags:
+      - system
+      summary: System Compatibility
+      operationId: system_compatibility_api_v1_system_compatibility_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response System Compatibility Api V1 System Compatibility Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/metrics:
     get:
       tags:
@@ -10339,6 +10558,22 @@ components:
       required:
       - until
       title: AlertSilence
+    BillAccountContextWrite:
+      properties:
+        revision:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Revision
+        account_id:
+          type: string
+          maxLength: 36
+          minLength: 1
+          title: Account Id
+      type: object
+      required:
+      - revision
+      - account_id
+      title: BillAccountContextWrite
     BillConflictResolution:
       properties:
         conflict_id:
@@ -10387,6 +10622,160 @@ components:
       - field_id
       - action
       title: BillFieldReview
+    BillImportAccountSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        site_id:
+          type: string
+          title: Site Id
+        site_name:
+          type: string
+          title: Site Name
+        name:
+          type: string
+          title: Name
+        utility_name:
+          type: string
+          title: Utility Name
+        timezone:
+          type: string
+          title: Timezone
+        currency:
+          type: string
+          title: Currency
+        provider_mode:
+          type: string
+          title: Provider Mode
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - site_id
+      - site_name
+      - name
+      - utility_name
+      - timezone
+      - currency
+      - provider_mode
+      title: BillImportAccountSummary
+    BillImportRateAssignmentSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        rate_version_id:
+          type: string
+          title: Rate Version Id
+        effective_from:
+          type: string
+          format: date-time
+          title: Effective From
+        effective_to:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Effective To
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - rate_version_id
+      - effective_from
+      - effective_to
+      title: BillImportRateAssignmentSummary
+    BillImportRatePeriodSummary:
+      properties:
+        label:
+          type: string
+          title: Label
+        price_per_kwh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Price Per Kwh
+        currency:
+          type: string
+          title: Currency
+      additionalProperties: false
+      type: object
+      required:
+      - label
+      - price_per_kwh
+      - currency
+      title: BillImportRatePeriodSummary
+    BillImportRatePlanSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        code:
+          type: string
+          title: Code
+        name:
+          type: string
+          title: Name
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - code
+      - name
+      title: BillImportRatePlanSummary
+    BillImportRateReadiness:
+      properties:
+        account_configured:
+          type: boolean
+          title: Account Configured
+        rate_assigned:
+          type: boolean
+          title: Rate Assigned
+        rate_effective:
+          type: boolean
+          title: Rate Effective
+      additionalProperties: false
+      type: object
+      required:
+      - account_configured
+      - rate_assigned
+      - rate_effective
+      title: BillImportRateReadiness
+    BillImportRateVersionSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        version:
+          type: integer
+          title: Version
+        pricing_model:
+          type: string
+          title: Pricing Model
+        effective_from:
+          type: string
+          format: date
+          title: Effective From
+        effective_to:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Effective To
+        status:
+          type: string
+          title: Status
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - version
+      - pricing_model
+      - effective_from
+      - effective_to
+      - status
+      title: BillImportRateVersionSummary
     BillPublishWrite:
       properties:
         effective_from:
@@ -10541,6 +10930,16 @@ components:
       - public_key_pem
       - binary
       title: Body_upload_release_api_v1_firmware_releases_post
+    Body_upload_unassigned_utility_bill_api_v1_admin_utility_bill_imports_post:
+      properties:
+        upload:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Upload
+      type: object
+      required:
+      - upload
+      title: Body_upload_unassigned_utility_bill_api_v1_admin_utility_bill_imports_post
     Body_upload_utility_bill_api_v1_admin_utility_accounts__account_id__bill_imports_post:
       properties:
         upload:
@@ -14393,6 +14792,82 @@ components:
       - display_name
       - roles
       title: UserSummary
+    UtilityAccountRateContextView:
+      properties:
+        schema_version:
+          type: string
+          const: utility-account-rate-context/1.0
+          title: Schema Version
+        api_version:
+          type: string
+          title: Api Version
+        backend_version:
+          type: string
+          title: Backend Version
+        backend_commit:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Backend Commit
+        generated_client_schema_version:
+          type: string
+          const: utility-account-rate-context/1.0
+          title: Generated Client Schema Version
+        account_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Account Id
+        site_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+        account:
+          anyOf:
+          - $ref: '#/components/schemas/BillImportAccountSummary'
+          - type: 'null'
+        available_accounts:
+          items:
+            $ref: '#/components/schemas/BillImportAccountSummary'
+          type: array
+          title: Available Accounts
+        current_plan:
+          anyOf:
+          - $ref: '#/components/schemas/BillImportRatePlanSummary'
+          - type: 'null'
+        current_assignment:
+          anyOf:
+          - $ref: '#/components/schemas/BillImportRateAssignmentSummary'
+          - type: 'null'
+        current_rate_version:
+          anyOf:
+          - $ref: '#/components/schemas/BillImportRateVersionSummary'
+          - type: 'null'
+        current_period:
+          anyOf:
+          - $ref: '#/components/schemas/BillImportRatePeriodSummary'
+          - type: 'null'
+        readiness:
+          $ref: '#/components/schemas/BillImportRateReadiness'
+      additionalProperties: false
+      type: object
+      required:
+      - schema_version
+      - api_version
+      - backend_version
+      - backend_commit
+      - generated_client_schema_version
+      - account_id
+      - site_id
+      - account
+      - available_accounts
+      - current_plan
+      - current_assignment
+      - current_rate_version
+      - current_period
+      - readiness
+      title: UtilityAccountRateContextView
     UtilityAccountUpdate:
       properties:
         revision:

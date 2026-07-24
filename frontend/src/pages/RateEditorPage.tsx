@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CanonicalAction } from '../actions'
 import { api } from '../api'
+import { AppErrorBoundary } from '../components/AppErrorBoundary'
 import { BillImportWorkspace } from './BillImportPage'
 import { ErrorState, LoadingState, PageTitle, Panel, StatusPill } from '../components/UI'
 import {
@@ -155,6 +156,7 @@ export function RateEditorPage({ canManage, canImportBills = false }: { canManag
     next.delete('bill_import')
     next.delete('bill_id')
     next.delete('account_id')
+    next.delete('legacy_import')
     setSearchParams(next, { replace: true })
   }
 
@@ -305,20 +307,37 @@ export function RateEditorPage({ canManage, canImportBills = false }: { canManag
         eyebrow={saved ? `Rate version ${query.data?.version.version ?? 1}` : 'New custom plan'}
         title={document.plan_name || 'Custom rate plan'}
         description="Build an exact, effective-dated schedule. Active versions remain immutable; edits are saved only to drafts."
-        actions={<div className="inline-actions">{editable && canImportBills && <CanonicalAction id="rate_plan.import_from_bill" surface="resource_detail"><button className="button secondary" onClick={() => { setImportOpen(true); setImportNotice('') }}><FileUp size={16} /> Import rate plan from bill</button></CanonicalAction>}<button className="button secondary" onClick={() => navigate('/billing/rate-plans')}><ArrowLeft size={16} /> Rate plans</button></div>}
+        actions={<div className="inline-actions">{editable && canImportBills && <CanonicalAction id="rate_plan.import_from_bill" surface="resource_detail"><button className="button secondary" onClick={() => { const next = new URLSearchParams(searchParams); next.set('bill_import', 'open'); setSearchParams(next, { replace: true }); setImportOpen(true); setImportNotice('') }}><FileUp size={16} /> Import rate plan from bill</button></CanonicalAction>}<button className="button secondary" onClick={() => navigate('/billing/rate-plans')}><ArrowLeft size={16} /> Rate plans</button></div>}
       />
       {importNotice && <p className="form-success" role="status">{importNotice}</p>}
       {importOpen && editable && canImportBills && <section className="bill-import-editor-workspace" aria-label="Utility bill import">
-        <BillImportWorkspace
-          currentDraft={document}
-          onApplyDraft={(next) => {
-            setDocument(next)
-            setValidation(undefined)
-            setImportNotice('Selected reviewed bill values were applied to this unsaved Custom Plan draft. Review every editor step, then save explicitly.')
-            setStep(0)
+        <AppErrorBoundary
+          scope="Utility bill importer"
+          resetKey={`${searchParams.get('account_id') ?? 'none'}:${searchParams.get('bill_id') ?? 'new'}`}
+          onRetry={() => { setImportOpen(true) }}
+          returnTo="/billing/rate-plans"
+          returnLabel="Return to Rate Plans"
+          allowContinue
+          onContinue={() => {
+            const next = new URLSearchParams(searchParams)
+            next.delete('account_id')
+            next.set('bill_import', 'open')
+            setSearchParams(next, { replace: true })
           }}
-          onClose={closeImporter}
-        />
+          administrator
+        >
+          <BillImportWorkspace
+            currentDraft={document}
+            editorMode={versionId ? 'existing_custom_plan_draft' : 'new_custom_plan'}
+            onApplyDraft={(next) => {
+              setDocument(next)
+              setValidation(undefined)
+              setImportNotice('Selected reviewed bill values were applied to this unsaved Custom Plan draft. Review every editor step, then save explicitly.')
+              setStep(0)
+            }}
+            onClose={closeImporter}
+          />
+        </AppErrorBoundary>
       </section>}
       <nav className="editor-steps" aria-label="Rate plan editor steps">
         {stepNames.map((name, index) => (

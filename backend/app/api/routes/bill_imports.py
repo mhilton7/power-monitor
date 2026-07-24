@@ -88,6 +88,11 @@ class BillRetentionWrite(BaseModel):
         return value
 
 
+class BillAccountContextWrite(BaseModel):
+    revision: int = Field(gt=0)
+    account_id: str = Field(min_length=1, max_length=36)
+
+
 def _bill_admin(principal: Principal, permission: str) -> None:
     if "admin" not in principal.roles or permission not in principal.permissions:
         raise ProblemError(
@@ -131,28 +136,32 @@ async def _bill(session: DbSession, principal: Principal, bill_id: str) -> Utili
             "The requested import does not exist",
             "utility_bill_missing",
         )
-    await _account(session, principal, bill.utility_account_id)
+    if bill.utility_account_id is not None:
+        await _account(session, principal, bill.utility_account_id)
+    elif bill.created_by != principal.user.id:
+        raise ProblemError(
+            404,
+            "Utility bill import not found",
+            "The requested import does not exist",
+            "utility_bill_missing",
+        )
     return bill
 
 
-@router.post("/admin/utility-accounts/{account_id}/bill-imports", status_code=201)
-async def upload_utility_bill(
-    account_id: str,
+async def _store_utility_bill(
+    *,
+    account: UtilityAccount | None,
     request: Request,
-    principal: CsrfPrincipal,
+    principal: Principal,
     session: DbSession,
     settings: AppSettings,
-    upload: Annotated[UploadFile, File()],
-    retention_mode: Annotated[
-        Literal["retain", "retain_until", "delete_after_approval"], Query()
-    ] = "retain",
-    source_role: Annotated[
-        Literal["supporting", "authoritative_account_specific", "reference_only"], Query()
-    ] = "supporting",
-    retain_until: Annotated[datetime | None, Query()] = None,
+    upload: UploadFile,
+    retention_mode: Literal["retain", "retain_until", "delete_after_approval"],
+    source_role: Literal["supporting", "authoritative_account_specific", "reference_only"],
+    retain_until: datetime | None,
+    timezone: str,
+    currency: str,
 ) -> dict[str, Any]:
-    _bill_admin(principal, "utility_bills.manage")
-    account = await _account(session, principal, account_id)
     if upload.content_type != "application/pdf":
         raise ProblemError(
             415,
@@ -169,6 +178,13 @@ async def upload_utility_bill(
             "A future retain-until timestamp is required",
             "bill_retention_invalid",
         )
+    if account is None and source_role == "authoritative_account_specific":
+        raise ProblemError(
+            422,
+            "Utility account required",
+            "Choose a utility account before marking a bill account-authoritative",
+            "bill_account_context_required",
+        )
     content = await upload.read(settings.utility_bill_max_bytes + 1)
     try:
         bill, duplicate = await create_bill_import(
@@ -181,6 +197,8 @@ async def upload_utility_bill(
             retention_mode=retention_mode,
             retain_until=retain_until,
             source_role=source_role,
+            timezone=timezone,
+            currency=currency,
         )
     except BillPdfError as exc:
         await session.rollback()
@@ -202,7 +220,7 @@ async def upload_utility_bill(
             object_type="utility_bill_import",
             object_id=bill.id,
             details={
-                "utility_account_id": account.id,
+                "utility_account_id": account.id if account is not None else None,
                 "sha256": bill.content_sha256,
                 "page_count": bill.page_count,
                 "extraction_method": bill.extraction_method,
@@ -215,6 +233,74 @@ async def upload_utility_bill(
     )
     await session.commit()
     return {**await import_payload(session, bill), "duplicate": duplicate}
+
+
+@router.post("/admin/utility-bill-imports", status_code=201)
+async def upload_unassigned_utility_bill(
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+    settings: AppSettings,
+    upload: Annotated[UploadFile, File()],
+    account_id: Annotated[str | None, Query()] = None,
+    timezone: Annotated[str | None, Query(max_length=64)] = None,
+    currency: Annotated[str | None, Query(pattern=r"^[A-Z]{3}$")] = None,
+    retention_mode: Annotated[
+        Literal["retain", "retain_until", "delete_after_approval"], Query()
+    ] = "retain",
+    source_role: Annotated[
+        Literal["supporting", "authoritative_account_specific", "reference_only"], Query()
+    ] = "supporting",
+    retain_until: Annotated[datetime | None, Query()] = None,
+) -> dict[str, Any]:
+    _bill_admin(principal, "utility_bills.manage")
+    account = await _account(session, principal, account_id) if account_id else None
+    return await _store_utility_bill(
+        account=account,
+        request=request,
+        principal=principal,
+        session=session,
+        settings=settings,
+        upload=upload,
+        retention_mode=retention_mode,
+        source_role=source_role,
+        retain_until=retain_until,
+        timezone=account.timezone if account is not None else timezone or settings.default_timezone,
+        currency=account.currency if account is not None else currency or settings.default_currency,
+    )
+
+
+@router.post("/admin/utility-accounts/{account_id}/bill-imports", status_code=201)
+async def upload_utility_bill(
+    account_id: str,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+    settings: AppSettings,
+    upload: Annotated[UploadFile, File()],
+    retention_mode: Annotated[
+        Literal["retain", "retain_until", "delete_after_approval"], Query()
+    ] = "retain",
+    source_role: Annotated[
+        Literal["supporting", "authoritative_account_specific", "reference_only"], Query()
+    ] = "supporting",
+    retain_until: Annotated[datetime | None, Query()] = None,
+) -> dict[str, Any]:
+    _bill_admin(principal, "utility_bills.manage")
+    account = await _account(session, principal, account_id)
+    return await _store_utility_bill(
+        account=account,
+        request=request,
+        principal=principal,
+        session=session,
+        settings=settings,
+        upload=upload,
+        retention_mode=retention_mode,
+        source_role=source_role,
+        retain_until=retain_until,
+        timezone=account.timezone,
+        currency=account.currency,
+    )
 
 
 @router.get("/admin/utility-bill-imports")
@@ -231,9 +317,12 @@ async def list_utility_bill_imports(
     bills = list(await session.scalars(statement))
     visible: list[dict[str, Any]] = []
     for bill in bills:
-        try:
-            await _account(session, principal, bill.utility_account_id)
-        except ProblemError:
+        if bill.utility_account_id is not None:
+            try:
+                await _account(session, principal, bill.utility_account_id)
+            except ProblemError:
+                continue
+        elif bill.created_by != principal.user.id:
             continue
         payload = await import_payload(session, bill)
         cycle = await session.scalar(
@@ -277,6 +366,84 @@ async def list_utility_bill_imports(
             }
         )
     return visible
+
+
+@router.put("/admin/utility-bill-imports/{bill_id}/account-context")
+async def attach_utility_bill_account(
+    bill_id: str,
+    payload: BillAccountContextWrite,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _bill_admin(principal, "utility_bills.manage")
+    bill = await _bill(session, principal, bill_id)
+    if bill.revision != payload.revision:
+        raise ProblemError(
+            409,
+            "Bill import changed",
+            "Reload the import before changing its utility-account context",
+            "stale_revision",
+        )
+    if bill.status == "published":
+        raise ProblemError(
+            409,
+            "Published import is immutable",
+            "A published bill import cannot be attached to a different account",
+            "bill_account_context_immutable",
+        )
+    account = await _account(session, principal, payload.account_id)
+    duplicate = await session.scalar(
+        select(UtilityBillImport).where(
+            UtilityBillImport.utility_account_id == account.id,
+            UtilityBillImport.content_sha256 == bill.content_sha256,
+            UtilityBillImport.id != bill.id,
+        )
+    )
+    if duplicate is not None:
+        raise ProblemError(
+            409,
+            "Bill already exists for this account",
+            "Open the existing account import instead of attaching a duplicate",
+            "bill_account_duplicate",
+            extra={"existing_bill_import_id": duplicate.id},
+        )
+    cycle = await session.scalar(
+        select(UtilityBillCycleDraft).where(UtilityBillCycleDraft.bill_import_id == bill.id)
+    )
+    if cycle is not None and cycle.status == "imported":
+        raise ProblemError(
+            409,
+            "Billing cycle already imported",
+            "The imported billing-cycle evidence cannot be reassigned",
+            "bill_cycle_context_immutable",
+        )
+    previous_account_id = bill.utility_account_id
+    bill.utility_account_id = account.id
+    bill.updated_at = datetime.now(UTC)
+    bill.revision += 1
+    if cycle is not None:
+        cycle.utility_account_id = account.id
+        cycle.updated_at = datetime.now(UTC)
+        cycle.revision += 1
+    session.add(
+        audit_event(
+            action="utility_bill.account_context_attached",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="utility_bill_import",
+            object_id=bill.id,
+            details={
+                "previous_utility_account_id": previous_account_id,
+                "utility_account_id": account.id,
+                "automatic_assignment": False,
+                "billing_cycle_imported": False,
+            },
+        )
+    )
+    await session.commit()
+    return await import_payload(session, bill)
 
 
 @router.get("/admin/utility-bill-imports/{bill_id}")
@@ -461,6 +628,13 @@ async def publish_and_assign_utility_bill_rate(
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
     bill = await _bill(session, principal, bill_id)
+    if bill.utility_account_id is None:
+        raise ProblemError(
+            409,
+            "Utility account required",
+            "Select a utility account before publishing or assigning the imported rate",
+            "bill_account_context_required",
+        )
     account = await _account(session, principal, bill.utility_account_id)
     if "rates.assign" not in principal.permissions:
         raise ProblemError(
@@ -530,6 +704,13 @@ async def import_utility_bill_cycle(
             "forbidden",
         )
     bill = await _bill(session, principal, bill_id)
+    if bill.utility_account_id is None:
+        raise ProblemError(
+            409,
+            "Utility account required",
+            "Select a utility account before applying billing-cycle data",
+            "bill_account_context_required",
+        )
     account = await _account(session, principal, bill.utility_account_id)
     draft = await approve_cycle_draft(
         session,

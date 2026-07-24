@@ -49,6 +49,54 @@ def validate_schemas() -> None:
     Draft202012Validator(rate_schema, format_checker=FormatChecker()).validate(
         rate_example
     )
+    context_schema_path = (
+        ROOT / "shared" / "schemas" / "utility-account-rate-context-1.0.json"
+    )
+    context_schema = json.loads(context_schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(context_schema)
+    context_example = json.loads(
+        (ROOT / "shared" / "examples" / "utility-account-rate-context.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    Draft202012Validator(context_schema, format_checker=FormatChecker()).validate(
+        context_example
+    )
+
+
+def validate_bill_import_context_contract() -> None:
+    schema = json.loads(
+        (
+            ROOT / "shared" / "schemas" / "utility-account-rate-context-1.0.json"
+        ).read_text(encoding="utf-8")
+    )
+    openapi = yaml.safe_load(
+        (ROOT / "shared" / "openapi" / "server-api.yaml").read_text(encoding="utf-8")
+    )
+    component = openapi["components"]["schemas"]["UtilityAccountRateContextView"]
+    schema_required = set(schema["required"])
+    openapi_required = set(component["required"])
+    if schema_required != openapi_required:
+        raise AssertionError(
+            "UtilityAccountRateContext required fields diverge between JSON Schema and OpenAPI"
+        )
+    generated = (
+        ROOT / "frontend" / "src" / "generated" / "utilityAccountRateContext.ts"
+    ).read_text(encoding="utf-8")
+    runtime = (ROOT / "frontend" / "src" / "billImportContext.ts").read_text(
+        encoding="utf-8"
+    )
+    for key in schema["required"]:
+        if key not in generated:
+            raise AssertionError(f"generated UtilityAccountRateContext omits {key}")
+    version = schema["properties"]["schema_version"]["const"]
+    if version not in generated or (
+        version not in runtime
+        and "UTILITY_ACCOUNT_RATE_CONTEXT_SCHEMA_VERSION" not in runtime
+    ):
+        raise AssertionError("frontend contract/runtime schema version is stale")
+    if "parseUtilityAccountRateContext" not in runtime:
+        raise AssertionError("frontend runtime validation is missing")
 
 
 def validate_vectors() -> None:
@@ -82,6 +130,7 @@ def validate_vectors() -> None:
 if __name__ == "__main__":
     validate_openapi()
     validate_schemas()
+    validate_bill_import_context_contract()
     validate_vectors()
     print(
         "OpenAPI documents, JSON Schemas, protocol examples, and HMAC vectors are valid"
