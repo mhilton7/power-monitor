@@ -1,4 +1,7 @@
 @media (max-width: 1100px) {
+  .auth-page { grid-template-columns: minmax(0, 1fr) minmax(27rem, .85fr); }
+  .auth-brand { padding: clamp(2.5rem, 5vw, 4.5rem); }
+  .auth-brand h1 { font-size: clamp(2.8rem, 5.6vw, 4rem); }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .billing-main-grid { grid-template-columns: 1fr; }
   .billing-side-column { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -12,6 +15,27 @@
 
 @media (max-width: 900px) {
   :root { --top-height: 68px; }
+  .auth-page {
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+  .auth-brand {
+    min-height: 25rem;
+    padding: 3rem clamp(1.5rem, 8vw, 4rem) 5rem;
+  }
+  .auth-brand h1 {
+    max-width: 16ch;
+    margin-block: 1.8rem 1rem;
+    font-size: clamp(2.7rem, 8vw, 4rem);
+  }
+  .auth-brand ul {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 2rem;
+  }
+  .auth-card {
+    width: min(calc(100% - 2rem), 35rem);
+    margin: -2rem auto 2rem;
+  }
   .app-shell, .app-shell.rail-collapsed { display: block; padding: var(--top-height) 0 68px; }
   .side-rail { display: none; }
   .top-bar { position: fixed; inset: 0 0 auto; height: var(--top-height); padding: 0 .85rem; }
@@ -47,6 +71,27 @@
 
 @media (max-width: 620px) {
   h1 { font-size: 2.25rem; }
+  .auth-brand {
+    min-height: 23rem;
+    padding: 2rem 1.25rem 4rem;
+  }
+  .auth-brand h1 {
+    margin-top: 1.5rem;
+    font-size: clamp(2.35rem, 12vw, 3rem);
+  }
+  .auth-brand ul {
+    grid-template-columns: 1fr;
+    gap: .55rem;
+    margin-top: 1.5rem;
+  }
+  .auth-card {
+    width: calc(100% - 1rem);
+    margin-top: -2rem;
+    padding: 1.5rem;
+    border-radius: var(--radius-md);
+  }
+  .auth-card > div > .icon-tile { margin-bottom: 1rem; }
+  .auth-card form { margin-top: 1.5rem; }
   .page-heading, .surface-header { align-items: stretch; flex-direction: column; }
   .metric-grid, .stat-grid, .form-grid, .detail-picker, .billing-top-metrics, .history-summary, .cycle-metrics, .dependency-summary { grid-template-columns: 1fr; }
   .surface { padding: 1rem; }
