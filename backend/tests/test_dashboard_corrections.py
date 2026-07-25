@@ -38,6 +38,9 @@ def test_shared_log_volume_permissions_cover_api_worker_and_backup() -> None:
     assert "chmod 2770 /data/logs" in (root / "deploy/docker/backend.Dockerfile").read_text(
         encoding="utf-8"
     )
+    backend_dockerfile = (root / "deploy/docker/backend.Dockerfile").read_text(encoding="utf-8")
+    assert "/app/data/rate-source-artifacts/utility-bills" in backend_dockerfile
+    assert "chown -R power-monitor:power-monitor /app /data /srv" in backend_dockerfile
     assert "chmod 2770 /data/logs" in (root / "deploy/docker/backup.Dockerfile").read_text(
         encoding="utf-8"
     )

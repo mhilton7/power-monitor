@@ -222,7 +222,6 @@ export function RatesPage({
         expected_revision: plan.lifecycle_revision,
         confirmation,
         reason,
-        idempotency_key: `remove-${plan.id}-${crypto.randomUUID()}`,
       }
       if (dependencies.permanent_draft_deletion_eligible) {
         return api<void>(`/api/v1/admin/rate-plan-drafts/${plan.id}`, {
@@ -232,7 +231,10 @@ export function RatesPage({
       }
       return api(`/api/v1/admin/rate-plans/${plan.id}/remove`, {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          idempotency_key: `remove-${plan.id}-${crypto.randomUUID()}`,
+        }),
       })
     },
     onSuccess: () => {

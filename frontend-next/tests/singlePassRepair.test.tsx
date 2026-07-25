@@ -2,6 +2,8 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ModalLayer } from '../src/components/overlays/ModalLayer'
+import { ApiError, errorMessage } from '../src/api/client'
+import { ratePlanRemovalRequest } from '../src/features/rates/lifecycle'
 import { newRateDraft, period, tier } from '../src/features/rates/rateDocument'
 
 describe('single-pass repair contracts', () => {
@@ -29,5 +31,55 @@ describe('single-pass repair contracts', () => {
     expect(document.body.style.overflow).toBe('hidden')
     await user.keyboard('{Escape}')
     expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('omits lifecycle-only idempotency fields when permanently deleting an unused draft', () => {
+    const draftDelete = ratePlanRemovalRequest({
+      planId: 'draft-1',
+      expectedRevision: 2,
+      dependencyToken: 'a'.repeat(64),
+      confirmation: 'DRAFT-1',
+      reason: 'Discard reviewed unused draft',
+      permanentDraftDeletion: true,
+      idempotencyKey: 'must-not-be-sent',
+    })
+    expect(draftDelete).toMatchObject({
+      path: '/api/v1/admin/rate-plan-drafts/draft-1',
+      method: 'DELETE',
+      payload: {
+        expected_revision: 2,
+        expected_dependency_token: 'a'.repeat(64),
+        confirmation: 'DRAFT-1',
+        reason: 'Discard reviewed unused draft',
+      },
+    })
+    expect(draftDelete.payload).not.toHaveProperty('idempotency_key')
+
+    const softRemove = ratePlanRemovalRequest({
+      planId: 'published-1',
+      expectedRevision: 3,
+      dependencyToken: 'b'.repeat(64),
+      confirmation: 'PUBLISHED-1',
+      reason: 'Retire reviewed published plan',
+      permanentDraftDeletion: false,
+      idempotencyKey: 'remove-published-1',
+    })
+    expect(softRemove.payload).toHaveProperty('idempotency_key', 'remove-published-1')
+  })
+
+  it('shows the rejected field when the server returns structured validation details', () => {
+    const error = new ApiError({
+      title: 'Request validation failed',
+      detail: 'One or more fields are invalid',
+      status: 422,
+      code: 'validation_error',
+      errors: [{
+        location: ['body', 'idempotency_key'],
+        message: 'Extra inputs are not permitted',
+      }],
+    })
+    expect(errorMessage(error)).toBe(
+      'One or more fields are invalid: idempotency_key: Extra inputs are not permitted',
+    )
   })
 })

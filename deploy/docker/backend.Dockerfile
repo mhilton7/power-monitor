@@ -21,8 +21,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 power-monitor \
     && useradd --system --uid 10001 --gid power-monitor --home-dir /nonexistent power-monitor \
-    && mkdir -p /data/firmware /data/reports /data/backups /data/config /data/logs /srv/scripts /srv/tools \
-    && chown -R power-monitor:power-monitor /data /srv \
+    && mkdir -p /data/firmware /data/reports /data/backups /data/config /data/logs \
+        /app/data/rate-source-artifacts/utility-bills /srv/scripts /srv/tools \
+    && chown -R power-monitor:power-monitor /app /data /srv \
     && chmod 2770 /data/logs
 COPY --from=builder /wheels /wheels
 COPY --from=builder /build/backend/requirements.lock /requirements.lock

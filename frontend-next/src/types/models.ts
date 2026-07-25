@@ -3,7 +3,7 @@ export interface ApiProblem {
   detail: string
   status: number
   code: string
-  errors?: Array<{ location: string[]; message: string }>
+  errors?: Array<{ location: Array<string | number>; message: string }>
 }
 
 export interface UserSession {

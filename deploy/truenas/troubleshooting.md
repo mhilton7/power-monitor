@@ -19,6 +19,11 @@
   image contains `pdftoppm`, Tesseract, and English language data.
 - Confirm UID 10001 has Modify/traverse/inherit access to
   `/mnt/Apps/Power/power-monitor/rate-source-artifacts`.
+- If upload returns an internal-server error before Review appears, re-open the
+  dataset ACL in **Datasets > Permissions** and confirm UID 10001 can create a
+  temporary file in the dataset through the API workload. A missing inherited
+  Modify ACE prevents the original PDF from being retained and therefore
+  prevents extraction from starting.
 - Review the API workload log for a redacted error code. Bill text and account
   identity are intentionally omitted from ordinary logs.
 - Encrypted/password-protected PDFs are rejected by design. Export a

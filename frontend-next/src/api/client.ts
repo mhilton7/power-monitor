@@ -76,7 +76,17 @@ export function saveBlob(blob: Blob, name: string): void {
 }
 
 export function errorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.problem.detail
+  if (error instanceof ApiError) {
+    const fieldErrors = error.problem.errors
+      ?.map((entry) => {
+        const location = entry.location.filter((part) => part !== 'body').join('.')
+        return location ? `${location}: ${entry.message}` : entry.message
+      })
+      .filter(Boolean)
+    return fieldErrors?.length
+      ? `${error.problem.detail}: ${fieldErrors.join('; ')}`
+      : error.problem.detail
+  }
   if (error instanceof Error) return error.message
   return 'Something went wrong. Try again.'
 }

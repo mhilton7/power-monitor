@@ -361,6 +361,7 @@ test('Billing rate-plan menus close predictably before lifecycle confirmation', 
   await page.goto('/billing')
   const trigger = page.getByRole('button', { name: 'Rate plan actions' })
 
+  await trigger.scrollIntoViewIfNeeded()
   await trigger.click()
   await expect(page.getByRole('menuitem', { name: 'Remove plan' })).toBeVisible()
   await page.getByRole('heading', { name: 'Billing', exact: true }).click()

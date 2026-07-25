@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { errorMessage, json, request } from '../../api/client'
 import { adaptRateEvidence, adaptRatePlanDependencies, adaptRateSources, adaptRateVersions } from '../../api/adapters'
 import { objectList, record, stringValue } from '../../api/validation'
+import { ratePlanRemovalRequest } from './lifecycle'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
 import { TabList } from '../../components/layout/Layout'
 import type { ElectricService, Home, RateEvidence, RatePlanVersion, RateSource } from '../../types/models'
@@ -393,17 +394,17 @@ function PlanManager({ home, services, plans, loading, error }: { home: Home; se
   const remove = useMutation({
     mutationFn: (plan: PlanRow) => {
       const review = dependencies.data
-      const deleteDraft = review?.permanentDraftDeletionEligible === true
-      return request(
-        deleteDraft ? `/api/v1/admin/rate-plan-drafts/${plan.id}` : `/api/v1/admin/rate-plans/${plan.id}/remove`,
-        json(deleteDraft ? 'DELETE' : 'POST', {
-          expected_revision: plan.revision,
-          expected_dependency_token: review?.dependencyToken,
-          confirmation: lifecycleConfirmation,
-          reason: lifecycleReason,
-          idempotency_key: `remove-${plan.id}-${crypto.randomUUID()}`,
-        }),
-      )
+      if (!review) throw new Error('Dependency review is still loading.')
+      const deleteDraft = review.permanentDraftDeletionEligible
+      const lifecycle = ratePlanRemovalRequest({
+        planId: plan.id,
+        expectedRevision: plan.revision,
+        dependencyToken: review.dependencyToken,
+        confirmation: lifecycleConfirmation,
+        reason: lifecycleReason,
+        permanentDraftDeletion: deleteDraft,
+      })
+      return request(lifecycle.path, json(lifecycle.method, lifecycle.payload))
     },
     onSuccess: async () => {
       setLifecycleTarget(undefined)
@@ -421,6 +422,7 @@ function PlanManager({ home, services, plans, loading, error }: { home: Home; se
     lifecycleTarget
     && lifecycleConfirmation.trim().toLocaleLowerCase() === lifecycleTarget.code.trim().toLocaleLowerCase()
     && lifecycleReason.trim().length >= 8
+    && Boolean(dependencies.data)
     && !removalBlocked,
   )
   return (
