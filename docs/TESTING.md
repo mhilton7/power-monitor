@@ -30,14 +30,15 @@ stale revisions, idempotency, filters, audits, and duplicate-free actions.
 
 The append-only schema head is `20260724_0014`. The frontend component gate
 verifies parser identity, page/ignored-section review, exact five-decimal
-rates, arithmetic status, explicit missing reasons, dependency review, remove,
-blocked resolution, removed listing, and restore.
+rates, arithmetic status, explicit missing reasons, one-click reviewed-value
+merging with blank-value preservation, advanced no-op protection, dependency
+review, remove, blocked resolution, removed listing, and restore.
 
 The final portable Python run passed 138 tests; the separately enabled
 100-device/18,000-reading load gate, PostgreSQL 17 migration gate, and isolated
 TrueNAS deployment gate also passed. Ruff lint/format, strict mypy, generated
 OpenAPI drift, JSON Schema, protocol contracts, and the repository secret scan
-are clean. The frontend passed a locked install, lint, TypeScript checking, 60
+are clean. The frontend passed a locked install, lint, TypeScript checking, 63
 unit/component tests, the Node 24 production container build, and all 50
 Chromium scenarios. The keyboard-operated mobile drawer also passed 10
 parallel repetitions after its canonical-route race was corrected. The

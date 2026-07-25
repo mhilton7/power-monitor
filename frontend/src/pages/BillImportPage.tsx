@@ -23,6 +23,13 @@ import {
   type AppError,
   type BillImportState,
 } from '../billImportContext'
+import {
+  billImportEditableFields,
+  hasSelectedBillImportValues,
+  mergeAllReviewedBillValues,
+  mergeSelectedReviewedBillValues,
+  type BillImportDraftChoices,
+} from '../billImportMerge'
 import { AppErrorBoundary } from '../components/AppErrorBoundary'
 import { EmptyState, ErrorState, LoadingState, Panel, StatusPill, formatTime } from '../components/UI'
 import {
@@ -317,17 +324,6 @@ const steps = [
   'Apply to custom draft',
 ]
 
-const editableDraftFields = [
-  ['plan_name', 'Plan name'],
-  ['plan_code', 'Plan code'],
-  ['utility', 'Utility'],
-  ['description', 'Description'],
-  ['currency', 'Currency'],
-  ['timezone', 'Timezone'],
-  ['effective_from', 'Effective date'],
-  ['effective_through', 'Optional end date'],
-] as const
-
 const reviewValue = (value: unknown): string => {
   if (value === null || value === undefined) return ''
   if (typeof value === 'object') return JSON.stringify(value)
@@ -510,7 +506,7 @@ export function BillImportWorkspace({
   const [corrections, setCorrections] = useState<Record<string, string>>({})
   const [conflictDecisions, setConflictDecisions] = useState<Record<string, string>>({})
   const [message, setMessage] = useState('')
-  const [draftChoices, setDraftChoices] = useState<Record<string, 'import' | 'keep' | 'manual'>>({})
+  const [draftChoices, setDraftChoices] = useState<BillImportDraftChoices>({})
   const [manualDraftValues, setManualDraftValues] = useState<Record<string, string>>({})
   const [continueWithoutContext, setContinueWithoutContext] = useState(false)
   const [contextRetryCount, setContextRetryCount] = useState(0)
@@ -670,6 +666,11 @@ export function BillImportWorkspace({
       setMessage(result.status === 'ready_to_publish'
         ? 'Review saved. The extraction is ready for rate-engine validation and explicit publication.'
         : 'Review saved. Resolve the remaining blockers before publication.')
+      if (result.rate_version_id) {
+        await queryClient.invalidateQueries({
+          queryKey: ['rate-version', result.rate_version_id],
+        })
+      }
       await bill.refetch()
       await comparison.refetch()
       await history.refetch()
@@ -785,6 +786,15 @@ export function BillImportWorkspace({
     return groups
   }, [bill.data?.fields])
   const current = bill.data
+  const automaticMerge = useMemo(
+    () => linkedDraft.data?.document
+      ? mergeAllReviewedBillValues(currentDraft, linkedDraft.data.document)
+      : null,
+    [currentDraft, linkedDraft.data?.document],
+  )
+  const reviewedDraftReady = Boolean(
+    current && ['ready_to_publish', 'published'].includes(current.status),
+  )
   const strictLineItems = Array.isArray(current?.normalized.billing_cycle.line_items)
     ? current.normalized.billing_cycle.line_items as StrictChargeLine[]
     : []
@@ -831,37 +841,24 @@ export function BillImportWorkspace({
     saveBlob(blob, path === 'original' ? `utility-bill-${billId}.pdf` : `utility-bill-${billId}-evidence.json`)
   }
 
-  function applyImportedRateDraft() {
+  function applySelectedRateDraft() {
     const imported = linkedDraft.data?.document
-    if (!imported) return
-    const next = structuredClone(currentDraft)
-    for (const [key] of editableDraftFields) {
-      const choice = draftChoices[key] ?? 'keep'
-      if (choice === 'import') {
-        next[key] = imported[key] as never
-      } else if (choice === 'manual') {
-        next[key] = (key === 'effective_through'
-          ? manualDraftValues[key] || null
-          : manualDraftValues[key] ?? '') as never
-      }
-    }
-    if ((draftChoices.tariff_rules ?? 'keep') === 'import') {
-      next.pricing_model = imported.pricing_model
-      next.flat_rate_per_kwh = imported.flat_rate_per_kwh
-      next.billing_cycle = structuredClone(imported.billing_cycle)
-      next.tiers = structuredClone(imported.tiers)
-      next.hybrid_pricing = structuredClone(imported.hybrid_pricing)
-      next.seasons = structuredClone(imported.seasons)
-      next.adjustments = structuredClone(imported.adjustments)
-      next.provider_mode = imported.provider_mode
-      next.cost_scope_default = imported.cost_scope_default
-    }
-    if ((draftChoices.source_evidence ?? 'keep') === 'import') {
-      next.source_label = imported.source_label
-      next.source_note = imported.source_note
-      next.cloned_from_rate_version_id = imported.cloned_from_rate_version_id
-    }
-    onApplyDraft(next)
+    if (!imported || !hasSelectedBillImportValues(draftChoices)) return
+    const merged = mergeSelectedReviewedBillValues(
+      currentDraft,
+      imported,
+      draftChoices,
+      manualDraftValues,
+    )
+    onApplyDraft(merged.document)
+    onClose()
+  }
+
+  async function applyAllReviewedRateDraft() {
+    if (!automaticMerge) return
+    const result = await validate.mutateAsync()
+    if (!result.validation.valid) return
+    onApplyDraft(automaticMerge.document)
     onClose()
   }
 
@@ -1178,21 +1175,33 @@ export function BillImportWorkspace({
     {step === 8 && current && <div className="bill-import-columns">
       <Panel title="Validate and apply reviewed tariff" eyebrow="Step 9 · Custom Plan draft merge">
         <StatusPill status={current.status === 'ready_to_publish' || current.status === 'published' ? 'healthy' : 'failed'} label={formatStructuredLabel(current.status)} />
-        <p className="panel-copy">Choose every value deliberately. Applying changes only the unsaved Custom Plan editor draft; it does not publish, activate, or assign a rate.</p>
-        {linkedDraft.isLoading ? <LoadingState label="Loading the reviewed linked rate draft…" /> : linkedDraft.error ? <ErrorState error={linkedDraft.error} retry={() => { void linkedDraft.refetch() }} /> : linkedDraft.data ? <div className="bill-draft-choice-list">
-          {editableDraftFields.map(([key, label]) => {
-            const choice = draftChoices[key] ?? 'keep'
-            return <article key={key}>
-              <div><strong>{label}</strong><small>Current: {reviewValue(currentDraft[key]) || 'blank'} · Extracted: {reviewValue(linkedDraft.data.document[key]) || 'blank'}</small></div>
-              <label><span className="sr-only">{label} choice</span><select aria-label={`${label} choice`} value={choice} onChange={(event) => { setDraftChoices((value) => ({ ...value, [key]: event.target.value as 'import' | 'keep' | 'manual' })) }}><option value="keep">Keep current draft</option><option value="import">Use reviewed extraction</option><option value="manual">Enter manually</option></select></label>
-              {choice === 'manual' && <label><span className="sr-only">Manual {label}</span><input aria-label={`Manual ${label}`} value={manualDraftValues[key] ?? reviewValue(currentDraft[key])} onChange={(event) => { setManualDraftValues((value) => ({ ...value, [key]: event.target.value })) }} /></label>}
-            </article>
-          })}
-          <article><div><strong>Complete tariff rules</strong><small>Pricing model, exact tiers, billing-cycle thresholds, TOU schedules, charges, provider mode, and cost scope</small></div><label><span className="sr-only">Complete tariff rules choice</span><select aria-label="Complete tariff rules choice" value={draftChoices.tariff_rules ?? 'keep'} onChange={(event) => { setDraftChoices((value) => ({ ...value, tariff_rules: event.target.value as 'import' | 'keep' })) }}><option value="keep">Keep current draft rules</option><option value="import">Use reviewed extracted rules</option></select></label></article>
-          <article><div><strong>Source evidence references</strong><small>Sanitized evidence remains linked to the import; choose whether to copy its source label and note into this editor draft.</small></div><label><span className="sr-only">Source evidence choice</span><select aria-label="Source evidence choice" value={draftChoices.source_evidence ?? 'keep'} onChange={(event) => { setDraftChoices((value) => ({ ...value, source_evidence: event.target.value as 'import' | 'keep' })) }}><option value="keep">Keep current source fields</option><option value="import">Use imported evidence fields</option></select></label></article>
-        </div> : <EmptyState title="No linked rate draft" message="Review or reprocess the import so a separate rate-plan draft is available." />}
+        <p className="panel-copy">Apply all safe reviewed values in one step, or open Advanced field selection for a custom merge. Either path changes only this unsaved Custom Plan draft; it never publishes, activates, or assigns a rate.</p>
+        {linkedDraft.isLoading ? <LoadingState label="Loading the reviewed linked rate draft…" /> : linkedDraft.error ? <ErrorState error={linkedDraft.error} retry={() => { void linkedDraft.refetch() }} /> : linkedDraft.data && automaticMerge ? <>
+          <section className="bill-import-one-click" aria-labelledby="bill-import-one-click-title">
+            <div><ShieldCheck size={20} /><div><strong id="bill-import-one-click-title">Apply all reviewed values</strong><p>Runs server validation, imports every nonblank reviewed field, complete tariff rules, and available source evidence, then returns to the unsaved Custom Plan.</p><small>{automaticMerge.appliedGroups.length} groups ready: {automaticMerge.appliedGroups.join(', ')}</small></div></div>
+            <button className="button primary" disabled={!reviewedDraftReady || validate.isPending} onClick={() => { void applyAllReviewedRateDraft() }}><FileUp size={15} /> {validate.isPending ? 'Validating and applying…' : 'Apply all reviewed values'}</button>
+          </section>
+          {!reviewedDraftReady && <p className="field-help">Finish and save the administrator review before applying values.</p>}
+          <details className="bill-import-advanced-merge">
+            <summary>Advanced field selection</summary>
+            <p className="field-help">Use this only when you want to preserve selected current values, enter replacements manually, or exclude reviewed tariff evidence.</p>
+            <div className="bill-draft-choice-list">
+              {billImportEditableFields.map(([key, label]) => {
+                const choice = draftChoices[key] ?? 'keep'
+                return <article key={key}>
+                  <div><strong>{label}</strong><small>Current: {reviewValue(currentDraft[key]) || 'blank'} · Extracted: {reviewValue(linkedDraft.data.document[key]) || 'blank'}</small></div>
+                  <label><span className="sr-only">{label} choice</span><select aria-label={`${label} choice`} value={choice} onChange={(event) => { setDraftChoices((value) => ({ ...value, [key]: event.target.value as 'import' | 'keep' | 'manual' })) }}><option value="keep">Keep current draft</option><option value="import">Use reviewed extraction</option><option value="manual">Enter manually</option></select></label>
+                  {choice === 'manual' && <label><span className="sr-only">Manual {label}</span><input aria-label={`Manual ${label}`} value={manualDraftValues[key] ?? reviewValue(currentDraft[key])} onChange={(event) => { setManualDraftValues((value) => ({ ...value, [key]: event.target.value })) }} /></label>}
+                </article>
+              })}
+              <article><div><strong>Complete tariff rules</strong><small>Pricing model, exact tiers, billing-cycle thresholds, TOU schedules, charges, provider mode, and cost scope</small></div><label><span className="sr-only">Complete tariff rules choice</span><select aria-label="Complete tariff rules choice" value={draftChoices.tariff_rules ?? 'keep'} onChange={(event) => { setDraftChoices((value) => ({ ...value, tariff_rules: event.target.value as 'import' | 'keep' })) }}><option value="keep">Keep current draft rules</option><option value="import">Use reviewed extracted rules</option></select></label></article>
+              <article><div><strong>Source evidence references</strong><small>Sanitized evidence remains linked to the import; choose whether to copy its source label and note into this editor draft.</small></div><label><span className="sr-only">Source evidence choice</span><select aria-label="Source evidence choice" value={draftChoices.source_evidence ?? 'keep'} onChange={(event) => { setDraftChoices((value) => ({ ...value, source_evidence: event.target.value as 'import' | 'keep' })) }}><option value="keep">Keep current source fields</option><option value="import">Use imported evidence fields</option></select></label></article>
+            </div>
+            <div className="inline-actions"><button className="button secondary" disabled={validate.isPending} onClick={() => { validate.mutate(); }}><FileSearch size={15} /> Validate reviewed draft</button><button className="button secondary" disabled={!reviewedDraftReady || !validate.data?.validation.valid || !hasSelectedBillImportValues(draftChoices)} onClick={applySelectedRateDraft}><FileUp size={15} /> Apply selected values to Custom Plan</button></div>
+            {!hasSelectedBillImportValues(draftChoices) && <p className="field-help">Choose at least one reviewed or manual value before using the advanced Apply button.</p>}
+          </details>
+        </> : <EmptyState title="No linked rate draft" message="Review or reprocess the import so a separate rate-plan draft is available." />}
         {validate.data && <div className="validation-compact"><strong>{validate.data.validation.valid ? 'Rate-engine validation passed' : 'Validation failed'}</strong>{[...validate.data.validation.errors, ...validate.data.validation.warnings].map((issue) => <span key={`${issue.code}-${issue.path}`}>{issue.message} · {issue.path}</span>)}</div>}
-        <div className="inline-actions"><button className="button secondary" disabled={validate.isPending} onClick={() => { validate.mutate(); }}><FileSearch size={15} /> Validate reviewed draft</button><button className="button primary" disabled={!linkedDraft.data || !['ready_to_publish', 'published'].includes(current.status) || !validate.data?.validation.valid} onClick={applyImportedRateDraft}><FileUp size={15} /> Apply selected values to Custom Plan</button></div>
       </Panel>
       <Panel title="Import billing cycle" eyebrow="Separate bill-specific record">
         <p className="panel-copy">This records exact cycle dates and utility-reported cumulative usage separately. It never overwrites immutable monitored readings.</p>

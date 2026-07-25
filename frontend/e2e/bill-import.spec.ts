@@ -651,22 +651,18 @@ test('reviews separate bill outputs and selectively merges them into the existin
   await expect(page.getByText(/Sanitized evidence, normalized values, and audit history remain/i)).toBeVisible()
 
   await page.getByRole('button', { name: /Apply to custom draft/ }).click()
-  await page.getByRole('button', { name: 'Validate reviewed draft' }).click()
-  await expect(page.getByText('Rate-engine validation passed')).toBeVisible()
   await page.getByRole('button', { name: 'Import reviewed billing cycle' }).click()
   await expect(page.getByText(/without overwriting monitored readings/i)).toBeVisible()
-  await page.getByLabel('Plan code choice').selectOption('import')
-  await page.getByLabel('Complete tariff rules choice').selectOption('import')
-  await page.getByLabel('Source evidence choice').selectOption('import')
-  await page.getByRole('button', { name: 'Apply selected values to Custom Plan' }).click()
+  await expect(page.getByText(/groups ready: Plan name, Plan code/i)).toBeVisible()
+  await page.getByRole('button', { name: 'Apply all reviewed values' }).click()
 
   await expect(page.getByText(/applied to this unsaved Custom Plan draft/i)).toBeVisible()
-  await expect(page.getByLabel('Plan name')).toHaveValue('My preserved custom draft')
+  await expect(page.getByLabel('Plan name')).toHaveValue('DOMESTIC')
   await expect(page.getByLabel('Plan code')).toHaveValue('D')
   const saveRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/rates/plans') && request.method() === 'POST')
   await page.getByRole('button', { name: 'Save draft' }).click()
   const savedDocument = JSON.parse((await saveRequest).postData() ?? '{}') as { plan_name: string; plan_code: string; pricing_model: string; tiers: unknown[]; source_label: string }
-  expect(savedDocument.plan_name).toBe('My preserved custom draft')
+  expect(savedDocument.plan_name).toBe('DOMESTIC')
   expect(savedDocument.plan_code).toBe('D')
   expect(savedDocument.pricing_model).toBe('tiered')
   expect(savedDocument.tiers).toHaveLength(2)
@@ -674,6 +670,7 @@ test('reviews separate bill outputs and selectively merges them into the existin
 
   expect(requests).toContain('POST /api/v1/admin/utility-bill-imports')
   expect(requests).toContain('PUT /api/v1/admin/utility-bill-imports/bill-1/review')
+  expect(requests).toContain('POST /api/v1/admin/utility-bill-imports/bill-1/validate')
   expect(requests).toContain('POST /api/v1/admin/utility-bill-imports/bill-1/import-billing-cycle')
   expect(requests).toContain('DELETE /api/v1/admin/utility-bill-imports/bill-1/original')
   expect(requests).not.toContain('POST /api/v1/admin/utility-bill-imports/bill-1/publish-and-assign')
@@ -748,6 +745,8 @@ test('keeps an unresolved official-source conflict visible and blocks publicatio
   await expect(page.getByText('$0.38/kWh')).toBeVisible()
 
   await page.getByRole('button', { name: /Apply to custom draft/ }).click()
+  await expect(page.getByRole('button', { name: 'Apply all reviewed values' })).toBeDisabled()
+  await page.getByText('Advanced field selection', { exact: true }).click()
   await page.getByRole('button', { name: 'Validate reviewed draft' }).click()
   await expect(page.getByRole('button', { name: 'Apply selected values to Custom Plan' })).toBeDisabled()
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)

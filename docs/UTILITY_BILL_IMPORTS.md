@@ -9,12 +9,19 @@ Power Monitor server and produces two separate reviewed outputs:
 1. a reusable custom rate-plan draft; and
 2. a bill-specific billing-cycle draft for the selected utility account.
 
-The importer is a data-entry assistant, not a separate plan editor. It preserves
-the current in-progress custom-plan form, compares current and extracted values,
-and lets the administrator keep, import, or manually review each supported
-field. Applying a selection updates the current form only. The administrator
-then uses the normal custom-plan validation, server calculation preview, draft
-save, publication, and assignment workflow.
+The importer is a data-entry assistant, not a separate plan editor. After the
+administrator saves the evidence review, **Apply all reviewed values** provides
+the normal path: it performs fresh server-side rate validation, copies every
+nonblank reviewed field, the complete validated tariff document, and available
+source evidence into the unsaved Custom Plan, then returns to the editor. Blank
+extracted values preserve the current form value.
+
+**Advanced field selection** retains the field-level keep/import/manual
+workflow for exceptions. Its Apply action remains disabled until at least one
+field or rule group is selected, so an unchanged draft cannot be reported as a
+successful import. Both paths update the current form only. The administrator
+then uses the normal calculation preview, draft save, publication, and
+assignment workflow.
 
 Nothing is activated by upload or by applying extracted fields. Administrator
 review, rate-engine validation, explicit publication, and explicit account
@@ -124,10 +131,11 @@ recurring tariff rule.
 The rate-plan draft reuses the custom-rate editor, immutable rate versions, and
 managed-source evidence system. It may represent flat, time-of-use, tiered, or
 hybrid TOU+tiered pricing. Applying it updates one cloned editor document so an
-asynchronous extraction result cannot partially overwrite the live form.
-Existing populated values remain selected as **Keep current** until the
-administrator explicitly chooses otherwise. Complete tariff coverage and
-existing rate-engine validation are required before publication.
+asynchronous extraction result cannot partially overwrite the live form. The
+one-click path imports reviewed nonblank values; the advanced path defaults
+each value to **Keep current** until the administrator explicitly chooses
+otherwise. Complete tariff coverage and existing rate-engine validation are
+required before publication.
 
 The billing-cycle draft retains exact dates, utility-reported usage, reported
 tier/TOU/meter allocations, energy subtotal, complete bill total, components,

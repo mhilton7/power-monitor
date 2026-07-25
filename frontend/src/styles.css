@@ -1865,6 +1865,48 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
   overflow-wrap: anywhere;
 }
 
+.bill-import-one-click {
+  align-items: center;
+  background: color-mix(in srgb, var(--accent-soft, #173f34) 72%, transparent);
+  border: 1px solid var(--accent, #6fd7b6);
+  border-radius: .8rem;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.bill-import-one-click > div {
+  align-items: flex-start;
+  display: flex;
+  gap: .7rem;
+  min-width: 0;
+}
+
+.bill-import-one-click > div > div {
+  display: grid;
+  gap: .3rem;
+}
+
+.bill-import-one-click p,
+.bill-import-one-click small {
+  color: var(--muted);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bill-import-advanced-merge {
+  border-top: 1px solid var(--border, #29473c);
+  margin-top: 1rem;
+  padding-top: .8rem;
+}
+
+.bill-import-advanced-merge > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
 .bill-import-footer {
   align-items: center;
   background: color-mix(in srgb, var(--surface, #12261f) 94%, transparent);
@@ -1903,6 +1945,15 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 
   .bill-draft-choice-list article {
     grid-template-columns: 1fr;
+  }
+
+  .bill-import-one-click {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .bill-import-one-click > .button {
+    width: 100%;
   }
 }
 

@@ -1,5 +1,16 @@
 # Power Monitor Server 1.0.0
 
+## One-click reviewed bill import
+
+- Adds **Apply all reviewed values** to the final Custom Plan bill-import step.
+  One action performs fresh server rate-engine validation and copies nonblank
+  reviewed metadata, complete tariff rules, and available sanitized evidence
+  into the unsaved editor draft.
+- Preserves current values whenever extraction is blank, keeps billing-cycle
+  application separate, and never publishes, activates, or assigns a plan.
+- Moves keep/import/manual controls under **Advanced field selection** and
+  prevents that path from reporting success when no value was selected.
+
 ## Strict SCE bill parser and safe rate-plan removal
 
 - Replaces broad whole-document extraction for recognized SCE residential

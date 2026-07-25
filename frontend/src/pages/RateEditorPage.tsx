@@ -332,7 +332,7 @@ export function RateEditorPage({ canManage, canImportBills = false }: { canManag
             onApplyDraft={(next) => {
               setDocument(next)
               setValidation(undefined)
-              setImportNotice('Selected reviewed bill values were applied to this unsaved Custom Plan draft. Review every editor step, then save explicitly.')
+              setImportNotice('Reviewed bill values were applied to this unsaved Custom Plan draft. Review every editor step, then save explicitly.')
               setStep(0)
             }}
             onClose={closeImporter}
