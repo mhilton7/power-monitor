@@ -439,7 +439,9 @@ export function adaptBillDetail(value: unknown): BillImportDetail {
     conflicts: objectList(source.conflicts).map((conflict) => ({
       id: stringValue(conflict.id),
       path: stringValue(conflict.field_key),
-      message: `Bill: ${stringValue(conflict.extracted_value, 'not provided')} · Current: ${stringValue(conflict.configured_value, 'not provided')}`,
+      message: stringValue(conflict.field_key) === 'pricing_model'
+        ? `Uploaded bill: ${pricingModelLabel(stringValue(conflict.extracted_value, 'not provided'))} · current plan: ${pricingModelLabel(stringValue(conflict.configured_value, 'not provided'))}. Confirming uses the bill value for the new draft and preserves existing history.`
+        : `Uploaded bill: ${stringValue(conflict.extracted_value, 'not provided')} · current setup: ${stringValue(conflict.configured_value, 'not provided')}`,
     })),
   }
 }
@@ -584,6 +586,15 @@ function friendlySourceOrigin(value: string): string {
   } catch {
     return 'Private server source'
   }
+}
+
+function pricingModelLabel(value: string): string {
+  return {
+    flat: 'Flat',
+    time_of_use: 'Time of use',
+    tiered: 'Billing-cycle tiered',
+    time_of_use_tiered: 'Time of use with tiers',
+  }[value] ?? value.replaceAll('_', ' ')
 }
 
 function friendlySourceType(value: string): string {

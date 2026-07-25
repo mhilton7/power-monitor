@@ -208,7 +208,7 @@ export function BillImportFlow({
                 <ul>{bill.missingFields.filter((field) => !field.required).map((field) => <li key={`${field.outputKind}-${field.path}`}><strong>{statusLabel(field.path)}</strong><span>{field.state === 'not_applicable' ? 'Not applicable' : field.reason}</span></li>)}</ul>
               </details>
             )}
-            {bill.conflicts.map((conflict) => <InlineNotice key={conflict.id} tone="warning">{statusLabel(conflict.path)}: {conflict.message}</InlineNotice>)}
+            {bill.conflicts.map((conflict) => <InlineNotice key={conflict.id} tone="warning"><strong>Existing setup differs — {statusLabel(conflict.path)}.</strong> {conflict.message}</InlineNotice>)}
             <label><span>Tier threshold meaning</span><select value={threshold} onChange={(event) => { setThreshold(event.target.value as typeof threshold); }}><option value="unknown">Not stated / not applicable</option><option value="fixed_cycle_threshold">Fixed billing-cycle threshold</option><option value="daily_baseline">Daily baseline</option><option value="baseline_multiplier">Baseline multiplier</option></select></label>
             <div className="bill-diagnostics" aria-label="Bill diagnostics">
               <button type="button" className="button secondary compact" disabled={reprocess.isPending} onClick={() => { reprocess.mutate() }}>{reprocess.isPending ? 'Reprocessing…' : 'Reprocess bill'}</button>

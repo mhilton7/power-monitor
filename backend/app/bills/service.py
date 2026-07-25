@@ -49,7 +49,12 @@ from app.formatting import (
     format_tier_range,
 )
 from app.problem import ProblemError
-from app.rates.documents import RatePlanDocument, engine_plan, validate_document
+from app.rates.documents import (
+    RatePlanDocument,
+    document_hash,
+    engine_plan,
+    validate_document,
+)
 from app.rates.engine import RateEngine
 from app.rates.service import activate_version, create_custom_plan, update_draft_version
 
@@ -375,6 +380,153 @@ def _plan_document(
     )
 
 
+def _rate_draft_supported(rate_data: dict[str, Any]) -> bool:
+    pricing_model = rate_data.get("pricing_model")
+    return bool(
+        rate_data.get("plan_code")
+        and pricing_model
+        and (pricing_model != "tiered" or len(rate_data.get("tiers") or []) >= 2)
+    )
+
+
+def _extraction_from_revision(
+    bill: UtilityBillImport,
+    revision: UtilityBillExtractionRevision,
+) -> BillExtraction:
+    return BillExtraction(
+        page_count=bill.page_count,
+        extraction_method=bill.extraction_method,
+        ocr_version=revision.ocr_version,
+        regions=[],
+        raw_text="",
+        normalized_text="",
+        normalization_history=[],
+        account_data=revision.normalized_account_data,
+        rate_data=revision.normalized_rate_data,
+        cycle_data=revision.normalized_cycle_data,
+        fields=[],
+        warnings=[],
+        blocking_warnings=bill.blocking_warnings,
+    )
+
+
+async def ensure_bill_rate_draft(
+    session: AsyncSession,
+    *,
+    bill: UtilityBillImport,
+    user_id: str,
+) -> tuple[RateVersion | None, bool]:
+    """Return the bill's editable draft, rebuilding legacy broken links when safe."""
+    locked_bill = await session.scalar(
+        select(UtilityBillImport).where(UtilityBillImport.id == bill.id).with_for_update()
+    )
+    if locked_bill is not None:
+        bill = locked_bill
+    version = await session.get(RateVersion, bill.rate_version_id) if bill.rate_version_id else None
+    plan = await session.get(RatePlan, version.rate_plan_id) if version is not None else None
+    if version is not None and plan is not None and plan.status not in {"removed", "retired"}:
+        return version, False
+
+    revision = await latest_extraction_revision(session, bill.id)
+    if not _rate_draft_supported(revision.normalized_rate_data):
+        return None, False
+    account = (
+        await session.get(UtilityAccount, bill.utility_account_id)
+        if bill.utility_account_id is not None
+        else None
+    )
+    fallback_timezone = (
+        account.timezone
+        if account is not None
+        else (version.timezone if version is not None else "America/Los_Angeles")
+    )
+    fallback_currency = (
+        account.currency
+        if account is not None
+        else (version.currency if version is not None else "USD")
+    )
+    document = _plan_document(
+        _extraction_from_revision(bill, revision),
+        account,
+        bill.content_sha256,
+        timezone=fallback_timezone,
+        currency=fallback_currency,
+    )
+
+    reusable_plan = (
+        await session.get(RatePlan, bill.rate_plan_id) if bill.rate_plan_id is not None else None
+    )
+    if reusable_plan is not None and reusable_plan.status == "draft":
+        next_version = (
+            int(
+                await session.scalar(
+                    select(func.max(RateVersion.version)).where(
+                        RateVersion.rate_plan_id == reusable_plan.id
+                    )
+                )
+                or 0
+            )
+            + 1
+        )
+        now = datetime.now(UTC)
+        version = RateVersion(
+            rate_plan_id=reusable_plan.id,
+            version=next_version,
+            effective_from=document.effective_from,
+            effective_to=document.effective_through,
+            timezone=document.timezone,
+            currency=document.currency,
+            pricing_model=document.pricing_model,
+            source_url=f"urn:power-monitor:utility-bill:{bill.id}",
+            source_checked_on=date.today(),
+            source_checked_at=now,
+            source_notes=document.source_note,
+            source_label=document.source_label,
+            source_kind="utility_bill_candidate",
+            content_hash=document_hash(document),
+            status="draft",
+            normalized_payload=document.model_dump(mode="json"),
+            immutable_after_use=False,
+            is_active=False,
+            created_at=now,
+            created_by=user_id,
+        )
+        session.add(version)
+        await session.flush()
+        await update_draft_version(session, version, document)
+        reusable_plan.name = f"{document.plan_name} (bill draft)"
+        plan = reusable_plan
+    else:
+        plan, version = await create_custom_plan(
+            session,
+            document,
+            user_id,
+            duplicate_suffix=True,
+        )
+        version.source_kind = "utility_bill_candidate"
+        version.source_url = f"urn:power-monitor:utility-bill:{bill.id}"
+        plan.name = f"{plan.name} (bill draft)"
+
+    extraction_result = await session.scalar(
+        select(RateExtractionResult)
+        .where(RateExtractionResult.artifact_id == bill.artifact_id)
+        .order_by(RateExtractionResult.extracted_at.desc())
+        .limit(1)
+    )
+    session.add(
+        RateVersionSource(
+            rate_version_id=version.id,
+            artifact_id=bill.artifact_id,
+            extraction_result_id=extraction_result.id if extraction_result else None,
+            relationship="supporting",
+        )
+    )
+    bill.rate_plan_id = plan.id
+    bill.rate_version_id = version.id
+    bill.updated_at = datetime.now(UTC)
+    return version, True
+
+
 def _as_decimal(value: Any | None) -> Decimal | None:
     if value is None or value == "":
         return None
@@ -617,14 +769,7 @@ async def create_bill_import(
         )
     plan = None
     version = None
-    can_create_rate_draft = bool(
-        extraction.rate_data.get("plan_code")
-        and extraction.rate_data.get("pricing_model")
-        and (
-            extraction.rate_data.get("pricing_model") != "tiered"
-            or len(extraction.rate_data.get("tiers") or []) >= 2
-        )
-    )
+    can_create_rate_draft = _rate_draft_supported(extraction.rate_data)
     if can_create_rate_draft:
         document = _plan_document(
             extraction,
@@ -1348,7 +1493,14 @@ async def review_import(
                 "message": "Tier-threshold interpretation must be selected",
             }
         )
-    version = await session.get(RateVersion, bill.rate_version_id) if bill.rate_version_id else None
+    version, _draft_recreated = await ensure_bill_rate_draft(
+        session,
+        bill=bill,
+        user_id=user_id,
+    )
+    if version is not None:
+        await synchronize_rate_draft_from_extraction(session, bill=bill)
+        version = await session.get(RateVersion, bill.rate_version_id)
     if version is None or not version.normalized_payload:
         blockers.append(
             {
@@ -1390,14 +1542,20 @@ async def review_import(
         bill=bill,
         fields=list(fields_by_id.values()),
     )
-    await synchronize_rate_draft_from_extraction(session, bill=bill)
     return await import_payload(session, bill)
 
 
 async def validate_bill_rate_draft(
-    session: AsyncSession, bill: UtilityBillImport
+    session: AsyncSession,
+    bill: UtilityBillImport,
+    *,
+    user_id: str,
 ) -> dict[str, Any]:
-    version = await session.get(RateVersion, bill.rate_version_id) if bill.rate_version_id else None
+    version, recreated = await ensure_bill_rate_draft(
+        session,
+        bill=bill,
+        user_id=user_id,
+    )
     if version is None or not version.normalized_payload:
         raise ProblemError(
             404,
@@ -1407,10 +1565,24 @@ async def validate_bill_rate_draft(
         )
     document = RatePlanDocument.model_validate(version.normalized_payload)
     report = validate_document(document)
+    if recreated and report.valid:
+        bill.blocking_warnings = [
+            warning
+            for warning in bill.blocking_warnings
+            if warning.get("code") != "rate_draft_missing"
+        ]
+        if not bill.blocking_warnings:
+            bill.status = "ready_to_publish"
+            bill.approved_at = datetime.now(UTC)
+        bill.revision += 1
+        bill.updated_at = datetime.now(UTC)
     return {
         "bill_status": bill.status,
         "blocking_warnings": bill.blocking_warnings,
         "validation": report.model_dump(mode="json"),
+        "rate_draft_recreated": recreated,
+        "rate_plan_id": bill.rate_plan_id,
+        "rate_version_id": bill.rate_version_id,
     }
 
 
@@ -1849,21 +2021,7 @@ async def synchronize_rate_draft_from_extraction(
     revision = await latest_extraction_revision(session, bill.id)
     if version is None:
         return
-    extraction = BillExtraction(
-        page_count=bill.page_count,
-        extraction_method=bill.extraction_method,
-        ocr_version=revision.ocr_version,
-        regions=[],
-        raw_text="",
-        normalized_text="",
-        normalization_history=[],
-        account_data=revision.normalized_account_data,
-        rate_data=revision.normalized_rate_data,
-        cycle_data=revision.normalized_cycle_data,
-        fields=[],
-        warnings=[],
-        blocking_warnings=bill.blocking_warnings,
-    )
+    extraction = _extraction_from_revision(bill, revision)
     document = _plan_document(
         extraction,
         account,

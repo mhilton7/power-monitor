@@ -47,6 +47,19 @@ CSRF protected, revision checked, and audit logged. Re-uploading the same PDF
 for the same account restores the existing row instead of creating a duplicate
 or repeating OCR.
 
+Rate versions linked to bill imports or retained source evidence are treated as
+in-use and cannot be deleted through the draft-version endpoint. Deployments
+upgraded from an older release may already contain an import whose linked draft
+was deleted. In that case, **Retry this step** or re-uploading the same retained
+PDF rebuilds a new editable draft from the latest normalized extraction and
+reattaches the preserved source evidence. This recovery never publishes or
+assigns the plan automatically and is recorded in the audit log.
+
+When an uploaded bill's pricing model differs from the currently assigned
+plan, the review identifies both values explicitly. Confirming the review uses
+the bill's model for the new draft while preserving the existing plan,
+assignments, calculations, and historical reports.
+
 Account and rate readiness comes from the versioned
 `utility-account-rate-context/1.0` response. Plan, assignment, version, and
 period values are always present as explicit objects or `null`. An account with

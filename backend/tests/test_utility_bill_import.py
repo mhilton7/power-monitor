@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 import pytest
 from jsonschema import Draft202012Validator
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.bills.extraction import (
     BillPdfError,
@@ -22,6 +22,7 @@ from app.bills.extraction import (
 from app.db.models import (
     AuditEvent,
     RateVersion,
+    RateVersionSource,
     UtilityBillCycleDraft,
     UtilityBillExtractionRevision,
     UtilityBillImport,
@@ -538,6 +539,98 @@ async def test_unassigned_bill_import_extracts_without_plan_or_account(
     assert cycle.json()["code"] == "bill_account_context_required"
     row = await session.get(UtilityBillImport, imported["id"])
     assert row is not None and row.utility_account_id is None
+
+
+@pytest.mark.asyncio
+async def test_missing_linked_rate_draft_is_rebuilt_from_retained_bill_evidence(
+    api_client: httpx.AsyncClient,
+    session: Any,
+) -> None:
+    await bootstrap(api_client)
+    content = (FIXTURES / "text-tiered-bill.pdf").read_bytes()
+    upload = await api_client.post(
+        "/api/v1/admin/utility-bill-imports",
+        params={
+            "timezone": "America/Los_Angeles",
+            "currency": "USD",
+            "retention_mode": "retain",
+            "source_role": "supporting",
+        },
+        headers={**csrf(api_client), "X-Idempotency-Key": "legacy-missing-rate-draft"},
+        files={"upload": ("legacy-bill.pdf", content, "application/pdf")},
+    )
+    assert upload.status_code == 201, upload.text
+    imported = upload.json()
+    reviews = [
+        {"field_id": field["id"], "action": "confirm"}
+        for field in imported["fields"]
+        if field["field_key"] in REQUIRED_FIELDS
+        and field["field_key"] != "threshold_interpretation"
+    ]
+    threshold_field = next(
+        field for field in imported["fields"] if field["field_key"] == "threshold_interpretation"
+    )
+    reviews.append(
+        {
+            "field_id": threshold_field["id"],
+            "action": "correct",
+            "value": "fixed_cycle_threshold",
+        }
+    )
+    reviewed = await api_client.put(
+        f"/api/v1/admin/utility-bill-imports/{imported['id']}/review",
+        headers=csrf(api_client),
+        json={
+            "revision": imported["revision"],
+            "field_reviews": reviews,
+            "conflict_resolutions": [],
+            "threshold_interpretation": "fixed_cycle_threshold",
+            "source_role": "supporting",
+        },
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["status"] == "ready_to_publish"
+
+    old_version_id = reviewed.json()["rate_version_id"]
+    old_plan_id = reviewed.json()["rate_plan_id"]
+    bill_row = await session.get(UtilityBillImport, imported["id"])
+    old_version = await session.get(RateVersion, old_version_id)
+    assert bill_row is not None and old_version is not None
+    bill_row.rate_version_id = None
+    await session.execute(
+        delete(RateVersionSource).where(RateVersionSource.rate_version_id == old_version_id)
+    )
+    await session.flush()
+    await session.delete(old_version)
+    await session.commit()
+
+    validation = await api_client.post(
+        f"/api/v1/admin/utility-bill-imports/{imported['id']}/validate",
+        headers=csrf(api_client),
+    )
+    assert validation.status_code == 200, validation.text
+    result = validation.json()
+    assert result["rate_draft_recreated"] is True
+    assert result["validation"]["valid"] is True
+    assert result["bill_status"] == "ready_to_publish"
+    assert result["rate_plan_id"] == old_plan_id
+    assert result["rate_version_id"] != old_version_id
+    assert await session.get(RateVersion, result["rate_version_id"]) is not None
+    assert (
+        await session.scalar(
+            select(func.count(RateVersionSource.rate_version_id)).where(
+                RateVersionSource.rate_version_id == result["rate_version_id"]
+            )
+        )
+        == 1
+    )
+
+    protected = await api_client.delete(
+        f"/api/v1/rates/versions/{result['rate_version_id']}",
+        headers=csrf(api_client),
+    )
+    assert protected.status_code == 409
+    assert protected.json()["code"] == "rate_version_in_use"
 
 
 @pytest.mark.asyncio

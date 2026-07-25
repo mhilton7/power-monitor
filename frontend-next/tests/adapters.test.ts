@@ -176,7 +176,12 @@ describe('typed homeowner adapters', () => {
         effective_value: null,
         confidence: 'missing',
       }],
-      conflicts: [],
+      conflicts: [{
+        id: 'pricing-conflict',
+        field_key: 'pricing_model',
+        extracted_value: 'flat',
+        configured_value: 'time_of_use',
+      }],
       blocking_warnings: [],
     })
 
@@ -193,6 +198,9 @@ describe('typed homeowner adapters', () => {
       path: 'winter_rates',
       required: false,
     })])
+    expect(bill.conflicts[0]?.message).toBe(
+      'Uploaded bill: Flat · current plan: Time of use. Confirming uses the bill value for the new draft and preserves existing history.',
+    )
     expect(JSON.stringify(bill)).not.toContain('Unknown')
     expect(() => adaptBillDetail({
       ...billPayloadWithConfidence('administrator_confirmed'),

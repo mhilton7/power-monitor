@@ -17,6 +17,7 @@ from app.bills.service import (
     bill_comparison,
     create_bill_import,
     delete_original_artifact,
+    ensure_bill_rate_draft,
     import_payload,
     publish_and_assign,
     reprocess_bill_import,
@@ -217,6 +218,18 @@ async def _store_utility_bill(
             str(exc),
             exc.code,
         ) from exc
+    rate_draft_recreated = False
+    if duplicate and bill.status != "published":
+        _version, rate_draft_recreated = await ensure_bill_rate_draft(
+            session,
+            bill=bill,
+            user_id=principal.user.id,
+        )
+        if rate_draft_recreated:
+            bill.approved_at = None
+            bill.status = "review_required"
+            bill.revision += 1
+            bill.updated_at = datetime.now(UTC)
     history_restored = duplicate and bill.history_cleared_at is not None
     if history_restored:
         bill.history_cleared_at = None
@@ -241,6 +254,7 @@ async def _store_utility_bill(
                 "automatic_activation": False,
                 "filename_logged": False,
                 "history_restored": history_restored,
+                "linked_rate_draft_recreated": rate_draft_recreated,
             },
         )
     )
@@ -716,6 +730,7 @@ async def review_utility_bill_import(
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
     bill = await _bill(session, principal, bill_id)
+    previous_rate_version_id = bill.rate_version_id
     result = await review_import(
         session,
         bill=bill,
@@ -742,6 +757,7 @@ async def review_utility_bill_import(
                 "threshold_interpretation": payload.threshold_interpretation,
                 "source_role": payload.source_role,
                 "ready_to_publish": bill.status == "ready_to_publish",
+                "linked_rate_draft_recreated": (previous_rate_version_id != bill.rate_version_id),
             },
         )
     )
@@ -751,13 +767,37 @@ async def review_utility_bill_import(
 
 @router.post("/admin/utility-bill-imports/{bill_id}/validate")
 async def validate_utility_bill_rate_draft(
-    bill_id: str, principal: CsrfPrincipal, session: DbSession
+    bill_id: str,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    return await validate_bill_rate_draft(
+    bill = await _bill(session, principal, bill_id)
+    result = await validate_bill_rate_draft(
         session,
-        await _bill(session, principal, bill_id),
+        bill,
+        user_id=principal.user.id,
     )
+    if result["rate_draft_recreated"]:
+        session.add(
+            audit_event(
+                action="utility_bill.rate_draft_recreated",
+                actor_type="user",
+                actor_id=principal.user.id,
+                request=request,
+                object_type="utility_bill_import",
+                object_id=bill.id,
+                details={
+                    "rate_plan_id": bill.rate_plan_id,
+                    "rate_version_id": bill.rate_version_id,
+                    "source": "retained_normalized_bill_evidence",
+                    "automatic_activation": False,
+                },
+            )
+        )
+        await session.commit()
+    return result
 
 
 @router.get("/admin/utility-bill-imports/{bill_id}/comparison")

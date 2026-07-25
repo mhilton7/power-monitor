@@ -712,4 +712,20 @@ async def version_usage_count(session: AsyncSession, version_id: str) -> int:
         .select_from(UtilityAccount)
         .where(UtilityAccount.active_rate_version_id == version_id)
     )
-    return int(calculations or 0) + int(assignments or 0) + int(accounts or 0)
+    bill_imports = await session.scalar(
+        select(func.count())
+        .select_from(UtilityBillImport)
+        .where(UtilityBillImport.rate_version_id == version_id)
+    )
+    source_evidence = await session.scalar(
+        select(func.count())
+        .select_from(RateVersionSource)
+        .where(RateVersionSource.rate_version_id == version_id)
+    )
+    return (
+        int(calculations or 0)
+        + int(assignments or 0)
+        + int(accounts or 0)
+        + int(bill_imports or 0)
+        + int(source_evidence or 0)
+    )
