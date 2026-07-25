@@ -155,6 +155,7 @@ class SiteRestoreRequest(SiteLifecycleRequest):
 
 class RatePlanLifecycleRequest(ApiModel):
     expected_revision: int = Field(ge=1)
+    expected_dependency_token: str | None = Field(default=None, min_length=64, max_length=64)
     reason: str = Field(min_length=3, max_length=500)
     confirmation: str = Field(min_length=1, max_length=160)
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
@@ -162,14 +163,28 @@ class RatePlanLifecycleRequest(ApiModel):
 
 class RatePlanRestoreRequest(ApiModel):
     expected_revision: int = Field(ge=1)
+    expected_dependency_token: str | None = Field(default=None, min_length=64, max_length=64)
     reason: str = Field(min_length=3, max_length=500)
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
 
 
 class RatePlanDraftDeleteRequest(ApiModel):
     expected_revision: int = Field(ge=1)
+    expected_dependency_token: str | None = Field(default=None, min_length=64, max_length=64)
     confirmation: str = Field(min_length=1, max_length=160)
     reason: str = Field(min_length=3, max_length=500)
+
+
+class RatePlanUnassignRequest(ApiModel):
+    utility_account_id: str = Field(min_length=1, max_length=36)
+    expected_revision: int = Field(ge=1)
+    expected_dependency_token: str = Field(min_length=64, max_length=64)
+    effective_at: datetime
+    reason: str = Field(min_length=8, max_length=500)
+    confirmation: str = Field(min_length=1, max_length=180)
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
+
+    _effective_aware = field_validator("effective_at")(require_aware)
 
 
 class SiteSensorResolution(ApiModel):

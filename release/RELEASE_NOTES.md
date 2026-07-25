@@ -1,5 +1,31 @@
 # Power Monitor Server 1.0.0
 
+## Normalized bill review, rate-plan lifecycle, and dropdown repair
+
+- Stores a normative `normalized-utility-bill/1.0` artifact with every
+  extraction revision, including sanitized file metadata, separate rate-plan
+  and billing-cycle data, exact recognized evidence, validation, and explicitly
+  reasoned missing fields.
+- Corrects the frontend contract from obsolete `billing_cycle` data to the
+  server `cycle_draft`, groups recognized review values by meaning, keeps
+  optional missing values out of the primary review, and prevents a null value
+  from acquiring confirmed confidence.
+- Adds authenticated normalized JSON, redacted extracted-text, and safe
+  retained-original reprocessing operations. Reprocessing creates an immutable
+  revision and never overwrites confirmed or published data.
+- Adds explicit effective-dated rate-plan unassignment, retirement, soft
+  removal, impact review tokens, stale-dependency rejection, a complete Removed
+  view, and restore without reassignment while retaining costs, reports,
+  assignments, bill/source evidence, and audit history.
+- Replaces ad-hoc Billing, sensor, and account menus with one accessible
+  dropdown primitive that closes on outside interaction, Escape, route change,
+  another menu, scroll, resize, and owner teardown. Destructive selections close
+  before opening confirmation.
+- Adds append-only Alembic revision `20260725_0016`, regenerated OpenAPI and
+  normalized-artifact schema, backend/frontend/browser/PostgreSQL regressions,
+  and TrueNAS upgrade/rollback verification. No firmware, protocol, service,
+  dataset, secret, capability, network, mount, or host port changes.
+
 ## Single Home greenfield frontend
 
 - Replaces the production browser bundle with an independent React/TypeScript

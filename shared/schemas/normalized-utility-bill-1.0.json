@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "normalized-utility-bill/1.0",
+  "title": "Reviewed normalized utility-bill artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "parser_id",
+    "parser_version",
+    "artifact",
+    "utility",
+    "billing_cycle",
+    "plan_candidate",
+    "line_items",
+    "evidence",
+    "validation",
+    "warnings",
+    "missing_fields",
+    "ignored_sections",
+    "page_classifications",
+    "processing_status"
+  ],
+  "properties": {
+    "schema_version": {"const": "normalized-utility-bill/1.0"},
+    "parser_id": {"type": "string", "minLength": 1},
+    "parser_version": {"type": "string", "minLength": 1},
+    "artifact": {"$ref": "#/$defs/artifact"},
+    "utility": {"$ref": "#/$defs/utility"},
+    "billing_cycle": {"type": "object"},
+    "plan_candidate": {"type": "object"},
+    "line_items": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "evidence": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/evidence"}
+    },
+    "validation": {"type": "object"},
+    "warnings": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "missing_fields": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/missing_field"}
+    },
+    "ignored_sections": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "page_classifications": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "processing_status": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "nullable_string": {
+      "oneOf": [
+        {"type": "string"},
+        {"type": "null"}
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_id",
+        "display_filename",
+        "sha256",
+        "mime_type",
+        "byte_size",
+        "page_count",
+        "extraction_method",
+        "imported_at"
+      ],
+      "properties": {
+        "artifact_id": {"type": "string", "minLength": 1},
+        "display_filename": {"type": "string", "minLength": 1, "maxLength": 184},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "mime_type": {"const": "application/pdf"},
+        "byte_size": {
+          "oneOf": [
+            {"type": "integer", "minimum": 1},
+            {"type": "null"}
+          ]
+        },
+        "page_count": {"type": "integer", "minimum": 1},
+        "extraction_method": {"enum": ["text", "ocr", "mixed"]},
+        "imported_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "utility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "document_type", "rate_plan_code"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nullable_string"},
+        "document_type": {"$ref": "#/$defs/nullable_string"},
+        "rate_plan_code": {"$ref": "#/$defs/nullable_string"}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "output_kind",
+        "value",
+        "confidence",
+        "source_page",
+        "source_region",
+        "source_text",
+        "extraction_method",
+        "parser_rule",
+        "parser_version",
+        "validation_result"
+      ],
+      "properties": {
+        "field": {"type": "string", "minLength": 1},
+        "output_kind": {"type": "string", "minLength": 1},
+        "value": {},
+        "confidence": {
+          "enum": [
+            "parser_confirmed",
+            "arithmetic_confirmed",
+            "high",
+            "medium",
+            "low",
+            "manual_confirmed",
+            "conflict"
+          ]
+        },
+        "source_page": {
+          "oneOf": [
+            {"type": "integer", "minimum": 1},
+            {"type": "null"}
+          ]
+        },
+        "source_region": {},
+        "source_text": {"$ref": "#/$defs/nullable_string"},
+        "extraction_method": {"type": "string", "minLength": 1},
+        "parser_rule": {"$ref": "#/$defs/nullable_string"},
+        "parser_version": {"type": "string", "minLength": 1},
+        "validation_result": {}
+      }
+    },
+    "missing_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "output_kind",
+        "value",
+        "state",
+        "required",
+        "reason"
+      ],
+      "properties": {
+        "field": {"type": "string", "minLength": 1},
+        "output_kind": {"type": "string", "minLength": 1},
+        "value": {"type": "null"},
+        "state": {"enum": ["not_found_on_bill", "not_applicable"]},
+        "required": {"type": "boolean"},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

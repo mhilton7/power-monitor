@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 import pytest
+from jsonschema import Draft202012Validator
 from sqlalchemy import func, select
 
 from app.bills.extraction import (
@@ -306,6 +307,46 @@ async def test_complete_bill_api_workflow_is_reviewed_separate_and_private(
     assert imported["content_sha256"]
     assert imported["rate_plan_id"] and imported["rate_version_id"]
     assert imported["cycle_draft"]["id"]
+    normalized_artifact = imported["normalized_artifact"]
+    schema = json.loads(
+        (
+            Path(__file__).parents[2] / "shared" / "schemas" / "normalized-utility-bill-1.0.json"
+        ).read_text(encoding="utf-8")
+    )
+    Draft202012Validator(schema).validate(normalized_artifact)
+    assert normalized_artifact["schema_version"] == "normalized-utility-bill/1.0"
+    assert normalized_artifact["artifact"] == {
+        "artifact_id": imported["artifact_id"],
+        "display_filename": "ignored-client-name.pdf",
+        "sha256": imported["content_sha256"],
+        "mime_type": "application/pdf",
+        "byte_size": len(content),
+        "page_count": 2,
+        "extraction_method": "text",
+        "imported_at": normalized_artifact["artifact"]["imported_at"],
+    }
+    assert normalized_artifact["utility"] == {
+        "name": "Southern California Edison",
+        "document_type": None,
+        "rate_plan_code": "DOMESTIC",
+    }
+    assert normalized_artifact["billing_cycle"]["total_usage_kwh"] == "951"
+    assert normalized_artifact["billing_cycle"]["full_bill_total"] == "355.00"
+    assert isinstance(normalized_artifact["line_items"], list)
+    assert all(item["value"] is not None for item in normalized_artifact["evidence"])
+    assert all(
+        item["confidence"]
+        in {
+            "parser_confirmed",
+            "arithmetic_confirmed",
+            "high",
+            "medium",
+            "low",
+            "manual_confirmed",
+        }
+        for item in normalized_artifact["evidence"]
+    )
+    assert all(item["value"] is None for item in normalized_artifact["missing_fields"])
     assert imported["cycle_draft"]["status"] == "draft"
     assert imported["normalized"]["rate_plan"]["tiers"][0]["energy_charge"] == "173.7000000"
 
@@ -675,6 +716,75 @@ async def test_single_sce_charge_detail_page_creates_reviewable_drafts(
     assert [warning["code"] for warning in imported["blocking_warnings"]] == [
         "single_bill_incomplete_tariff"
     ]
+
+    missing = next(item for item in imported["fields"] if item["normalized_value"] is None)
+    invalid_confirmation = await api_client.put(
+        f"/api/v1/admin/utility-bill-imports/{imported['id']}/review",
+        headers=csrf(api_client),
+        json={
+            "revision": imported["revision"],
+            "field_reviews": [{"field_id": missing["id"], "action": "confirm"}],
+            "conflict_resolutions": [],
+            "threshold_interpretation": "fixed_cycle_threshold",
+            "source_role": "supporting",
+        },
+    )
+    assert invalid_confirmation.status_code == 422
+    assert invalid_confirmation.json()["code"] == "bill_missing_field_confirmation"
+
+    normalized = await api_client.get(
+        f"/api/v1/admin/utility-bill-imports/{imported['id']}/normalized"
+    )
+    assert normalized.status_code == 200
+    assert normalized.json()["billing_cycle"]["total_usage_kwh"] == "951"
+
+    reprocessed = await api_client.post(
+        f"/api/v1/admin/utility-bill-imports/{imported['id']}/reprocess",
+        headers=csrf(api_client),
+    )
+    assert reprocessed.status_code == 200, reprocessed.text
+    assert reprocessed.json()["extraction_revision"] == 2
+    assert reprocessed.json()["adopted_for_review"] is True
+    assert reprocessed.json()["confirmed_records_overwritten"] is False
+    assert (
+        reprocessed.json()["bill"]["normalized_artifact"]["billing_cycle"]["total_usage_kwh"]
+        == "951"
+    )
+
+
+@pytest.mark.asyncio
+async def test_strict_sce_import_exposes_readable_normalized_review(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await bootstrap(api_client)
+    content = (FIXTURES / "sanitized-sce-domestic-bill.pdf").read_bytes()
+    upload = await api_client.post(
+        "/api/v1/admin/utility-bill-imports",
+        headers=csrf(api_client),
+        files={
+            "upload": (
+                "July SCE bill (sanitized).pdf",
+                content,
+                "application/pdf",
+            )
+        },
+    )
+    assert upload.status_code == 201, upload.text
+    artifact = upload.json()["normalized_artifact"]
+    assert artifact["artifact"]["display_filename"] == "July SCE bill (sanitized).pdf"
+    assert artifact["artifact"]["page_count"] == 6
+    assert artifact["artifact"]["extraction_method"] == "text"
+    assert artifact["utility"] == {
+        "name": "Southern California Edison",
+        "document_type": "residential_electric_bill",
+        "rate_plan_code": "DOMESTIC",
+    }
+    assert artifact["billing_cycle"]["total_usage_kwh"] == "951"
+    assert artifact["billing_cycle"]["full_bill_total"] == "354.15"
+    assert artifact["evidence"]
+    assert all(item["value"] is not None for item in artifact["evidence"])
+    assert all(item["value"] is None for item in artifact["missing_fields"])
+    assert all(item["confidence"] != "administrator_confirmed" for item in artifact["evidence"])
 
 
 @pytest.mark.asyncio

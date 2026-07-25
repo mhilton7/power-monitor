@@ -3,9 +3,10 @@ import { Check, FileCheck2, FileText, ShieldCheck, Upload, X } from 'lucide-reac
 import { useRef, useState } from 'react'
 import { adaptBillDetail } from '../../api/adapters'
 import { errorMessage, json, request } from '../../api/client'
+import { record } from '../../api/validation'
 import { InlineNotice, LoadingState } from '../../components/feedback/States'
 import type { BillImportDetail, ElectricService, Home } from '../../types/models'
-import { dateRange, energy, money, statusLabel } from '../../utils/format'
+import { dateRange, dateTime, energy, money, statusLabel } from '../../utils/format'
 
 type Step = 'upload' | 'review' | 'confirm' | 'apply' | 'done'
 
@@ -52,6 +53,7 @@ export function BillImportFlow({
     },
     onSuccess: (data) => {
       setBill(data)
+      setThreshold(data.thresholdInterpretation)
       setStep('review')
     },
   })
@@ -114,9 +116,24 @@ export function BillImportFlow({
       setStep('done')
     },
   })
+  const reprocess = useMutation({
+    mutationFn: () => {
+      if (!bill) throw new Error('The extracted bill is unavailable.')
+      return request(
+        `/api/v1/admin/utility-bill-imports/${bill.id}/reprocess`,
+        json('POST'),
+        (value) => adaptBillDetail(record(value, 'reprocess result').bill),
+      )
+    },
+    onSuccess: (data) => {
+      setBill(data)
+      setThreshold(data.thresholdInterpretation)
+    },
+  })
 
   const currentIndex = steps.findIndex((item) => item.id === step)
-  const error = upload.error ?? review.error ?? validate.error ?? apply.error
+  const error = upload.error ?? review.error ?? validate.error ?? apply.error ?? reprocess.error
+  const requiredMissing = bill?.missingFields.filter((field) => field.required) ?? []
   const retry = () => {
     if (step === 'upload') upload.mutate()
     else if (step === 'review') review.mutate()
@@ -157,20 +174,49 @@ export function BillImportFlow({
           <>
             <div className="review-summary">
               <FileText />
-              <div><strong>{dateRange(bill.startsAt, bill.endsAt)}</strong><span>{energy(bill.usageKwh)} · {money(bill.total, home.currency)} · {bill.pageCount} pages</span></div>
-              <span className="pill">{statusLabel(bill.extractionMethod ?? 'extracted')}</span>
+              <div>
+                <strong>{bill.displayFilename}</strong>
+                <span>{bill.utilityName ?? 'Utility not identified'} · {statusLabel(bill.documentType ?? 'electric bill')}</span>
+                <small>{bill.pageCount} pages · {statusLabel(bill.extractionMethod ?? 'text')} extraction · imported {dateTime(bill.importedAt)}</small>
+              </div>
+              <span className="pill">{statusLabel(bill.processingStatus)}</span>
             </div>
-            <div className="review-fields">
-              {bill.fields.length ? bill.fields.map((field) => (
-                <div key={field.id}>
-                  <span>{statusLabel(field.label)}</span>
-                  <strong>{field.value ?? 'Unknown'}</strong>
-                  <small>{field.sourcePage ? `Page ${field.sourcePage}` : 'Source retained'} · {field.confidence ?? 'unscored'} confidence</small>
-                </div>
-              )) : <InlineNotice tone="warning">The parser did not return reviewable values. The bill remains a draft.</InlineNotice>}
-            </div>
+            {bill.fields.length
+              ? <div className="review-groups">{groupBillFields(bill).map((group) => (
+                <section key={group.label} className="review-group">
+                  <h3>{group.label}</h3>
+                  <div className="review-fields">{group.fields.map((field) => (
+                    <div key={field.id}>
+                      <span>{statusLabel(field.label)}</span>
+                      <strong>{field.value}</strong>
+                      <small>{field.sourcePage ? `Page ${field.sourcePage}` : 'Source retained'} · {statusLabel(field.confidence)}</small>
+                    </div>
+                  ))}</div>
+                </section>
+              ))}</div>
+              : <InlineNotice tone="warning">Unsupported bill layout. No recognized values can be applied.</InlineNotice>}
+            {requiredMissing.length > 0 && (
+              <section className="missing-fields needs-review" aria-label="Needs review">
+                <h3>Needs review</h3>
+                <p>These required values were not found and must be corrected before Apply.</p>
+                <ul>{requiredMissing.map((field) => <li key={`${field.outputKind}-${field.path}`}><strong>{statusLabel(field.path)}</strong><span>{field.reason}</span></li>)}</ul>
+              </section>
+            )}
+            {bill.missingFields.some((field) => !field.required) && (
+              <details className="missing-fields">
+                <summary>Fields not found on this bill ({bill.missingFields.filter((field) => !field.required).length})</summary>
+                <ul>{bill.missingFields.filter((field) => !field.required).map((field) => <li key={`${field.outputKind}-${field.path}`}><strong>{statusLabel(field.path)}</strong><span>{field.state === 'not_applicable' ? 'Not applicable' : field.reason}</span></li>)}</ul>
+              </details>
+            )}
             {bill.conflicts.map((conflict) => <InlineNotice key={conflict.id} tone="warning">{statusLabel(conflict.path)}: {conflict.message}</InlineNotice>)}
             <label><span>Tier threshold meaning</span><select value={threshold} onChange={(event) => { setThreshold(event.target.value as typeof threshold); }}><option value="unknown">Not stated / not applicable</option><option value="fixed_cycle_threshold">Fixed billing-cycle threshold</option><option value="daily_baseline">Daily baseline</option><option value="baseline_multiplier">Baseline multiplier</option></select></label>
+            <div className="bill-diagnostics" aria-label="Bill diagnostics">
+              <button type="button" className="button secondary compact" disabled={reprocess.isPending} onClick={() => { reprocess.mutate() }}>{reprocess.isPending ? 'Reprocessing…' : 'Reprocess bill'}</button>
+              <a className="button ghost compact" href={`/api/v1/admin/utility-bill-imports/${bill.id}/evidence/pages/1`} target="_blank" rel="noreferrer">View evidence</a>
+              <a className="button ghost compact" href={`/api/v1/admin/utility-bill-imports/${bill.id}/extracted-text`} target="_blank" rel="noreferrer">View extracted text</a>
+              <a className="button ghost compact" href={`/api/v1/admin/utility-bill-imports/${bill.id}/normalized`} target="_blank" rel="noreferrer">View normalized data</a>
+              <a className="button ghost compact" href={`/api/v1/admin/utility-bill-imports/${bill.id}/sanitized-evidence`} download>Download normalized JSON</a>
+            </div>
           </>
         )}
         {step === 'confirm' && bill && (
@@ -209,11 +255,37 @@ export function BillImportFlow({
         <footer className="workflow-footer">
           <button type="button" className="button secondary" onClick={onClose}>Cancel</button>
           {step === 'upload' && <button type="button" className="button primary" disabled={!file || upload.isPending} onClick={() => { upload.mutate(); }}>{upload.isPending ? 'Extracting…' : 'Upload and review'}</button>}
-          {step === 'review' && <button type="button" className="button primary" disabled={review.isPending || bill?.fields.length === 0} onClick={() => { review.mutate(); }}>{review.isPending ? 'Saving review…' : 'Confirm extracted values'}</button>}
+          {step === 'review' && <button type="button" className="button primary" disabled={review.isPending || bill?.fields.length === 0 || requiredMissing.length > 0} onClick={() => { review.mutate(); }}>{review.isPending ? 'Saving review…' : 'Confirm extracted values'}</button>}
           {step === 'confirm' && <button type="button" className="button primary" disabled={!confirmed || validate.isPending} onClick={() => { validate.mutate(); }}>{validate.isPending ? 'Validating…' : 'Continue to Apply'}</button>}
           {step === 'apply' && <button type="button" className="button primary" disabled={apply.isPending || !serviceId} onClick={() => { apply.mutate(); }}>{apply.isPending ? 'Applying…' : 'Apply plan and billing cycle'}</button>}
         </footer>
       )}
     </section>
   )
+}
+
+const reviewGroupOrder = [
+  'Bill summary',
+  'Billing cycle',
+  'Usage',
+  'Rate plan',
+  'Charges and taxes',
+  'Credits and adjustments',
+  'Validation',
+] as const
+
+function reviewGroup(path: string): typeof reviewGroupOrder[number] {
+  if (path.includes('validation') || path.includes('subtotal') || path.includes('total_new')) return 'Validation'
+  if (path.includes('credit') || path.includes('adjustment')) return 'Credits and adjustments'
+  if (path.includes('charge') || path.includes('tax') || path.startsWith('line_items.')) return 'Charges and taxes'
+  if (path.includes('rate') || path.includes('pricing') || path.includes('season') || path.includes('baseline')) return 'Rate plan'
+  if (path.includes('usage') || path.includes('meter')) return 'Usage'
+  if (path.includes('period') || path.includes('cycle') || path.includes('starts_at') || path.includes('ends_at')) return 'Billing cycle'
+  return 'Bill summary'
+}
+
+function groupBillFields(bill: BillImportDetail) {
+  return reviewGroupOrder
+    .map((label) => ({ label, fields: bill.fields.filter((field) => reviewGroup(field.path) === label) }))
+    .filter((group) => group.fields.length > 0)
 }

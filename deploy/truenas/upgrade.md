@@ -79,6 +79,28 @@ from **Prior imports** without deleting its linked drafts, evidence, billing
 data, or audit history. It adds no dataset, secret, service, capability,
 network, mount, or host port.
 
+The normalized bill-review and rate-plan lifecycle correction adds append-only
+revision `20260725_0016`. It stores the versioned normalized artifact on each
+extraction revision and replaces the ambiguous legacy
+`administrator_confirmed` confidence label with parser-, arithmetic-, manual-,
+missing-, conflict-, and not-applicable states. Existing original PDFs,
+redacted text, extraction revisions, billing records, rate versions,
+assignments, costs, and audit records are preserved. Missing legacy values are
+backfilled as `missing`, never as confirmed. This revision adds no dataset,
+secret, service, capability, network, mount, environment variable, or host
+port.
+
+After migration, upload the sanitized regression bill and verify that the
+review header shows its filename, utility/document type, page count, extraction
+method, status, and import time. Confirm recognized charges appear once, absent
+optional fields are grouped under **Fields not found on this bill**, and a
+required missing value blocks confirmation. In **Billing**, open **More** and
+verify Escape, outside click, route change, and another menu close it. Review
+dependencies before **Remove from Electric Service**, then confirm that
+unassignment preserves prior bill/cost history. Retire/remove must remain
+blocked until active and future assignments are resolved; restore makes a plan
+available but does not reassign it.
+
 After migration, upload the sanitized SCE test fixture through **Billing >
 Rate Plans > Custom Plan > Import from utility bill**. Confirm the adapter is
 `sce_residential_bill_v1`, the detailed charge page is authoritative, ignored

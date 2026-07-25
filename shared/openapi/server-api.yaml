@@ -2949,6 +2949,121 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/normalized:
+    get:
+      tags:
+      - utility bill imports
+      summary: Get Normalized Utility Bill
+      operationId: get_normalized_utility_bill_api_v1_admin_utility_bill_imports__bill_id__normalized_get
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Normalized Utility Bill Api V1 Admin Utility Bill
+                  Imports  Bill Id  Normalized Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/extracted-text:
+    get:
+      tags:
+      - utility bill imports
+      summary: Download Extracted Utility Bill Text
+      operationId: download_extracted_utility_bill_text_api_v1_admin_utility_bill_imports__bill_id__extracted_text_get
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/reprocess:
+    post:
+      tags:
+      - utility bill imports
+      summary: Reprocess Utility Bill
+      operationId: reprocess_utility_bill_api_v1_admin_utility_bill_imports__bill_id__reprocess_post
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Reprocess Utility Bill Api V1 Admin Utility Bill Imports  Bill
+                  Id  Reprocess Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/admin/utility-bill-imports/{bill_id}/evidence/pages/{page_number}:
     get:
       tags:
@@ -7345,6 +7460,108 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Remove Rate Plan Api V1 Admin Rate Plans  Plan Id  Remove
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-plans/{plan_id}/retire:
+    post:
+      tags:
+      - rate management
+      summary: Retire Rate Plan
+      operationId: retire_rate_plan_api_v1_admin_rate_plans__plan_id__retire_post
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Plan Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatePlanLifecycleRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Retire Rate Plan Api V1 Admin Rate Plans  Plan Id  Retire
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-plans/{plan_id}/unassign:
+    post:
+      tags:
+      - rate management
+      summary: Unassign Rate Plan
+      operationId: unassign_rate_plan_api_v1_admin_rate_plans__plan_id__unassign_post
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Plan Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RatePlanUnassignRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Unassign Rate Plan Api V1 Admin Rate Plans  Plan Id  Unassign
                   Post
         '422':
           description: Validation Error
@@ -13564,6 +13781,13 @@ components:
           type: integer
           minimum: 1.0
           title: Expected Revision
+        expected_dependency_token:
+          anyOf:
+          - type: string
+            maxLength: 64
+            minLength: 64
+          - type: 'null'
+          title: Expected Dependency Token
         confirmation:
           type: string
           maxLength: 160
@@ -13587,6 +13811,13 @@ components:
           type: integer
           minimum: 1.0
           title: Expected Revision
+        expected_dependency_token:
+          anyOf:
+          - type: string
+            maxLength: 64
+            minLength: 64
+          - type: 'null'
+          title: Expected Dependency Token
         reason:
           type: string
           maxLength: 500
@@ -13617,6 +13848,13 @@ components:
           type: integer
           minimum: 1.0
           title: Expected Revision
+        expected_dependency_token:
+          anyOf:
+          - type: string
+            maxLength: 64
+            minLength: 64
+          - type: 'null'
+          title: Expected Dependency Token
         reason:
           type: string
           maxLength: 500
@@ -13635,6 +13873,53 @@ components:
       - expected_revision
       - reason
       title: RatePlanRestoreRequest
+    RatePlanUnassignRequest:
+      properties:
+        utility_account_id:
+          type: string
+          maxLength: 36
+          minLength: 1
+          title: Utility Account Id
+        expected_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected Revision
+        expected_dependency_token:
+          type: string
+          maxLength: 64
+          minLength: 64
+          title: Expected Dependency Token
+        effective_at:
+          type: string
+          format: date-time
+          title: Effective At
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+        confirmation:
+          type: string
+          maxLength: 180
+          minLength: 1
+          title: Confirmation
+        idempotency_key:
+          anyOf:
+          - type: string
+            maxLength: 160
+            minLength: 8
+          - type: 'null'
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - utility_account_id
+      - expected_revision
+      - expected_dependency_token
+      - effective_at
+      - reason
+      - confirmation
+      title: RatePlanUnassignRequest
     RatePreviewRequest:
       properties:
         plan_code:

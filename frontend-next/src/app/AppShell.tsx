@@ -23,6 +23,7 @@ import { useSingleHome } from '../state/SingleHomeContext'
 import { power, relativeTime } from '../utils/format'
 import { AlertDrawer } from '../features/alerts/AlertDrawer'
 import { StatusDot } from '../components/data-display/Surface'
+import { DropdownMenu, DropdownMenuItem } from '../components/overlays/DropdownMenu'
 
 export const PRIMARY_DESTINATIONS = [
   { label: 'Home', path: '/home', icon: Home },
@@ -38,7 +39,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { railCollapsed, setRailCollapsed } = useAppearance()
   const location = useLocation()
   const [alertsOpen, setAlertsOpen] = useState(new URLSearchParams(location.search).get('alerts') === '1')
-  const [userOpen, setUserOpen] = useState(false)
   const navigate = useNavigate()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const liveState = summary?.hasLiveData ? 'live' : summary?.totalSensors ? 'waiting' : 'attention'
@@ -103,17 +103,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             {alerts.length > 0 && <span>{alerts.length}</span>}
           </button>
           <div className="user-menu">
-            <button type="button" className="user-button" aria-expanded={userOpen} onClick={() => { setUserOpen(!userOpen); }}>
-              <CircleUserRound aria-hidden="true" />
-              <span><strong>{session?.user?.name ?? 'User'}</strong><small>{session?.user?.roles.includes('admin') ? 'Owner' : 'Family'}</small></span>
-              <Menu aria-hidden="true" />
-            </button>
-            {userOpen && (
-              <div className="user-popover">
-                <span>{session?.user?.email}</span>
-                <button type="button" onClick={() => void logout()}><LogOut size={16} /> Sign out</button>
-              </div>
-            )}
+            <DropdownMenu
+              label="Account menu"
+              triggerClassName="user-button"
+              menuClassName="user-popover"
+              trigger={<>
+                <CircleUserRound aria-hidden="true" />
+                <span><strong>{session?.user?.name ?? 'User'}</strong><small>{session?.user?.roles.includes('admin') ? 'Owner' : 'Family'}</small></span>
+                <Menu aria-hidden="true" />
+              </>}
+            >
+              <span>{session?.user?.email}</span>
+              <DropdownMenuItem onSelect={() => { void logout() }}><LogOut size={16} /> Sign out</DropdownMenuItem>
+            </DropdownMenu>
           </div>
         </div>
       </header>

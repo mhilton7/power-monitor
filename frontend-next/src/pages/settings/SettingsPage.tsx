@@ -33,6 +33,7 @@ import {
 import { json, request } from '../../api/client'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
 import { Surface } from '../../components/data-display/Surface'
+import { DropdownMenu, DropdownMenuItem } from '../../components/overlays/DropdownMenu'
 import { SensorSetupFlow } from '../../features/sensors/SensorSetupFlow'
 import { useAppearance } from '../../state/AppearanceContext'
 import { useAuth } from '../../state/AuthContext'
@@ -131,7 +132,6 @@ function SensorSettings() {
   const { resolution } = useSingleHome()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const [adding, setAdding] = useState(new URLSearchParams(location.search).get('action') === 'add')
-  const [selected, setSelected] = useState<string>()
   const firmware = useQuery({ queryKey: ['firmware-releases'], queryFn: () => request<Array<{ id: string; version: string; channel: string; active: boolean }>>('/api/v1/firmware-releases') })
   const maintenance = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => enabled
@@ -144,7 +144,7 @@ function SensorSettings() {
       reason: 'other',
       confirmation: name,
     })),
-    onSuccess: async () => { setSelected(undefined); await client.invalidateQueries({ queryKey: ['sensors'] }) },
+    onSuccess: async () => { await client.invalidateQueries({ queryKey: ['sensors'] }) },
   })
   const configure = useMutation({
     mutationFn: ({ id, currentName, currentCt }: { id: string; currentName: string; currentCt: string }) => {
@@ -173,14 +173,13 @@ function SensorSettings() {
             <span className={`sensor-icon ${sensor.online ? 'online' : ''}`}><Radio /></span>
             <span><strong>{sensor.name}</strong><small>{sensor.monitoredCircuit} · {sensor.firmware ?? 'Firmware unknown'} · last seen {relativeTime(sensor.lastSeenAt)}</small></span>
             <span className={`pill ${sensor.online ? 'success' : 'warning'}`}>{sensor.online ? 'Online' : 'Needs attention'}</span>
-            <button className="icon-button" type="button" aria-label={`Manage ${sensor.name}`} onClick={() => { setSelected(selected === sensor.id ? undefined : sensor.id); }}><MoreHorizontal /></button>
-            {selected === sensor.id && <div className="row-menu">
-              <button type="button" onClick={() => { configure.mutate({ id: sensor.id, currentName: sensor.name, currentCt: sensor.ctRatingAmps }); }}><Gauge /> Edit name and CT rating</button>
-              <button type="button" onClick={() => { maintenance.mutate({ id: sensor.id, enabled: true }); }}><Wrench /> Start maintenance test</button>
-              <button type="button" onClick={() => { void request(`/api/v1/devices/${sensor.id}/credential-rotation`, json('POST', { overlap_seconds: 3600 })); }}><KeyRound /> Rotate credentials</button>
-              {firmware.data?.[0] && <button type="button" onClick={() => { const release = firmware.data[0]; if (release && confirm(`Install signed firmware ${release.version} on ${sensor.name}?`)) updateFirmware.mutate({ releaseId: release.id, sensorId: sensor.id }); }}><RefreshCw /> Update signed firmware</button>}
-              <button type="button" className="danger" onClick={() => { if (confirm(`Remove ${sensor.name}? Historical readings will be preserved.`)) remove.mutate({ id: sensor.id, name: sensor.name }) }}><Trash2 /> Remove sensor</button>
-            </div>}
+            <DropdownMenu label={`Manage ${sensor.name}`} triggerClassName="icon-button" menuClassName="row-menu" trigger={<MoreHorizontal />}>
+              <DropdownMenuItem onSelect={() => { configure.mutate({ id: sensor.id, currentName: sensor.name, currentCt: sensor.ctRatingAmps }); }}><Gauge /> Edit name and CT rating</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => { maintenance.mutate({ id: sensor.id, enabled: true }); }}><Wrench /> Start maintenance test</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => { void request(`/api/v1/devices/${sensor.id}/credential-rotation`, json('POST', { overlap_seconds: 3600 })); }}><KeyRound /> Rotate credentials</DropdownMenuItem>
+              {firmware.data?.[0] && <DropdownMenuItem onSelect={() => { const release = firmware.data[0]; if (release && confirm(`Install signed firmware ${release.version} on ${sensor.name}?`)) updateFirmware.mutate({ releaseId: release.id, sensorId: sensor.id }); }}><RefreshCw /> Update signed firmware</DropdownMenuItem>}
+              <DropdownMenuItem className="danger" onSelect={() => { if (confirm(`Remove ${sensor.name}? Historical readings will be preserved.`)) remove.mutate({ id: sensor.id, name: sensor.name }) }}><Trash2 /> Remove sensor</DropdownMenuItem>
+            </DropdownMenu>
           </article>)}</div>}
       </Surface>
       {home && adding && <SensorSetupFlow home={home} onClose={() => { setAdding(false); }} />}

@@ -88,10 +88,15 @@ activation, source evidence, and custom-plan schema behavior.
 Dependency-aware removal uses
 `GET /api/v1/admin/rate-plans/{plan_id}/dependencies`,
 `DELETE /api/v1/admin/rate-plan-drafts/{plan_id}`,
+`POST /api/v1/admin/rate-plans/{plan_id}/unassign`,
+`POST /api/v1/admin/rate-plans/{plan_id}/retire`,
 `POST /api/v1/admin/rate-plans/{plan_id}/remove`, and
 `POST /api/v1/admin/rate-plans/{plan_id}/restore`. The administrator list
 accepts active, removed, retired, combined, or all status filters. Removed
-plans cannot be assigned, edited, versioned, or activated. See
+plans cannot be assigned, edited, versioned, or activated. Lifecycle mutations
+submit the dependency token from the preceding impact review so concurrent
+assignment changes fail with `409 Conflict`. Explicit unassignment closes the
+effective-dated assignment without deleting historical costs or evidence. See
 [Rate-plan lifecycle](RATE_PLAN_LIFECYCLE.md).
 
 Tiered account status is
@@ -120,6 +125,14 @@ identifier. Upload and review reuse the existing job, artifact, rate-source,
 custom-rate, assignment, cycle, audit, RBAC, and CSRF services. The upload job
 is readable through `GET /api/v1/jobs/{job_id}`. See [Utility-bill PDF
 imports](UTILITY_BILL_IMPORTS.md).
+
+Bill detail includes the normative `normalized-utility-bill/1.0` object.
+`GET /api/v1/admin/utility-bill-imports/{bill_id}/normalized` returns that
+artifact directly, `/extracted-text` returns the retained redacted text, and
+`POST /reprocess` creates a new immutable extraction revision from the retained
+private original. The normalized contract places only recognized values in
+`evidence`; absent fields are represented separately in `missing_fields` and
+cannot be confirmed as though a value had been found.
 
 Recognized SCE residential bills return strict `sce_bill_v1` adapter metadata,
 page classifications, ignored-section reasons, per-field parser/validation

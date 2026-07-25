@@ -193,6 +193,7 @@
 .button.compact { min-height: 36px; padding: .45rem .75rem; }
 .button.ghost { border-color: transparent; }
 .more-menu { position: relative; }
+.dropdown-menu { position: relative; display: inline-flex; min-width: 0; }
 .menu-popover {
   position: absolute;
   z-index: 45;
@@ -444,6 +445,18 @@ tbody th { font-weight: 700; }
 .review-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .review-fields > div { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-md); }
 .review-fields strong, .review-fields small { overflow-wrap: anywhere; }
+.review-groups { display: grid; gap: var(--space-5); }
+.review-group { display: grid; gap: var(--space-3); }
+.review-group h3 { margin: 0; font-size: var(--text-md); }
+.missing-fields { padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+.missing-fields.needs-review { border-color: var(--warning); }
+.missing-fields summary { cursor: pointer; font-weight: 750; }
+.missing-fields p { margin: var(--space-2) 0; color: var(--muted); }
+.missing-fields ul { display: grid; gap: var(--space-2); margin: var(--space-3) 0 0; padding: 0; list-style: none; }
+.missing-fields li { display: grid; grid-template-columns: minmax(10rem, .35fr) 1fr; gap: var(--space-3); }
+.missing-fields li span { color: var(--muted); }
+.bill-diagnostics { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.lifecycle-dialog { width: min(52rem, calc(100vw - 2rem)); min-height: 0; }
 .confirm-card { display: grid; justify-items: start; gap: var(--space-4); max-width: 46rem; margin: auto; padding: var(--space-7); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }
 .confirm-card > svg { width: 2.25rem; height: 2.25rem; color: var(--accent); }
 .confirm-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: var(--space-3); margin: 0; }

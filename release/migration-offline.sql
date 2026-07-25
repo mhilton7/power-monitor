@@ -3050,5 +3050,26 @@ CREATE INDEX ix_utility_bill_imports_history_cleared_at ON utility_bill_imports 
 
 UPDATE alembic_version SET version_num='20260724_0015' WHERE alembic_version.version_num = '20260724_0014';
 
+-- Running upgrade 20260724_0015 -> 20260725_0016
+
+ALTER TABLE utility_bill_extraction_revisions ADD COLUMN normalized_artifact JSON DEFAULT '{}' NOT NULL;
+
+ALTER TABLE utility_bill_extracted_fields DROP CONSTRAINT ck_utility_bill_extracted_fields_utility_bill_field_confidence;
+
+UPDATE utility_bill_extracted_fields
+        SET confidence = CASE
+            WHEN normalized_value IS NULL AND corrected_value IS NULL THEN 'missing'
+            ELSE 'manual_confirmed'
+        END
+        WHERE confidence = 'administrator_confirmed';
+
+UPDATE utility_bill_extracted_fields
+        SET confidence = 'conflict'
+        WHERE confidence IN ('conflicts_current', 'conflicts_source');
+
+ALTER TABLE utility_bill_extracted_fields ADD CONSTRAINT ck_utility_bill_extracted_fields_utility_bill_field_confidence CHECK (confidence IN ('parser_confirmed','arithmetic_confirmed','high','medium','low','manual_confirmed','missing','conflict','not_applicable'));
+
+UPDATE alembic_version SET version_num='20260725_0016' WHERE alembic_version.version_num = '20260724_0015';
+
 COMMIT;
 

@@ -1358,6 +1358,7 @@ class UtilityBillExtractionRevision(Base):
     normalized_account_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     normalized_rate_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     normalized_cycle_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    normalized_artifact: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     raw_text_sha256: Mapped[str] = mapped_column(String(64))
     normalized_text_sha256: Mapped[str] = mapped_column(String(64))
     sanitized_text_path: Mapped[str] = mapped_column(String(1000))
@@ -1414,8 +1415,8 @@ class UtilityBillExtractedField(Base):
             name="utility_bill_field_method",
         ),
         CheckConstraint(
-            "confidence IN ('administrator_confirmed','high','medium','low','missing',"
-            "'conflicts_current','conflicts_source','not_applicable')",
+            "confidence IN ('parser_confirmed','arithmetic_confirmed','high','medium','low',"
+            "'manual_confirmed','missing','conflict','not_applicable')",
             name="utility_bill_field_confidence",
         ),
         CheckConstraint(

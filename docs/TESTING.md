@@ -1,5 +1,24 @@
 # Testing and release gates
 
+## Normalized bill, plan lifecycle, and dropdown acceptance (2026-07-25)
+
+The complete command/result matrix is recorded in
+`docs/PDF_PLAN_DROPDOWN_REPAIR_TEST_MATRIX.md`; the exact failure trace is in
+`docs/PDF_PLAN_DROPDOWN_REPAIR_ROOT_CAUSE.md`. The final portable gates pass
+182 backend tests, 20 frontend unit/component tests, 80 Playwright scenarios,
+Python and TypeScript static checks, contract validation, and the production
+frontend bundle check. PostgreSQL 17 separately passed legacy/prior/clean
+migration paths at head `20260725_0016`.
+The separately enabled load gate accepted and deduplicated 18,000 readings
+from 100 devices.
+
+Fresh API, frontend, and backup images built successfully. The standard stack
+reported every long-running service healthy and restored a verified logical
+backup into a clean 98-table database. The isolated TrueNAS-equivalent
+seven-service gate passed with strict internal-CA TLS, three simulated devices,
+90 readings, SCE rate calculation, encrypted backup/restore, and verified
+gateway-only port publication.
+
 ## Greenfield frontend layout stabilization acceptance (2026-07-24)
 
 The failure was reproduced before repair in Vite development, local

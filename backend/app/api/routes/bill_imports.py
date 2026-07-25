@@ -19,6 +19,7 @@ from app.bills.service import (
     delete_original_artifact,
     import_payload,
     publish_and_assign,
+    reprocess_bill_import,
     review_import,
     validate_bill_rate_draft,
 )
@@ -203,6 +204,7 @@ async def _store_utility_bill(
             source_role=source_role,
             timezone=timezone,
             currency=currency,
+            original_filename=upload.filename,
         )
     except BillPdfError as exc:
         await session.rollback()
@@ -524,6 +526,85 @@ async def get_utility_bill_import(
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.view")
     return await import_payload(session, await _bill(session, principal, bill_id))
+
+
+@router.get("/admin/utility-bill-imports/{bill_id}/normalized")
+async def get_normalized_utility_bill(
+    bill_id: str, principal: Principal, session: DbSession
+) -> dict[str, Any]:
+    _bill_admin(principal, "utility_bills.view")
+    payload = await import_payload(session, await _bill(session, principal, bill_id))
+    return payload["normalized_artifact"]
+
+
+@router.get("/admin/utility-bill-imports/{bill_id}/extracted-text")
+async def download_extracted_utility_bill_text(
+    bill_id: str, principal: Principal, session: DbSession
+) -> FileResponse:
+    _bill_admin(principal, "utility_bills.view")
+    bill = await _bill(session, principal, bill_id)
+    revision = await session.scalar(
+        select(UtilityBillExtractionRevision)
+        .where(UtilityBillExtractionRevision.bill_import_id == bill.id)
+        .order_by(UtilityBillExtractionRevision.revision.desc())
+        .limit(1)
+    )
+    path = Path(revision.sanitized_text_path) if revision else None
+    if path is None or not path.is_file():
+        raise ProblemError(
+            404,
+            "Extracted text unavailable",
+            "The sanitized extracted-text artifact is missing",
+            "bill_extracted_text_missing",
+        )
+    return FileResponse(
+        path,
+        media_type="text/plain; charset=utf-8",
+        filename=f"utility-bill-{bill.id}-extracted.txt",
+        headers={"Cache-Control": "no-store, private"},
+    )
+
+
+@router.post("/admin/utility-bill-imports/{bill_id}/reprocess")
+async def reprocess_utility_bill(
+    bill_id: str,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+    settings: AppSettings,
+) -> dict[str, Any]:
+    _bill_admin(principal, "utility_bills.manage")
+    bill = await _bill(session, principal, bill_id)
+    revision, adopted = await reprocess_bill_import(
+        session,
+        bill=bill,
+        settings=settings,
+        user_id=principal.user.id,
+    )
+    session.add(
+        audit_event(
+            action="utility_bill.reprocessed",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="utility_bill_import",
+            object_id=bill.id,
+            details={
+                "extraction_revision": revision.revision,
+                "parser_version": revision.parser_version,
+                "adopted_for_review": adopted,
+                "confirmed_records_overwritten": False,
+            },
+        )
+    )
+    await session.commit()
+    result = await import_payload(session, bill)
+    return {
+        "bill": result,
+        "extraction_revision": revision.revision,
+        "adopted_for_review": adopted,
+        "confirmed_records_overwritten": False,
+    }
 
 
 @router.get("/admin/utility-bill-imports/{bill_id}/evidence/pages/{page_number}")

@@ -16,6 +16,7 @@ import type {
   HomeSummary,
   SensorSummary,
   RateEvidence,
+  RatePlanDependencySummary,
   RatePlanAssignment,
   RatePlanVersion,
   RateSource,
@@ -287,10 +288,89 @@ export function adaptBills(value: unknown): BillSummary[] {
   })
 }
 
+export function adaptRatePlanDependencies(value: unknown): RatePlanDependencySummary {
+  const source = record(value, 'rate plan dependency summary')
+  const dependencyToken = stringValue(source.dependency_token)
+  if (!/^[a-f0-9]{64}$/u.test(dependencyToken)) {
+    throw new Error('Rate plan dependency summary did not include a valid concurrency token')
+  }
+  return {
+    dependencyToken,
+    activeAssignments: objectList(source.active_assignments),
+    futureAssignments: objectList(source.future_assignments),
+    activeAccountPointers: objectList(source.active_account_pointers),
+    historicalAssignmentCount: numberValue(source.historical_assignment_count),
+    historicalCalculationCount: numberValue(source.historical_calculation_count),
+    sourceEvidenceCount: numberValue(source.source_evidence_count),
+    billImportCount: numberValue(source.bill_import_count),
+    permanentDraftDeletionEligible: booleanValue(source.permanent_draft_deletion_eligible),
+    removalBlocked: booleanValue(source.removal_blocked),
+  }
+}
+
 export function adaptBillDetail(value: unknown): BillImportDetail {
   const source = record(value, 'bill')
-  const cycle = source.billing_cycle ? record(source.billing_cycle, 'bill cycle') : {}
+  const cycle = source.cycle_draft
+    ? record(source.cycle_draft, 'bill cycle')
+    : source.billing_cycle
+      ? record(source.billing_cycle, 'bill cycle')
+      : {}
+  const normalized = record(source.normalized_artifact, 'normalized utility bill')
+  const artifact = record(normalized.artifact, 'normalized bill artifact')
+  const utility = normalized.utility ? record(normalized.utility, 'normalized bill utility') : {}
+  const normalizedCycle = normalized.billing_cycle
+    ? record(normalized.billing_cycle, 'normalized billing cycle')
+    : {}
+  const planCandidate = normalized.plan_candidate
+    ? record(normalized.plan_candidate, 'normalized plan candidate')
+    : {}
   const extractedFields = objectList(source.fields)
+  const allowedConfidence = new Set([
+    'parser_confirmed',
+    'arithmetic_confirmed',
+    'high',
+    'medium',
+    'low',
+    'manual_confirmed',
+    'missing',
+    'conflict',
+    'not_applicable',
+  ])
+  const confidence = (input: unknown): BillImportDetail['fields'][number]['confidence'] => {
+    const result = stringValue(input)
+    if (!allowedConfidence.has(result)) throw new Error(`Unsupported bill confidence state: ${result || 'empty'}`)
+    return result as BillImportDetail['fields'][number]['confidence']
+  }
+  const warningMessages = (input: unknown) => objectList(input)
+    .map((warning) => stringValue(warning.message))
+    .filter(Boolean)
+  const missingFields = objectList(normalized.missing_fields).map((field) => {
+    const rawState = stringValue(field.state, 'not_found_on_bill')
+    const state = ['not_found_on_bill', 'needs_review', 'not_applicable', 'conflict', 'unsupported'].includes(rawState)
+      ? rawState as BillImportDetail['missingFields'][number]['state']
+      : 'not_found_on_bill'
+    return {
+      path: stringValue(field.field),
+      outputKind: stringValue(field.output_kind),
+      state,
+      required: booleanValue(field.required),
+      reason: stringValue(field.reason, 'The bill did not contain this field.'),
+    }
+  })
+  const fields = extractedFields
+    .filter((field) => field.effective_value !== null && field.effective_value !== undefined && stringValue(field.effective_value) !== '')
+    .map((field) => ({
+      id: stringValue(field.id),
+      path: stringValue(field.field_key),
+      label: stringValue(field.field_key).replaceAll('_', ' '),
+      outputKind: stringValue(field.output_kind),
+      value: stringValue(field.effective_value),
+      confidence: confidence(field.confidence),
+      sourcePage: typeof field.page_number === 'number' ? field.page_number : undefined,
+      status: optionalString(field.review_state),
+      parserRule: optionalString(field.parser_rule),
+      sourceText: optionalString(field.source_excerpt),
+    }))
   return {
     id: stringValue(source.id),
     serviceId: optionalString(source.utility_account_id),
@@ -304,22 +384,62 @@ export function adaptBillDetail(value: unknown): BillImportDetail {
     endsAt: optionalString(cycle.ends_at),
     ratePlanId: optionalString(source.rate_plan_id),
     rateVersionId: optionalString(source.rate_version_id),
-    blockingWarnings: stringList(source.blocking_warnings),
+    blockingWarnings: warningMessages(source.blocking_warnings),
     revision: numberValue(source.revision),
-    normalized: source.normalized ? record(source.normalized, 'normalized bill') : {},
-    fields: extractedFields.map((field) => ({
-      id: stringValue(field.id),
-      path: stringValue(field.field_key),
-      label: stringValue(field.field_key).replaceAll('_', ' '),
-      value: optionalString(field.effective_value),
-      confidence: optionalString(field.confidence),
-      sourcePage: typeof field.page_number === 'number' ? field.page_number : undefined,
-      status: optionalString(field.review_state),
-    })),
+    normalized: {
+      schemaVersion: stringValue(normalized.schema_version),
+      parserId: stringValue(normalized.parser_id),
+      parserVersion: stringValue(normalized.parser_version),
+      artifact: {
+        id: stringValue(artifact.artifact_id),
+        displayFilename: stringValue(artifact.display_filename, 'utility-bill.pdf'),
+        sha256: stringValue(artifact.sha256),
+        mimeType: stringValue(artifact.mime_type) === 'application/pdf' ? 'application/pdf' : (() => { throw new Error('Normalized bill artifact is not a PDF') })(),
+        byteSize: typeof artifact.byte_size === 'number' ? artifact.byte_size : undefined,
+        pageCount: numberValue(artifact.page_count),
+        extractionMethod: ['text', 'ocr', 'mixed'].includes(stringValue(artifact.extraction_method))
+          ? stringValue(artifact.extraction_method) as 'text' | 'ocr' | 'mixed'
+          : (() => { throw new Error('Unsupported bill extraction method') })(),
+        importedAt: stringValue(artifact.imported_at, stringValue(source.created_at)),
+      },
+      utility: {
+        name: optionalString(utility.name),
+        documentType: optionalString(utility.document_type),
+        ratePlanCode: optionalString(utility.rate_plan_code),
+      },
+      billingCycle: normalizedCycle,
+      planCandidate,
+      lineItems: objectList(normalized.line_items),
+      evidence: objectList(normalized.evidence).map((item) => ({
+        path: stringValue(item.field),
+        outputKind: stringValue(item.output_kind),
+        value: stringValue(item.value),
+        confidence: confidence(item.confidence),
+        sourcePage: typeof item.source_page === 'number' ? item.source_page : undefined,
+        sourceText: optionalString(item.source_text),
+        parserRule: optionalString(item.parser_rule),
+        parserVersion: stringValue(item.parser_version, stringValue(normalized.parser_version)),
+      })),
+      validation: normalized.validation ? record(normalized.validation, 'bill validation') : {},
+      warnings: warningMessages(normalized.warnings),
+      missingFields,
+      ignoredSections: objectList(normalized.ignored_sections),
+      processingStatus: stringValue(normalized.processing_status, stringValue(source.status)),
+    },
+    displayFilename: stringValue(artifact.display_filename, 'utility-bill.pdf'),
+    utilityName: optionalString(utility.name),
+    documentType: optionalString(utility.document_type),
+    importedAt: stringValue(artifact.imported_at, stringValue(source.created_at)),
+    processingStatus: stringValue(normalized.processing_status, stringValue(source.status)),
+    thresholdInterpretation: ['fixed_cycle_threshold', 'daily_baseline', 'baseline_multiplier'].includes(stringValue(planCandidate.threshold_interpretation))
+      ? stringValue(planCandidate.threshold_interpretation) as BillImportDetail['thresholdInterpretation']
+      : 'unknown',
+    missingFields,
+    fields,
     conflicts: objectList(source.conflicts).map((conflict) => ({
       id: stringValue(conflict.id),
       path: stringValue(conflict.field_key),
-      message: `Bill: ${stringValue(conflict.extracted_value, 'unknown')} · Current: ${stringValue(conflict.configured_value, 'unknown')}`,
+      message: `Bill: ${stringValue(conflict.extracted_value, 'not provided')} · Current: ${stringValue(conflict.configured_value, 'not provided')}`,
     })),
   }
 }

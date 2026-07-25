@@ -92,6 +92,112 @@ def _json_bytes(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+def _safe_display_filename(value: str | None, digest: str) -> str:
+    candidate = Path(value or "").name.strip()
+    if not candidate:
+        return f"utility-bill-{digest[:12]}.pdf"
+    candidate = re.sub(r"[^A-Za-z0-9._() -]+", "-", candidate)
+    candidate = re.sub(r"\s+", " ", candidate).strip(" .-")[:180]
+    if not candidate:
+        return f"utility-bill-{digest[:12]}.pdf"
+    return candidate if candidate.lower().endswith(".pdf") else f"{candidate}.pdf"
+
+
+def _document_type(
+    parser_id: str,
+    adapter_result: dict[str, Any] | None = None,
+    account_data: dict[str, Any] | None = None,
+) -> str | None:
+    classified = (adapter_result or {}).get("document_class") or (account_data or {}).get(
+        "document_class"
+    )
+    if classified:
+        return str(classified)
+    if parser_id == "sce_residential_bill_v1":
+        return "residential_electric_bill"
+    return None
+
+
+def _normalized_bill_artifact(
+    *,
+    artifact: RateSourceArtifact,
+    extraction: BillExtraction,
+    fields: list[ExtractedField],
+    imported_at: datetime,
+) -> dict[str, Any]:
+    evidence: list[dict[str, Any]] = []
+    missing_fields: list[dict[str, Any]] = []
+    for item in fields:
+        if item.normalized_value is None:
+            warning = item.warnings[0] if item.warnings else {}
+            state = "not_applicable" if item.confidence == "not_applicable" else "not_found_on_bill"
+            missing_fields.append(
+                {
+                    "field": item.field_key,
+                    "output_kind": item.output_kind,
+                    "value": None,
+                    "state": state,
+                    "required": item.field_key in REQUIRED_REVIEW_FIELDS,
+                    "reason": warning.get("message") or "The bill did not contain this field.",
+                }
+            )
+            continue
+        confidence = item.confidence
+        if item.validation_result and item.validation_result.get("status") == "pass":
+            confidence = "arithmetic_confirmed"
+        elif confidence == "high":
+            confidence = "parser_confirmed"
+        evidence.append(
+            {
+                "field": item.field_key,
+                "output_kind": item.output_kind,
+                "value": item.normalized_value,
+                "confidence": confidence,
+                "source_page": item.page_number,
+                "source_region": item.text_region,
+                "source_text": item.source_excerpt,
+                "extraction_method": item.extraction_method,
+                "parser_rule": item.parser_rule,
+                "parser_version": extraction.parser_version,
+                "validation_result": item.validation_result,
+            }
+        )
+    return {
+        "schema_version": "normalized-utility-bill/1.0",
+        "parser_id": extraction.parser_id,
+        "parser_version": extraction.parser_version,
+        "artifact": {
+            "artifact_id": artifact.id,
+            "display_filename": artifact.original_filename,
+            "sha256": artifact.sha256,
+            "mime_type": artifact.content_type,
+            "byte_size": artifact.byte_size,
+            "page_count": extraction.page_count,
+            "extraction_method": extraction.extraction_method,
+            "imported_at": imported_at.isoformat(),
+        },
+        "utility": {
+            "name": extraction.account_data.get("utility"),
+            "document_type": _document_type(
+                extraction.parser_id,
+                extraction.adapter_result,
+                extraction.account_data,
+            ),
+            "rate_plan_code": extraction.rate_data.get("plan_code"),
+        },
+        "billing_cycle": extraction.cycle_data,
+        "plan_candidate": extraction.rate_data,
+        "line_items": list(extraction.cycle_data.get("line_items") or []),
+        "evidence": evidence,
+        "validation": extraction.validation,
+        "warnings": extraction.warnings,
+        "missing_fields": missing_fields,
+        "ignored_sections": extraction.ignored_sections,
+        "page_classifications": extraction.page_classifications,
+        "processing_status": "review_required",
+    }
+
+
 async def _bill_source(
     session: AsyncSession,
     account: UtilityAccount | None,
@@ -351,6 +457,7 @@ async def create_bill_import(
     source_role: str,
     timezone: str,
     currency: str,
+    original_filename: str | None = None,
     runner: Any | None = None,
 ) -> tuple[UtilityBillImport, bool]:
     digest = hashlib.sha256(content).hexdigest()
@@ -403,7 +510,7 @@ async def create_bill_import(
         content_type="application/pdf",
         byte_size=len(content),
         storage_path=str(original_path),
-        original_filename=f"utility-bill-{digest[:12]}.pdf",
+        original_filename=_safe_display_filename(original_filename, digest),
         captured_at=now,
     )
     session.add(artifact)
@@ -465,6 +572,12 @@ async def create_bill_import(
         extracted_at=now,
     )
     session.add(extraction_record)
+    normalized_artifact = _normalized_bill_artifact(
+        artifact=artifact,
+        extraction=extraction,
+        fields=extraction.fields,
+        imported_at=now,
+    )
     revision = UtilityBillExtractionRevision(
         bill_import_id=bill.id,
         revision=1,
@@ -474,6 +587,7 @@ async def create_bill_import(
         normalized_account_data=extraction.account_data,
         normalized_rate_data=extraction.rate_data,
         normalized_cycle_data=extraction.cycle_data,
+        normalized_artifact=normalized_artifact,
         raw_text_sha256=hashlib.sha256(extraction.raw_text.encode("utf-8")).hexdigest(),
         normalized_text_sha256=hashlib.sha256(
             extraction.normalized_text.encode("utf-8")
@@ -642,6 +756,124 @@ async def latest_extraction_revision(
     return revision
 
 
+async def reprocess_bill_import(
+    session: AsyncSession,
+    *,
+    bill: UtilityBillImport,
+    settings: Settings,
+    user_id: str,
+    runner: Any | None = None,
+) -> tuple[UtilityBillExtractionRevision, bool]:
+    artifact = await session.get(RateSourceArtifact, bill.artifact_id)
+    path = Path(artifact.storage_path) if artifact else None
+    if (
+        artifact is None
+        or path is None
+        or not path.is_file()
+        or bill.original_deleted_at is not None
+    ):
+        raise ProblemError(
+            410,
+            "Original utility bill is unavailable",
+            "Reprocessing requires the retained private PDF",
+            "bill_original_removed",
+        )
+    extraction = extract_bill(
+        path.read_bytes(),
+        settings,
+        pdf_path=path,
+        **({"runner": runner} if runner is not None else {}),
+    )
+    previous = await latest_extraction_revision(session, bill.id)
+    next_revision = (
+        int(
+            await session.scalar(
+                select(func.max(UtilityBillExtractionRevision.revision)).where(
+                    UtilityBillExtractionRevision.bill_import_id == bill.id
+                )
+            )
+            or 0
+        )
+        + 1
+    )
+    now = datetime.now(UTC)
+    sanitized_text = redact_sensitive_text(extraction.normalized_text)
+    sanitized_path = _safe_path(
+        settings.utility_bill_artifact_path,
+        bill.content_sha256,
+        f"sanitized-evidence-r{next_revision}.txt",
+    )
+    _write_private(sanitized_path, sanitized_text.encode("utf-8"))
+    normalized_artifact = _normalized_bill_artifact(
+        artifact=artifact,
+        extraction=extraction,
+        fields=extraction.fields,
+        imported_at=now,
+    )
+    revision = UtilityBillExtractionRevision(
+        bill_import_id=bill.id,
+        revision=next_revision,
+        status="review_required",
+        parser_version=extraction.parser_version,
+        ocr_version=extraction.ocr_version,
+        normalized_account_data=extraction.account_data,
+        normalized_rate_data=extraction.rate_data,
+        normalized_cycle_data=extraction.cycle_data,
+        normalized_artifact=normalized_artifact,
+        raw_text_sha256=hashlib.sha256(extraction.raw_text.encode("utf-8")).hexdigest(),
+        normalized_text_sha256=hashlib.sha256(
+            extraction.normalized_text.encode("utf-8")
+        ).hexdigest(),
+        sanitized_text_path=str(sanitized_path),
+        extraction_metadata={
+            "page_count": extraction.page_count,
+            "method": extraction.extraction_method,
+            "normalization_history": extraction.normalization_history,
+            "parser_id": extraction.parser_id,
+            "page_classifications": extraction.page_classifications,
+            "ignored_sections": extraction.ignored_sections,
+            "validation": extraction.validation,
+            "adapter_result": extraction.adapter_result,
+            "reprocessed_from_revision": previous.revision,
+        },
+        created_by=user_id,
+        created_at=now,
+    )
+    session.add(revision)
+    await session.flush()
+    for item in extraction.fields:
+        session.add(
+            UtilityBillExtractedField(
+                extraction_revision_id=revision.id,
+                **_field_payload(item, parser_version=extraction.parser_version),
+            )
+        )
+    session.add(
+        RateExtractionResult(
+            artifact_id=artifact.id,
+            parser_id=extraction.parser_id,
+            parser_version=extraction.parser_version,
+            status="succeeded",
+            normalized_payload=normalized_artifact,
+            warnings=extraction.warnings,
+            errors=[],
+            extracted_at=now,
+        )
+    )
+    adopted = bill.status not in {"ready_to_publish", "published"}
+    if adopted:
+        previous.status = "superseded"
+        bill.parser_version = extraction.parser_version
+        bill.extraction_method = extraction.extraction_method
+        bill.page_count = extraction.page_count
+        bill.blocking_warnings = extraction.blocking_warnings
+        bill.extraction_warnings = extraction.warnings
+        bill.status = "review_required"
+        bill.revision += 1
+        bill.updated_at = now
+    return revision, adopted
+
+
 async def import_payload(session: AsyncSession, bill: UtilityBillImport) -> dict[str, Any]:
     revision = await latest_extraction_revision(session, bill.id)
     fields = list(
@@ -669,6 +901,50 @@ async def import_payload(session: AsyncSession, bill: UtilityBillImport) -> dict
         if bill.utility_account_id is not None
         else None
     )
+    artifact = await session.get(RateSourceArtifact, bill.artifact_id)
+    normalized_artifact = dict(revision.normalized_artifact or {})
+    if not normalized_artifact:
+        parser_id = str(revision.extraction_metadata.get("parser_id", "utility_bill_generic"))
+        normalized_artifact = {
+            "schema_version": "normalized-utility-bill/1.0",
+            "parser_id": parser_id,
+            "parser_version": revision.parser_version,
+            "artifact": {
+                "artifact_id": bill.artifact_id,
+                "display_filename": (
+                    artifact.original_filename
+                    if artifact and artifact.original_filename
+                    else f"utility-bill-{bill.content_sha256[:12]}.pdf"
+                ),
+                "sha256": bill.content_sha256,
+                "mime_type": artifact.content_type if artifact else "application/pdf",
+                "byte_size": artifact.byte_size if artifact else None,
+                "page_count": bill.page_count,
+                "extraction_method": bill.extraction_method,
+                "imported_at": bill.created_at.isoformat(),
+            },
+            "utility": {
+                "name": revision.normalized_account_data.get("utility"),
+                "document_type": _document_type(
+                    parser_id,
+                    revision.extraction_metadata.get("adapter_result"),
+                    revision.normalized_account_data,
+                ),
+                "rate_plan_code": revision.normalized_rate_data.get("plan_code"),
+            },
+            "billing_cycle": revision.normalized_cycle_data,
+            "plan_candidate": revision.normalized_rate_data,
+            "line_items": list(revision.normalized_cycle_data.get("line_items") or []),
+            "evidence": [],
+            "validation": revision.extraction_metadata.get("validation", {}),
+            "warnings": bill.extraction_warnings,
+            "missing_fields": [],
+            "ignored_sections": revision.extraction_metadata.get("ignored_sections", []),
+            "page_classifications": revision.extraction_metadata.get("page_classifications", []),
+            "processing_status": bill.status,
+        }
+    else:
+        normalized_artifact["processing_status"] = bill.status
     return {
         "id": bill.id,
         "job_id": bill.job_id,
@@ -698,6 +974,7 @@ async def import_payload(session: AsyncSession, bill: UtilityBillImport) -> dict
             "rate_plan": revision.normalized_rate_data,
             "billing_cycle": revision.normalized_cycle_data,
         },
+        "normalized_artifact": normalized_artifact,
         "adapter_result": revision.extraction_metadata.get("adapter_result"),
         "page_classifications": revision.extraction_metadata.get("page_classifications", []),
         "ignored_sections": revision.extraction_metadata.get("ignored_sections", []),
@@ -783,6 +1060,36 @@ async def import_payload(session: AsyncSession, bill: UtilityBillImport) -> dict
     }
 
 
+def _apply_cycle_revision(
+    cycle: UtilityBillCycleDraft,
+    revision: UtilityBillExtractionRevision,
+    *,
+    timezone: str,
+    now: datetime,
+) -> None:
+    data = revision.normalized_cycle_data
+    cycle.starts_at = _as_utc_date(data.get("starts_at"), timezone)
+    cycle.ends_at = _as_utc_date(data.get("ends_at"), timezone)
+    cycle.cycle_days = data.get("cycle_days")
+    cycle.meter_read_date = (
+        date.fromisoformat(str(data["meter_read_date"])) if data.get("meter_read_date") else None
+    )
+    cycle.total_usage_kwh = _as_decimal(data.get("total_usage_kwh"))
+    cycle.usage_by_tier = list(data.get("usage_by_tier") or [])
+    cycle.usage_by_tou = list(data.get("usage_by_tou") or [])
+    cycle.meter_records = list(data.get("meter_records") or [])
+    cycle.current_tier = data.get("current_tier")
+    cycle.projected_tier = data.get("projected_tier")
+    cycle.energy_subtotal = _as_decimal(data.get("energy_subtotal"))
+    cycle.full_bill_total = _as_decimal(data.get("full_bill_total"))
+    cycle.fixed_charges = _as_decimal(data.get("fixed_charges"))
+    cycle.taxes_fees = _as_decimal(data.get("taxes_fees"))
+    cycle.credits = _as_decimal(data.get("credits"))
+    cycle.adjustments = _as_decimal(data.get("adjustments"))
+    cycle.extraction_revision_id = revision.id
+    cycle.updated_at = now
+
+
 def _set_path(document: dict[str, Any], path: str, value: Any) -> None:
     current: Any = document
     parts = path.split(".")
@@ -799,6 +1106,74 @@ def _set_path(document: dict[str, Any], path: str, value: Any) -> None:
         current[int(final)] = value
     else:
         current[final] = value
+
+
+def _refresh_review_artifact(
+    *,
+    revision: UtilityBillExtractionRevision,
+    bill: UtilityBillImport,
+    fields: list[UtilityBillExtractedField],
+) -> None:
+    artifact = dict(revision.normalized_artifact or {})
+    artifact["processing_status"] = bill.status
+    artifact["billing_cycle"] = revision.normalized_cycle_data
+    artifact["plan_candidate"] = revision.normalized_rate_data
+    artifact["line_items"] = list(revision.normalized_cycle_data.get("line_items") or [])
+    evidence: list[dict[str, Any]] = []
+    missing: list[dict[str, Any]] = []
+    for item in fields:
+        value = item.corrected_value if item.corrected_value is not None else item.normalized_value
+        if value is None:
+            warning = item.warnings[0] if item.warnings else {}
+            missing.append(
+                {
+                    "field": item.field_key,
+                    "output_kind": item.output_kind,
+                    "value": None,
+                    "state": (
+                        "not_applicable"
+                        if item.confidence == "not_applicable"
+                        else "not_found_on_bill"
+                    ),
+                    "required": item.field_key in REQUIRED_REVIEW_FIELDS,
+                    "reason": warning.get("message") or "The bill did not contain this field.",
+                }
+            )
+            continue
+        confidence = item.confidence
+        if item.validation_result and item.validation_result.get("status") == "pass":
+            confidence = "arithmetic_confirmed"
+        elif confidence == "high":
+            confidence = "parser_confirmed"
+        evidence.append(
+            {
+                "field": item.field_key,
+                "output_kind": item.output_kind,
+                "value": value,
+                "confidence": confidence,
+                "source_page": item.page_number,
+                "source_region": item.text_region,
+                "source_text": item.source_excerpt,
+                "extraction_method": item.extraction_method,
+                "parser_rule": item.parser_rule,
+                "parser_version": item.parser_version,
+                "validation_result": item.validation_result,
+                "manual_confirmation": (
+                    {
+                        "actor_id": item.confirmed_by,
+                        "confirmed_at": item.confirmed_at.isoformat()
+                        if item.confirmed_at
+                        else None,
+                        "review_state": item.review_state,
+                    }
+                    if item.confidence == "manual_confirmed"
+                    else None
+                ),
+            }
+        )
+    artifact["evidence"] = evidence
+    artifact["missing_fields"] = missing
+    revision.normalized_artifact = artifact
 
 
 async def review_import(
@@ -867,10 +1242,21 @@ async def review_import(
                 review["value"],
             )
         elif action == "confirm":
+            effective_value = (
+                item.corrected_value if item.corrected_value is not None else item.normalized_value
+            )
+            if effective_value is None:
+                raise ProblemError(
+                    422,
+                    "Missing fields cannot be confirmed",
+                    "Leave optional missing fields unreviewed or enter a correction",
+                    "bill_missing_field_confirmation",
+                    extra={"field_key": item.field_key},
+                )
             item.review_state = "confirmed"
         else:
             item.review_state = "rejected"
-        item.confidence = "administrator_confirmed" if action != "reject" else "missing"
+        item.confidence = "manual_confirmed" if action != "reject" else "missing"
         item.confirmed_by = user_id
         item.confirmed_at = now
     conflicts_by_id = {
@@ -914,7 +1300,17 @@ async def review_import(
         )
     cycle.threshold_interpretation = threshold_interpretation
     cycle.reviewed_by = user_id
-    cycle.updated_at = now
+    account = (
+        await session.get(UtilityAccount, bill.utility_account_id)
+        if bill.utility_account_id
+        else None
+    )
+    _apply_cycle_revision(
+        cycle,
+        revision,
+        timezone=account.timezone if account else "America/Los_Angeles",
+        now=now,
+    )
     cycle.revision += 1
     bill.source_role = source_role
     unresolved_fields = [
@@ -989,6 +1385,11 @@ async def review_import(
     bill.updated_at = now
     bill.revision += 1
     revision.status = "approved" if not blockers else "review_required"
+    _refresh_review_artifact(
+        revision=revision,
+        bill=bill,
+        fields=list(fields_by_id.values()),
+    )
     await synchronize_rate_draft_from_extraction(session, bill=bill)
     return await import_payload(session, bill)
 

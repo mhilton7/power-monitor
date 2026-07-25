@@ -8,6 +8,7 @@ import {
   adaptPermissions,
   adaptRateAssignments,
   adaptRateEvidence,
+  adaptRatePlanDependencies,
   adaptRateSources,
   adaptRateVersions,
   resolveSingleHome,
@@ -100,6 +101,104 @@ describe('typed homeowner adapters', () => {
     expect(() => resolveSingleHome({ homes: 'not-an-array' })).toThrow(/homes/i)
   })
 
+  it('adapts the canonical normalized bill instead of rendering missing fields as values', () => {
+    const bill = adaptBillDetail({
+      id: 'bill-1',
+      status: 'review_required',
+      created_at: '2026-07-25T12:00:00Z',
+      revision: 1,
+      page_count: 1,
+      extraction_method: 'text',
+      content_sha256: 'a'.repeat(64),
+      cycle_draft: {
+        starts_at: '2026-06-22T07:00:00Z',
+        ends_at: '2026-07-22T07:00:00Z',
+        total_usage_kwh: '951',
+        full_bill_total: '354.15',
+      },
+      normalized_artifact: {
+        schema_version: 'normalized-utility-bill/1.0',
+        parser_id: 'sce_residential_bill_v1',
+        parser_version: '1.1.0',
+        artifact: {
+          artifact_id: 'artifact-1',
+          display_filename: 'sce-bill.pdf',
+          sha256: 'a'.repeat(64),
+          mime_type: 'application/pdf',
+          byte_size: 4264,
+          page_count: 1,
+          extraction_method: 'text',
+          imported_at: '2026-07-25T12:00:00Z',
+        },
+        utility: {
+          name: 'Southern California Edison',
+          document_type: 'residential_electric_bill',
+          rate_plan_code: 'DOMESTIC',
+        },
+        billing_cycle: { total_usage_kwh: '951', full_bill_total: '354.15' },
+        plan_candidate: {
+          plan_code: 'DOMESTIC',
+          threshold_interpretation: 'fixed_cycle_threshold',
+        },
+        line_items: [{ label: 'State tax', amount: '0.29' }],
+        evidence: [{
+          field: 'total_usage_kwh',
+          output_kind: 'billing_cycle',
+          value: '951',
+          confidence: 'arithmetic_confirmed',
+          source_page: 1,
+          parser_version: '1.1.0',
+        }],
+        validation: { valid: true },
+        warnings: [],
+        missing_fields: [{
+          field: 'winter_rates',
+          output_kind: 'rate_plan',
+          value: null,
+          state: 'not_found_on_bill',
+          required: false,
+          reason: 'Only summer rates are present.',
+        }],
+        ignored_sections: [],
+        processing_status: 'review_required',
+      },
+      fields: [{
+        id: 'present-field',
+        output_kind: 'billing_cycle',
+        field_key: 'total_usage_kwh',
+        effective_value: '951',
+        confidence: 'high',
+        page_number: 1,
+      }, {
+        id: 'missing-field',
+        output_kind: 'rate_plan',
+        field_key: 'winter_rates',
+        effective_value: null,
+        confidence: 'missing',
+      }],
+      conflicts: [],
+      blocking_warnings: [],
+    })
+
+    expect(bill).toMatchObject({
+      displayFilename: 'sce-bill.pdf',
+      utilityName: 'Southern California Edison',
+      usageKwh: '951',
+      total: '354.15',
+      thresholdInterpretation: 'fixed_cycle_threshold',
+    })
+    expect(bill.fields).toHaveLength(1)
+    expect(bill.fields[0]).toMatchObject({ path: 'total_usage_kwh', value: '951' })
+    expect(bill.missingFields).toEqual([expect.objectContaining({
+      path: 'winter_rates',
+      required: false,
+    })])
+    expect(JSON.stringify(bill)).not.toContain('Unknown')
+    expect(() => adaptBillDetail({
+      ...billPayloadWithConfidence('administrator_confirmed'),
+    })).toThrow(/confidence/i)
+  })
+
   it('normalizes rate lifecycle payloads while preserving exact evidence and dates', () => {
     expect(adaptRateVersions([{
       id: 'version-1',
@@ -122,6 +221,24 @@ describe('typed homeowner adapters', () => {
       parser_id: 'utility_bill_pdf_v1',
       relationship: 'supporting',
     }] })[0]).toMatchObject({ id: 'artifact-1', checksum: 'def456', displaySource: 'Reviewed bill evidence' })
+    expect(adaptRatePlanDependencies({
+      dependency_token: 'a'.repeat(64),
+      active_assignments: [{ id: 'assignment-1' }],
+      future_assignments: [],
+      active_account_pointers: [{ utility_account_id: 'service-1' }],
+      historical_assignment_count: 2,
+      historical_calculation_count: 4,
+      source_evidence_count: 3,
+      bill_import_count: 1,
+      permanent_draft_deletion_eligible: false,
+      removal_blocked: true,
+    })).toMatchObject({
+      dependencyToken: 'a'.repeat(64),
+      historicalAssignmentCount: 2,
+      sourceEvidenceCount: 3,
+      removalBlocked: true,
+    })
+    expect(() => adaptRatePlanDependencies({ dependency_token: 'stale' })).toThrow(/concurrency token/i)
   })
 
   it('keeps raw managed-source identifiers behind a human-readable adapter boundary', () => {
@@ -138,3 +255,48 @@ describe('typed homeowner adapters', () => {
     })
   })
 })
+
+function billPayloadWithConfidence(confidence: string) {
+  return {
+    id: 'bill-invalid-confidence',
+    status: 'review_required',
+    created_at: '2026-07-25T12:00:00Z',
+    revision: 1,
+    page_count: 1,
+    extraction_method: 'text',
+    cycle_draft: {},
+    normalized_artifact: {
+      schema_version: 'normalized-utility-bill/1.0',
+      parser_id: 'sce_residential_bill_v1',
+      parser_version: '1.1.0',
+      artifact: {
+        artifact_id: 'artifact-1',
+        display_filename: 'bill.pdf',
+        sha256: 'a'.repeat(64),
+        mime_type: 'application/pdf',
+        page_count: 1,
+        extraction_method: 'text',
+        imported_at: '2026-07-25T12:00:00Z',
+      },
+      utility: {},
+      billing_cycle: {},
+      plan_candidate: {},
+      line_items: [],
+      evidence: [],
+      validation: {},
+      warnings: [],
+      missing_fields: [],
+      ignored_sections: [],
+      processing_status: 'review_required',
+    },
+    fields: [{
+      id: 'field-1',
+      output_kind: 'billing_cycle',
+      field_key: 'total_usage_kwh',
+      effective_value: '951',
+      confidence,
+    }],
+    conflicts: [],
+    blocking_warnings: [],
+  }
+}

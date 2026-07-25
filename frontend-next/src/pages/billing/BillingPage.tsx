@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  CircleOff,
   FileClock,
   FileSearch,
   MoreHorizontal,
@@ -11,17 +12,19 @@ import {
   Plus,
   ReceiptText,
   ShieldCheck,
+  Trash2,
   Upload,
 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useSearchParams } from '../../app/router'
-import { adaptBills } from '../../api/adapters'
+import { adaptBills, adaptRatePlanDependencies } from '../../api/adapters'
 import { errorMessage, json, request } from '../../api/client'
 import { objectList, record, stringValue } from '../../api/validation'
 import { Metric, Surface } from '../../components/data-display/Surface'
-import { EmptyState, ErrorState, LoadingState } from '../../components/feedback/States'
+import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
 import { MetadataItem, MetadataList, Page, PageHeader, StatGrid } from '../../components/layout/Layout'
 import { ModalLayer } from '../../components/overlays/ModalLayer'
+import { DropdownMenu, DropdownMenuItem } from '../../components/overlays/DropdownMenu'
 import { BillImportFlow } from '../../features/bill-import/BillImportFlow'
 import { AdvancedRateSettings } from '../../features/rates/AdvancedRateSettings'
 import { useAuth } from '../../state/AuthContext'
@@ -40,12 +43,17 @@ interface LibraryPlan {
   versionId?: string
   version?: number
   pricingModel?: string
+  removedAt?: string
+  removedBy?: string
+  removalReason?: string
 }
 
 function libraryPlans(value: unknown): LibraryPlan[] {
   const rows = Array.isArray(value) ? objectList(value) : objectList(record(value).plans)
   return rows.map((row) => {
-    const latest = row.latest_version && typeof row.latest_version === 'object' ? record(row.latest_version) : {}
+    const latest = row.latest_version && typeof row.latest_version === 'object'
+      ? record(row.latest_version)
+      : objectList(row.versions)[0] ?? {}
     return {
       id: stringValue(row.id),
       name: stringValue(row.name, stringValue(row.plan_name, 'Rate plan')),
@@ -55,6 +63,9 @@ function libraryPlans(value: unknown): LibraryPlan[] {
       versionId: stringValue(latest.id, stringValue(row.rate_version_id)) || undefined,
       version: Number(latest.version ?? row.version ?? 0) || undefined,
       pricingModel: stringValue(latest.pricing_model, stringValue(row.pricing_model)) || undefined,
+      removedAt: stringValue(row.removed_at) || undefined,
+      removedBy: stringValue(row.removed_by) || undefined,
+      removalReason: stringValue(row.removal_reason) || undefined,
     }
   })
 }
@@ -66,9 +77,9 @@ export function BillingPage() {
   const [params, setParams] = useSearchParams()
   const importOpen = params.get('action') === 'upload'
   const [planDetail, setPlanDetail] = useState(false)
-  const [moreOpen, setMoreOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(params.get('advanced') === 'rates')
   const [replaceOpen, setReplaceOpen] = useState(false)
+  const [lifecycleAction, setLifecycleAction] = useState<'unassign' | 'retire' | 'remove'>()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const service = services[0]
   const bills = useQuery({
@@ -146,8 +157,14 @@ export function BillingPage() {
                 <button type="button" className="button secondary" onClick={() => { setPlanDetail(!planDetail); }}><FileSearch size={16} /> Review plan</button>
                 {isOwner(session ?? { authenticated: false, bootstrapRequired: false }) && <button type="button" className="button secondary" onClick={() => { setAdvancedOpen(true); }}><Pencil size={16} /> Edit plan</button>}
                 <div className="more-menu">
-                  <button type="button" className="button ghost" aria-expanded={moreOpen} onClick={() => { setMoreOpen(!moreOpen); }}><MoreHorizontal size={17} /> More <ChevronDown size={14} /></button>
-                  {moreOpen && <div className="menu-popover"><button type="button" onClick={() => { setReplaceOpen(true); setMoreOpen(false) }}>Replace</button><button type="button" onClick={() => { setAdvancedOpen(true); setMoreOpen(false) }}>Versions</button><button type="button" onClick={() => { setAdvancedOpen(true); setMoreOpen(false) }}>Evidence</button><RetireAction plan={currentLibraryPlan} onDone={() => { void refresh() }} /></div>}
+                  <DropdownMenu label="Rate plan actions" trigger={<><MoreHorizontal size={17} /> More <ChevronDown size={14} /></>}>
+                    <DropdownMenuItem actionId="rate_plan.replace_assignment" onSelect={() => { setReplaceOpen(true) }}>Replace plan</DropdownMenuItem>
+                    {currentLibraryPlan && <DropdownMenuItem actionId="rate_plan.unassign" onSelect={() => { setLifecycleAction('unassign') }}><CircleOff size={15} /> Remove from Electric Service</DropdownMenuItem>}
+                    <DropdownMenuItem onSelect={() => { setAdvancedOpen(true) }}>View versions</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => { setAdvancedOpen(true) }}>View evidence</DropdownMenuItem>
+                    {currentLibraryPlan && <DropdownMenuItem actionId="rate_plan.retire" onSelect={() => { setLifecycleAction('retire') }}><Archive size={15} /> Retire plan</DropdownMenuItem>}
+                    {currentLibraryPlan && <DropdownMenuItem actionId="rate_plan.remove" className="danger" onSelect={() => { setLifecycleAction('remove') }}><Trash2 size={15} /> Remove plan</DropdownMenuItem>}
+                  </DropdownMenu>
                 </div>
               </div>
               {planDetail && <PlanDetail service={service} model={currentLibraryPlan?.pricingModel} cycle={cycle} currency={home.currency} />}
@@ -197,6 +214,21 @@ export function BillingPage() {
       )}
 
       {importOpen && <ModalLayer onRequestClose={closeImporter}><BillImportFlow home={home} services={services} onClose={closeImporter} /></ModalLayer>}
+      {lifecycleAction && currentLibraryPlan && service && (
+        <ModalLayer onRequestClose={() => { setLifecycleAction(undefined) }}>
+          <PlanLifecycleDialog
+            action={lifecycleAction}
+            plan={currentLibraryPlan}
+            service={service}
+            onClose={() => { setLifecycleAction(undefined) }}
+            onDone={() => {
+              setLifecycleAction(undefined)
+              void refresh()
+              void plans.refetch()
+            }}
+          />
+        </ModalLayer>
+      )}
     </Page>
   )
 }
@@ -214,18 +246,93 @@ function ReplacePlan({ service, plans, onClose, onDone }: { service: ElectricSer
   return <div className="replace-plan"><h3>Replace current plan</h3><p>The previous assignment remains in billing history.</p><label><span>Published plan</span><select value={versionId} onChange={(event) => { setVersionId(event.target.value); }}><option value="">Choose a plan</option>{plans.filter((plan) => plan.versionId && plan.name !== service.currentPlan && !['removed', 'retired'].includes(plan.status)).map((plan) => <option key={plan.id} value={plan.versionId}>{plan.name} · v{plan.version}</option>)}</select></label>{mutation.error && <p className="form-error" role="alert">{errorMessage(mutation.error)}</p>}<div className="inline-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button type="button" className="button primary" disabled={!versionId || mutation.isPending} onClick={() => { mutation.mutate(); }}>{mutation.isPending ? 'Switching…' : 'Use selected plan'}</button></div></div>
 }
 
-function RetireAction({ plan, onDone }: { plan?: LibraryPlan; onDone: () => void }) {
+function PlanLifecycleDialog({
+  action,
+  plan,
+  service,
+  onClose,
+  onDone,
+}: {
+  action: 'unassign' | 'retire' | 'remove'
+  plan: LibraryPlan
+  service: ElectricService
+  onClose: () => void
+  onDone: () => void
+}) {
+  const dependencies = useQuery({
+    queryKey: ['rate-plan-dependencies', plan.id],
+    queryFn: () => request(`/api/v1/admin/rate-plans/${plan.id}/dependencies`, {}, adaptRatePlanDependencies),
+  })
+  const [reason, setReason] = useState(
+    action === 'unassign'
+      ? 'Owner removed the current plan from this electric service'
+      : `Owner requested rate-plan ${action}`,
+  )
+  const [confirmation, setConfirmation] = useState('')
+  const [effectiveAt, setEffectiveAt] = useState(new Date().toISOString().slice(0, 16))
   const mutation = useMutation({
-    mutationFn: async () => {
-      if (!plan) throw new Error('The current plan could not be matched in the rate library.')
-      const dependencies = await request<Record<string, unknown>>(`/api/v1/admin/rate-plans/${plan.id}/dependencies`)
-      const safe = window.confirm(`Retire ${plan.name}? Historical assignments, costs, reports, versions, and evidence will be preserved. Dependencies were reviewed: ${JSON.stringify(dependencies).slice(0, 180)}…`)
-      if (!safe) return
-      await request(`/api/v1/admin/rate-plans/${plan.id}/remove`, json('POST', { expected_revision: plan.lifecycleRevision, reason: 'Retired from Single Home Billing', confirmation: plan.name, idempotency_key: crypto.randomUUID() }))
+    mutationFn: () => {
+      if (!dependencies.data) throw new Error('Dependency review is still loading.')
+      if (action === 'unassign') {
+        return request(`/api/v1/admin/rate-plans/${plan.id}/unassign`, json('POST', {
+          utility_account_id: service.id,
+          expected_revision: plan.lifecycleRevision,
+          expected_dependency_token: dependencies.data.dependencyToken,
+          effective_at: new Date(effectiveAt).toISOString(),
+          reason,
+          confirmation,
+          idempotency_key: crypto.randomUUID(),
+        }))
+      }
+      return request(`/api/v1/admin/rate-plans/${plan.id}/${action === 'retire' ? 'retire' : 'remove'}`, json('POST', {
+        expected_revision: plan.lifecycleRevision,
+        expected_dependency_token: dependencies.data.dependencyToken,
+        reason,
+        confirmation,
+        idempotency_key: crypto.randomUUID(),
+      }))
     },
     onSuccess: onDone,
   })
-  return <button type="button" disabled={mutation.isPending} onClick={() => { mutation.mutate(); }}><Archive size={15} /> Retire</button>
+  const expectedConfirmation = action === 'unassign' ? `UNASSIGN ${plan.code}` : plan.code
+  const blocked = action !== 'unassign' && dependencies.data?.removalBlocked === true
+  const ready = confirmation.trim().toLocaleLowerCase() === expectedConfirmation.toLocaleLowerCase()
+    && reason.trim().length >= 8
+    && Boolean(dependencies.data)
+    && !blocked
+  const title = action === 'unassign'
+    ? 'Remove plan from Electric Service'
+    : action === 'retire'
+      ? 'Retire rate plan'
+      : 'Remove rate plan'
+  return (
+    <section className="workflow lifecycle-dialog" role="dialog" aria-modal="true" aria-labelledby="plan-lifecycle-title">
+      <header className="workflow-header"><div><p>Dependency-aware lifecycle</p><h2 id="plan-lifecycle-title">{title}</h2></div></header>
+      <div className="workflow-body">
+        <InlineNotice tone="warning">
+          {action === 'unassign'
+            ? 'Cost calculation stops after the effective time. Historical assignments, costs, reports, bill imports, and evidence remain intact.'
+            : 'This plan cannot be changed while any active or future electric-service assignment remains.'}
+        </InlineNotice>
+        {dependencies.isLoading ? <LoadingState label="Reviewing plan impact…" /> : dependencies.error ? <ErrorState error={dependencies.error} retry={() => { void dependencies.refetch() }} /> : dependencies.data && (
+          <div className="dependency-summary">
+            <span><small>Current assignments</small><strong>{dependencies.data.activeAssignments.length + dependencies.data.activeAccountPointers.length}</strong></span>
+            <span><small>Future assignments</small><strong>{dependencies.data.futureAssignments.length}</strong></span>
+            <span><small>Historical assignments</small><strong>{dependencies.data.historicalAssignmentCount}</strong></span>
+            <span><small>Cost calculations</small><strong>{dependencies.data.historicalCalculationCount}</strong></span>
+            <span><small>Evidence records</small><strong>{dependencies.data.sourceEvidenceCount}</strong></span>
+            <span><small>Imported bills</small><strong>{dependencies.data.billImportCount}</strong></span>
+          </div>
+        )}
+        {blocked && <InlineNotice tone="danger">Replace or explicitly unassign all current and future assignments before continuing.</InlineNotice>}
+        {action === 'unassign' && <label><span>Effective date and time</span><input type="datetime-local" value={effectiveAt} onChange={(event) => { setEffectiveAt(event.target.value) }} /></label>}
+        <label><span>Reason</span><textarea value={reason} onChange={(event) => { setReason(event.target.value) }} /></label>
+        <label><span>Type {expectedConfirmation} to confirm</span><input value={confirmation} autoComplete="off" onChange={(event) => { setConfirmation(event.target.value) }} /></label>
+        {mutation.error && <InlineNotice tone="danger">{errorMessage(mutation.error)}</InlineNotice>}
+      </div>
+      <footer className="workflow-footer"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button type="button" className="button danger" disabled={!ready || mutation.isPending} onClick={() => { mutation.mutate() }}>{mutation.isPending ? 'Applying…' : title}</button></footer>
+    </section>
+  )
 }
 
 function PastBills({ bills, currency }: { bills: BillSummary[]; currency: string }) {

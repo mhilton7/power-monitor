@@ -173,17 +173,87 @@ export interface BillSummary {
   blockingWarnings: string[]
 }
 
+export type BillFieldConfidence =
+  | 'parser_confirmed'
+  | 'arithmetic_confirmed'
+  | 'high'
+  | 'medium'
+  | 'low'
+  | 'manual_confirmed'
+  | 'missing'
+  | 'conflict'
+  | 'not_applicable'
+
+export interface MissingBillField {
+  path: string
+  outputKind: string
+  state: 'not_found_on_bill' | 'needs_review' | 'not_applicable' | 'conflict' | 'unsupported'
+  required: boolean
+  reason: string
+}
+
+export interface BillFieldEvidence {
+  path: string
+  outputKind: string
+  value: string
+  confidence: BillFieldConfidence
+  sourcePage?: number
+  sourceText?: string
+  parserRule?: string
+  parserVersion: string
+}
+
+export interface NormalizedUtilityBill {
+  schemaVersion: string
+  parserId: string
+  parserVersion: string
+  artifact: {
+    id: string
+    displayFilename: string
+    sha256: string
+    mimeType: 'application/pdf'
+    byteSize?: number
+    pageCount: number
+    extractionMethod: 'text' | 'ocr' | 'mixed'
+    importedAt: string
+  }
+  utility: {
+    name?: string
+    documentType?: string
+    ratePlanCode?: string
+  }
+  billingCycle: Record<string, unknown>
+  planCandidate: Record<string, unknown>
+  lineItems: Array<Record<string, unknown>>
+  evidence: BillFieldEvidence[]
+  validation: Record<string, unknown>
+  warnings: string[]
+  missingFields: MissingBillField[]
+  ignoredSections: Array<Record<string, unknown>>
+  processingStatus: string
+}
+
 export interface BillImportDetail extends BillSummary {
   revision: number
-  normalized: Record<string, unknown>
+  normalized: NormalizedUtilityBill
+  displayFilename: string
+  utilityName?: string
+  documentType?: string
+  importedAt: string
+  processingStatus: string
+  thresholdInterpretation: 'fixed_cycle_threshold' | 'daily_baseline' | 'baseline_multiplier' | 'unknown'
+  missingFields: MissingBillField[]
   fields: Array<{
     id: string
     path: string
     label: string
-    value?: string
-    confidence?: string
+    outputKind: string
+    value: string
+    confidence: BillFieldConfidence
     sourcePage?: number
     status?: string
+    parserRule?: string
+    sourceText?: string
   }>
   conflicts: Array<{ id: string; path: string; message: string }>
 }
@@ -207,6 +277,27 @@ export interface RatePlanAssignment {
   versionId: string
   effectiveFrom: string
   effectiveThrough?: string
+}
+
+export type DropdownAction =
+  | 'rate_plan.replace_assignment'
+  | 'rate_plan.unassign'
+  | 'rate_plan.retire'
+  | 'rate_plan.remove'
+  | 'rate_plan.restore'
+  | 'rate_plan.delete_draft'
+
+export interface RatePlanDependencySummary {
+  dependencyToken: string
+  activeAssignments: Array<Record<string, unknown>>
+  futureAssignments: Array<Record<string, unknown>>
+  activeAccountPointers: Array<Record<string, unknown>>
+  historicalAssignmentCount: number
+  historicalCalculationCount: number
+  sourceEvidenceCount: number
+  billImportCount: number
+  permanentDraftDeletionEligible: boolean
+  removalBlocked: boolean
 }
 
 export interface RateSource {

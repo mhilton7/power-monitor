@@ -343,6 +343,127 @@ async def test_assignments_block_removal_then_history_and_costs_are_preserved(
 
 
 @pytest.mark.asyncio
+async def test_owner_explicit_unassign_preserves_assignment_and_allows_retirement(
+    api_client: httpx.AsyncClient,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+) -> None:
+    await bootstrap(api_client)
+    plan = await create_plan(api_client, "EXPLICIT-UNASSIGN", activate=True)
+    version_id = plan["versions"][0]["id"]
+    now = datetime.now(UTC)
+    async with session_factory_fixture() as session:
+        rate_plan = await session.get(RatePlan, plan["id"])
+        site = await session.scalar(select(Site).order_by(Site.created_at))
+        assert rate_plan and site
+        account = UtilityAccount(
+            site_id=site.id,
+            utility_id=rate_plan.utility_id,
+            name="Explicit unassignment account",
+            timezone="America/Los_Angeles",
+            active_rate_version_id=version_id,
+        )
+        session.add(account)
+        await session.flush()
+        assignment = RateAssignment(
+            utility_account_id=account.id,
+            rate_version_id=version_id,
+            effective_from=now - timedelta(days=5),
+            assigned_by=None,
+            created_at=now,
+        )
+        session.add(assignment)
+        await session.commit()
+        account_id = account.id
+        assignment_id = assignment.id
+
+    dependencies = await api_client.get(f"/api/v1/admin/rate-plans/{plan['id']}/dependencies")
+    assert dependencies.status_code == 200
+    impact = dependencies.json()
+    assert len(impact["active_assignments"]) == 1
+    assert len(impact["active_account_pointers"]) == 1
+    assert len(impact["dependency_token"]) == 64
+
+    stale = await api_client.post(
+        f"/api/v1/admin/rate-plans/{plan['id']}/unassign",
+        headers=csrf(api_client),
+        json={
+            "utility_account_id": account_id,
+            "expected_revision": plan["lifecycle_revision"],
+            "expected_dependency_token": "0" * 64,
+            "effective_at": now.isoformat(),
+            "reason": "Reject stale dependency impact before changing assignment",
+            "confirmation": f"UNASSIGN {plan['code']}",
+            "idempotency_key": f"unassign-stale-{plan['id']}",
+        },
+    )
+    assert stale.status_code == 409
+    assert stale.json()["type"].endswith("/stale_dependency_token")
+
+    unassign_payload = {
+        "utility_account_id": account_id,
+        "expected_revision": plan["lifecycle_revision"],
+        "expected_dependency_token": impact["dependency_token"],
+        "effective_at": now.isoformat(),
+        "reason": "Owner explicitly removed this plan from the electric service",
+        "confirmation": f"UNASSIGN {plan['code']}",
+        "idempotency_key": f"unassign-{plan['id']}",
+    }
+    unassigned = await api_client.post(
+        f"/api/v1/admin/rate-plans/{plan['id']}/unassign",
+        headers=csrf(api_client),
+        json=unassign_payload,
+    )
+    assert unassigned.status_code == 200, unassigned.text
+    assert unassigned.json()["history_preserved"] is True
+    assert unassigned.json()["dependencies"]["active_assignments"] == []
+    assert unassigned.json()["dependencies"]["active_account_pointers"] == []
+    repeated = await api_client.post(
+        f"/api/v1/admin/rate-plans/{plan['id']}/unassign",
+        headers=csrf(api_client),
+        json=unassign_payload,
+    )
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["idempotent"] is True
+    assert repeated.json()["assignment_id"] == assignment_id
+
+    async with session_factory_fixture() as session:
+        account = await session.get(UtilityAccount, account_id)
+        assignment = await session.get(RateAssignment, assignment_id)
+        assert account and assignment
+        assert account.active_rate_version_id is None
+        assert assignment.effective_to is not None
+        assert assignment.assignment_reason == (
+            "Owner explicitly removed this plan from the electric service"
+        )
+        assert (
+            await session.scalar(
+                select(func.count(AuditEvent.id)).where(
+                    AuditEvent.action == "rate_plan.unassigned",
+                    AuditEvent.object_id == assignment_id,
+                )
+            )
+            == 1
+        )
+
+    updated_plan = unassigned.json()["plan"]
+    updated_dependencies = unassigned.json()["dependencies"]
+    retired = await api_client.post(
+        f"/api/v1/admin/rate-plans/{plan['id']}/retire",
+        headers=csrf(api_client),
+        json={
+            "expected_revision": updated_plan["lifecycle_revision"],
+            "expected_dependency_token": updated_dependencies["dependency_token"],
+            "reason": "Retire after explicit owner unassignment",
+            "confirmation": plan["code"],
+            "idempotency_key": f"retire-{plan['id']}",
+        },
+    )
+    assert retired.status_code == 200, retired.text
+    assert retired.json()["plan"]["status"] == "retired"
+    assert retired.json()["dependencies"]["historical_assignment_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_managed_plan_retires_and_restores_with_source_evidence(
     api_client: httpx.AsyncClient,
     session_factory_fixture: async_sessionmaker[AsyncSession],

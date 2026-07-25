@@ -57,7 +57,8 @@
   .metadata-item:nth-child(n + 2) { border-top: 1px solid var(--line-subtle); }
   .card-actions > .button,
   .card-actions > .more-menu,
-  .card-actions > .more-menu > .button { width: 100%; }
+  .card-actions > .more-menu > .dropdown-menu,
+  .card-actions > .more-menu > .dropdown-menu > .button { width: 100%; }
   .menu-popover { inset-inline: 0; min-width: 100%; }
   .plan-detail dl { grid-template-columns: 1fr; }
   .tier-list > div,
@@ -83,6 +84,7 @@
   .workflow { min-height: 100dvh; border-radius: 0; }
   .workflow-header, .workflow-body, .workflow-footer, .workflow > .stepper { padding-inline: var(--space-4); }
   .review-fields, .confirm-card dl { grid-template-columns: 1fr; }
+  .missing-fields li { grid-template-columns: 1fr; }
   .modal-card { width: 100%; max-height: 100vh; height: 100%; border: 0; border-radius: 0; }
   .permission-groups { grid-template-columns: 1fr; }
   .home-primary-onboarding { grid-template-columns: 1fr; min-height: auto; padding: var(--space-5); }

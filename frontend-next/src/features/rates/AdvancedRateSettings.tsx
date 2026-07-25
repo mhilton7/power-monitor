@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, FileSearch, Plus, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { errorMessage, json, request } from '../../api/client'
-import { adaptRateEvidence, adaptRateSources, adaptRateVersions } from '../../api/adapters'
+import { adaptRateEvidence, adaptRatePlanDependencies, adaptRateSources, adaptRateVersions } from '../../api/adapters'
 import { objectList, record, stringValue } from '../../api/validation'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
 import { TabList } from '../../components/layout/Layout'
@@ -20,6 +20,9 @@ interface PlanRow {
   pricingModel?: string
   versionId?: string
   version?: number
+  removedAt?: string
+  removedBy?: string
+  removalReason?: string
 }
 
 type RateView = 'plans' | 'sources' | 'versions' | 'evidence' | 'removed' | 'adjustments'
@@ -38,7 +41,7 @@ function plansAdapter(value: unknown): PlanRow[] {
   return source.map((item) => {
     const latest = item.latest_version && typeof item.latest_version === 'object'
       ? record(item.latest_version)
-      : {}
+      : objectList(item.versions)[0] ?? {}
     return {
       id: stringValue(item.id),
       name: stringValue(item.name, stringValue(item.plan_name, 'Rate plan')),
@@ -48,6 +51,9 @@ function plansAdapter(value: unknown): PlanRow[] {
       pricingModel: stringValue(latest.pricing_model, stringValue(item.pricing_model)) || undefined,
       versionId: stringValue(latest.id, stringValue(item.rate_version_id)) || undefined,
       version: Number(latest.version ?? item.version ?? 0) || undefined,
+      removedAt: stringValue(item.removed_at) || undefined,
+      removedBy: stringValue(item.removed_by) || undefined,
+      removalReason: stringValue(item.removal_reason) || undefined,
     }
   })
 }
@@ -142,8 +148,9 @@ function EvidenceList({ plans }: { plans: PlanRow[] }) {
 function RemovedPlans({ plans, loading, error }: { plans: PlanRow[]; loading: boolean; error: unknown }) {
   const client = useQueryClient()
   const restore = useMutation({
-    mutationFn: (plan: PlanRow) => request(`/api/v1/admin/rate-plans/${plan.id}/restore`, json('POST', {
+    mutationFn: ({ plan, dependencyToken }: { plan: PlanRow; dependencyToken: string }) => request(`/api/v1/admin/rate-plans/${plan.id}/restore`, json('POST', {
       expected_revision: plan.revision,
+      expected_dependency_token: dependencyToken,
       reason: 'Restored from Single Home Billing',
       idempotency_key: crypto.randomUUID(),
     })),
@@ -161,10 +168,18 @@ function RemovedPlans({ plans, loading, error }: { plans: PlanRow[]; loading: bo
       <h3>Removed and retired plans</h3>
       {plans.length === 0
         ? <EmptyState title="No removed plans" message="Retired plans remain here with their versions, assignments, costs, and evidence intact." />
-        : <ul className="structured-list">{plans.map((plan) => <li key={plan.id}><div><strong>{plan.name}</strong><span>{statusLabel(plan.status)} · assignments are not restored automatically</span></div><button type="button" className="button secondary compact" disabled={restore.isPending} onClick={() => { restore.mutate(plan); }}>Restore</button></li>)}</ul>}
+        : <ul className="structured-list">{plans.map((plan) => <RemovedPlanRecord key={plan.id} plan={plan} pending={restore.isPending} onRestore={(dependencyToken) => { restore.mutate({ plan, dependencyToken }) }} />)}</ul>}
       {restore.error && <InlineNotice tone="danger">{errorMessage(restore.error)}</InlineNotice>}
     </section>
   )
+}
+
+function RemovedPlanRecord({ plan, pending, onRestore }: { plan: PlanRow; pending: boolean; onRestore: (dependencyToken: string) => void }) {
+  const dependencies = useQuery({
+    queryKey: ['removed-rate-plan-dependencies', plan.id],
+    queryFn: () => request(`/api/v1/admin/rate-plans/${plan.id}/dependencies`, {}, adaptRatePlanDependencies),
+  })
+  return <li><div><strong>{plan.name}</strong><span>{statusLabel(plan.status)}{plan.removedAt ? ` · removed ${plan.removedAt}` : ''}{plan.removedBy ? ` · actor ${plan.removedBy}` : ''}</span><small>{plan.removalReason ?? 'Lifecycle reason retained in the audit record'} · {dependencies.data?.historicalAssignmentCount ?? 0} historical assignments · {dependencies.data?.historicalCalculationCount ?? 0} cost calculations · assignments are not restored automatically</small></div><button type="button" className="button secondary compact" data-canonical-action="rate_plan.restore" disabled={pending || dependencies.isLoading || !dependencies.data?.dependencyToken} onClick={() => { if (dependencies.data?.dependencyToken) onRestore(dependencies.data.dependencyToken) }}>Restore</button></li>
 }
 
 /*
@@ -342,7 +357,7 @@ function PlanManager({ home, services, plans, loading, error }: { home: Home; se
   })
   const dependencies = useQuery({
     queryKey: ['rate-plan-dependencies', lifecycleTarget?.id],
-    queryFn: () => request<Record<string, unknown>>(`/api/v1/admin/rate-plans/${lifecycleTarget?.id ?? ''}/dependencies`),
+    queryFn: () => request(`/api/v1/admin/rate-plans/${lifecycleTarget?.id ?? ''}/dependencies`, {}, adaptRatePlanDependencies),
     enabled: Boolean(lifecycleTarget),
   })
   const clone = useMutation({
@@ -377,12 +392,13 @@ function PlanManager({ home, services, plans, loading, error }: { home: Home; se
   })
   const remove = useMutation({
     mutationFn: (plan: PlanRow) => {
-      const review = dependencies.data ?? {}
-      const deleteDraft = review.permanent_draft_deletion_eligible === true
+      const review = dependencies.data
+      const deleteDraft = review?.permanentDraftDeletionEligible === true
       return request(
         deleteDraft ? `/api/v1/admin/rate-plan-drafts/${plan.id}` : `/api/v1/admin/rate-plans/${plan.id}/remove`,
         json(deleteDraft ? 'DELETE' : 'POST', {
           expected_revision: plan.revision,
+          expected_dependency_token: review?.dependencyToken,
           confirmation: lifecycleConfirmation,
           reason: lifecycleReason,
           idempotency_key: `remove-${plan.id}-${crypto.randomUUID()}`,
@@ -400,7 +416,7 @@ function PlanManager({ home, services, plans, loading, error }: { home: Home; se
   })
   if (loading) return <LoadingState label="Loading rate plans…" />
   if (error) return <ErrorState error={error} />
-  const removalBlocked = dependencies.data?.removal_blocked === true
+  const removalBlocked = dependencies.data?.removalBlocked === true
   const removalReady = Boolean(
     lifecycleTarget
     && lifecycleConfirmation.trim().toLocaleLowerCase() === lifecycleTarget.code.trim().toLocaleLowerCase()
@@ -420,7 +436,7 @@ function PlanManager({ home, services, plans, loading, error }: { home: Home; se
           {dependencies.isLoading ? <LoadingState label="Reviewing plan dependencies…" /> : dependencies.error ? <ErrorState error={dependencies.error} retry={() => { void dependencies.refetch() }} /> : (
             <>
               <div className="dependency-summary">
-                <span><small>Permanent draft deletion</small><strong>{dependencies.data?.permanent_draft_deletion_eligible === true ? 'Eligible' : 'Not eligible'}</strong></span>
+                <span><small>Permanent draft deletion</small><strong>{dependencies.data?.permanentDraftDeletionEligible === true ? 'Eligible' : 'Not eligible'}</strong></span>
                 <span><small>Removal</small><strong>{removalBlocked ? 'Blocked by active assignments' : 'Available after confirmation'}</strong></span>
                 <span><small>History</small><strong>Versions and evidence preserved</strong></span>
               </div>
@@ -430,8 +446,8 @@ function PlanManager({ home, services, plans, loading, error }: { home: Home; se
               </div>
               {removalBlocked && <InlineNotice tone="warning">Replace or end active and future assignments before removing this plan.</InlineNotice>}
               <div className="inline-actions">
-                {lifecycleTarget.versionId && !['draft', 'retired'].includes(lifecycleTarget.status) && <button type="button" className="button secondary compact" disabled={retire.isPending} onClick={() => { retire.mutate(lifecycleTarget) }}><Archive size={15} /> {retire.isPending ? 'Retiring…' : 'Retire version'}</button>}
-                <button type="button" className="button danger compact" disabled={!removalReady || remove.isPending} onClick={() => { remove.mutate(lifecycleTarget) }}>{remove.isPending ? 'Removing…' : dependencies.data?.permanent_draft_deletion_eligible === true ? 'Delete unused draft' : 'Remove plan'}</button>
+                {lifecycleTarget.versionId && !['draft', 'retired'].includes(lifecycleTarget.status) && <button type="button" className="button secondary compact" data-canonical-action="rate_plan.retire" disabled={retire.isPending} onClick={() => { retire.mutate(lifecycleTarget) }}><Archive size={15} /> {retire.isPending ? 'Retiring…' : 'Retire version'}</button>}
+                <button type="button" className="button danger compact" data-canonical-action={dependencies.data?.permanentDraftDeletionEligible === true ? 'rate_plan.delete_draft' : 'rate_plan.remove'} disabled={!removalReady || remove.isPending} onClick={() => { remove.mutate(lifecycleTarget) }}>{remove.isPending ? 'Removing…' : dependencies.data?.permanentDraftDeletionEligible === true ? 'Delete unused draft' : 'Remove plan'}</button>
               </div>
             </>
           )}

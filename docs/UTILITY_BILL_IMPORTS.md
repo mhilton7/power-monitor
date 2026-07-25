@@ -114,17 +114,44 @@ utility classifier. Summary-only data such as account identifiers and bill
 preparation dates remains null with a review reason when those pages were not
 uploaded.
 
+## Durable normalized artifact
+
+Every extraction revision stores a versioned
+`normalized-utility-bill/1.0` artifact. It is the review and dashboard contract,
+not a browser reconstruction of loosely related response fields. It contains:
+
+- a sanitized display filename, SHA-256, MIME type, byte and page counts,
+  extraction method, and import time;
+- utility/document classification and rate-plan identity;
+- separate `billing_cycle` and `plan_candidate` objects;
+- exact-string line items and validation results;
+- only recognized non-null values in `evidence`; and
+- absent values in `missing_fields`, each with a required/optional flag and a
+  parser reason.
+
+The artifact is normative in
+`shared/schemas/normalized-utility-bill-1.0.json`. It is returned with bill
+detail and separately through
+`GET /api/v1/admin/utility-bill-imports/{bill_id}/normalized`. Owners may
+download the redacted extracted text through `/extracted-text`. If the retained
+private original is still available, `/reprocess` creates a new immutable
+extraction revision and normalized artifact. Reprocessing never overwrites a
+confirmed or published revision.
+
 ## Evidence and confidence
 
-Every field records its source artifact, page number, retained excerpt,
-coordinates when available, extraction method, parser/OCR version, confidence,
-warnings, and normalization history. The administrator can inspect this
-evidence before confirming or correcting a field.
+Every recognized field records its source artifact, page number, retained
+excerpt, coordinates when available, extraction method, parser/OCR version,
+confidence, warnings, and normalization history. The administrator can inspect
+this evidence before confirming or correcting a field.
 
-Confidence and review states distinguish administrator-confirmed, high, medium,
-low, missing, conflicting, and not-applicable values. Required low-confidence
-or missing rate fields block publication. A tier boundary such as `579 kWh`
-always requires an explicit interpretation:
+Confidence states distinguish parser-confirmed, arithmetic-confirmed, high,
+medium, low, manually confirmed, conflicting, missing, and not-applicable
+values. A null is never administrator-confirmed: missing values are shown once
+in the required **Needs review** group or the expandable optional **Fields not
+found on this bill** group. Confirming a missing field is rejected by the
+server. Required low-confidence or missing rate fields block publication. A
+tier boundary such as `579 kWh` always requires an explicit interpretation:
 
 - fixed billing-cycle threshold;
 - derived from a daily baseline;
@@ -222,6 +249,10 @@ than PDF punctuation.
   English language data. The production backend image installs these packages.
 - **Low confidence:** inspect the page evidence and correct the exact value.
   Do not confirm a value that the bill does not establish.
+- **Old import still shows incomplete metadata:** use **Reprocess from retained
+  original**. This creates a new extraction revision. If the original was
+  deleted by retention policy, re-upload the local source PDF; the server does
+  not fabricate lost text or OCR evidence.
 - **Preview unavailable:** complete the linked custom-rate draft and resolve
   blocking warnings, then run validation again.
 - **Editor failed to load:** select **Retry**. If the deployment was just
