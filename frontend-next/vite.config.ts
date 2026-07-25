@@ -2,12 +2,16 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
 const performanceBudgetBytes = 480_000
+const frontendVersion = process.env.VITE_BUILD_VERSION ?? '1.0.0-dev'
+const frontendCommit = process.env.VITE_RELEASE_COMMIT ?? 'development'
 
 export default defineConfig({
   plugins: [react()],
   define: {
     __SINGLE_HOME_MODE__: JSON.stringify(process.env.VITE_SINGLE_HOME_MODE !== 'false'),
     __PERFORMANCE_BUDGET_BYTES__: JSON.stringify(performanceBudgetBytes),
+    __FRONTEND_VERSION__: JSON.stringify(frontendVersion),
+    __FRONTEND_COMMIT__: JSON.stringify(frontendCommit),
   },
   server: {
     port: 5190,

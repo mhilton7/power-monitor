@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { errorMessage, json, request } from '../../api/client'
 import { objectList, record, stringValue } from '../../api/validation'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
+import { TabList } from '../../components/layout/Layout'
 import type { ElectricService, Home } from '../../types/models'
 import { statusLabel } from '../../utils/format'
 
@@ -26,6 +27,17 @@ interface SourceRow {
   enabled: boolean
   lastSuccess?: string
 }
+
+type RateView = 'plans' | 'sources' | 'versions' | 'evidence' | 'removed' | 'adjustments'
+
+const rateViews: ReadonlyArray<readonly [RateView, string]> = [
+  ['plans', 'Custom editor'],
+  ['sources', 'Sources'],
+  ['versions', 'Versions'],
+  ['evidence', 'Evidence'],
+  ['removed', 'Removed'],
+  ['adjustments', 'Adjustments'],
+]
 
 function plansAdapter(value: unknown): PlanRow[] {
   const source = Array.isArray(value) ? objectList(value) : objectList(record(value).plans)
@@ -65,7 +77,7 @@ export function AdvancedRateSettings({
   home: Home
   services: ElectricService[]
 }) {
-  const [view, setView] = useState<'plans' | 'sources' | 'versions' | 'evidence' | 'removed' | 'adjustments'>('plans')
+  const [view, setView] = useState<RateView>('plans')
   const plans = useQuery({ queryKey: ['managed-rate-plans'], queryFn: () => request('/api/v1/rates/plans', {}, plansAdapter) })
   const removedPlans = useQuery({
     queryKey: ['removed-rate-plans'],
@@ -81,22 +93,21 @@ export function AdvancedRateSettings({
   const sources = useQuery({ queryKey: ['rate-sources'], queryFn: () => request('/api/v1/admin/rate-sources', {}, sourcesAdapter), enabled: view === 'sources' })
   return (
     <div className="advanced-rates">
-      <div className="subnav" role="tablist" aria-label="Advanced rate settings">
-        {([
-          ['plans', 'Custom editor'],
-          ['sources', 'Sources'],
-          ['versions', 'Versions'],
-          ['evidence', 'Evidence'],
-          ['removed', 'Removed'],
-          ['adjustments', 'Adjustments'],
-        ] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={view === id} className={view === id ? 'active' : ''} onClick={() => { setView(id); }}>{label}</button>)}
+      <TabList idBase="advanced-rates" label="Advanced rate settings" value={view} items={rateViews} onChange={setView} />
+      <div
+        id={`advanced-rates-panel-${view}`}
+        className="rate-tab-panel"
+        role="tabpanel"
+        aria-labelledby={`advanced-rates-tab-${view}`}
+        tabIndex={0}
+      >
+        {view === 'plans' && <PlanManager home={home} plans={plans.data ?? []} loading={plans.isLoading} error={plans.error} />}
+        {view === 'sources' && <SourceManager sources={sources.data ?? []} loading={sources.isLoading} error={sources.error} />}
+        {view === 'versions' && <RateList title="Rate versions" empty="No rate versions are available." plans={plans.data ?? []} loading={plans.isLoading} error={plans.error} detail={(plan) => `Version ${plan.version ?? '—'} · ${statusLabel(plan.status)}`} />}
+        {view === 'evidence' && <RateList title="Source evidence" empty="Evidence appears after a managed source check or bill import." plans={plans.data ?? []} loading={plans.isLoading} error={plans.error} detail={(plan) => `${plan.code || 'Custom'} · Evidence retained with each version`} />}
+        {view === 'removed' && <RemovedPlans plans={removedPlans.data ?? []} loading={removedPlans.isLoading} error={removedPlans.error} />}
+        {view === 'adjustments' && <Adjustments services={services} />}
       </div>
-      {view === 'plans' && <PlanManager home={home} plans={plans.data ?? []} loading={plans.isLoading} error={plans.error} />}
-      {view === 'sources' && <SourceManager sources={sources.data ?? []} loading={sources.isLoading} error={sources.error} />}
-      {view === 'versions' && <RateList title="Rate versions" empty="No rate versions are available." plans={plans.data ?? []} detail={(plan) => `Version ${plan.version ?? '—'} · ${statusLabel(plan.status)}`} />}
-      {view === 'evidence' && <RateList title="Source evidence" empty="Evidence appears after a managed source check or bill import." plans={plans.data ?? []} detail={(plan) => `${plan.code || 'Custom'} · Evidence retained with each version`} />}
-      {view === 'removed' && <RemovedPlans plans={removedPlans.data ?? []} loading={removedPlans.isLoading} error={removedPlans.error} />}
-      {view === 'adjustments' && <Adjustments services={services} />}
     </div>
   )
 }
@@ -123,7 +134,7 @@ function RemovedPlans({ plans, loading, error }: { plans: PlanRow[]; loading: bo
       <h3>Removed and retired plans</h3>
       {plans.length === 0
         ? <EmptyState title="No removed plans" message="Retired plans remain here with their versions, assignments, costs, and evidence intact." />
-        : <ul className="plain-list">{plans.map((plan) => <li key={plan.id}><div><strong>{plan.name}</strong><span>{statusLabel(plan.status)} · assignments are not restored automatically</span></div><button type="button" className="button secondary" disabled={restore.isPending} onClick={() => { restore.mutate(plan); }}>Restore</button></li>)}</ul>}
+        : <ul className="structured-list">{plans.map((plan) => <li key={plan.id}><div><strong>{plan.name}</strong><span>{statusLabel(plan.status)} · assignments are not restored automatically</span></div><button type="button" className="button secondary compact" disabled={restore.isPending} onClick={() => { restore.mutate(plan); }}>Restore</button></li>)}</ul>}
       {restore.error && <InlineNotice tone="danger">{errorMessage(restore.error)}</InlineNotice>}
     </section>
   )
@@ -133,17 +144,34 @@ function RateList({
   title,
   empty,
   plans,
+  loading,
+  error,
   detail,
 }: {
   title: string
   empty: string
   plans: PlanRow[]
+  loading: boolean
+  error: unknown
   detail: (plan: PlanRow) => string
 }) {
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const pageSize = 10
+  const matching = plans.filter((plan) => `${plan.name} ${plan.code} ${plan.status}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  const pageCount = Math.max(1, Math.ceil(matching.length / pageSize))
+  const safePage = Math.min(page, pageCount - 1)
+  const visible = matching.slice(safePage * pageSize, (safePage + 1) * pageSize)
+  if (loading) return <LoadingState label={`Loading ${title.toLocaleLowerCase()}…`} />
+  if (error) return <ErrorState error={error} />
   return (
     <section className="rate-advanced-panel">
-      <h3>{title}</h3>
-      {plans.length === 0 ? <EmptyState title={title} message={empty} /> : <ul className="plain-list">{plans.map((plan) => <li key={plan.id}><div><strong>{plan.name}</strong><span>{detail(plan)}</span></div><FileSearch /></li>)}</ul>}
+      <div className="section-heading">
+        <div><h3>{title}</h3><p>{matching.length} matching record{matching.length === 1 ? '' : 's'}</p></div>
+        <label className="compact-search"><span className="sr-only">Search {title.toLocaleLowerCase()}</span><input type="search" placeholder={`Search ${title.toLocaleLowerCase()}`} value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} /></label>
+      </div>
+      {plans.length === 0 ? <EmptyState compact title={title} message={empty} /> : matching.length === 0 ? <EmptyState compact title="No matching records" message="Clear the search or try a different name, code, or status." /> : <ul className="structured-list">{visible.map((plan) => <li key={plan.id}><div><strong>{plan.name}</strong><span>{detail(plan)}</span></div><FileSearch aria-hidden="true" /></li>)}</ul>}
+      {pageCount > 1 && <nav className="pagination" aria-label={`${title} pages`}><button type="button" className="button secondary compact" disabled={safePage === 0} onClick={() => { setPage((current) => Math.max(0, current - 1)); }}>Previous</button><span>Page {safePage + 1} of {pageCount}</span><button type="button" className="button secondary compact" disabled={safePage + 1 >= pageCount} onClick={() => { setPage((current) => Math.min(pageCount - 1, current + 1)); }}>Next</button></nav>}
     </section>
   )
 }
@@ -265,7 +293,7 @@ function PlanManager({ home, plans, loading, error }: { home: Home; plans: PlanR
           <div className="form-actions"><button type="button" className="button secondary" onClick={() => { setOpen(false); }}>Cancel</button><button type="submit" className="button primary" disabled={create.isPending}>{create.isPending ? 'Creating…' : 'Create draft plan'}</button></div>
         </form>
       )}
-      {plans.length === 0 ? <EmptyState title="No rate plans" message="Create a custom plan or upload an electric bill." /> : <ul className="plain-list">{plans.map((plan) => <li key={plan.id}><div><strong>{plan.name}</strong><span>{plan.code} · {statusLabel(plan.pricingModel ?? 'unknown')} · {statusLabel(plan.status)}</span></div><button type="button" className="button ghost compact" disabled={clone.isPending} onClick={() => { clone.mutate(plan); }}>Clone</button></li>)}</ul>}
+      {plans.length === 0 ? <EmptyState compact title="No rate plans" message="Create a custom plan or upload an electric bill." /> : <ul className="structured-list">{plans.map((plan) => <li key={plan.id}><div><strong>{plan.name}</strong><span>{plan.code} · {statusLabel(plan.pricingModel ?? 'unknown')} · {statusLabel(plan.status)}</span></div><button type="button" className="button ghost compact" disabled={clone.isPending} onClick={() => { clone.mutate(plan); }}>Clone</button></li>)}</ul>}
     </section>
   )
 }
@@ -296,7 +324,7 @@ function SourceManager({ sources, loading, error }: { sources: SourceRow[]; load
     <section className="rate-advanced-panel">
       <div className="section-heading"><div><h3>Managed rate sources</h3><p>Approved HTTPS sources are archived and reviewed before activation.</p></div><div className="inline-actions"><button type="button" className="button secondary" onClick={() => { check.mutate(); }} disabled={check.isPending}><RefreshCw size={16} /> Check now</button><button type="button" className="button secondary" onClick={() => { setOpen(!open); }}><Plus size={16} /> Add source</button></div></div>
       {open && <form className="structured-editor" onSubmit={(event) => { event.preventDefault(); create.mutate() }}><div className="form-grid"><label><span>Name</span><input value={name} onChange={(event) => { setName(event.target.value); }} required minLength={3} /></label><label><span>Approved HTTPS URL</span><input type="url" value={url} onChange={(event) => { setUrl(event.target.value); }} required /></label><label><span>Source type</span><select value={parser} onChange={(event) => { setParser(event.target.value); }}><option value="sce_public_tou_html_v1">SCE public TOU page</option><option value="sce_tariff_pdf_v1">SCE tariff PDF</option></select></label>{parser === 'sce_public_tou_html_v1' && <label><span>Effective date</span><input type="date" value={effective} onChange={(event) => { setEffective(event.target.value); }} /></label>}</div>{create.error && <p className="form-error" role="alert">{errorMessage(create.error)}</p>}<div className="form-actions"><button className="button primary" disabled={create.isPending}>Add approved source</button></div></form>}
-      {sources.length === 0 ? <EmptyState title="No approved sources" message="Add an official SCE page or tariff PDF to start managed checks." /> : <ul className="plain-list">{sources.map((source) => <li key={source.id}><div><strong>{source.name}</strong><span>{source.url} · {statusLabel(source.parser)}</span></div><span className={`pill ${source.enabled ? 'success' : ''}`}>{source.enabled ? 'Enabled' : 'Disabled'}</span></li>)}</ul>}
+      {sources.length === 0 ? <EmptyState compact title="No approved sources" message="Add an official SCE page or tariff PDF to start managed checks." /> : <ul className="structured-list">{sources.map((source) => <li key={source.id}><div><strong>{source.name}</strong><span>{source.url} · {statusLabel(source.parser)}</span></div><span className={`pill ${source.enabled ? 'success' : ''}`}>{source.enabled ? 'Enabled' : 'Disabled'}</span></li>)}</ul>}
     </section>
   )
 }
@@ -308,7 +336,7 @@ function Adjustments({ services }: { services: ElectricService[] }) {
       {services.length === 0 ? <EmptyState title="No electric service" message="Create an electric service before adding account adjustments." /> : (
         <>
           <InlineNotice><ShieldCheck size={16} /> Fixed charges and credits remain scoped to the electric service and are applied only once.</InlineNotice>
-          <ul className="plain-list">{services.map((service) => <li key={service.id}><div><strong>{service.name}</strong><span>{statusLabel(service.costScope)} · {service.provider}</span></div><Archive /></li>)}</ul>
+          <ul className="structured-list">{services.map((service) => <li key={service.id}><div><strong>{service.name}</strong><span>{statusLabel(service.costScope)} · {service.provider}</span></div><Archive aria-hidden="true" /></li>)}</ul>
         </>
       )}
     </section>

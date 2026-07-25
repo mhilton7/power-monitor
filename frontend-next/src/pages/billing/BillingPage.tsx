@@ -20,6 +20,7 @@ import { errorMessage, json, request } from '../../api/client'
 import { objectList, record, stringValue } from '../../api/validation'
 import { Metric, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, LoadingState } from '../../components/feedback/States'
+import { MetadataItem, MetadataList, Page, PageHeader, StatGrid } from '../../components/layout/Layout'
 import { BillImportFlow } from '../../features/bill-import/BillImportFlow'
 import { AdvancedRateSettings } from '../../features/rates/AdvancedRateSettings'
 import { useAuth } from '../../state/AuthContext'
@@ -93,19 +94,20 @@ export function BillingPage() {
 
   if (!home) return <ErrorState error={new Error('The default home is unavailable.')} />
   return (
-    <div className="page-stack billing-page">
-      <header className="page-heading">
-        <div><h1>Billing</h1><p>Your electric service, rate plan, billing cycle, and imported statements.</p></div>
-        <button type="button" className="button primary" data-canonical-action="bill.upload" onClick={() => { setImportOpen(true); }}>
+    <Page className="billing-page">
+      <PageHeader
+        title="Billing"
+        description="Your electric service, rate plan, billing cycle, and imported statements."
+        action={<button type="button" className="button primary" data-canonical-action="bill.upload" onClick={() => { setImportOpen(true); }}>
           <Upload size={17} /> Upload electric bill
-        </button>
-      </header>
+        </button>}
+      />
 
-      <div className="billing-top-metrics">
+      <StatGrid className="billing-top-metrics">
         <Metric label="Electric service" value={service ? '1' : '0'} identity="billing.service_count" detail={service ? service.name : 'Setup needed'} />
         <Metric label="Current plan" value={service?.currentPlan ?? 'Not configured'} identity="billing.current_plan" detail={service?.currentVersion ? `Version ${service.currentVersion}` : 'Upload a bill to begin'} />
         <Metric label="Current energy price" value={rate(service?.currentRate ?? cycle?.currentRate, home.currency)} identity="billing.current_price" detail={service?.nextRate ? `Next: ${rate(service.nextRate, home.currency)}` : undefined} />
-      </div>
+      </StatGrid>
 
       {!service ? (
         <Surface>
@@ -121,10 +123,12 @@ export function BillingPage() {
                 <span className={`pill ${service.currentPlan ? 'success' : 'warning'}`}>{service.currentPlan ? 'Rate active' : 'Setup needed'}</span>
               </div>
               <div className="service-facts">
-                <span><CalendarDays /><small>Billing day</small><strong>{ordinal(service.billingDay)}</strong></span>
-                <span><FileClock /><small>Current period</small><strong>{dateRange(service.billingStartsAt ?? cycle?.startsAt, service.billingEndsAt ?? cycle?.endsAt)}</strong></span>
-                <span><ShieldCheck /><small>Cost scope</small><strong>{statusLabel(service.costScope)}</strong></span>
-                <span><ReceiptText /><small>Projected bill</small><strong>{money(cycle?.projectedBill, home.currency)}</strong></span>
+                <MetadataList>
+                  <MetadataItem icon={<CalendarDays />} label="Billing day" value={ordinal(service.billingDay)} />
+                  <MetadataItem icon={<FileClock />} label="Current period" value={dateRange(service.billingStartsAt ?? cycle?.startsAt, service.billingEndsAt ?? cycle?.endsAt)} />
+                  <MetadataItem icon={<ShieldCheck />} label="Cost scope" value={statusLabel(service.costScope)} />
+                  <MetadataItem icon={<ReceiptText />} label="Projected bill" value={money(cycle?.projectedBill, home.currency)} />
+                </MetadataList>
               </div>
               <div className="card-actions">
                 <button type="button" className="button secondary" onClick={() => { setPlanDetail(!planDetail); }}><FileSearch size={16} /> Review plan</button>
@@ -139,14 +143,14 @@ export function BillingPage() {
             </Surface>
 
             <Surface title="Billing-cycle details" subtitle={dateRange(cycle?.startsAt, cycle?.endsAt)}>
-              {!cycle?.available ? <EmptyState title="Billing cycle not ready" message="Upload a bill or add exact cycle dates to calculate tier progress and projections." /> : (
+              {!cycle?.available ? <EmptyState compact title="Billing cycle not ready" message="Upload a bill or add exact cycle dates to calculate tier progress and projections." action={<button type="button" className="button secondary compact" onClick={() => { setImportOpen(true); }}><Upload size={16} /> Upload bill</button>} /> : (
                 <>
-                  <div className="cycle-metrics">
+                  <StatGrid className="cycle-metrics">
                     <Metric label="Usage" value={energy(cycle.usageKwh)} identity="billing.cycle_usage" />
                     <Metric label="Energy charge" value={money(cycle.energyCharge, home.currency)} identity="billing.cycle_charge" />
                     <Metric label="Projected usage" value={energy(cycle.projectedUsageKwh)} identity="billing.projected_usage" />
                     <Metric label="Projected bill" value={money(cycle.projectedBill, home.currency)} identity="billing.projected_bill" />
-                  </div>
+                  </StatGrid>
                   {cycle.tiers.length > 0 ? (
                     <div className="tier-list">
                       {cycle.tiers.map((tier) => <div key={tier.id} className={tier.name === cycle.currentTier ? 'current' : ''}><span><strong>{tier.name}</strong><small>{tier.upperKwh ? `${tier.lowerKwh}–${tier.upperKwh} kWh` : `${tier.lowerKwh}+ kWh`}</small></span><span><strong>{energy(tier.usageKwh)}</strong><small>{rate(tier.rate, home.currency)} · {money(tier.cost, home.currency)}</small></span></div>)}
@@ -181,7 +185,7 @@ export function BillingPage() {
       )}
 
       {importOpen && <div className="modal-layer"><button type="button" className="modal-backdrop" aria-label="Close bill import" onClick={() => { setImportOpen(false); }} /><BillImportFlow home={home} services={services} onClose={() => { setImportOpen(false); params.delete('action'); setParams(params, { replace: true }); void bills.refetch() }} /></div>}
-    </div>
+    </Page>
   )
 }
 

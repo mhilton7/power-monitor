@@ -1,5 +1,53 @@
 # Testing and release gates
 
+## Greenfield frontend layout stabilization acceptance (2026-07-24)
+
+The failure was reproduced before repair in Vite development, local
+production preview, a standalone frontend container, and the full Compose
+gateway. Each production-shaped path served the same valid 20,568-byte hashed
+CSS asset, but runtime inspection showed that the semantic Billing, History,
+and Advanced Rate Settings classes had no declarations. The dated root-cause
+record and before/after evidence are in
+`docs/frontend-replacement/layout-stabilization.md` and
+`docs/screenshots/frontend-layout/`.
+
+The repaired design system bounds normal content to 1,680 px and provides
+shared page, metric-grid, metadata, action, compact-empty-state, segmented
+control, disclosure, tab, version-list, evidence-list, pagination, table, and
+chart contracts. The browser matrix checks Billing, History, and Advanced Rate
+Settings at 3440x1440, 2560x1440, 1920x1080, 1440x900, 1024x768, 768x1024,
+and 390x844 with 80%, 100%, 125%, and 150% browser-equivalent reflow. It
+asserts document overflow, pairwise bounding-box overlap, control containment,
+intentional-scroll boundaries, duplicate IDs, keyboard tabs, and ARIA
+relationships.
+
+The locked greenfield install passes lint, TypeScript checking, 12 unit tests,
+a zero-vulnerability npm audit, and the production build/CSS contract gate.
+The complete Playwright run passes 48 scenarios with eight capture-only or
+project-specific skips. Reviewed dark desktop, light desktop, tablet, and
+mobile baselines are committed beside the browser specifications. The same
+CSS, accessibility, overlap, and visual gates pass against local production
+preview, the read-only NGINX frontend image, and the full Compose Caddy
+gateway. Advanced System Health exposes the frontend version, commit, and
+active hashed CSS asset.
+
+The retained comparison frontend still passes lint, type checking, 64 unit
+tests, its production build, and all 51 Chromium regressions. Ruff
+lint/format, strict mypy, generated OpenAPI drift, contracts, the repository
+secret scan, 179 portable backend tests, the separately enabled PostgreSQL 17
+migration gate, and the 100-device load/resilience gate pass. No backend,
+rate-engine, PDF/OCR, or firmware files were changed for this repair.
+
+The standard Compose stack reports every long-running service healthy and
+publishes only its gateway ports. A fresh five-artifact logical backup passed
+all checksums and restored into a clean 98-table database at
+`20260724_0015`. The independently rendered seven-service TrueNAS workflow
+published only gateway TCP 18444, completed migration before API/worker
+startup, enrolled three signed simulated devices, accepted 90 readings,
+resolved the SCE rate calculation, persisted two utility accounts and one
+network CIDR, verified encrypted backup artifacts, and restored them cleanly.
+Its containers, networks, volumes, CA, and generated secrets were removed.
+
 ## Single Home frontend replacement acceptance (2026-07-24)
 
 The production `frontend-next` package passes a locked dependency install,

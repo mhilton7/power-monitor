@@ -6,6 +6,7 @@ import { download, errorMessage, json, request, saveBlob } from '../../api/clien
 import { EnergyChart } from '../../components/charts/EnergyChart'
 import { Metric, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
+import { Page, PageHeader, SegmentedControl, StatGrid } from '../../components/layout/Layout'
 import { historyPayload } from '../../features/history/historyQuery'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
@@ -57,29 +58,18 @@ export function HistoryPage() {
   if (!home) return <ErrorState error={new Error('The default home is unavailable.')} />
 
   return (
-    <div className="page-stack history-page">
-      <header className="page-heading">
-        <div><h1>History</h1><p>See how your home used energy and what it cost over time.</p></div>
-        <button type="button" className="button secondary" disabled={!payload || exportHistory.isPending} onClick={() => { exportHistory.mutate(); }}>
+    <Page className="history-page">
+      <PageHeader
+        title="History"
+        description="See how your home used energy and what it cost over time."
+        action={<button type="button" className="button secondary" disabled={!payload || exportHistory.isPending} onClick={() => { exportHistory.mutate(); }}>
           <Download size={17} /> {exportHistory.isPending ? 'Preparing…' : 'Export'}
-        </button>
-      </header>
+        </button>}
+      />
       {exportHistory.error && <InlineNotice tone="danger">{errorMessage(exportHistory.error)}</InlineNotice>}
 
       <Surface className="history-controls-surface">
-        <div className="segmented-control" aria-label="History range">
-          {ranges.map((item) => (
-            <button
-              key={item.value}
-              type="button"
-              className={filters.range === item.value ? 'active' : undefined}
-              aria-pressed={filters.range === item.value}
-              onClick={() => { setFilters((current) => ({ ...current, range: item.value })); }}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl label="History range" value={filters.range} items={ranges} onChange={(range) => { setFilters((current) => ({ ...current, range })); }} />
         <div className="history-filter-row">
           <label>
             <span><Gauge size={15} /> Metric</span>
@@ -128,13 +118,13 @@ export function HistoryPage() {
           )}
           {history.data.warnings.map((warning) => <InlineNotice key={warning} tone="warning">{warning}</InlineNotice>)}
           <Surface title={history.data.title} subtitle={`${filters.scope === 'home' ? 'Whole Home' : 'Individual sensor'} · ${history.data.contributingSensors} contributing sensor${history.data.contributingSensors === 1 ? '' : 's'}`}>
-            <div className="history-summary">
+            <StatGrid className="history-summary">
               <Metric label="Energy" value={energy(history.data.energyKwh)} identity="history.energy" />
               <Metric label="Estimated cost" value={money(history.data.cost, home.currency)} identity="history.cost" detail="Interval energy charges" />
               <Metric label="Blended rate" value={rate(history.data.blendedRate, home.currency)} identity="history.blended_rate" />
               <Metric label="Peak power" value={power(history.data.peakPowerW)} identity="history.peak_power" />
               <Metric label="Coverage" value={`${number(history.data.coveragePercent, 1)}%`} identity="data.coverage" />
-            </div>
+            </StatGrid>
           </Surface>
           <Surface title="Energy over time" subtitle="Tier and time-of-use context is available in each interval tooltip.">
             {history.data.points.length ? (
@@ -148,6 +138,6 @@ export function HistoryPage() {
           )}
         </>
       ) : null}
-    </div>
+    </Page>
   )
 }

@@ -1,5 +1,8 @@
 @media (max-width: 1100px) {
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .billing-main-grid { grid-template-columns: 1fr; }
+  .billing-side-column { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .history-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .live-facts .freshness { display: none; }
   .detail-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -13,6 +16,16 @@
   .user-button > svg:first-child { width: 30px; }
   .page-content { min-width: 0; }
   .workspace-page { width: min(100% - 1.25rem, var(--content-max)); padding: 1.5rem 0 2.5rem; }
+  .page-stack { gap: var(--space-4); }
+  .billing-top-metrics,
+  .history-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metadata-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metadata-item:nth-child(odd) { border-inline-start: 0; }
+  .metadata-item:nth-child(n + 3) { border-top: 1px solid var(--line-subtle); }
+  .cycle-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .billing-side-column { grid-template-columns: 1fr; }
+  .subnav { padding-inline: var(--space-3); }
+  .rate-tab-panel { padding: var(--space-4); }
   .mobile-nav { position: fixed; inset: auto 0 0; z-index: 60; display: grid; grid-template-columns: repeat(4, 1fr); height: 68px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--bg-elevated) 95%, transparent); backdrop-filter: blur(15px); }
   .mobile-nav a { display: grid; place-items: center; align-content: center; gap: .2rem; color: var(--muted); font-size: .68rem; }
   .mobile-nav a.active { color: var(--accent); }
@@ -32,8 +45,28 @@
 @media (max-width: 620px) {
   h1 { font-size: 2.25rem; }
   .page-heading, .surface-header { align-items: stretch; flex-direction: column; }
-  .metric-grid, .form-grid, .detail-picker { grid-template-columns: 1fr; }
+  .metric-grid, .stat-grid, .form-grid, .detail-picker, .billing-top-metrics, .history-summary, .cycle-metrics { grid-template-columns: 1fr; }
   .surface { padding: 1rem; }
+  .service-card-heading, .section-heading { align-items: stretch; flex-direction: column; }
+  .metadata-list { grid-template-columns: 1fr; }
+  .metadata-item,
+  .metadata-item:nth-child(odd) { border-inline-start: 0; }
+  .metadata-item:nth-child(n + 2) { border-top: 1px solid var(--line-subtle); }
+  .card-actions > .button,
+  .card-actions > .more-menu,
+  .card-actions > .more-menu > .button { width: 100%; }
+  .menu-popover { inset-inline: 0; min-width: 100%; }
+  .plan-detail dl { grid-template-columns: 1fr; }
+  .tier-list > div,
+  .period-summary { align-items: flex-start; flex-direction: column; }
+  .tier-list span:last-child,
+  .period-summary span:last-child { text-align: left; }
+  .chart-canvas { min-height: 280px; }
+  .advanced-disclosure > summary,
+  .rate-tab-panel { padding: 1rem; }
+  .structured-list li { align-items: flex-start; }
+  .tier-editor > div { grid-template-columns: 1fr; }
+  .pagination { justify-content: space-between; }
   .list-row, .sensor-row { align-items: flex-start; flex-wrap: wrap; }
   .list-row > span:nth-of-type(1):not(.avatar), .sensor-row > span:nth-of-type(2) { flex-basis: calc(100% - 60px); }
   .list-row small, .sensor-row small { white-space: normal; }

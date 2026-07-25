@@ -1,0 +1,63 @@
+{
+  "location": "http://127.0.0.1:4198/billing?advanced=rates",
+  "title": "Power Monitor",
+  "document": {
+    "clientWidth": 1920,
+    "scrollWidth": 1920
+  },
+  "tokens": {
+    "contentMax": "1680px",
+    "space4": "1.125rem"
+  },
+  "computed": {
+    "pageStack": {
+      "display": "grid",
+      "gridTemplateColumns": "1584px",
+      "flexDirection": "row",
+      "gap": "24px",
+      "maxWidth": "none",
+      "overflowX": "visible"
+    },
+    "billingTopMetrics": {
+      "display": "grid",
+      "gridTemplateColumns": "518.656px 518.672px 518.672px",
+      "flexDirection": "row",
+      "gap": "14px",
+      "maxWidth": "none",
+      "overflowX": "visible"
+    },
+    "billingMainGrid": {
+      "display": "grid",
+      "gridTemplateColumns": "1147.05px 412.953px",
+      "flexDirection": "row",
+      "gap": "24px",
+      "maxWidth": "none",
+      "overflowX": "visible"
+    },
+    "serviceFacts": {
+      "display": "block",
+      "gridTemplateColumns": "none",
+      "flexDirection": "row",
+      "gap": "normal",
+      "maxWidth": "none",
+      "overflowX": "visible"
+    },
+    "subnav": {
+      "display": "flex",
+      "gridTemplateColumns": "none",
+      "flexDirection": "row",
+      "gap": "normal",
+      "maxWidth": "none",
+      "overflowX": "auto"
+    },
+    "metric": {
+      "display": "block",
+      "gridTemplateColumns": "none",
+      "flexDirection": "row",
+      "gap": "normal",
+      "maxWidth": "none",
+      "overflowX": "visible"
+    }
+  },
+  "stylesheets": []
+}

@@ -32,13 +32,15 @@ export function EmptyState({
   title,
   message,
   action,
+  compact = false,
 }: {
   title: string
   message: string
   action?: ReactNode
+  compact?: boolean
 }) {
   return (
-    <div className="state-block empty-state">
+    <div className={`state-block empty-state ${compact ? 'compact' : ''}`}>
       <CheckCircle2 aria-hidden="true" />
       <div>
         <strong>{title}</strong>

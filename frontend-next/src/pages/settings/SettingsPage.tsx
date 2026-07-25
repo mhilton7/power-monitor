@@ -549,7 +549,8 @@ function HealthDetail() {
   const health = useQuery({ queryKey: ['advanced-health'], queryFn: () => request('/api/v1/health/ready', {}, adaptHealth) })
   if (health.isLoading) return <LoadingState />
   if (health.error) return <ErrorState error={health.error} retry={() => void health.refetch()} />
-  return <Surface title="System health">{Object.entries(health.data ?? {}).map(([label, value]) => <div className="list-row" key={label}><span><strong>{label.replaceAll('_', ' ')}</strong></span><span className="pill success">{value ?? 'unknown'}</span></div>)}</Surface>
+  const cssAsset = document.querySelector<HTMLLinkElement>('link[rel="stylesheet"]')?.href.split('/').at(-1) ?? 'development styles'
+  return <Surface title="System health">{Object.entries(health.data ?? {}).map(([label, value]) => <div className="list-row" key={label}><span><strong>{label.replaceAll('_', ' ')}</strong></span><span className="pill success">{value ?? 'unknown'}</span></div>)}<div className="list-row"><span><strong>Frontend release</strong><small>Commit {__FRONTEND_COMMIT__}</small></span><span className="pill">v{__FRONTEND_VERSION__}</span></div><div className="list-row"><span><strong>CSS bundle</strong><small>Hashed production asset currently loaded by this browser</small></span><code className="bundle-identity">{cssAsset}</code></div></Surface>
 }
 
 function NetworkDetail() {

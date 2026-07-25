@@ -1,15 +1,18 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const externalBaseUrl = process.env.PW_EXTERNAL_BASE_URL
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 35_000,
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.015 } },
   use: {
-    baseURL: 'http://127.0.0.1:4197',
+    baseURL: externalBaseUrl ?? 'http://127.0.0.1:4197',
     trace: 'retain-on-failure',
     colorScheme: 'dark',
+    ignoreHTTPSErrors: true,
   },
-  webServer: {
+  webServer: externalBaseUrl ? undefined : {
     command: 'npm run preview -- --port 4197',
     url: 'http://127.0.0.1:4197',
     reuseExistingServer: false,

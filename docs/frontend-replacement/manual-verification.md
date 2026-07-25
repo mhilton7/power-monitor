@@ -34,8 +34,25 @@ History, Billing, and Settings. The alert bell opens a drawer. Check `/overview`
 
 ## Responsive and accessible behavior
 
-At 1440×1000, 834×1194, and 412×915 in dark and light themes, check for clipped
-text, horizontal page scrolling, fixed-nav overlap, hidden actions, or orphan
-gaps. Navigate every action by keyboard, verify visible focus, labels, dialog
-focus, reduced motion, high zoom, chart table access, and status text independent
-of color.
+Use Chrome DevTools responsive mode for 3440×1440, 2560×1440, 1920×1080,
+1440×900, 1024×768, 768×1024, and 390×844. At each size, repeat at Chrome zoom
+80%, 100%, 125%, and 150%. Test both dark and light themes where available.
+
+On Billing, History, and Settings > Electricity rate > Advanced Rate Settings,
+confirm:
+
+- no document-level horizontal scrollbar, clipped text, overlapping metadata,
+  fixed-navigation collision, hidden action, or orphan gap;
+- wide content remains centered and does not exceed 1,680 px;
+- metric grids collapse cleanly, Billing actions remain reachable, and the
+  billing-cycle empty state stays compact;
+- only designated tab, segmented-control, table, and version/evidence regions
+  scroll internally when their content requires it;
+- Advanced Rate Settings tabs respond to Tab, Arrow Left/Right, Home, and End
+  and announce the selected tab and panel correctly; and
+- the Advanced System Health disclosure shows the expected frontend version,
+  commit, and active hashed CSS asset.
+
+Navigate every action by keyboard and verify visible focus, labels, dialog
+focus, reduced motion, chart table access, and status text independent of
+color.
