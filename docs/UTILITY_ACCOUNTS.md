@@ -43,8 +43,16 @@ retaining rate-version IDs, costs, readings, reports, and audit evidence. There 
 account-delete operation.
 
 The Rates page uses these distinct library states: **Draft**, **Published · Available**,
-**Assigned**, and **Effective now · account**. **Assign to utility account** opens the same account
-management workflow; there is no second assignment implementation.
+**Assigned**, and **Effective now · account**. **Use this plan** opens an explicit account
+selector. **Switch now** ends the selected account's prior assignment at the server-recorded
+switch instant, makes the new version effective, and preserves the prior window and audit
+evidence. **Schedule a change** keeps the current plan effective until the selected future
+instant. An already scheduled later change is retained rather than silently overwritten.
+
+Only one plan can be effective for a utility account at an instant. Different accounts may use
+different plans concurrently, so the selector always names the account being changed. The same
+operation remains available under the account card's **Manage** area; typed overlap failures are
+shown inline instead of being discarded.
 
 ## Cost scopes
 

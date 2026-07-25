@@ -184,7 +184,7 @@ async def _create_assignment(
     account: UtilityAccount,
     payload: RateAssignmentWrite,
     actor_id: str,
-) -> tuple[RateAssignment, bool]:
+) -> tuple[RateAssignment, bool, list[str]]:
     # Serialize assignment-window changes for one account. Application-level
     # overlap checks alone are vulnerable to concurrent administrator saves.
     locked_account = await session.scalar(
@@ -193,11 +193,19 @@ async def _create_assignment(
     if locked_account is None:
         raise ProblemError(404, "Utility account not found", "Unknown account", "not_found")
     account = locked_account
+    if account.status != "active":
+        raise ProblemError(
+            409,
+            "Active utility account required",
+            "Restore the utility account before changing its rate plan",
+            "utility_account_archived",
+        )
     version = await _version_or_error(session, payload.rate_version_id)
     start = _as_utc(payload.effective_from)
     end = _as_utc(payload.effective_to) if payload.effective_to else None
     assignments = await _account_assignments(session, account.id)
-    close_previous: RateAssignment | None = None
+    close_previous: list[RateAssignment] = []
+    preserved_future_start: datetime | None = None
     for item in assignments:
         item_start = (
             item.effective_from.replace(tzinfo=UTC)
@@ -212,18 +220,34 @@ async def _create_assignment(
         )
         if not overlaps:
             continue
-        if item_end is None and item_start < start:
-            close_previous = item
+        if item_start < start:
+            close_previous.append(item)
+            continue
+        if payload.replace_current and end is None and item_start > start:
+            # Preserve an already scheduled future change. The replacement is
+            # effective immediately and ends when that schedule begins.
+            preserved_future_start = (
+                item_start
+                if preserved_future_start is None
+                else min(preserved_future_start, item_start)
+            )
             continue
         raise ProblemError(
             409,
             "Rate assignment overlaps",
-            "The account already has a rate assignment in this effective window",
+            (
+                "The account already has a rate assignment at that exact time. "
+                "Choose a later effective time or review its assignment history."
+                if payload.replace_current
+                else "The account already has a rate assignment in this effective window"
+            ),
             "rate_assignment_overlap",
             extra={"conflicting_assignment_id": item.id},
         )
-    if close_previous:
-        close_previous.effective_to = start
+    if preserved_future_start is not None:
+        end = preserved_future_start
+    for item in close_previous:
+        item.effective_to = start
     assignment = RateAssignment(
         utility_account_id=account.id,
         rate_version_id=version.id,
@@ -239,7 +263,7 @@ async def _create_assignment(
     if effective_now:
         account.active_rate_version_id = version.id
     await session.flush()
-    return assignment, effective_now
+    return assignment, effective_now, [item.id for item in close_previous]
 
 
 async def _rate_context(
@@ -652,7 +676,7 @@ async def create_site_account(
             "or an explicit override",
             "incomplete_account_topology",
         )
-    assignment, effective_now = await _create_assignment(
+    assignment, effective_now, replaced_assignment_ids = await _create_assignment(
         session, account, payload.rate_assignment, principal.user.id
     )
     for item in payload.adjustments:
@@ -686,6 +710,7 @@ async def create_site_account(
                 "rate_assignment_id": assignment.id,
                 "rate_version_id": assignment.rate_version_id,
                 "effective_now": effective_now,
+                "replaced_assignment_ids": replaced_assignment_ids,
                 "adjustment_count": len(payload.adjustments),
                 "account_number_stored": False,
             },
@@ -808,12 +833,18 @@ async def add_account_rate_assignment(
 ) -> dict[str, Any]:
     _permission(principal, "rates.assign")
     account = await _account_or_404(session, principal, account_id)
-    assignment, effective_now = await _create_assignment(
+    assignment, effective_now, replaced_assignment_ids = await _create_assignment(
         session, account, payload, principal.user.id
     )
     session.add(
         audit_event(
-            action="rate_assignment.created" if effective_now else "rate_assignment.scheduled",
+            action=(
+                "rate_assignment.replaced"
+                if effective_now and replaced_assignment_ids
+                else "rate_assignment.created"
+                if effective_now
+                else "rate_assignment.scheduled"
+            ),
             actor_type="user",
             actor_id=principal.user.id,
             request=request,
@@ -822,6 +853,7 @@ async def add_account_rate_assignment(
             details={
                 "utility_account_id": account.id,
                 "rate_version_id": assignment.rate_version_id,
+                "replaced_assignment_ids": replaced_assignment_ids,
             },
         )
     )
@@ -829,7 +861,9 @@ async def add_account_rate_assignment(
     return {
         "id": assignment.id,
         "effective_from": assignment.effective_from,
+        "effective_to": assignment.effective_to,
         "effective_now": effective_now,
+        "replaced_assignment_ids": replaced_assignment_ids,
     }
 
 

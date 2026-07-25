@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
   CheckCircle2,
@@ -45,6 +45,21 @@ interface AccountSummary {
   id: string
   name: string
   site_id: string
+  status?: 'active' | 'archived'
+  active_rate_version_id?: string
+}
+
+interface AssignmentTarget {
+  plan: ManagedRatePlan
+  versionId: string
+}
+
+interface AssignmentResult {
+  id: string
+  effective_from: string
+  effective_to?: string
+  effective_now: boolean
+  replaced_assignment_ids: string[]
 }
 
 interface RatePlanDependencies {
@@ -109,6 +124,7 @@ export function RatesPage({
   canRestore?: boolean
 }) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const importInput = useRef<HTMLInputElement>(null)
   const [jobId, setJobId] = useState<string>()
   const [modelFilter, setModelFilter] = useState<ModelFilter>('all')
@@ -116,6 +132,16 @@ export function RatesPage({
   const [lifecyclePlan, setLifecyclePlan] = useState<ManagedRatePlan>()
   const [reason, setReason] = useState('')
   const [confirmation, setConfirmation] = useState('')
+  const [assignmentTarget, setAssignmentTarget] = useState<AssignmentTarget>()
+  const [assignmentAccountId, setAssignmentAccountId] = useState('')
+  const [assignmentTiming, setAssignmentTiming] = useState<'now' | 'scheduled'>(
+    'now',
+  )
+  const [assignmentEffectiveFrom, setAssignmentEffectiveFrom] = useState('')
+  const [assignmentReason, setAssignmentReason] = useState(
+    'Administrator selected a new active rate plan',
+  )
+  const [assignmentSuccess, setAssignmentSuccess] = useState('')
 
   const query = useQuery({
     queryKey: ['managed-rates', lifecycleView],
@@ -232,6 +258,53 @@ export function RatesPage({
       void query.refetch()
     },
   })
+  const assign = useMutation({
+    mutationFn: ({
+      accountId,
+      versionId,
+      effectiveFrom,
+      reason: requestedReason,
+    }: {
+      accountId: string
+      versionId: string
+      effectiveFrom: string
+      reason: string
+    }) =>
+      api<AssignmentResult>(
+        `/api/v1/admin/utility-accounts/${accountId}/rate-assignments`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            rate_version_id: versionId,
+            effective_from: effectiveFrom,
+            assignment_reason: requestedReason,
+            replace_current: true,
+          }),
+        },
+      ),
+    onSuccess: async (result, variables) => {
+      const account = accounts.data?.find(
+        (item) => item.id === variables.accountId,
+      )
+      const plan = assignmentTarget?.plan
+      setAssignmentSuccess(
+        result.effective_now
+          ? `${plan?.name ?? 'The selected plan'} is now active for ${
+              account?.name ?? 'the utility account'
+            }. The previous assignment remains in history.`
+          : `${plan?.name ?? 'The selected plan'} is scheduled for ${
+              account?.name ?? 'the utility account'
+            }.`,
+      )
+      setAssignmentTarget(undefined)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['rate-assignments'] }),
+        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
+        queryClient.invalidateQueries({ queryKey: ['utility-accounts'] }),
+        queryClient.invalidateQueries({ queryKey: ['status-indicator-values'] }),
+      ])
+    },
+  })
 
   const pending =
     candidateQuery.data?.filter((item) => item.status === 'pending_review') ?? []
@@ -268,6 +341,36 @@ export function RatesPage({
     setLifecyclePlan(plan)
     setReason('')
     setConfirmation('')
+  }
+
+  function openAssignment(plan: ManagedRatePlan, versionId: string) {
+    const activeAccounts =
+      accounts.data?.filter((account) => account.status !== 'archived') ?? []
+    setAssignmentTarget({ plan, versionId })
+    setAssignmentAccountId(activeAccounts.length === 1 ? activeAccounts[0]?.id ?? '' : '')
+    setAssignmentTiming('now')
+    setAssignmentEffectiveFrom('')
+    setAssignmentReason('Administrator selected a new active rate plan')
+    assign.reset()
+  }
+
+  function currentAssignmentFor(accountId: string) {
+    const now = Date.now()
+    return assignments.data?.find(
+      (item) =>
+        item.utility_account_id === accountId &&
+        new Date(item.effective_from).getTime() <= now &&
+        (!item.effective_to || new Date(item.effective_to).getTime() > now),
+    )
+  }
+
+  function versionLabel(versionId?: string) {
+    if (!versionId) return 'No current rate plan'
+    for (const plan of query.data ?? []) {
+      const version = plan.versions.find((item) => item.id === versionId)
+      if (version) return `${plan.name} · v${version.version}`
+    }
+    return 'Current published rate version'
   }
 
   const dependencies = dependencyQuery.data
@@ -334,6 +437,11 @@ export function RatesPage({
         </p>
       )}
       {check.error && <ErrorState error={check.error} />}
+      {assignmentSuccess && (
+        <p className="form-success" role="status">
+          <CheckCircle2 size={16} /> {assignmentSuccess}
+        </p>
+      )}
 
       <div className="rate-library-toolbar" aria-label="Rate library filters">
         <div className="segmented-control" aria-label="Rate plan lifecycle">
@@ -555,15 +663,11 @@ export function RatesPage({
                           version.status !== 'draft' && (
                             <button
                               className="button primary"
-                              onClick={() =>
-                                navigate(
-                                  `/billing/accounts?rate_version_id=${encodeURIComponent(
-                                    version.id,
-                                  )}`,
-                                )
-                              }
+                              onClick={() => {
+                                openAssignment(plan, version.id)
+                              }}
                             >
-                              <Plus size={15} /> Assign to utility account
+                              <Plus size={15} /> Use this plan
                             </button>
                           )}
                         {!unavailable &&
@@ -909,6 +1013,240 @@ export function RatesPage({
                         : 'Remove rate plan'}
                   </button>
                 </CanonicalAction>
+              )}
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {assignmentTarget && (
+        <div
+          className="modal-backdrop modal-top"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) {
+              setAssignmentTarget(undefined)
+            }
+          }}
+        >
+          <section
+            className="confirm-dialog rate-assignment-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rate-assignment-title"
+          >
+            <header>
+              <div>
+                <span className="eyebrow">Effective-dated account rate</span>
+                <h2 id="rate-assignment-title">Use {assignmentTarget.plan.name}</h2>
+              </div>
+              <button
+                className="icon-button"
+                aria-label="Close rate assignment"
+                onClick={() => {
+                  setAssignmentTarget(undefined)
+                }}
+              >
+                <X />
+              </button>
+            </header>
+
+            {accounts.isLoading || assignments.isLoading ? (
+              <LoadingState label="Loading utility-account assignments…" />
+            ) : accounts.error || assignments.error ? (
+              <ErrorState
+                error={accounts.error ?? assignments.error}
+                retry={() => {
+                  void accounts.refetch()
+                  void assignments.refetch()
+                }}
+              />
+            ) : (accounts.data?.filter(
+                (account) => account.status !== 'archived',
+              ).length ?? 0) === 0 ? (
+              <EmptyState
+                title="Create a utility account first"
+                message="A published rate plan becomes active through an effective-dated utility-account assignment."
+                action={
+                  <button
+                    className="button primary"
+                    onClick={() =>
+                      navigate(
+                        `/billing/accounts?rate_version_id=${encodeURIComponent(
+                          assignmentTarget.versionId,
+                        )}&create=account`,
+                      )
+                    }
+                  >
+                    Create utility account
+                  </button>
+                }
+              />
+            ) : (
+              <>
+                <label>
+                  <span>Utility account</span>
+                  <select
+                    value={assignmentAccountId}
+                    onChange={(event) => {
+                      setAssignmentAccountId(event.target.value)
+                      assign.reset()
+                    }}
+                  >
+                    <option value="">Choose an account</option>
+                    {accounts.data
+                      ?.filter((account) => account.status !== 'archived')
+                      .map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                          {sites.data?.find((site) => site.id === account.site_id)
+                            ? ` · ${
+                                sites.data.find(
+                                  (site) => site.id === account.site_id,
+                                )?.name
+                              }`
+                            : ''}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+
+                {assignmentAccountId && (
+                  <dl className="rate-switch-summary">
+                    <div>
+                      <dt>Current plan</dt>
+                      <dd>
+                        {versionLabel(
+                          currentAssignmentFor(assignmentAccountId)?.rate_version_id,
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>New plan</dt>
+                      <dd>{assignmentTarget.plan.name}</dd>
+                    </div>
+                  </dl>
+                )}
+
+                <fieldset className="rate-assignment-timing">
+                  <legend>When should this plan take effect?</legend>
+                  <label>
+                    <input
+                      type="radio"
+                      name="rate-assignment-timing"
+                      checked={assignmentTiming === 'now'}
+                      onChange={() => {
+                        setAssignmentTiming('now')
+                      }}
+                    />
+                    <span>
+                      <strong>Switch now</strong>
+                      <small>
+                        End the current assignment at the switch time and preserve
+                        it in history.
+                      </small>
+                    </span>
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="rate-assignment-timing"
+                      checked={assignmentTiming === 'scheduled'}
+                      onChange={() => {
+                        setAssignmentTiming('scheduled')
+                      }}
+                    />
+                    <span>
+                      <strong>Schedule a change</strong>
+                      <small>Keep the current plan active until the selected time.</small>
+                    </span>
+                  </label>
+                </fieldset>
+
+                {assignmentTiming === 'scheduled' && (
+                  <label>
+                    <span>Effective from</span>
+                    <input
+                      type="datetime-local"
+                      value={assignmentEffectiveFrom}
+                      min={new Date().toISOString().slice(0, 16)}
+                      onChange={(event) => {
+                        setAssignmentEffectiveFrom(event.target.value)
+                      }}
+                    />
+                  </label>
+                )}
+
+                <label>
+                  <span>Assignment reason</span>
+                  <input
+                    value={assignmentReason}
+                    maxLength={500}
+                    onChange={(event) => {
+                      setAssignmentReason(event.target.value)
+                    }}
+                  />
+                </label>
+
+                {assignmentAccountId &&
+                  currentAssignmentFor(assignmentAccountId)?.rate_version_id ===
+                    assignmentTarget.versionId && (
+                    <p className="form-success" role="status">
+                      <CheckCircle2 size={16} /> This plan is already active for the
+                      selected account.
+                    </p>
+                  )}
+
+                {assign.error && (
+                  <div className="form-error" role="alert">
+                    <strong>Rate plan was not changed</strong>
+                    <span>{errorMessage(assign.error)}</span>
+                  </div>
+                )}
+              </>
+            )}
+
+            <footer>
+              <button
+                className="button secondary"
+                onClick={() => {
+                  setAssignmentTarget(undefined)
+                }}
+              >
+                Cancel
+              </button>
+              {(accounts.data?.filter((account) => account.status !== 'archived')
+                .length ?? 0) > 0 && (
+                <button
+                  className="button primary"
+                  disabled={
+                    assign.isPending ||
+                    !assignmentAccountId ||
+                    !assignmentReason.trim() ||
+                    (assignmentTiming === 'scheduled' &&
+                      !assignmentEffectiveFrom) ||
+                    currentAssignmentFor(assignmentAccountId)?.rate_version_id ===
+                      assignmentTarget.versionId
+                  }
+                  onClick={() => {
+                    if (!assignmentAccountId) return
+                    assign.mutate({
+                      accountId: assignmentAccountId,
+                      versionId: assignmentTarget.versionId,
+                      effectiveFrom:
+                        assignmentTiming === 'now'
+                          ? new Date().toISOString()
+                          : new Date(assignmentEffectiveFrom).toISOString(),
+                      reason: assignmentReason.trim(),
+                    })
+                  }}
+                >
+                  {assign.isPending
+                    ? 'Saving…'
+                    : assignmentTiming === 'now'
+                      ? 'Switch active plan'
+                      : 'Schedule plan'}
+                </button>
               )}
             </footer>
           </section>

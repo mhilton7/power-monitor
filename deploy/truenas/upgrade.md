@@ -31,6 +31,15 @@ set; do not update only the frontend after a bill-import correction. The
 frontend now compares its API/import schema versions with the backend before
 mounting an authenticated workspace and intentionally blocks a mixed release.
 
+For the Single Home frontend cutover, confirm exactly one site is active before
+upgrading. The new production image contains only `frontend-next` and exposes
+exactly Home, History, Billing, and Settings; the gateway, internal frontend
+port, UID/GID, datasets, secrets, health check, and published gateway port do
+not change. Preserve the previous digest-pinned frontend image and App YAML for
+rollback. After save, verify legacy bookmarks redirect and follow
+`docs/frontend-replacement/cutover-and-rollback.md`. No ESP32 firmware or device
+protocol update is required.
+
 ## Upgrade
 
 1. Open **Apps > Installed > power-monitor > Edit > YAML**.
@@ -63,6 +72,12 @@ indexes/constraints, and `rates.remove`/`rates.restore`. It does not add a
 dataset, secret, service, capability, network, mount, or host port. Existing
 rate versions, assignments, calculations, reports, bills, managed-source
 artifacts, candidates, and audit records remain in place.
+
+Per-import draft-history controls add append-only revision `20260724_0015`.
+The new nullable history-visibility metadata lets administrators clear one row
+from **Prior imports** without deleting its linked drafts, evidence, billing
+data, or audit history. It adds no dataset, secret, service, capability,
+network, mount, or host port.
 
 After migration, upload the sanitized SCE test fixture through **Billing >
 Rate Plans > Custom Plan > Import from utility bill**. Confirm the adapter is

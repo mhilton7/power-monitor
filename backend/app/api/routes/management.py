@@ -30,6 +30,7 @@ from app.db.models import (
     AlertInstance,
     AlertRule,
     AuditEvent,
+    BackgroundJob,
     BackupRun,
     Circuit,
     CostCalculationRun,
@@ -65,6 +66,7 @@ from app.schemas import (
     AlertAcknowledge,
     AlertRuleWrite,
     AlertSilence,
+    BackupRequestCreate,
     CircuitCreate,
     CircuitView,
     CredentialRotationRequest,
@@ -235,6 +237,7 @@ async def list_utility_accounts(principal: Viewer, session: DbSession) -> list[d
             "id": account.id,
             "site_id": account.site_id,
             "name": account.name,
+            "status": account.status,
             "timezone": account.timezone,
             "currency": account.currency,
             "billing_cycle_start_day": account.billing_cycle_start_day,
@@ -2822,6 +2825,105 @@ async def list_backups(principal: Principal, session: DbSession) -> list[dict[st
         }
         for run in runs
     ]
+
+
+def _backup_request_payload(job: BackgroundJob) -> dict[str, Any]:
+    result = dict(job.result or {})
+    progress = dict(job.progress or {})
+    return {
+        "id": job.id,
+        "operation": (
+            "restore_preflight" if job.job_type == "backup_restore_preflight" else "create"
+        ),
+        "status": job.status,
+        "requested_at": job.requested_at,
+        "started_at": job.started_at,
+        "completed_at": job.completed_at,
+        "backup_id": result.get("backup_run_id") or progress.get("backup_run_id"),
+        "verified": bool(result.get("verified", False)),
+        "maintenance_required": bool(result.get("maintenance_required", False)),
+        "error_code": job.error_code,
+        "error_detail": job.error_detail,
+    }
+
+
+@router.get("/backup-requests")
+async def list_backup_requests(principal: Principal, session: DbSession) -> list[dict[str, Any]]:
+    _permission(principal, "backups.view")
+    requests = list(
+        await session.scalars(
+            select(BackgroundJob)
+            .where(BackgroundJob.job_type.in_(["backup_create", "backup_restore_preflight"]))
+            .order_by(BackgroundJob.requested_at.desc())
+            .limit(100)
+        )
+    )
+    return [_backup_request_payload(item) for item in requests]
+
+
+@router.post("/backup-requests", status_code=202)
+async def create_backup_request(
+    payload: BackupRequestCreate,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    permission = "backups.create" if payload.operation == "create" else "backups.restore"
+    _permission(principal, permission)
+    backup: BackupRun | None = None
+    if payload.operation == "restore_preflight":
+        backup = await session.get(BackupRun, payload.backup_id)
+        if backup is None:
+            raise ProblemError(
+                404, "Backup not found", "The selected backup does not exist", "backup_missing"
+            )
+        if backup.status != "verified" or backup.verified_at is None:
+            raise ProblemError(
+                409,
+                "Verified backup required",
+                "Only a completed, automatically restored and verified backup can be selected",
+                "backup_not_verified",
+            )
+    correlation_id = f"backup-request:{principal.user.id}:{payload.idempotency_key}"
+    existing = await session.scalar(
+        select(BackgroundJob).where(BackgroundJob.correlation_id == correlation_id)
+    )
+    if existing is not None:
+        return _backup_request_payload(existing)
+    now = datetime.now(UTC)
+    job = BackgroundJob(
+        job_type=("backup_create" if payload.operation == "create" else "backup_restore_preflight"),
+        status="queued",
+        requested_by=principal.user.id,
+        requested_at=now,
+        scheduled_for=now,
+        correlation_id=correlation_id,
+        progress={"backup_run_id": backup.id} if backup else {},
+        result={},
+    )
+    session.add(job)
+    session.add(
+        audit_event(
+            action=f"backup.{payload.operation}_requested",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="backup_request",
+            object_id=job.id,
+            details={"backup_id": backup.id if backup else None},
+        )
+    )
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing = await session.scalar(
+            select(BackgroundJob).where(BackgroundJob.correlation_id == correlation_id)
+        )
+        if existing is None:
+            raise
+        return _backup_request_payload(existing)
+    return _backup_request_payload(job)
 
 
 @router.get("/reports")

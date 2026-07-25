@@ -1300,6 +1300,10 @@ class UtilityBillImport(Base):
     retention_mode: Mapped[str] = mapped_column(String(32), default="retain")
     retain_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     original_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    history_cleared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    history_cleared_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     sanitized_evidence_path: Mapped[str] = mapped_column(String(1000))
     rate_plan_id: Mapped[str | None] = mapped_column(
         ForeignKey("rate_plans.id", ondelete="SET NULL"), index=True

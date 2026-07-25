@@ -88,7 +88,7 @@ describe('utility account and network administration', () => {
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Updated main account' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save account' }))
     await waitFor(() => { expect(mutations.some((item) => item.includes('PUT') && item.includes('/utility-accounts/account-1'))).toBe(true) })
-    fireEvent.click(screen.getByRole('button', { name: 'Save rate assignment' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Switch rate plan' }))
     fireEvent.change(screen.getByLabelText('Scope'), { target: { value: 'allocated_account_estimate' } })
     fireEvent.change(screen.getByLabelText('Allocation method'), { target: { value: 'Proportional to kWh' } })
     fireEvent.click(screen.getByRole('button', { name: 'Update cost scope' }))

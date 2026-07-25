@@ -3038,5 +3038,17 @@ INSERT INTO role_permissions (role_name, permission_code)
 
 UPDATE alembic_version SET version_num='20260724_0014' WHERE alembic_version.version_num = '20260724_0013';
 
+-- Running upgrade 20260724_0014 -> 20260724_0015
+
+ALTER TABLE utility_bill_imports ADD COLUMN history_cleared_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE utility_bill_imports ADD COLUMN history_cleared_by VARCHAR(36);
+
+ALTER TABLE utility_bill_imports ADD CONSTRAINT fk_utility_bill_imports_history_cleared_by_users FOREIGN KEY(history_cleared_by) REFERENCES users (id) ON DELETE SET NULL;
+
+CREATE INDEX ix_utility_bill_imports_history_cleared_at ON utility_bill_imports (history_cleared_at);
+
+UPDATE alembic_version SET version_num='20260724_0015' WHERE alembic_version.version_num = '20260724_0014';
+
 COMMIT;
 

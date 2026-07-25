@@ -1,5 +1,56 @@
 # Testing and release gates
 
+## Single Home frontend replacement acceptance (2026-07-24)
+
+The production `frontend-next` package passes a locked dependency install,
+lint, TypeScript checking, 10 unit/adapter tests, a zero-vulnerability npm audit,
+and a production build. The bundle verifier reports 11 JavaScript chunks,
+534,990 uncompressed bytes, and no legacy module markers. All 36 Playwright
+checks pass on dark desktop, light desktop, tablet, and mobile. They cover the
+four-destination navigation, legacy redirects, page boundaries, stable loading
+and recoverable error states, responsive Billing and Settings, the custom-role
+lifecycle, and the skippable nine-step first-run flow. Reviewed image baselines are stored beside
+`frontend-next/e2e/single-home.spec.ts`.
+
+The retained comparison frontend also passes lint, type checking, 64
+unit/component tests, its build, and 51 Chromium regressions. It is not copied
+into the production image.
+
+Ruff lint/format and strict mypy pass. The portable backend, worker, and
+simulator suite passes 178 tests with the three gated cases run separately.
+PostgreSQL 17 passes populated initial-schema upgrade, downgrade/re-upgrade,
+populated prior-schema upgrade, and clean installation at
+`20260724_0015`. The 100-device gate passes 18,000-reading backfill and retry
+checks. Generated OpenAPI, JSON Schema, bill-import types, examples, and HMAC
+vectors validate.
+
+Fresh API, greenfield frontend, and backup images build. The standard Compose
+stack migrates to `20260724_0015`; PostgreSQL, API, worker, frontend, and
+gateway report healthy. The deployment-mode TrueNAS render and optional ICMP
+template validate. Its isolated seven-service workflow publishes only gateway
+TCP 18443, completes the one-shot migration before API/worker startup, enrolls
+three signed devices, accepts 90 readings, resolves the SCE rate calculation,
+persists two utility accounts and one network CIDR, verifies all five encrypted
+backup artifacts, and restores them into a clean 98-table database. That gate
+also verified file-backed backup authentication and empty job-queue handling.
+
+## Per-draft bill-import history acceptance (2026-07-24)
+
+The backend gate creates two independent PDF-derived drafts, rejects a stale
+clear request, clears exactly one row, preserves direct access to sanitized
+evidence and linked rate/cycle records, records one immutable audit event, and
+proves Retry is idempotent. Re-uploading the same PDF restores the existing
+history row without duplicating extraction or OCR.
+
+The browser gate renders a separate accessible **Clear** action for each
+**Prior imports** row, confirms the preservation behavior, removes only the
+selected row, and leaves the other draft actionable. The complete portable
+suite passes 140 tests with three intentional integration/load skips; the
+PostgreSQL 17 integration gate separately passes populated-schema upgrade,
+downgrade/re-upgrade, prior-schema upgrade, and clean installation at
+`20260724_0015`. The frontend passes lint, type checking, 63 unit/component
+tests, a production build, and all 51 Chromium scenarios.
+
 ## Strict SCE parser and rate-plan lifecycle acceptance (2026-07-24)
 
 The parser fixture gate uses the generated PII-free six-page PDF and
@@ -28,18 +79,18 @@ versions, reports, bills, and source evidence; retires/restores an official SCE
 plan without deleting its extraction artifact; and checks permissions, CSRF,
 stale revisions, idempotency, filters, audits, and duplicate-free actions.
 
-The append-only schema head is `20260724_0014`. The frontend component gate
+The append-only schema head is `20260724_0015`. The frontend component gate
 verifies parser identity, page/ignored-section review, exact five-decimal
 rates, arithmetic status, explicit missing reasons, one-click reviewed-value
 merging with blank-value preservation, advanced no-op protection, dependency
 review, remove, blocked resolution, removed listing, and restore.
 
-The final portable Python run passed 138 tests; the separately enabled
+The final portable Python run passed 140 tests; the separately enabled
 100-device/18,000-reading load gate, PostgreSQL 17 migration gate, and isolated
 TrueNAS deployment gate also passed. Ruff lint/format, strict mypy, generated
 OpenAPI drift, JSON Schema, protocol contracts, and the repository secret scan
 are clean. The frontend passed a locked install, lint, TypeScript checking, 63
-unit/component tests, the Node 24 production container build, and all 50
+unit/component tests, the Node 24 production container build, and all 51
 Chromium scenarios. The keyboard-operated mobile drawer also passed 10
 parallel repetitions after its canonical-route race was corrected. The
 reviewed strict-parser capture is
@@ -48,14 +99,14 @@ capture remains at `docs/screenshots/utility-bill-import-tier-preview.png`.
 
 PostgreSQL migration testing covers initial-schema upgrade, downgrade and
 re-upgrade, populated prior-schema upgrade, and clean installation at
-`20260724_0014` with 98 public tables and 65 Administrator permissions.
+`20260724_0015` with 98 public tables and 65 Administrator permissions.
 The standard Compose stack is healthy at that revision. A fresh logical backup
 passed all five checksums and test-restored with 98 tables and three preserved
 status-layout revisions. The isolated seven-service TrueNAS workflow used
 strict internal-CA TLS with SNI, published only TCP 18443 on the gateway,
 enrolled three signed simulated devices, accepted 90 readings, resolved an SCE
 calculation, persisted two utility accounts and one CIDR, verified five
-encrypted artifacts, and restored them at `20260724_0014`.
+encrypted artifacts, and restored them at `20260724_0015`.
 
 ## PDF import account-context stabilization acceptance (2026-07-24)
 
@@ -87,11 +138,11 @@ reviewed repaired no-account capture is
 
 PostgreSQL 17 passes populated initial-schema upgrade, downgrade/re-upgrade,
 populated prior-schema upgrade, and clean installation at
-`20260724_0014`, retaining 98 public tables. Fresh API/worker, frontend, and
+`20260724_0015`, retaining 98 public tables. Fresh API/worker, frontend, and
 backup images build with matching `1.0.0` release/revision labels. The standard
-Compose stack migrated to `0014` and every long-running service reported
+Compose stack migrated to `0015` and every long-running service reported
 healthy. Its fresh five-artifact logical backup passed checksums and restored
-to a clean database with revision `0014`, 98 tables, and nullable deferred
+to a clean database with revision `0015`, 98 tables, and nullable deferred
 bill-account references.
 
 The TrueNAS template, optional ICMP overlay, deployment render, mixed-release
@@ -101,7 +152,7 @@ TCP 18443 published. The one-shot migration completed before API/worker startup,
 all health checks passed, three signed simulated devices contributed 90
 readings, SCE calculation resolved, two utility accounts and one canonical
 network CIDR persisted, all five encrypted backup artifacts verified, and the
-backup restored cleanly at `20260724_0014`. The disposable containers,
+backup restored cleanly at `20260724_0015`. The disposable containers,
 networks, volumes, CA, and test secrets were removed.
 
 The locked Python production dependency audit reports no known

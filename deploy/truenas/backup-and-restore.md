@@ -16,13 +16,16 @@ accepted until its status is `verified`.
 
 ## On-demand verified backup
 
-Use the TrueNAS App editor, not direct Docker commands:
+Use **Settings → Data & Backups → Create verified backup** in Power Monitor.
+The API records an audited, idempotent request and the isolated `backup`
+service claims it using its file-backed database password. The browser never
+receives a database password, encryption key, or host path.
 
-1. Edit the App YAML and set `BACKUP_RUN_ON_STARTUP: "true"` on `backup`.
-2. Save and watch the backup workload log until both the backup directory and the
-   restore-verification result are reported.
-3. Set the value back to `"false"` and save.
-4. Copy the completed `power-monitor-YYYYMMDDTHHMMSSZ` directory off-system and
+1. Submit the request and wait for the row to report **Completed / Verified**.
+2. Use **Verify restore** on that row to enqueue a non-destructive restore
+   preflight. This rechecks the selected artifact; it never overwrites the live
+   database.
+3. Copy the completed `power-monitor-YYYYMMDDTHHMMSSZ` directory off-system and
    verify its `checksums.sha256` after transfer. Store the encryption key
    separately; losing it makes the encrypted backup unrecoverable.
 
@@ -33,7 +36,7 @@ a different failure domain.
 The `/mnt/Apps/Power/power-monitor/logs` dataset is intentionally separate from
 the logical database dump. Snapshot or replicate it when operational log history
 must survive a pool-level disaster. Administrators can download a redacted,
-checksummed ZIP for any available range from **Administration > Backups** without
+checksummed ZIP for any available range from **Settings → Data & Backups** without
 opening a TrueNAS workload shell.
 
 `rate-source-artifacts.tar.gz` (or its encrypted `.enc` form) is included in

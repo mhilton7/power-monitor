@@ -6,9 +6,20 @@ Browser routes use an opaque `pm_session` cookie and `X-CSRF-Token` on mutations
 
 Key groups are `/api/v1/auth`, `/sites`, `/utility-accounts`, `/circuits`, `/aggregate-sets`, `/devices`, `/readings/history`, `/history/query`, `/history/export`, `/rates`, `/billing`, `/alerts`, `/exports`, `/firmware-*`, `/reports`, `/backups`, `/audit-events`, `/system/info`, and `/events/stream`. Administrator log discovery and export use `/api/v1/admin/logs/availability`, `POST /api/v1/admin/logs/exports`, export status, and the short-lived authorized download route. Safe sensor removal uses `POST /api/v1/admin/devices/{device_id}/unclaim`; it requires CSRF, an administrator, and exact name-or-ID confirmation. Health endpoints are outside `/api/v1`. Metrics are authenticated.
 
+`GET /api/v1/backup-requests` lists authorized request state and
+`POST /api/v1/backup-requests` queues either an idempotent `create` or a
+confirmed `restore_preflight` operation. Responses never contain secret values
+or dataset paths. The UID/GID 10003 backup scheduler claims these jobs and uses
+the existing encrypted backup/verification scripts; a live database restore is
+not exposed as a browser API.
+
 Guided utility-account APIs are under `/api/v1/admin/sites/{site_id}/utility-accounts` and
 `/api/v1/admin/utility-accounts/{account_id}`. Subresources provide immutable rate-assignment
 history/creation, cost-scope changes, effective-dated adjustments, recalculation, and archive.
+`POST /api/v1/admin/utility-accounts/{account_id}/rate-assignments` accepts
+`replace_current: true` for an administrator-confirmed switch. The server serializes the account,
+closes the prior effective window, retains future schedules when possible, updates the active
+version pointer, returns replaced assignment IDs, and records `rate_assignment.replaced`.
 `GET /api/v1/sites/{site_id}/setup-readiness` returns separate monitoring and rate/cost readiness.
 Sensor network APIs are under `/api/v1/admin/network/policies`, `/cidrs`, `/test-address`,
 `/observed-devices`, and `/suggest-current`. All mutations require CSRF and granular server-side

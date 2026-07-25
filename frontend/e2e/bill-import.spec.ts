@@ -438,8 +438,42 @@ const importedRateDocument = {
   source_note: 'Sanitized evidence artifact artifact-1',
 }
 
-async function mockApplication(page: Page, initialBill = baseBill) {
+async function mockApplication(
+  page: Page,
+  initialBill = baseBill,
+  includePriorImports = false,
+) {
   let bill = structuredClone(initialBill)
+  let priorImports = includePriorImports
+    ? [
+        {
+          id: bill.id,
+          utility_account_id: bill.utility_account_id,
+          utility_account_name: bill.utility_account_name,
+          status: bill.status,
+          extraction_method: bill.extraction_method,
+          page_count: bill.page_count,
+          retention_mode: bill.retention_mode,
+          original_available: bill.original_available,
+          revision: bill.revision,
+          blocking_warnings: bill.blocking_warnings,
+          created_at: bill.created_at,
+        },
+        {
+          id: 'bill-2',
+          utility_account_id: bill.utility_account_id,
+          utility_account_name: 'Second utility draft',
+          status: 'ready_to_publish',
+          extraction_method: 'text',
+          page_count: 1,
+          retention_mode: 'retain',
+          original_available: false,
+          revision: 3,
+          blocking_warnings: [],
+          created_at: '2026-07-23T08:00:00Z',
+        },
+      ]
+    : []
   const requests: string[] = []
 
   await page.route('**/api/v1/**', async (route) => {
@@ -529,7 +563,17 @@ async function mockApplication(page: Page, initialBill = baseBill) {
     ) {
       body = bill
     } else if (apiPath === '/api/v1/admin/utility-bill-imports' && request.method() === 'GET') {
-      body = []
+      body = priorImports
+    } else if (apiPath.endsWith('/history') && request.method() === 'DELETE') {
+      const clearedId = apiPath.split('/').at(-2)
+      priorImports = priorImports.filter((item) => item.id !== clearedId)
+      body = {
+        id: clearedId,
+        history_visible: false,
+        drafts_preserved: true,
+        evidence_preserved: true,
+        audit_history_preserved: true,
+      }
     } else if (apiPath.endsWith('/review') && request.method() === 'PUT') {
       bill = {
         ...bill,
@@ -598,6 +642,21 @@ async function mockApplication(page: Page, initialBill = baseBill) {
 
   return requests
 }
+
+test('clears each bill draft from Prior imports without a bulk destructive action', async ({ page }) => {
+  const requests = await mockApplication(page, baseBill, true)
+  page.on('dialog', (dialog) => dialog.accept())
+
+  await page.goto('/billing/rate-plans/new?bill_import=open')
+  await page.getByLabel('Utility bill import', { exact: true }).getByRole('button', { name: 'Next' }).click()
+  await expect(page.getByRole('button', { name: /Clear draft history/ })).toHaveCount(2)
+
+  await page.getByRole('button', { name: /Clear draft history for Home utility account/ }).click()
+  await expect(page.getByText(/Draft cleared from Prior imports/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Clear draft history/ })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /Clear draft history for Second utility draft/ })).toBeVisible()
+  expect(requests).toContain('DELETE /api/v1/admin/utility-bill-imports/bill-1/history')
+})
 
 test('reviews separate bill outputs and selectively merges them into the existing Custom Plan draft', async ({ page }) => {
   const requests = await mockApplication(page)

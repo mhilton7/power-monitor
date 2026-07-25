@@ -1,5 +1,53 @@
 # Power Monitor Server 1.0.0
 
+## Single Home greenfield frontend
+
+- Replaces the production browser bundle with an independent React/TypeScript
+  application containing exactly Home, History, Billing, and Settings.
+- Adds typed adapters, default-home resolution, shared live state, responsive
+  dark/light design tokens, accessible charts and tables, homeowner wording,
+  and a persisted nine-step first-run flow.
+- Preserves secure sign-in, users and roles, sensors and enrollment, exact
+  history costs, custom and managed rates, strict PDF/OCR bill review, alerts,
+  backups, audit records, and advanced owner controls through existing server
+  APIs.
+- Redirects legacy bookmarks into canonical destinations without importing or
+  rendering any legacy page. The production Dockerfile and release reports now
+  build and inventory only `frontend-next`.
+- Adds audited on-demand backup creation and restore-preflight requests. The
+  existing UID/GID 10003 backup scheduler handles those jobs and continues
+  nightly encrypted, checksum-verified logical backups.
+- Passes responsive unit, architecture, browser, migration, load, container,
+  and seven-service TrueNAS workflow gates. No ESP32 firmware or protocol file
+  changed.
+
+## Reliable active rate-plan switching
+
+- Replaces the Rate Plans page's navigation-only assignment button with a
+  utility-account selector that clearly shows the current and replacement
+  plans.
+- Adds explicit **Switch now** and **Schedule a change** paths. Immediate
+  switches close the prior effective window atomically, retain immutable
+  history and audit evidence, and preserve an existing later schedule.
+- Makes archived accounts ineligible, prevents selecting an already effective
+  version, reports typed assignment errors inline, refreshes all rate/account
+  status queries, and confirms the account that changed.
+- Adds backend and frontend regression coverage plus regenerated OpenAPI. No
+  migration, service, database, secret, dataset, capability, network, or host
+  port is added.
+
+## Per-draft bill-import history controls
+
+- Adds an individual **Clear** action to every entry under **Prior imports** in
+  the Custom Plan bill importer.
+- Hides only the selected history row while preserving linked rate and
+  billing-cycle drafts, imported usage, source evidence, and immutable audit
+  records.
+- Restores a cleared row when the same PDF is uploaded again, avoiding duplicate
+  extraction and OCR work.
+- Adds revision-safe, administrator-only, CSRF-protected API handling and
+  append-only Alembic revision `20260724_0015`.
+
 ## One-click reviewed bill import
 
 - Adds **Apply all reviewed values** to the final Custom Plan bill-import step.

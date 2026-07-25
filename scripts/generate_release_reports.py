@@ -60,7 +60,7 @@ def backend_licenses() -> None:
 
 def frontend_licenses() -> None:
     lock = json.loads(
-        (ROOT / "frontend" / "package-lock.json").read_text(encoding="utf-8")
+        (ROOT / "frontend-next" / "package-lock.json").read_text(encoding="utf-8")
     )
     with (RELEASE / "frontend-licenses.csv").open(
         "w", encoding="utf-8", newline=""
@@ -95,7 +95,7 @@ def versions() -> None:
         "product": "Power Monitor Server",
         "version": "1.0.0",
         "protocol": (ROOT / "shared" / "protocol-version.txt").read_text().strip(),
-        "migration_revision": "20260724_0014",
+        "migration_revision": "20260724_0015",
         "python": platform.python_version(),
         "node": command_version(["node", "--version"]),
         "npm": command_version(["npm.cmd" if os.name == "nt" else "npm", "--version"]),

@@ -351,7 +351,11 @@ function WizardError({ error }: { error: Error }) {
 function AccountManager({ account, versions, onSaved }: { account: UtilityAccount; versions: Array<{ plan: ManagedRatePlan; version: ManagedRateVersion }>; onSaved: (message: string) => Promise<void> }) {
   const [name, setName] = useState(account.name)
   const [billingDay, setBillingDay] = useState(String(account.billing_cycle_start_day))
-  const [versionId, setVersionId] = useState(versions[0]?.version.id ?? '')
+  const [versionId, setVersionId] = useState(
+    versions.find((item) => item.version.id === account.rate_context.rate_version_id)?.version.id
+      ?? versions[0]?.version.id
+      ?? '',
+  )
   const [effectiveFrom, setEffectiveFrom] = useState(todayInput())
   const [scope, setScope] = useState<CostScope>(account.cost_scope)
   const [allocation, setAllocation] = useState(account.allocation_method ?? '')
@@ -361,13 +365,31 @@ function AccountManager({ account, versions, onSaved }: { account: UtilityAccoun
   const history = useQuery({ queryKey: ['account-rate-history', account.id], queryFn: () => api<Array<{ id: string; plan_code?: string; plan_name?: string; version?: number; effective_from: string; effective_to?: string; assignment_reason?: string }>>(`/api/v1/admin/utility-accounts/${account.id}/rate-assignments`) })
   const adjustments = useQuery({ queryKey: ['account-adjustments', account.id], queryFn: () => api<Array<{ id: string; component: string; value: string; unit: string; provenance: string; effective_from: string; effective_to?: string; enabled: boolean }>>(`/api/v1/admin/utility-accounts/${account.id}/adjustments`) })
   const edit = useMutation({ mutationFn: () => api<UtilityAccount>(`/api/v1/admin/utility-accounts/${account.id}`, { method: 'PUT', body: JSON.stringify({ revision: account.revision, name, billing_cycle_start_day: Number(billingDay) }) }), onSuccess: async () => { setMessage('Utility account updated.'); await onSaved('Utility account updated.') } })
-  const assign = useMutation({ mutationFn: () => api(`/api/v1/admin/utility-accounts/${account.id}/rate-assignments`, { method: 'POST', body: JSON.stringify({ rate_version_id: versionId, effective_from: dateWithOffset(effectiveFrom), assignment_reason: 'Administrator rate change' }) }), onSuccess: async () => { setMessage('Rate assignment saved.'); await onSaved('Rate assignment saved.') } })
+  const assign = useMutation({
+    mutationFn: () => api<{ effective_now: boolean }>(`/api/v1/admin/utility-accounts/${account.id}/rate-assignments`, {
+      method: 'POST',
+      body: JSON.stringify({
+        rate_version_id: versionId,
+        effective_from: dateWithOffset(effectiveFrom),
+        assignment_reason: 'Administrator rate change',
+        replace_current: true,
+      }),
+    }),
+    onSuccess: async (result) => {
+      const savedMessage = result.effective_now
+        ? 'Active rate plan switched. The previous assignment remains in history.'
+        : 'Rate-plan change scheduled.'
+      setMessage(savedMessage)
+      await history.refetch()
+      await onSaved(savedMessage)
+    },
+  })
   const saveScope = useMutation({ mutationFn: () => api<UtilityAccount>(`/api/v1/admin/utility-accounts/${account.id}/cost-scope`, { method: 'POST', body: JSON.stringify({ revision: account.revision, cost_scope: scope, allocation_method: allocation || null, full_account_override: scope === 'full_account_estimate' && fullOverride }) }), onSuccess: async () => { setMessage('Cost scope updated.'); await onSaved('Cost scope updated.') } })
   const addAdjustment = useMutation({ mutationFn: () => api(`/api/v1/admin/utility-accounts/${account.id}/adjustments`, { method: 'POST', body: JSON.stringify({ component: 'custom_per_kwh', value: adjustment, unit: 'per_kwh', provenance: 'Administrator configured', effective_from: new Date().toISOString(), enabled: true }) }), onSuccess: async () => { setAdjustment(''); setMessage('Adjustment added.'); await adjustments.refetch(); await onSaved('Adjustment added.') } })
   return <div className="account-manager">
     <h4>Manage account</h4>{message && <p className="form-success" role="status">{message}</p>}
     <div className="account-manager-grid"><section><h5>Edit account</h5><label><span>Name</span><input value={name} onChange={(event) => { setName(event.target.value); }} /></label><label><span>Billing day</span><input type="number" min="1" max="31" value={billingDay} onChange={(event) => { setBillingDay(event.target.value); }} /></label><button className="button secondary" disabled={edit.isPending} onClick={() => { edit.mutate(); }}>Save account</button></section>
-      <section><h5>Change or schedule rate</h5><label><span>Published version</span><select value={versionId} onChange={(event) => { setVersionId(event.target.value); }}>{versions.map(({ plan, version }) => <option key={version.id} value={version.id}>{plan.code} · v{version.version}</option>)}</select></label><label><span>Effective from</span><input type="datetime-local" value={effectiveFrom} onChange={(event) => { setEffectiveFrom(event.target.value); }} /></label><button className="button secondary" disabled={assign.isPending || !versionId} onClick={() => { assign.mutate(); }}>Save rate assignment</button></section>
+      <section><h5>Change or schedule rate</h5><label><span>Published version</span><select value={versionId} onChange={(event) => { setVersionId(event.target.value); assign.reset(); }}>{versions.map(({ plan, version }) => <option key={version.id} value={version.id}>{plan.code} · v{version.version}</option>)}</select></label><label><span>Effective from</span><input type="datetime-local" value={effectiveFrom} onChange={(event) => { setEffectiveFrom(event.target.value); assign.reset(); }} /></label><button className="button secondary" disabled={assign.isPending || !versionId || versionId === account.rate_context.rate_version_id} onClick={() => { assign.mutate(); }}>{assign.isPending ? 'Saving…' : versionId === account.rate_context.rate_version_id ? 'Currently active' : 'Switch rate plan'}</button>{assign.error && <div className="form-error" role="alert"><strong>Rate plan was not changed</strong><span>{assign.error instanceof ApiError ? assign.error.problem.detail : assign.error.message}</span></div>}</section>
       <section><h5>Cost scope</h5><label><span>Scope</span><select value={scope} onChange={(event) => { setScope(event.target.value as CostScope); }}><option value="energy_only">Energy-only monitored</option><option value="allocated_account_estimate">Allocated account</option><option value="full_account_estimate">Complete account</option></select></label>{scope === 'allocated_account_estimate' && <label><span>Allocation method</span><input value={allocation} onChange={(event) => { setAllocation(event.target.value); }} /></label>}{scope === 'full_account_estimate' && !account.readiness.topology_complete && <label className="confirm-check"><input type="checkbox" checked={fullOverride} onChange={(event) => { setFullOverride(event.target.checked); }} /><span>I confirm complete account coverage despite the topology warning.</span></label>}<button className="button secondary" disabled={saveScope.isPending || (scope === 'full_account_estimate' && !account.readiness.topology_complete && !fullOverride)} onClick={() => { saveScope.mutate(); }}>Update cost scope</button></section>
       <section><h5>Adjustments</h5><label><span>New custom $/kWh</span><input type="number" step="0.00000001" value={adjustment} onChange={(event) => { setAdjustment(event.target.value); }} /></label><button className="button secondary" disabled={addAdjustment.isPending || !adjustment} onClick={() => { addAdjustment.mutate(); }}><CircleDollarSign size={14} /> Add adjustment</button>{adjustments.isLoading ? <LoadingState /> : adjustments.error ? <ErrorState error={adjustments.error} /> : adjustments.data?.length ? <ul className="adjustment-history">{adjustments.data.map((item) => <li key={item.id}><strong>{item.component.replaceAll('_', ' ')}</strong><span>{item.value} {item.unit.replaceAll('_', ' ')}</span><small>{item.provenance} · effective {formatTime(item.effective_from)}{item.effective_to ? ` through ${formatTime(item.effective_to)}` : ''}</small></li>)}</ul> : <p className="field-help">No account-level adjustments. Rate-version charges remain separate.</p>}</section></div>
     <h5>Immutable assignment history</h5>{history.isLoading ? <LoadingState /> : history.error ? <ErrorState error={history.error} /> : <div className="responsive-table"><table><thead><tr><th>Plan</th><th>Version</th><th>Effective from</th><th>Effective through</th><th>Reason</th></tr></thead><tbody>{history.data?.map((item) => <tr key={item.id}><td>{item.plan_code} · {item.plan_name}</td><td>{item.version}</td><td>{formatTime(item.effective_from)}</td><td>{item.effective_to ? formatTime(item.effective_to) : 'Open'}</td><td>{item.assignment_reason || '—'}</td></tr>)}</tbody></table></div>}

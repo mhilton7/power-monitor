@@ -93,6 +93,10 @@ class BillAccountContextWrite(BaseModel):
     account_id: str = Field(min_length=1, max_length=36)
 
 
+class BillHistoryClearWrite(BaseModel):
+    revision: int = Field(gt=0)
+
+
 def _bill_admin(principal: Principal, permission: str) -> None:
     if "admin" not in principal.roles or permission not in principal.permissions:
         raise ProblemError(
@@ -211,6 +215,12 @@ async def _store_utility_bill(
             str(exc),
             exc.code,
         ) from exc
+    history_restored = duplicate and bill.history_cleared_at is not None
+    if history_restored:
+        bill.history_cleared_at = None
+        bill.history_cleared_by = None
+        bill.revision += 1
+        bill.updated_at = datetime.now(UTC)
     session.add(
         audit_event(
             action="utility_bill.reused" if duplicate else "utility_bill.uploaded",
@@ -228,6 +238,7 @@ async def _store_utility_bill(
                 "source_role": bill.source_role,
                 "automatic_activation": False,
                 "filename_logged": False,
+                "history_restored": history_restored,
             },
         )
     )
@@ -310,7 +321,11 @@ async def list_utility_bill_imports(
     utility_account_id: str | None = None,
 ) -> list[dict[str, Any]]:
     _bill_admin(principal, "utility_bills.view")
-    statement = select(UtilityBillImport).order_by(UtilityBillImport.created_at.desc())
+    statement = (
+        select(UtilityBillImport)
+        .where(UtilityBillImport.history_cleared_at.is_(None))
+        .order_by(UtilityBillImport.created_at.desc())
+    )
     if utility_account_id:
         await _account(session, principal, utility_account_id)
         statement = statement.where(UtilityBillImport.utility_account_id == utility_account_id)
@@ -366,6 +381,63 @@ async def list_utility_bill_imports(
             }
         )
     return visible
+
+
+@router.delete("/admin/utility-bill-imports/{bill_id}/history")
+async def clear_utility_bill_history_entry(
+    bill_id: str,
+    payload: BillHistoryClearWrite,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _bill_admin(principal, "utility_bills.manage")
+    bill = await _bill(session, principal, bill_id)
+    if bill.history_cleared_at is not None:
+        return {
+            "id": bill.id,
+            "history_visible": False,
+            "drafts_preserved": True,
+            "evidence_preserved": True,
+            "audit_history_preserved": True,
+        }
+    if bill.revision != payload.revision:
+        raise ProblemError(
+            409,
+            "Bill import changed",
+            "Reload the import history before clearing this entry",
+            "stale_revision",
+        )
+    bill.history_cleared_at = datetime.now(UTC)
+    bill.history_cleared_by = principal.user.id
+    bill.revision += 1
+    bill.updated_at = bill.history_cleared_at
+    session.add(
+        audit_event(
+            action="utility_bill.history_cleared",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="utility_bill_import",
+            object_id=bill.id,
+            details={
+                "status": bill.status,
+                "rate_plan_id": bill.rate_plan_id,
+                "rate_version_id": bill.rate_version_id,
+                "drafts_preserved": True,
+                "evidence_preserved": True,
+                "audit_history_preserved": True,
+            },
+        )
+    )
+    await session.commit()
+    return {
+        "id": bill.id,
+        "history_visible": False,
+        "drafts_preserved": True,
+        "evidence_preserved": True,
+        "audit_history_preserved": True,
+    }
 
 
 @router.put("/admin/utility-bill-imports/{bill_id}/account-context")

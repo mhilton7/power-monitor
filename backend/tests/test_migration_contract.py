@@ -181,6 +181,17 @@ def test_utility_bill_import_migration_is_additive_private_and_indexed() -> None
     assert "def downgrade()" in revision
 
 
+def test_utility_bill_history_visibility_migration_is_append_only() -> None:
+    root = Path(__file__).parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260724_0015_bill_import_history_visibility.py"
+    ).read_text()
+    assert 'down_revision = "20260724_0014"' in revision
+    assert "history_cleared_at" in revision
+    assert "history_cleared_by" in revision
+    assert "ix_utility_bill_imports_history_cleared_at" in revision
+
+
 def test_user_lifecycle_cleanup_migration_is_additive_and_preserves_identity() -> None:
     root = Path(__file__).resolve().parents[1]
     revision = (

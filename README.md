@@ -20,13 +20,16 @@ draft, responsive preview, immutable publish, defaults, and rollback. See
 [user management](docs/USER_MANAGEMENT.md), [permissions](docs/PERMISSIONS.md),
 [site access](docs/SITE_ACCESS.md), and [interface text](docs/INTERFACE_TEXT.md).
 
-The application shell is organized into exactly six role-aware workspaces:
-**Overview, Monitoring, Analytics, Billing, Alerts, and Administration**.
-Canonical actions prevent duplicate controls, legacy bookmarks redirect safely,
-and complete Physical Site lifecycle management preserves effective-dated
-assignments and history. See the [interface architecture](docs/UI_INFORMATION_ARCHITECTURE.md),
-[action registry](docs/ACTION_REGISTRY.md), and
-[site management](docs/SITE_MANAGEMENT.md).
+The production browser application uses **Single Home Mode** and exactly four
+destinations: **Home, History, Billing, and Settings**. Alerts open from the
+global header instead of becoming a fifth workspace. The independent
+`frontend-next` bundle consumes the existing FastAPI services through
+runtime-validated adapters; legacy bookmarks redirect to one of the four
+destinations and no legacy page is included in the production image. Internal
+site, account, circuit, aggregate, and device identities remain intact in
+PostgreSQL. See the [replacement architecture](docs/frontend-replacement/architecture.md),
+[feature-parity contract](docs/frontend-replacement/feature-parity.md), and
+[cutover and rollback guide](docs/frontend-replacement/cutover-and-rollback.md).
 
 Utility-bill PDF import is integrated directly into **Billing > Rate Plans >
 Custom plan** as
@@ -68,13 +71,15 @@ Requirements are Python 3.13, Node.js 24 LTS, and PostgreSQL 17. Docker Compose 
 python -m venv .venv
 . .venv/bin/activate
 pip install -e './backend[dev]'
-cd frontend && npm ci && cd ..
+cd frontend-next && npm ci && cd ..
 cp .env.example .env                 # replace every CHANGE_ME value
 docker compose -f compose.yaml -f compose.dev.yaml up -d postgres
 cd backend && alembic upgrade head && uvicorn app.main:app --reload
 ```
 
-In separate terminals run `python -m worker.app.main` and `cd frontend && npm run dev`. Run all portable gates with `make lint typecheck test contract frontend`.
+In separate terminals run `python -m worker.app.main` and
+`cd frontend-next && npm run dev`. The legacy `frontend` directory remains only
+as temporary migration evidence and is not copied into the production image.
 
 For production use [Installation](docs/INSTALLATION.md), then [First run](docs/FIRST_RUN.md).
 Browser sign-in behavior is documented in [Authentication](docs/AUTHENTICATION.md)

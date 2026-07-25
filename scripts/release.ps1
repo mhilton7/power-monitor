@@ -32,7 +32,7 @@ Assert-NativeSuccess 'OpenAPI check'
 Assert-NativeSuccess 'Contract check'
 & $python tools/validate-truenas-compose.py
 Assert-NativeSuccess 'TrueNAS template validation'
-Push-Location frontend
+Push-Location frontend-next
 npm ci
 Assert-NativeSuccess 'npm clean install'
 npm run lint
@@ -50,7 +50,7 @@ Pop-Location
 Assert-NativeSuccess 'Secret scan'
 & $python -m pip_audit -r backend/requirements.lock --no-deps --format cyclonedx-json --output release/backend-sbom.cdx.json
 Assert-NativeSuccess 'Backend dependency audit'
-Push-Location frontend
+Push-Location frontend-next
 npm audit --audit-level=high
 Assert-NativeSuccess 'Frontend dependency audit'
 npm sbom --sbom-format cyclonedx | Set-Content -Encoding utf8 ..\release\frontend-sbom.cdx.json

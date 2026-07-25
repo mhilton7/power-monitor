@@ -68,6 +68,74 @@ def account_payload(version_id: str, name: str = "Main electric account") -> dic
 
 
 @pytest.mark.asyncio
+async def test_switching_active_rate_closes_previous_window_and_preserves_history(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await bootstrap(api_client)
+    site = (await api_client.get("/api/v1/sites")).json()[0]
+    plans = (await api_client.get("/api/v1/rates/plans")).json()
+    published = [
+        (plan, version)
+        for plan in plans
+        for version in plan["versions"]
+        if version["status"] in {"active", "approved"}
+    ]
+    assert len(published) >= 2
+    first_plan, first_version = published[0]
+    second_plan, second_version = next(
+        (plan, version) for plan, version in published[1:] if version["id"] != first_version["id"]
+    )
+    created = await api_client.post(
+        f"/api/v1/admin/sites/{site['id']}/utility-accounts",
+        headers=csrf(api_client),
+        json=account_payload(first_version["id"], "Rate switch fixture"),
+    )
+    assert created.status_code == 201, created.text
+    account = created.json()
+    assert account["rate_context"]["current_plan"] == first_plan["name"]
+
+    switched_at = datetime.now(UTC)
+    switched = await api_client.post(
+        f"/api/v1/admin/utility-accounts/{account['id']}/rate-assignments",
+        headers=csrf(api_client),
+        json={
+            "rate_version_id": second_version["id"],
+            "effective_from": switched_at.isoformat(),
+            "assignment_reason": "Administrator selected a new active rate plan",
+            "replace_current": True,
+        },
+    )
+    assert switched.status_code == 201, switched.text
+    result = switched.json()
+    assert result["effective_now"] is True
+    assert len(result["replaced_assignment_ids"]) == 1
+
+    current = await api_client.get(f"/api/v1/admin/utility-accounts/{account['id']}")
+    assert current.status_code == 200, current.text
+    assert current.json()["rate_context"]["current_plan"] == second_plan["name"]
+    assert current.json()["rate_context"]["rate_version_id"] == second_version["id"]
+
+    history = (
+        await api_client.get(f"/api/v1/admin/utility-accounts/{account['id']}/rate-assignments")
+    ).json()
+    assert len(history) == 2
+    previous = next(item for item in history if item["rate_version_id"] == first_version["id"])
+    replacement = next(item for item in history if item["rate_version_id"] == second_version["id"])
+    assert datetime.fromisoformat(previous["effective_to"]) == datetime.fromisoformat(
+        replacement["effective_from"]
+    )
+    assert replacement["effective_to"] is None
+
+    audits = (await api_client.get("/api/v1/audit-events")).json()
+    replacement_audit = next(
+        item for item in audits if item["action"] == "rate_assignment.replaced"
+    )
+    assert (
+        replacement_audit["details"]["replaced_assignment_ids"] == result["replaced_assignment_ids"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_guided_account_creation_rate_context_history_and_archive(
     api_client: httpx.AsyncClient,
 ) -> None:

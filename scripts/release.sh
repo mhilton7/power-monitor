@@ -10,10 +10,10 @@ MYPYPATH=backend "$python_bin" -m mypy worker simulator --explicit-package-bases
 "$python_bin" scripts/generate_openapi.py --check
 "$python_bin" scripts/validate_contracts.py
 "$python_bin" tools/validate-truenas-compose.py
-(cd frontend && npm ci && npm run lint && npm run typecheck && npm test && npm run build && npm run e2e)
+(cd frontend-next && npm ci && npm run lint && npm run typecheck && npm test && npm run build && npm run e2e)
 "$python_bin" scripts/secret_scan.py
 "$python_bin" -m pip_audit -r backend/requirements.lock --no-deps --format cyclonedx-json --output release/backend-sbom.cdx.json
-(cd frontend && npm audit --audit-level=high && npm sbom --sbom-format cyclonedx > ../release/frontend-sbom.cdx.json)
+(cd frontend-next && npm audit --audit-level=high && npm sbom --sbom-format cyclonedx > ../release/frontend-sbom.cdx.json)
 "$python_bin" scripts/generate_release_reports.py
 
 docker compose config --quiet

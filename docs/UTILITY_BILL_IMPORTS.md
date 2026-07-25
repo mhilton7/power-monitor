@@ -39,6 +39,14 @@ billing-cycle application are deferred. The server stores such evidence as a
 private, user-scoped source. Selecting an account later explicitly attaches the
 context; it does not publish, assign, or apply either draft.
 
+Each row under **Prior imports** has its own **Clear** action. Clearing a row
+removes only that import from the visible draft history; it does not delete the
+linked rate-plan draft, billing-cycle draft, imported usage, sanitized
+evidence, source provenance, or audit events. The action is administrator-only,
+CSRF protected, revision checked, and audit logged. Re-uploading the same PDF
+for the same account restores the existing row instead of creating a duplicate
+or repeating OCR.
+
 Account and rate readiness comes from the versioned
 `utility-account-rate-context/1.0` response. Plan, assignment, version, and
 period values are always present as explicit objects or `null`. An account with
@@ -179,6 +187,10 @@ Deleting the original does not remove the sanitized evidence, field-level
 provenance, extraction revision, rate source, review decisions, or audit
 history. The worker enforces scheduled retention. The artifact dataset is
 included in the existing encrypted logical-backup bundle.
+
+Clearing a row from **Prior imports** is also not data deletion. It records who
+cleared that individual row and when, while keeping the private evidence and
+all dependent records recoverable through audit and duplicate-file reuse.
 
 ## Exact values and readable display
 

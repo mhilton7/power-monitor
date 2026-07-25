@@ -500,6 +500,116 @@ async def test_unassigned_bill_import_extracts_without_plan_or_account(
 
 
 @pytest.mark.asyncio
+async def test_each_bill_draft_can_be_cleared_from_history_without_deleting_evidence(
+    api_client: httpx.AsyncClient,
+    session: Any,
+) -> None:
+    await bootstrap(api_client)
+    first_content = (FIXTURES / "text-tiered-bill.pdf").read_bytes()
+    second_content = (FIXTURES / "sanitized-sce-single-detail-page.pdf").read_bytes()
+
+    async def upload(content: bytes, key: str) -> dict[str, Any]:
+        response = await api_client.post(
+            "/api/v1/admin/utility-bill-imports",
+            params={
+                "timezone": "America/Los_Angeles",
+                "currency": "USD",
+                "retention_mode": "retain",
+                "source_role": "supporting",
+            },
+            headers={**csrf(api_client), "X-Idempotency-Key": key},
+            files={"upload": ("bill.pdf", content, "application/pdf")},
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    first = await upload(first_content, "clear-history-first")
+    second = await upload(second_content, "clear-history-second")
+    listed = await api_client.get("/api/v1/admin/utility-bill-imports")
+    assert listed.status_code == 200
+    assert {item["id"] for item in listed.json()} == {first["id"], second["id"]}
+
+    stale = await api_client.request(
+        "DELETE",
+        f"/api/v1/admin/utility-bill-imports/{first['id']}/history",
+        headers=csrf(api_client),
+        json={"revision": first["revision"] + 1},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "stale_revision"
+
+    cleared = await api_client.request(
+        "DELETE",
+        f"/api/v1/admin/utility-bill-imports/{first['id']}/history",
+        headers=csrf(api_client),
+        json={"revision": first["revision"]},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json() == {
+        "id": first["id"],
+        "history_visible": False,
+        "drafts_preserved": True,
+        "evidence_preserved": True,
+        "audit_history_preserved": True,
+    }
+
+    after_clear = await api_client.get("/api/v1/admin/utility-bill-imports")
+    assert after_clear.status_code == 200
+    assert [item["id"] for item in after_clear.json()] == [second["id"]]
+    assert (
+        await api_client.get(f"/api/v1/admin/utility-bill-imports/{first['id']}")
+    ).status_code == 200
+    assert (
+        await api_client.get(f"/api/v1/admin/utility-bill-imports/{first['id']}/sanitized-evidence")
+    ).status_code == 200
+    first_row = await session.get(UtilityBillImport, first["id"])
+    assert first_row is not None
+    assert first_row.history_cleared_at is not None
+    assert first_row.history_cleared_by is not None
+    assert first_row.rate_plan_id == first["rate_plan_id"]
+    assert first_row.rate_version_id == first["rate_version_id"]
+    cycle_draft = await session.scalar(
+        select(UtilityBillCycleDraft).where(UtilityBillCycleDraft.bill_import_id == first["id"])
+    )
+    assert cycle_draft is not None
+    assert (
+        await session.scalar(
+            select(func.count(AuditEvent.id)).where(
+                AuditEvent.action == "utility_bill.history_cleared",
+                AuditEvent.object_id == first["id"],
+            )
+        )
+        == 1
+    )
+
+    repeated = await api_client.request(
+        "DELETE",
+        f"/api/v1/admin/utility-bill-imports/{first['id']}/history",
+        headers=csrf(api_client),
+        json={"revision": first["revision"]},
+    )
+    assert repeated.status_code == 200
+    assert (
+        await session.scalar(
+            select(func.count(AuditEvent.id)).where(
+                AuditEvent.action == "utility_bill.history_cleared",
+                AuditEvent.object_id == first["id"],
+            )
+        )
+        == 1
+    )
+
+    restored = await upload(first_content, "restore-cleared-history")
+    assert restored["id"] == first["id"]
+    assert restored["duplicate"] is True
+    restored_list = await api_client.get("/api/v1/admin/utility-bill-imports")
+    assert {item["id"] for item in restored_list.json()} == {first["id"], second["id"]}
+    await session.refresh(first_row)
+    assert first_row.history_cleared_at is None
+    assert first_row.history_cleared_by is None
+
+
+@pytest.mark.asyncio
 async def test_single_sce_charge_detail_page_creates_reviewable_drafts(
     api_client: httpx.AsyncClient,
 ) -> None:

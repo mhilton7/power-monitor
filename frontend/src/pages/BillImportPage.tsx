@@ -587,6 +587,35 @@ export function BillImportWorkspace({
     setMessage('')
   }
 
+  const clearHistory = useMutation({
+    mutationFn: (item: BillSummary) => api<{
+      id: string
+      history_visible: boolean
+      drafts_preserved: boolean
+      evidence_preserved: boolean
+      audit_history_preserved: boolean
+    }>(`/api/v1/admin/utility-bill-imports/${item.id}/history`, {
+      method: 'DELETE',
+      body: JSON.stringify({ revision: item.revision }),
+    }),
+    onSuccess: async (_, item) => {
+      if (billId === item.id) {
+        setBillId('')
+        setStep(1)
+        setSelectedPage(1)
+        setSearchParams((currentParams) => {
+          const next = new URLSearchParams(currentParams)
+          next.delete('bill_id')
+          return next
+        })
+        queryClient.removeQueries({ queryKey: ['utility-bill-import', item.id] })
+        queryClient.removeQueries({ queryKey: ['utility-bill-comparison', item.id] })
+      }
+      setMessage('Draft cleared from Prior imports. Its linked drafts, evidence, billing data, and audit history were preserved.')
+      await queryClient.invalidateQueries({ queryKey: ['utility-bill-imports'] })
+    },
+  })
+
   const upload = useMutation({
     mutationFn: async (file: File) => {
       const body = new FormData()
@@ -927,6 +956,7 @@ export function BillImportWorkspace({
     {retention.error && <ErrorState error={retention.error} />}
     {removeOriginal.error && <ErrorState error={removeOriginal.error} />}
     {attachAccount.error && <ErrorState error={attachAccount.error} />}
+    {clearHistory.error && <ErrorState error={clearHistory.error} />}
 
     {step === 0 && <Panel title="Select utility account" eyebrow="Step 1 · Account scope">
       <label className="bill-account-select">
@@ -1003,7 +1033,25 @@ export function BillImportWorkspace({
         </form>
       </Panel>
       <Panel title="Prior imports" eyebrow="Billing-cycle history">
-        {history.isLoading ? <LoadingState /> : history.error ? <ErrorState error={history.error} /> : history.data?.length ? <div className="bill-history-list">{history.data.map((item) => <button type="button" key={item.id} onClick={() => { selectBill(item.id); }}><span><strong>{item.utility_account_name}</strong><small>{formatTime(item.created_at)} · {formatStructuredLabel(item.extraction_method)} · {item.page_count} page{item.page_count === 1 ? '' : 's'}</small></span><StatusPill status={item.status === 'published' ? 'healthy' : item.status === 'ready_to_publish' ? 'pending' : 'failed'} label={formatStructuredLabel(item.status)} /></button>)}</div> : <EmptyState title="No uploaded bills" message="The first import for this account will appear here." />}
+        {history.isLoading ? <LoadingState /> : history.error ? <ErrorState error={history.error} /> : history.data?.length ? <div className="bill-history-list">{history.data.map((item) => <article key={item.id}>
+          <button type="button" className="bill-history-open" onClick={() => { selectBill(item.id); }}>
+            <span><strong>{item.utility_account_name}</strong><small>{formatTime(item.created_at)} · {formatStructuredLabel(item.extraction_method)} · {item.page_count} page{item.page_count === 1 ? '' : 's'}</small></span>
+            <StatusPill status={item.status === 'published' ? 'healthy' : item.status === 'ready_to_publish' ? 'pending' : 'failed'} label={formatStructuredLabel(item.status)} />
+          </button>
+          <button
+            type="button"
+            className="button ghost danger-text bill-history-clear"
+            aria-label={`Clear draft history for ${item.utility_account_name} from ${formatTime(item.created_at)}`}
+            disabled={clearHistory.isPending && clearHistory.variables.id === item.id}
+            onClick={() => {
+              if (window.confirm('Clear this draft from Prior imports? Linked drafts, extracted evidence, imported billing data, and audit history will be preserved.')) {
+                clearHistory.mutate(item)
+              }
+            }}
+          >
+            <Trash2 size={15} /> {clearHistory.isPending && clearHistory.variables.id === item.id ? 'Clearing…' : 'Clear'}
+          </button>
+        </article>)}</div> : <EmptyState title="No uploaded bills" message="The first import for this account will appear here." />}
       </Panel>
     </div>}
 

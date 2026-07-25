@@ -2,11 +2,14 @@
 FROM node:24.4.0-alpine AS builder
 ARG APP_VERSION=1.0.0
 ARG RELEASE_COMMIT=development
-ENV VITE_BUILD_VERSION=${APP_VERSION} VITE_RELEASE_COMMIT=${RELEASE_COMMIT}
+ARG SINGLE_HOME_MODE=true
+ENV VITE_BUILD_VERSION=${APP_VERSION} \
+    VITE_RELEASE_COMMIT=${RELEASE_COMMIT} \
+    VITE_SINGLE_HOME_MODE=${SINGLE_HOME_MODE}
 WORKDIR /build
-COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend-next/package.json frontend-next/package-lock.json ./
 RUN npm ci --ignore-scripts
-COPY frontend/ ./
+COPY frontend-next/ ./
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.29.0-alpine

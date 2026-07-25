@@ -293,6 +293,7 @@ class RateAssignmentWrite(ApiModel):
     effective_from: datetime
     effective_to: datetime | None = None
     assignment_reason: str | None = Field(default=None, max_length=500)
+    replace_current: bool = False
 
     _from_aware = field_validator("effective_from")(require_aware)
     _to_aware = field_validator("effective_to")(
@@ -533,6 +534,30 @@ class AlertRuleWrite(ApiModel):
         "firmware_failure",
         "server_failure",
         "device_address_outside_policy",
+        # Bootstrap identifiers retained for backward-compatible rule editing.
+        "api_unreachable",
+        "reading_stale",
+        "ct_limit_80",
+        "ct_limit_90",
+        "voltage_range",
+        "frequency_range",
+        "firmware_failed",
+        "worker_failure",
+        "backup_failure",
+        "rate_check_succeeded",
+        "rate_source_changed",
+        "rate_candidate_pending",
+        "rate_candidate_validation_failed",
+        "rate_source_unavailable",
+        "rate_candidate_approved",
+        "rate_candidate_rejected",
+        "rate_parser_failed",
+        "rate_source_conflict",
+        "rate_version_activated",
+        "rate_version_auto_activated",
+        "rate_retroactive_activated",
+        "rate_estimates_recalculated",
+        "rate_source_stale",
     ]
     severity: Literal["info", "warning", "error", "critical"]
     enabled: bool = True
@@ -1030,6 +1055,24 @@ class DeviceUnclaimRequest(ApiModel):
         ]
         | None
     ) = None
+
+
+class BackupRequestCreate(ApiModel):
+    operation: Literal["create", "restore_preflight"]
+    backup_id: str | None = Field(default=None, min_length=36, max_length=36)
+    confirmation: str | None = Field(default=None, max_length=80)
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+    @model_validator(mode="after")
+    def restore_fields(self) -> BackupRequestCreate:
+        if self.operation == "restore_preflight":
+            if not self.backup_id:
+                raise ValueError("backup_id is required for restore preflight")
+            if self.confirmation != "VERIFY RESTORE":
+                raise ValueError("restore preflight requires the exact confirmation")
+        elif self.backup_id is not None or self.confirmation is not None:
+            raise ValueError("create requests do not accept restore fields")
+        return self
 
 
 class LogExportCreate(ApiModel):

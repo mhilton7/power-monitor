@@ -2810,6 +2810,57 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/history:
+    delete:
+      tags:
+      - utility bill imports
+      summary: Clear Utility Bill History Entry
+      operationId: clear_utility_bill_history_entry_api_v1_admin_utility_bill_imports__bill_id__history_delete
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillHistoryClearWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Clear Utility Bill History Entry Api V1 Admin Utility
+                  Bill Imports  Bill Id  History Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/admin/utility-bill-imports/{bill_id}/account-context:
     put:
       tags:
@@ -6384,6 +6435,81 @@ paths:
                   type: object
                   additionalProperties: true
                 title: Response List Backups Api V1 Backups Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/backup-requests:
+    get:
+      tags:
+      - management
+      summary: List Backup Requests
+      operationId: list_backup_requests_api_v1_backup_requests_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Backup Requests Api V1 Backup Requests Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - management
+      summary: Create Backup Request
+      operationId: create_backup_request_api_v1_backup_requests_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackupRequestCreate'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Backup Request Api V1 Backup Requests Post
         '422':
           description: Validation Error
           content:
@@ -10725,6 +10851,29 @@ components:
           - firmware_failure
           - server_failure
           - device_address_outside_policy
+          - api_unreachable
+          - reading_stale
+          - ct_limit_80
+          - ct_limit_90
+          - voltage_range
+          - frequency_range
+          - firmware_failed
+          - worker_failure
+          - backup_failure
+          - rate_check_succeeded
+          - rate_source_changed
+          - rate_candidate_pending
+          - rate_candidate_validation_failed
+          - rate_source_unavailable
+          - rate_candidate_approved
+          - rate_candidate_rejected
+          - rate_parser_failed
+          - rate_source_conflict
+          - rate_version_activated
+          - rate_version_auto_activated
+          - rate_retroactive_activated
+          - rate_estimates_recalculated
+          - rate_source_stale
           title: Rule Type
         severity:
           type: string
@@ -10787,6 +10936,38 @@ components:
       required:
       - until
       title: AlertSilence
+    BackupRequestCreate:
+      properties:
+        operation:
+          type: string
+          enum:
+          - create
+          - restore_preflight
+          title: Operation
+        backup_id:
+          anyOf:
+          - type: string
+            maxLength: 36
+            minLength: 36
+          - type: 'null'
+          title: Backup Id
+        confirmation:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Confirmation
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - operation
+      - idempotency_key
+      title: BackupRequestCreate
     BillAccountContextWrite:
       properties:
         revision:
@@ -10851,6 +11032,16 @@ components:
       - field_id
       - action
       title: BillFieldReview
+    BillHistoryClearWrite:
+      properties:
+        revision:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Revision
+      type: object
+      required:
+      - revision
+      title: BillHistoryClearWrite
     BillImportAccountSummary:
       properties:
         id:
@@ -13188,6 +13379,10 @@ components:
             maxLength: 500
           - type: 'null'
           title: Assignment Reason
+        replace_current:
+          type: boolean
+          title: Replace Current
+          default: false
       additionalProperties: false
       type: object
       required:

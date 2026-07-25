@@ -7,7 +7,7 @@ x-security:
   security_opt: &id002
   - no-new-privileges:true
 x-app-environment:
-  POWER_MONITOR_VERSION: 1.1.3
+  POWER_MONITOR_VERSION: 1.0.0
   PROTOCOL_VERSION: pm-protocol/1.0.0
   DATABASE_URL_FILE: /run/secrets/database_url
   APP_MASTER_KEY_FILE: /run/secrets/app_master_key
@@ -90,7 +90,7 @@ services:
     read_only: true
     cap_drop: *id001
     security_opt: *id002
-    image: ghcr.io/mhilton7/power-monitor-api:1.1.3@sha256:ef330438b306ef9e14c626e957669377c63d2e5669569a07887b928036622d44
+    image: ghcr.io/mhilton7/power-monitor-api:1.1.7@sha256:d921df969abd33d1d77f9b0803af2d91d1404073df38cfa26eb715e24b14bf58
     platform: linux/amd64
     user: 10001:10001
     restart: 'no'
@@ -121,12 +121,12 @@ services:
     read_only: true
     cap_drop: *id001
     security_opt: *id002
-    image: ghcr.io/mhilton7/power-monitor-api:1.1.3@sha256:ef330438b306ef9e14c626e957669377c63d2e5669569a07887b928036622d44
+    image: ghcr.io/mhilton7/power-monitor-api:1.1.7@sha256:d921df969abd33d1d77f9b0803af2d91d1404073df38cfa26eb715e24b14bf58
     platform: linux/amd64
     user: 10001:10001
     restart: unless-stopped
     environment:
-      POWER_MONITOR_VERSION: 1.1.3
+      POWER_MONITOR_VERSION: 1.1.7
       PROTOCOL_VERSION: pm-protocol/1.0.0
       DATABASE_URL_FILE: /run/secrets/database_url
       APP_MASTER_KEY_FILE: /run/secrets/app_master_key
@@ -210,7 +210,7 @@ services:
     read_only: true
     cap_drop: *id001
     security_opt: *id002
-    image: ghcr.io/mhilton7/power-monitor-api:1.1.3@sha256:ef330438b306ef9e14c626e957669377c63d2e5669569a07887b928036622d44
+    image: ghcr.io/mhilton7/power-monitor-api:1.1.7@sha256:d921df969abd33d1d77f9b0803af2d91d1404073df38cfa26eb715e24b14bf58
     platform: linux/amd64
     user: 10001:10001
     restart: unless-stopped
@@ -219,7 +219,7 @@ services:
     - -m
     - worker.app.main
     environment:
-      POWER_MONITOR_VERSION: 1.1.3
+      POWER_MONITOR_VERSION: 1.1.7
       PROTOCOL_VERSION: pm-protocol/1.0.0
       DATABASE_URL_FILE: /run/secrets/database_url
       APP_MASTER_KEY_FILE: /run/secrets/app_master_key
@@ -297,7 +297,7 @@ services:
     read_only: true
     cap_drop: *id001
     security_opt: *id002
-    image: ghcr.io/mhilton7/power-monitor-frontend:1.1.3@sha256:086e7e7d0df99e2749375891ff5bd59137212c385cdb16abbf8081edbdcee7bc
+    image: ghcr.io/mhilton7/power-monitor-frontend:1.1.7@sha256:f09085e5d8415eca3f33bd21f6e1befea9cc1f3d03fbabcb263d39af35a1cf88
     platform: linux/amd64
     user: 101:101
     restart: unless-stopped
@@ -381,7 +381,7 @@ services:
     read_only: true
     cap_drop: *id001
     security_opt: *id002
-    image: ghcr.io/mhilton7/power-monitor-backup:1.1.3@sha256:4cc61463c00eccd0e83d5fd860de3a0fd15ca0251995d7998c09c9d497e8b29c
+    image: ghcr.io/mhilton7/power-monitor-backup:1.1.7@sha256:2bb5dad7200076989e09cbe9c648159937e879b19801c3a99f0401a63b7a1f12
     platform: linux/amd64
     user: 10003:10003
     group_add:
