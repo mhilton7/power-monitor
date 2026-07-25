@@ -25,9 +25,18 @@ The SCE adapter now classifies every page from content/layout signals:
 - `other`
 
 Only a section with the required charge-detail heading and at least seven known
-anchors is authoritative for reusable rate rules. Utility detection requires
-the full utility name plus another independent SCE signal; a lone occurrence
-of “Edison” is insufficient.
+anchors is authoritative for reusable rate rules. Normal bills require the
+full utility name plus another independent SCE signal. An exported single
+charge-detail page may instead use the official `sce.com` domain, exact `SCE`
+generation-provider label, all charge headings, and the strongly anchored
+detail section. This supports image-only SCE logos without treating a lone
+occurrence of “Edison” or “SCE” as sufficient.
+
+The adapter accepts both written-month and numeric billing periods, including
+`06/22/26 to 07/21/26 (30 days)`. It also joins tightly adjacent text regions
+for SCE layouts that place `Your Total Usage` or the summer baseline label and
+value in separate PDF objects. The joined value retains its own source
+geometry and still participates in exact usage reconciliation.
 
 ## Allowed output
 
@@ -81,5 +90,8 @@ digits require stronger review. The service does not use external OCR or AI.
 
 Original PDFs remain private and are never test fixtures. Tests use the
 generated, PII-free `sanitized-sce-domestic-bill.pdf` plus the authoritative
-sanitized JSON fixture. Normalized identity is suffix-masked; customer
-name/address and complete identifiers are excluded from drafts and logs.
+sanitized JSON fixture. A second generated fixture,
+`sanitized-sce-single-detail-page.pdf`, models a separately exported Page 3
+whose logo is image-only, dates are numeric, and usage/baseline values occupy
+split text regions. Normalized identity is suffix-masked; customer name/address
+and complete identifiers are excluded from drafts and logs.

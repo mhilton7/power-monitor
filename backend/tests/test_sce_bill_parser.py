@@ -13,10 +13,12 @@ from app.bills.sce import (
     ADAPTER_VERSION,
     ALLOWED_FIELD_KEYS,
     parse_sce_residential,
+    recognizes_sce_residential,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "bills"
 SCE_PDF = FIXTURES / "sanitized-sce-domestic-bill.pdf"
+SCE_SINGLE_DETAIL_PDF = FIXTURES / "sanitized-sce-single-detail-page.pdf"
 EXPECTED = FIXTURES / "sanitized-sce-expected-extraction.json"
 
 
@@ -25,6 +27,14 @@ def _extract(test_settings: Any) -> Any:
         SCE_PDF.read_bytes(),
         test_settings,
         pdf_path=SCE_PDF,
+    )
+
+
+def _extract_single_detail(test_settings: Any) -> Any:
+    return extract_bill(
+        SCE_SINGLE_DETAIL_PDF.read_bytes(),
+        test_settings,
+        pdf_path=SCE_SINGLE_DETAIL_PDF,
     )
 
 
@@ -80,6 +90,78 @@ def test_sanitized_sce_fixture_matches_authoritative_expected_extraction(
         tiers["Tier 2"]["price_per_kwh"]
         == expected["derived_validation_only"]["tier_2_variable_rate_sum"]
     )
+
+
+def test_sce_single_detail_page_with_image_only_logo_is_strictly_supported(
+    test_settings: Any,
+) -> None:
+    result = _extract_single_detail(test_settings)
+    parsed = result.adapter_result
+    assert parsed is not None
+    assert result.parser_id == ADAPTER_ID
+    assert result.parser_version == ADAPTER_VERSION == "1.1.0"
+    assert parsed["supported_layout"] == "sce_residential_single_charge_detail_page"
+    assert result.page_classifications == [
+        {
+            "page_number": 1,
+            "page_class": "new_charge_details",
+            "anchor_score": 11,
+            "matched_anchors": [
+                "details of your new charges",
+                "your rate",
+                "billing period",
+                "delivery charges",
+                "generation charges",
+                "other charges or credits",
+                "subtotal of your new charges",
+                "state tax",
+                "your new charges",
+                "additional information",
+                "baseline allowance",
+            ],
+            "authoritative_for_rate_plan": True,
+        }
+    ]
+    assert result.rate_data["plan_code"] == "DOMESTIC"
+    assert result.cycle_data["starts_at"] == "2026-06-22"
+    assert result.cycle_data["ends_at"] == "2026-07-21"
+    assert result.cycle_data["cycle_days"] == 30
+    assert result.cycle_data["total_usage_kwh"] == "951"
+    assert result.cycle_data["baseline_allowance_kwh"] == "579.0"
+    assert len(result.cycle_data["line_items"]) == 8
+    assert result.cycle_data["energy_subtotal"] == "353.86"
+    assert result.cycle_data["full_bill_total"] == "354.15"
+    assert result.validation["valid"] is True
+    assert result.rate_data["summary_chart"] == {
+        "tier_1_usage_kwh": "579",
+        "tier_2_usage_kwh": "372",
+        "tier_1_display_average_rate": "0.30",
+        "tier_2_display_average_rate": "0.40",
+        "display_only": True,
+        "authoritative_for_rate_plan": False,
+        "reason": "Rounded explanatory chart; actual prices may vary.",
+    }
+    fields = {field.field_key: field for field in result.fields}
+    assert fields["service_voltage"].normalized_value == "240"
+    assert fields["bill_prepared_date"].normalized_value is None
+    assert fields["account_suffix"].normalized_value is None
+    assert fields["account_suffix"].warnings[0]["code"] == "field_not_found"
+    assert [item["code"] for item in result.blocking_warnings] == ["single_bill_incomplete_tariff"]
+
+
+def test_sce_single_detail_page_requires_domain_provider_and_strong_anchors(
+    test_settings: Any,
+) -> None:
+    result = _extract_single_detail(test_settings)
+    assert recognizes_sce_residential(result.regions)
+    without_provider = [region for region in result.regions if region.text.upper() != "SCE"]
+    without_domain = [region for region in result.regions if "sce.com" not in region.text.lower()]
+    without_heading = [
+        region for region in result.regions if region.text.lower() != "details of your new charges"
+    ]
+    assert not recognizes_sce_residential(without_provider)
+    assert not recognizes_sce_residential(without_domain)
+    assert not recognizes_sce_residential(without_heading)
 
 
 def test_sce_page_and_section_classification_excludes_irrelevant_numbers(

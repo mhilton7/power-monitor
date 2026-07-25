@@ -10,6 +10,11 @@
   tariff drafts. Rounded `$0.30/$0.40` chart values are display-only; exact
   detailed rates, line amounts, usage, subtotal, tax, and total are reconciled
   with `Decimal`.
+- Extends parser version `1.1.0` to SCE single charge-detail-page exports whose
+  logo is image-only. Recognition still requires the official domain, exact
+  generation-provider marker, and complete anchored section; numeric dates and
+  split usage/baseline text regions are supported without accepting unrelated
+  documents.
 - Adds one canonical dependency-aware Remove action, permanent deletion only
   for truly unused custom drafts, soft removal for published/historical custom
   plans, local retirement for official plans, a Removed / Retired view, and

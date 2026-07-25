@@ -13,6 +13,14 @@ breakdowns and prove none become normalized tariff fields. Unsupported layouts
 return null drafts with actionable warnings. OCR ordering/confidence and
 identifier masking are also covered.
 
+The generated `sanitized-sce-single-detail-page.pdf` gate models an isolated
+Page 3 export with an image-only logo, numeric billing period, and split
+usage/baseline text objects. It must select `sce_residential_bill_v1` version
+`1.1.0`, classify the page as authoritative charge details, create separate
+review drafts, validate all eight rows and totals, and reject the same page
+when the official domain, exact provider marker, or required heading is
+removed.
+
 Lifecycle coverage permanently deletes only an unused unpublished custom
 draft; soft-removes a published custom plan; blocks active/future assignments
 and active account pointers; preserves historical assignments, cost runs,
@@ -25,7 +33,7 @@ verifies parser identity, page/ignored-section review, exact five-decimal
 rates, arithmetic status, explicit missing reasons, dependency review, remove,
 blocked resolution, removed listing, and restore.
 
-The final portable Python run passed 135 tests; the separately enabled
+The final portable Python run passed 138 tests; the separately enabled
 100-device/18,000-reading load gate, PostgreSQL 17 migration gate, and isolated
 TrueNAS deployment gate also passed. Ruff lint/format, strict mypy, generated
 OpenAPI drift, JSON Schema, protocol contracts, and the repository secret scan

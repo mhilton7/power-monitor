@@ -103,6 +103,52 @@ SCE_SANITIZED_PAGES = [
     ],
 ]
 
+SCE_SANITIZED_SINGLE_DETAIL_REGIONS = [
+    (250, 756, "Go paperless at www.sce.com/ebilling"),
+    (520, 716, "Page 3 of 6"),
+    (36, 662, "Details of your new charges"),
+    (36, 650, "Your rate: DOMESTIC"),
+    (36, 640, "Billing period: 06/22/26 to 07/21/26 (30 days)"),
+    (36, 620, "Delivery charges"),
+    (36, 609, "Base services charge 30 days x $0.76900 $23.07"),
+    (36, 599, "Energy-Summer"),
+    (45, 588, "Tier 1 (within baseline) 579 kWh x $0.17862 $103.42"),
+    (45, 577, "Tier 2 (over baseline) 372 kWh x $0.27961 $104.01"),
+    (36, 567, "Wildfire fund charge 951 kWh x $0.00591 $5.62"),
+    (36, 547, "Generation charges"),
+    (36, 536, "SCE"),
+    (36, 525, "Energy-Summer"),
+    (45, 515, "Tier 1 (within baseline) 579 kWh x $0.11761 $68.10"),
+    (45, 504, "Tier 2 (over baseline) 372 kWh x $0.11761 $43.75"),
+    (36, 484, "Other charges or credits"),
+    (45, 473, "Fixed recovery charge 951 kWh x $0.00619 $5.89"),
+    (36, 458, "Subtotal of your new charges $353.86"),
+    (36, 447, "State tax 951 kWh x $0.00030 $0.29"),
+    (36, 437, "Your new charges $354.15"),
+    (419, 415, "Your Delivery charges include:"),
+    (425, 404, "$23.61 transmission charges"),
+    (419, 393, "Your Generation charges include:"),
+    (425, 382, "-$5.74 PCIA adjustment"),
+    (419, 371, "Additional information:"),
+    (425, 360, "Service voltage: 240 volts"),
+    (425, 349, "Your summer baseline allowance:"),
+    (425, 338, "579.0 kWh"),
+    (40, 316, "Your Total Usage:"),
+    (40, 305, "951 kWh"),
+    (228, 305, "Tier 1 Tier 2"),
+    (222, 288, "579 kWh 372 kWh"),
+    (218, 271, "$0.30/kWh $0.40/kWh"),
+    (40, 249, "Understanding Your Bill..."),
+    (40, 238, "Average chart prices are rounded and actual prices may vary."),
+    (36, 210, "Things you should know"),
+    (36, 196, "Fixed Recovery Charge"),
+    (
+        36,
+        182,
+        "Generic definitions and regulatory explanations are informational only.",
+    ),
+]
+
 
 def draw_text_page(canvas: Any, lines: list[str]) -> None:
     canvas.setFont("Helvetica", 11)
@@ -157,6 +203,49 @@ def sanitized_sce_bill() -> bytes:
     writer.add_metadata(
         {
             "/Title": "Sanitized deterministic SCE residential bill fixture",
+            "/Producer": "Power Monitor test fixtures",
+        }
+    )
+    writer.write(output)
+    return output.getvalue()
+
+
+def sanitized_sce_single_detail_page() -> bytes:
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    output = io.BytesIO()
+    writer = PdfWriter()
+    font = writer._add_object(
+        DictionaryObject(
+            {
+                NameObject("/Type"): NameObject("/Font"),
+                NameObject("/Subtype"): NameObject("/Type1"),
+                NameObject("/BaseFont"): NameObject("/Helvetica"),
+            }
+        )
+    )
+    page = writer.add_blank_page(width=612, height=792)
+    commands: list[str] = []
+    for x, y, line in SCE_SANITIZED_SINGLE_DETAIL_REGIONS:
+        escaped = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        commands.extend(
+            [
+                "BT",
+                "/F1 11 Tf",
+                f"{x} {y} Td",
+                f"({escaped}) Tj",
+                "ET",
+            ]
+        )
+    stream = DecodedStreamObject()
+    stream.set_data("\n".join(commands).encode("ascii"))
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    page[NameObject("/Resources")] = DictionaryObject(
+        {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})}
+    )
+    writer.add_metadata(
+        {
+            "/Title": "Sanitized deterministic SCE single detail-page fixture",
             "/Producer": "Power Monitor test fixtures",
         }
     )
@@ -220,6 +309,9 @@ def main() -> None:
     FIXTURES.mkdir(parents=True, exist_ok=True)
     if "--sce-only" in sys.argv:
         (FIXTURES / "sanitized-sce-domestic-bill.pdf").write_bytes(sanitized_sce_bill())
+        (FIXTURES / "sanitized-sce-single-detail-page.pdf").write_bytes(
+            sanitized_sce_single_detail_page()
+        )
         return
     text = text_bill()
     (FIXTURES / "text-tiered-bill.pdf").write_bytes(text)
@@ -227,6 +319,9 @@ def main() -> None:
     (FIXTURES / "rotated-tiered-bill.pdf").write_bytes(rotated_bill(text))
     (FIXTURES / "encrypted-tiered-bill.pdf").write_bytes(encrypted_bill(text))
     (FIXTURES / "sanitized-sce-domestic-bill.pdf").write_bytes(sanitized_sce_bill())
+    (FIXTURES / "sanitized-sce-single-detail-page.pdf").write_bytes(
+        sanitized_sce_single_detail_page()
+    )
 
 
 if __name__ == "__main__":

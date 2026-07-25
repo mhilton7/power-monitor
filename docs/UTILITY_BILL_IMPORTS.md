@@ -91,6 +91,14 @@ definitions, regulatory notices, informational component disclosures, and the
 rounded usage-by-tier chart are explicitly non-authoritative. See
 [Strict SCE residential-bill parser](SCE_BILL_PARSER.md).
 
+Separately exported SCE charge-detail pages are also supported when the text
+layer contains the official `sce.com` domain, exact `SCE` generation label,
+and the complete anchored charge section. Numeric billing dates and adjacent
+usage/baseline label-value regions are normalized without weakening the
+utility classifier. Summary-only data such as account identifiers and bill
+preparation dates remains null with a review reason when those pages were not
+uploaded.
+
 ## Evidence and confidence
 
 Every field records its source artifact, page number, retained excerpt,

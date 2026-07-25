@@ -8,7 +8,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Literal
 
 ADAPTER_ID = "sce_residential_bill_v1"
-ADAPTER_VERSION = "1.0.0"
+ADAPTER_VERSION = "1.1.0"
 SCHEMA_VERSION = "sce_bill_v1"
 FIXTURE_VERSION = "sanitized_sce_domestic_tiered_bill_2026_07"
 UTILITY = "Southern California Edison"
@@ -195,8 +195,27 @@ def _signal_summary(pages: dict[int, list[RegionLine]]) -> dict[str, bool]:
 
 
 def recognizes_sce_residential(regions: Sequence[Any]) -> bool:
-    signals = _signal_summary(_by_page(_lines(regions)))
-    return signals["full_utility_name"] and sum(signals.values()) >= 2
+    lines = _lines(regions)
+    pages = _by_page(lines)
+    signals = _signal_summary(pages)
+    if signals["full_utility_name"] and sum(signals.values()) >= 2:
+        return True
+    # Some exported SCE bills contain only the detail page and render the
+    # utility logo as an image. Accept that layout only when the text layer
+    # still proves SCE's official domain, exact generation-provider label,
+    # and the fully anchored authoritative charge section.
+    exact_sce_provider = any(line.text.upper() == "SCE" for line in lines)
+    strongly_anchored_detail = any(
+        _classify_page(page_lines)[0] == "new_charge_details" for page_lines in pages.values()
+    )
+    return (
+        signals["official_website"]
+        and signals["bill_heading"]
+        and signals["rate_heading"]
+        and signals["new_charges_heading"]
+        and exact_sce_provider
+        and strongly_anchored_detail
+    )
 
 
 def _classify_page(lines: Sequence[RegionLine]) -> tuple[PageClass, list[str], int]:
@@ -286,6 +305,34 @@ def _first(
         match = compiled.search(line.text)
         if match:
             return match.group(group).strip(), line
+    return None, None
+
+
+def _following_value(
+    lines: Sequence[RegionLine],
+    label_pattern: str,
+    value_pattern: str,
+    *,
+    max_following_lines: int = 5,
+    max_vertical_gap: float = 24.0,
+) -> tuple[str | None, RegionLine | None]:
+    label = re.compile(label_pattern, re.IGNORECASE)
+    value = re.compile(value_pattern, re.IGNORECASE)
+    for index, line in enumerate(lines):
+        if not label.fullmatch(line.text):
+            continue
+        for candidate in lines[index + 1 : index + 1 + max_following_lines]:
+            if candidate.page_number != line.page_number:
+                break
+            if (
+                line.y is not None
+                and candidate.y is not None
+                and abs(line.y - candidate.y) > max_vertical_gap
+            ):
+                continue
+            match = value.fullmatch(candidate.text)
+            if match:
+                return match.group(1).strip(), candidate
     return None, None
 
 
@@ -679,17 +726,21 @@ def parse_sce_residential(regions: Sequence[Any]) -> SceParseResult:
 
     plan_raw, plan_line = _first(detail_lines, r"\byour rate\s*:\s*([A-Z0-9._-]+)")
     plan_code = plan_raw.upper() if plan_raw else None
+    period_date = r"(?:[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}|\d{1,2}/\d{1,2}/\d{2,4})"
+    period_pattern = (
+        rf"\bbilling period\s*:\s*({period_date})"
+        rf"\s+(?:through|to|-)\s+({period_date})"
+    )
     period_match: tuple[str | None, RegionLine | None] = _first(
         detail_lines,
-        r"\bbilling period\s*:\s*([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})"
-        r"\s+(?:through|to|-)\s+([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})",
+        period_pattern,
     )
     period_line = period_match[1]
     period_regex = (
         re.search(
-            r"(?i)\bbilling period\s*:\s*([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})"
-            r"\s+(?:through|to|-)\s+([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})",
+            period_pattern,
             period_line.text,
+            re.IGNORECASE,
         )
         if period_line
         else None
@@ -700,11 +751,23 @@ def parse_sce_residential(regions: Sequence[Any]) -> SceParseResult:
     usage_raw, usage_line = _first(
         authoritative, r"\btotal (?:electricity )?usage\s*:?\s*([\d,]+(?:\.\d+)?)\s*kWh"
     )
+    if usage_raw is None:
+        usage_raw, usage_line = _following_value(
+            authoritative,
+            r"(?:your )?total (?:electricity )?usage\s*:?",
+            r"([\d,]+(?:\.\d+)?)\s*kWh",
+        )
     total_usage = _decimal(usage_raw)
     baseline_raw, baseline_line = _first(
         detail_lines,
         r"\b(?:summer )?baseline allowance(?: is|:)?\s*([\d,]+(?:\.\d+)?)\s*kWh",
     )
+    if baseline_raw is None:
+        baseline_raw, baseline_line = _following_value(
+            detail_lines,
+            r"(?:your )?(?:summer )?baseline allowance\s*:?",
+            r"([\d,]+(?:\.\d+)?)\s*kWh",
+        )
     baseline = _decimal(baseline_raw)
     prepared_raw, prepared_line = _first(
         summary_lines, r"\bbill prepared(?: on|:)?\s*([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})"
@@ -731,6 +794,16 @@ def parse_sce_residential(regions: Sequence[Any]) -> SceParseResult:
     daily_average = _decimal(daily_raw)
     provider_raw, provider_line = _first(detail_lines, r"^(SCE)$")
     provider = provider_raw.upper() if provider_raw else None
+    voltage_raw, voltage_line = _first(
+        detail_lines, r"\bservice voltage\s*:\s*([\d,]+(?:\.\d+)?)\s*volts?\b"
+    )
+    if voltage_raw is None:
+        voltage_raw, voltage_line = _following_value(
+            detail_lines,
+            r"service voltage\s*:?",
+            r"([\d,]+(?:\.\d+)?)\s*volts?",
+        )
+    service_voltage = _decimal(voltage_raw)
 
     scalar_fields = [
         _field(
@@ -872,9 +945,9 @@ def parse_sce_residential(regions: Sequence[Any]) -> SceParseResult:
         _field(
             "rate_plan",
             "service_voltage",
-            None,
-            None,
-            None,
+            voltage_raw,
+            service_voltage,
+            voltage_line,
             "sce.service_voltage.v1",
             missing_reason="Service voltage was not found on this bill.",
         ),
@@ -1010,11 +1083,20 @@ def parse_sce_residential(regions: Sequence[Any]) -> SceParseResult:
             )
         )
 
+    display_average_rates = [
+        rate
+        for line in lines
+        for rate in re.findall(r"\$(\d+(?:\.\d+)?)/kWh\b", line.text, re.IGNORECASE)
+    ]
     chart = {
-        "tier_1_usage_kwh": "579",
-        "tier_2_usage_kwh": "372",
-        "tier_1_display_average_rate": "0.30",
-        "tier_2_display_average_rate": "0.40",
+        "tier_1_usage_kwh": (delivery_tiers[0]["usage_kwh"] if len(delivery_tiers) >= 1 else None),
+        "tier_2_usage_kwh": (delivery_tiers[1]["usage_kwh"] if len(delivery_tiers) >= 2 else None),
+        "tier_1_display_average_rate": (
+            _decimal(display_average_rates[0]) if len(display_average_rates) >= 1 else None
+        ),
+        "tier_2_display_average_rate": (
+            _decimal(display_average_rates[1]) if len(display_average_rates) >= 2 else None
+        ),
         "display_only": True,
         "authoritative_for_rate_plan": False,
         "reason": "Rounded explanatory chart; actual prices may vary.",
@@ -1149,7 +1231,11 @@ def parse_sce_residential(regions: Sequence[Any]) -> SceParseResult:
         "fixture_version": FIXTURE_VERSION,
         "utility": UTILITY,
         "document_class": DOCUMENT_CLASS,
-        "supported_layout": "sce_residential_multi_page_charge_details",
+        "supported_layout": (
+            "sce_residential_multi_page_charge_details"
+            if summary_lines
+            else "sce_residential_single_charge_detail_page"
+        ),
         "automatic_publication_eligible": False,
         "plan_draft": rate_data,
         "billing_cycle_draft": cycle_data,

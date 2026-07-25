@@ -500,6 +500,74 @@ async def test_unassigned_bill_import_extracts_without_plan_or_account(
 
 
 @pytest.mark.asyncio
+async def test_single_sce_charge_detail_page_creates_reviewable_drafts(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await bootstrap(api_client)
+    content = (FIXTURES / "sanitized-sce-single-detail-page.pdf").read_bytes()
+    upload = await api_client.post(
+        "/api/v1/admin/utility-bill-imports",
+        params={
+            "timezone": "America/Los_Angeles",
+            "currency": "USD",
+            "retention_mode": "delete_after_approval",
+            "source_role": "supporting",
+        },
+        headers={
+            **csrf(api_client),
+            "X-Idempotency-Key": "single-sce-charge-detail-page",
+        },
+        files={"upload": ("sce-charge-details.pdf", content, "application/pdf")},
+    )
+    assert upload.status_code == 201, upload.text
+    imported = upload.json()
+    assert imported["status"] == "review_required"
+    assert imported["parser_id"] == "sce_residential_bill_v1"
+    assert imported["parser_version"] == "1.1.0"
+    assert imported["rate_plan_id"]
+    assert imported["rate_version_id"]
+    assert imported["cycle_draft"]["id"]
+    assert imported["adapter_result"]["supported_layout"] == (
+        "sce_residential_single_charge_detail_page"
+    )
+    assert imported["page_classifications"] == [
+        {
+            "page_number": 1,
+            "page_class": "new_charge_details",
+            "anchor_score": 11,
+            "matched_anchors": [
+                "details of your new charges",
+                "your rate",
+                "billing period",
+                "delivery charges",
+                "generation charges",
+                "other charges or credits",
+                "subtotal of your new charges",
+                "state tax",
+                "your new charges",
+                "additional information",
+                "baseline allowance",
+            ],
+            "authoritative_for_rate_plan": True,
+        }
+    ]
+    assert imported["normalized"]["rate_plan"]["plan_code"] == "DOMESTIC"
+    cycle = imported["normalized"]["billing_cycle"]
+    assert cycle["starts_at"] == "2026-06-22"
+    assert cycle["ends_at"] == "2026-07-21"
+    assert cycle["cycle_days"] == 30
+    assert cycle["total_usage_kwh"] == "951"
+    assert cycle["baseline_allowance_kwh"] == "579.0"
+    assert cycle["energy_subtotal"] == "353.86"
+    assert cycle["full_bill_total"] == "354.15"
+    assert len(cycle["line_items"]) == 8
+    assert imported["validation"]["valid"] is True
+    assert [warning["code"] for warning in imported["blocking_warnings"]] == [
+        "single_bill_incomplete_tariff"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_non_admin_cannot_access_private_bill_artifacts(
     api_client: httpx.AsyncClient,
 ) -> None:
