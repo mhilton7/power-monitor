@@ -13,7 +13,7 @@ import {
   ShieldCheck,
   Upload,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useSearchParams } from '../../app/router'
 import { adaptBills } from '../../api/adapters'
 import { errorMessage, json, request } from '../../api/client'
@@ -21,6 +21,7 @@ import { objectList, record, stringValue } from '../../api/validation'
 import { Metric, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, LoadingState } from '../../components/feedback/States'
 import { MetadataItem, MetadataList, Page, PageHeader, StatGrid } from '../../components/layout/Layout'
+import { ModalLayer } from '../../components/overlays/ModalLayer'
 import { BillImportFlow } from '../../features/bill-import/BillImportFlow'
 import { AdvancedRateSettings } from '../../features/rates/AdvancedRateSettings'
 import { useAuth } from '../../state/AuthContext'
@@ -63,7 +64,7 @@ export function BillingPage() {
   const { services, cycle, refresh } = useLiveHome()
   const { session } = useAuth()
   const [params, setParams] = useSearchParams()
-  const [importOpen, setImportOpen] = useState(params.get('action') === 'upload')
+  const importOpen = params.get('action') === 'upload'
   const [planDetail, setPlanDetail] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(params.get('advanced') === 'rates')
@@ -91,6 +92,17 @@ export function BillingPage() {
     onSuccess: () => refresh(),
   })
   const currentLibraryPlan = plans.data?.find((plan) => plan.name === service?.currentPlan || plan.code === service?.planCode)
+  const openImporter = useCallback(() => {
+    const next = new URLSearchParams(params)
+    next.set('action', 'upload')
+    setParams(next)
+  }, [params, setParams])
+  const closeImporter = useCallback(() => {
+    const next = new URLSearchParams(params)
+    next.delete('action')
+    setParams(next, { replace: true })
+    void bills.refetch()
+  }, [bills, params, setParams])
 
   if (!home) return <ErrorState error={new Error('The default home is unavailable.')} />
   return (
@@ -98,7 +110,7 @@ export function BillingPage() {
       <PageHeader
         title="Billing"
         description="Your electric service, rate plan, billing cycle, and imported statements."
-        action={<button type="button" className="button primary" data-canonical-action="bill.upload" onClick={() => { setImportOpen(true); }}>
+        action={<button type="button" className="button primary" data-canonical-action="bill.upload" onClick={openImporter}>
           <Upload size={17} /> Upload electric bill
         </button>}
       />
@@ -143,7 +155,7 @@ export function BillingPage() {
             </Surface>
 
             <Surface title="Billing-cycle details" subtitle={dateRange(cycle?.startsAt, cycle?.endsAt)}>
-              {!cycle?.available ? <EmptyState compact title="Billing cycle not ready" message="Upload a bill or add exact cycle dates to calculate tier progress and projections." action={<button type="button" className="button secondary compact" onClick={() => { setImportOpen(true); }}><Upload size={16} /> Upload bill</button>} /> : (
+              {!cycle?.available ? <EmptyState compact title="Billing cycle not ready" message="Upload a bill or add exact cycle dates to calculate tier progress and projections." action={<button type="button" className="button secondary compact" onClick={openImporter}><Upload size={16} /> Upload bill</button>} /> : (
                 <>
                   <StatGrid className="cycle-metrics">
                     <Metric label="Usage" value={energy(cycle.usageKwh)} identity="billing.cycle_usage" />
@@ -184,7 +196,7 @@ export function BillingPage() {
         </details>
       )}
 
-      {importOpen && <div className="modal-layer"><button type="button" className="modal-backdrop" aria-label="Close bill import" onClick={() => { setImportOpen(false); }} /><BillImportFlow home={home} services={services} onClose={() => { setImportOpen(false); params.delete('action'); setParams(params, { replace: true }); void bills.refetch() }} /></div>}
+      {importOpen && <ModalLayer onRequestClose={closeImporter}><BillImportFlow home={home} services={services} onClose={closeImporter} /></ModalLayer>}
     </Page>
   )
 }

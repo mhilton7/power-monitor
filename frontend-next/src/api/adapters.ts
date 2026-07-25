@@ -15,6 +15,10 @@ import type {
   HomeResolution,
   HomeSummary,
   SensorSummary,
+  RateEvidence,
+  RatePlanAssignment,
+  RatePlanVersion,
+  RateSource,
   UserSession,
 } from '../types/models'
 import {
@@ -395,4 +399,76 @@ export function adaptHealth(value: unknown): AdvancedHealthSummary {
     protocol: optionalString(source.protocol_version),
     worker: optionalString(source.worker_status),
   }
+}
+
+export function adaptRateVersions(value: unknown): RatePlanVersion[] {
+  const rows = Array.isArray(value) ? objectList(value) : objectList(record(value, 'rate versions').versions)
+  return rows.map((item) => ({
+    id: stringValue(item.id),
+    version: numberValue(item.version),
+    status: stringValue(item.status, 'draft'),
+    effectiveFrom: optionalString(item.effective_from),
+    effectiveThrough: optionalString(item.effective_through) ?? optionalString(item.effective_to),
+    pricingModel: optionalString(item.pricing_model),
+    integritySha256: optionalString(item.integrity_sha256) ?? optionalString(item.content_hash),
+    immutable: booleanValue(item.immutable) || booleanValue(item.immutable_after_use),
+  }))
+}
+
+export function adaptRateAssignments(value: unknown): RatePlanAssignment[] {
+  const rows = Array.isArray(value) ? objectList(value) : objectList(record(value, 'rate assignments').assignments)
+  return rows.map((item) => ({
+    id: stringValue(item.id),
+    serviceId: stringValue(item.utility_account_id),
+    versionId: stringValue(item.rate_version_id),
+    effectiveFrom: stringValue(item.effective_from),
+    effectiveThrough: optionalString(item.effective_to),
+  }))
+}
+
+export function adaptRateSources(value: unknown): RateSource[] {
+  const rows = objectList(record(value, 'rate sources').sources)
+  return rows.map((item) => {
+    const technicalUrl = stringValue(item.url)
+    const parserId = stringValue(item.parser_id)
+    return {
+      id: stringValue(item.id),
+      name: stringValue(item.name, 'Managed source'),
+      sourceType: friendlySourceType(parserId),
+      enabled: item.enabled !== false,
+      lastSuccessAt: optionalString(item.last_success_at),
+      displayOrigin: friendlySourceOrigin(technicalUrl),
+      technicalUrl,
+      parserId,
+    }
+  })
+}
+
+export function adaptRateEvidence(value: unknown): RateEvidence[] {
+  const rows = Array.isArray(value) ? objectList(value) : objectList(record(value, 'rate evidence').source_evidence)
+  return rows.map((item) => ({
+    id: stringValue(item.artifact_id, stringValue(item.id)),
+    versionId: stringValue(item.rate_version_id),
+    capturedAt: optionalString(item.captured_at),
+    relationship: stringValue(item.relationship, 'supporting'),
+    checksum: optionalString(item.sha256),
+    displaySource: friendlySourceType(stringValue(item.parser_id)),
+  }))
+}
+
+function friendlySourceOrigin(value: string): string {
+  if (value.startsWith('urn:power-monitor:utility-bill:')) return 'Private uploaded utility bill'
+  try {
+    const parsed = new URL(value)
+    return `${parsed.hostname.replace(/^www\./, '')} · Official source`
+  } catch {
+    return 'Private server source'
+  }
+}
+
+function friendlySourceType(value: string): string {
+  if (value.includes('utility_bill')) return 'Reviewed bill evidence'
+  if (value.includes('tariff_pdf')) return 'Official tariff PDF'
+  if (value.includes('tou_html')) return 'Official residential rate page'
+  return 'Managed rate evidence'
 }

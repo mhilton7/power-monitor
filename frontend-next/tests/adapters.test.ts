@@ -6,6 +6,10 @@ import {
   adaptFamilyRoles,
   adaptHistory,
   adaptPermissions,
+  adaptRateAssignments,
+  adaptRateEvidence,
+  adaptRateSources,
+  adaptRateVersions,
   resolveSingleHome,
 } from '../src/api/adapters'
 
@@ -94,5 +98,43 @@ describe('typed homeowner adapters', () => {
   it('rejects malformed parent payloads instead of leaking undefined errors', () => {
     expect(() => adaptBillDetail(undefined)).toThrow(/bill/i)
     expect(() => resolveSingleHome({ homes: 'not-an-array' })).toThrow(/homes/i)
+  })
+
+  it('normalizes rate lifecycle payloads while preserving exact evidence and dates', () => {
+    expect(adaptRateVersions([{
+      id: 'version-1',
+      version: 3,
+      status: 'draft',
+      effective_from: '2026-07-24',
+      pricing_model: 'time_of_use_tiered',
+      integrity_sha256: 'abc123',
+      immutable_after_use: false,
+    }])[0]).toMatchObject({ id: 'version-1', version: 3, pricingModel: 'time_of_use_tiered', integritySha256: 'abc123' })
+    expect(adaptRateAssignments([{
+      id: 'assignment-1',
+      utility_account_id: 'service-1',
+      rate_version_id: 'version-1',
+      effective_from: '2026-07-24T00:00:00Z',
+    }])[0]).toMatchObject({ serviceId: 'service-1', versionId: 'version-1' })
+    expect(adaptRateEvidence({ source_evidence: [{
+      artifact_id: 'artifact-1',
+      sha256: 'def456',
+      parser_id: 'utility_bill_pdf_v1',
+      relationship: 'supporting',
+    }] })[0]).toMatchObject({ id: 'artifact-1', checksum: 'def456', displaySource: 'Reviewed bill evidence' })
+  })
+
+  it('keeps raw managed-source identifiers behind a human-readable adapter boundary', () => {
+    expect(adaptRateSources({ sources: [{
+      id: 'source-1',
+      name: 'Private bill source',
+      url: 'urn:power-monitor:utility-bill:service-1',
+      parser_id: 'utility_bill_pdf_v1',
+      enabled: false,
+    }] })[0]).toMatchObject({
+      displayOrigin: 'Private uploaded utility bill',
+      sourceType: 'Reviewed bill evidence',
+      technicalUrl: 'urn:power-monitor:utility-bill:service-1',
+    })
   })
 })

@@ -82,15 +82,16 @@ export function BillImportFlow({
   const validate = useMutation({
     mutationFn: async () => {
       if (!bill) throw new Error('The extracted bill is unavailable.')
-      return request<{ validation?: { valid?: boolean }; blocking_warnings?: string[] }>(
+      const result = await request<{ validation?: { valid?: boolean }; blocking_warnings?: string[] }>(
         `/api/v1/admin/utility-bill-imports/${bill.id}/validate`,
         json('POST'),
       )
-    },
-    onSuccess: (result) => {
       if (result.validation?.valid === false || (result.blocking_warnings?.length ?? 0) > 0) {
         throw new Error('Resolve the highlighted bill values before applying this plan.')
       }
+      return result
+    },
+    onSuccess: () => {
       setStep('apply')
     },
   })
@@ -116,6 +117,12 @@ export function BillImportFlow({
 
   const currentIndex = steps.findIndex((item) => item.id === step)
   const error = upload.error ?? review.error ?? validate.error ?? apply.error
+  const retry = () => {
+    if (step === 'upload') upload.mutate()
+    else if (step === 'review') review.mutate()
+    else if (step === 'confirm') validate.mutate()
+    else if (step === 'apply') apply.mutate()
+  }
   return (
     <section className="workflow" role="dialog" aria-modal="true" aria-labelledby="bill-flow-title">
       <header className="workflow-header">
@@ -196,7 +203,7 @@ export function BillImportFlow({
             <button type="button" className="button primary" onClick={onClose}>Return to Billing</button>
           </div>
         )}
-        {error && <p className="form-error" role="alert">{errorMessage(error)}</p>}
+        {error && <div className="workflow-error" role="alert"><p>{errorMessage(error)}</p><button type="button" className="button secondary compact" onClick={retry}>Retry this step</button></div>}
       </div>
       {step !== 'done' && (
         <footer className="workflow-footer">

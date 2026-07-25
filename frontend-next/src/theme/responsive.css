@@ -5,9 +5,12 @@
   .history-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .live-facts .freshness { display: none; }
   .detail-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-onboarding-grid, .home-main-grid { grid-template-columns: 1fr; }
+  .home-setup-card { min-height: auto; }
+  .home-side-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; }
 }
 
-@media (max-width: 820px) {
+@media (max-width: 900px) {
   :root { --top-height: 68px; }
   .app-shell, .app-shell.rail-collapsed { display: block; padding: var(--top-height) 0 68px; }
   .side-rail { display: none; }
@@ -45,7 +48,7 @@
 @media (max-width: 620px) {
   h1 { font-size: 2.25rem; }
   .page-heading, .surface-header { align-items: stretch; flex-direction: column; }
-  .metric-grid, .stat-grid, .form-grid, .detail-picker, .billing-top-metrics, .history-summary, .cycle-metrics { grid-template-columns: 1fr; }
+  .metric-grid, .stat-grid, .form-grid, .detail-picker, .billing-top-metrics, .history-summary, .cycle-metrics, .dependency-summary { grid-template-columns: 1fr; }
   .surface { padding: 1rem; }
   .service-card-heading, .section-heading { align-items: stretch; flex-direction: column; }
   .metadata-list { grid-template-columns: 1fr; }
@@ -75,8 +78,25 @@
   .stepper { display: flex; overflow-x: auto; }
   .stepper li { flex: 0 0 70px; }
   .modal-backdrop { padding: 0; }
+  .modal-layer { padding: 0; }
+  .modal-layer-content { width: 100%; max-height: 100dvh; border-radius: 0; }
+  .workflow { min-height: 100dvh; border-radius: 0; }
+  .workflow-header, .workflow-body, .workflow-footer, .workflow > .stepper { padding-inline: var(--space-4); }
+  .review-fields, .confirm-card dl { grid-template-columns: 1fr; }
   .modal-card { width: 100%; max-height: 100vh; height: 100%; border: 0; border-radius: 0; }
   .permission-groups { grid-template-columns: 1fr; }
+  .home-primary-onboarding { grid-template-columns: 1fr; min-height: auto; padding: var(--space-5); }
+  .home-onboarding-icon { width: 4.5rem; }
+  .home-assurance-list { display: grid; }
+  .home-side-stack { grid-template-columns: 1fr; }
+  .power-reading { justify-content: flex-start; min-height: 11rem; }
+  .rate-editor-heading, .rate-editor-footer { align-items: stretch; flex-direction: column; }
+  .rate-editor-shell > .subnav { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-inline: var(--space-2); }
+  .rate-editor-panel { min-height: 0; padding: var(--space-4); }
+  .rate-editor-panel .form-grid { grid-template-columns: 1fr; }
+  .rate-editor-panel .form-grid > .wide { grid-column: auto; }
+  .lifecycle-steps li { grid-template-columns: auto minmax(0, 1fr); }
+  .lifecycle-steps li > .button { grid-column: 1 / -1; width: 100%; }
   .role-row { grid-template-columns: auto minmax(0, 1fr); }
   .role-row > .pill, .role-row > .inline-actions { grid-column: 2; }
   .onboarding-content > header { padding: 1.5rem 1.25rem .5rem; }

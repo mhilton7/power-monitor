@@ -98,7 +98,8 @@ test.beforeEach(async ({ page }, testInfo) => {
 
 test('normal production routes use only the four-workspace shell', async ({ page }, testInfo) => {
   await page.goto('/home')
-  const primary = page.getByRole('navigation', { name: testInfo.project.name === 'mobile' ? 'Primary mobile' : 'Primary', exact: true })
+  const compactNavigation = testInfo.project.name === 'mobile' || testInfo.project.name === 'tablet'
+  const primary = page.getByRole('navigation', { name: compactNavigation ? 'Primary mobile' : 'Primary', exact: true })
   await expect(primary.getByRole('link')).toHaveCount(4)
   await expect(primary.getByRole('link', { name: 'Home' })).toBeVisible()
   await expect(primary.getByRole('link', { name: 'History' })).toBeVisible()

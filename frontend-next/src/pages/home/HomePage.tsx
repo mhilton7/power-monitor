@@ -3,8 +3,11 @@ import {
   AlertTriangle,
   ArrowRight,
   BatteryCharging,
+  Check,
+  Clock3,
   RadioTower,
   ReceiptText,
+  ShieldCheck,
   Upload,
   Zap,
 } from 'lucide-react'
@@ -14,10 +17,11 @@ import { json, request } from '../../api/client'
 import { EnergyChart } from '../../components/charts/EnergyChart'
 import { Metric, StatusDot, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, LoadingState } from '../../components/feedback/States'
+import { Page, PageHeader, StatGrid } from '../../components/layout/Layout'
 import { historyPayload } from '../../features/history/historyQuery'
+import { useAppearance } from '../../state/AppearanceContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
-import { useAppearance } from '../../state/AppearanceContext'
 import type { HistoryFilters } from '../../types/models'
 import { dateRange, energy, money, power, rate, relativeTime, statusLabel } from '../../utils/format'
 
@@ -44,106 +48,133 @@ export function HomePage() {
 
   if (sensors.length === 0) {
     return (
-      <div className="page-stack home-page">
-        <PageHeading title={`Good ${dayPart()}, ${firstName()}`} description="Your private home energy dashboard is ready." />
-        <Surface className="hero-empty">
-          <EmptyState
-            title="Connect your first sensor"
-            message="Generate a short-lived setup code, enter it on your ESP32, and readings will appear here after its first signed heartbeat."
-            action={<Link className="button primary" to="/settings/sensors?action=add"><RadioTower size={17} /> Connect sensor</Link>}
-          />
-        </Surface>
-        {!summary.currentPlan && (
-          <Surface className="bill-empty">
-            <EmptyState
-              title="Upload your electric bill"
-              message="A reviewed bill can prepare your rate plan and billing cycle without changing anything automatically."
-              action={<Link className="button secondary" to="/billing?action=upload"><Upload size={17} /> Upload bill</Link>}
-            />
+      <Page className="home-page home-empty-state">
+        <PageHeader
+          eyebrow="Home overview"
+          title={`Good ${dayPart()}, ${firstName()}`}
+          description={`Finish the two private setup steps for ${home.name}; live readings will appear automatically after the first signed heartbeat.`}
+          action={<Link className="button primary" to="/settings/sensors?action=add"><RadioTower size={17} /> Connect sensor</Link>}
+        />
+        <StatGrid className="home-status-grid">
+          <Metric label="Live data" value="Not connected" identity="home.live_status" detail="Waiting for the first signed heartbeat" />
+          <Metric label="Current load" value={power(summary.currentPowerW)} identity="home.current_load" detail="No reporting sensors" />
+          <Metric label="Last data" value={relativeTime(summary.latestDataAt)} identity="home.last_data" detail="Readings remain private on this server" />
+          <Metric label="Current plan" value={summary.currentPlan ?? 'Not configured'} identity="home.current_plan" detail={summary.currentRate ? rate(summary.currentRate, home.currency) : 'Upload a bill or choose a plan'} />
+        </StatGrid>
+        <div className="home-onboarding-grid">
+          <Surface className="home-primary-onboarding">
+            <div className="home-onboarding-icon"><RadioTower /></div>
+            <div>
+              <span className="section-eyebrow">Step 1 · Live monitoring</span>
+              <h2>Connect your first sensor</h2>
+              <p>Generate a short-lived setup code, enter it on your ESP32, and this dashboard will begin showing verified whole-home readings.</p>
+              <ul className="home-assurance-list">
+                <li><ShieldCheck /> Signed device identity</li>
+                <li><Clock3 /> Automatic history synchronization</li>
+                <li><Check /> No cloud account required</li>
+              </ul>
+              <Link className="button primary" to="/settings/sensors?action=add"><RadioTower size={17} /> Connect sensor</Link>
+            </div>
           </Surface>
-        )}
-      </div>
+          <Surface className="home-setup-card" title="Billing setup" subtitle="Optional until you want cost estimates">
+            {summary.currentPlan ? (
+              <div className="home-setup-complete">
+                <span className="icon-tile"><Check /></span>
+                <div><strong>Billing setup complete</strong><p>Your reviewed rate plan is ready before the first reading arrives.</p></div>
+                <Link className="text-link" to="/billing">Review billing <ArrowRight /></Link>
+              </div>
+            ) : (
+              <div className="home-setup-complete">
+                <span className="icon-tile"><ReceiptText /></span>
+                <div><strong>Add your electric rate</strong><p>A reviewed bill can prepare a rate plan and exact billing cycle without changing anything on upload.</p></div>
+                <Link className="button secondary" to="/billing?action=upload"><Upload size={17} /> Upload electric bill</Link>
+              </div>
+            )}
+          </Surface>
+        </div>
+        <Surface className="home-ready-note">
+          <div><ShieldCheck /><span><strong>Your system is ready</strong><small>Monitoring, signed ingestion, alerts, local backups, and billing history remain active while setup is incomplete.</small></span></div>
+        </Surface>
+        <p className="estimate-disclosure"><AlertTriangle size={16} /> {summary.disclosure}</p>
+      </Page>
     )
   }
 
   return (
-    <div className="page-stack home-page">
-      <PageHeading title={`Good ${dayPart()}, ${firstName()}`} description={`Here is what is happening at ${home.name}.`} />
-      <div className="home-hero-grid">
+    <Page className="home-page home-connected-state">
+      <PageHeader
+        eyebrow="Home overview"
+        title={`Good ${dayPart()}, ${firstName()}`}
+        description={`Here is what is happening at ${home.name}.`}
+        action={<Link className="button secondary" to="/history">View History <ArrowRight size={16} /></Link>}
+      />
+      <StatGrid className="home-status-grid">
+        <Metric label="Live data" value={summary.hasLiveData ? 'Connected' : 'Waiting'} identity="home.live_status" detail={`${summary.reportingSensors} of ${summary.totalSensors} sensors reporting`} />
+        <Metric label="Sensors" value={`${summary.onlineSensors}/${summary.totalSensors}`} identity="home.sensor_status" detail={summary.attentionSensors ? `${summary.attentionSensors} need attention` : 'All enrolled sensors accounted for'} />
+        <Metric label="Last data" value={relativeTime(summary.latestDataAt)} identity="home.last_data" detail={summary.hasLiveData ? 'Signed reading received' : 'Waiting for a fresh reading'} />
+        <Metric label="Current rate" value={rate(summary.currentRate, home.currency)} identity="home.current_rate" detail={summary.currentPeriod ?? summary.currentTier ?? summary.currentPlan ?? 'Plan not configured'} />
+        <Metric label="Active alerts" value={summary.activeAlerts} identity="home.active_alerts" detail={summary.activeAlerts ? 'Review recommended' : 'Nothing needs attention'} />
+      </StatGrid>
+
+      <div className="home-main-grid">
         <Surface className="power-hero">
           <div className="hero-kicker"><StatusDot state={summary.hasLiveData ? 'live' : 'waiting'} label={summary.hasLiveData ? 'Live power' : 'Waiting for live data'} /></div>
           <div className="power-reading" data-metric-identity="power.current">
             <span className="power-orb"><Zap fill="currentColor" /></span>
             <div><strong>{power(summary.currentPowerW)}</strong><span>right now</span></div>
           </div>
-          <div className="hero-facts">
-            <span><small>Sensors reporting</small><strong>{summary.reportingSensors} of {summary.totalSensors}</strong></span>
-            <span data-metric-identity="power.recent_peak"><small>Recent peak</small><strong>{power(summary.recentPeakW)}</strong></span>
-            <span><small>Freshness</small><strong>{relativeTime(summary.latestDataAt)}</strong></span>
-          </div>
-          <Link className="text-link" to="/history">View History <ArrowRight /></Link>
+          <StatGrid className="home-power-facts">
+            <Metric label="Energy today" value={energy(summary.energyTodayKwh)} identity="energy.today" />
+            <Metric label="Estimated today" value={money(summary.estimatedCostToday, home.currency)} identity="cost.today" detail={summary.hasCostData ? 'Current plan applied' : 'Rate data pending'} />
+            <Metric label="Recent peak" value={power(summary.recentPeakW)} identity="power.recent_peak" />
+          </StatGrid>
         </Surface>
-        <div className="home-summary-column">
-          <Surface title="Today" subtitle="Since local midnight">
-            <div className="metric-row">
-              <Metric label="Energy" value={energy(summary.energyTodayKwh)} identity="energy.today" />
-              <Metric label="Estimated cost" value={money(summary.estimatedCostToday, home.currency)} identity="cost.today" detail={summary.hasCostData ? 'Using your current plan' : 'Rate data pending'} />
-              <Metric label="Compared with yesterday" value="—" identity="energy.yesterday_delta" detail="Available after two complete days" />
-            </div>
-          </Surface>
-          {appearance.showSensorsCard && <Surface title="Sensors" subtitle={`${summary.onlineSensors} online · ${summary.attentionSensors} need attention`} action={<Link className="text-link" to="/settings/sensors">Manage sensors <ArrowRight /></Link>}>
+        <div className="home-side-stack">
+          {appearance.showSensorsCard && <Surface title="Sensor health" subtitle={`${summary.onlineSensors} online · ${summary.attentionSensors} need attention`} action={<Link className="text-link" to="/settings/sensors">Manage <ArrowRight /></Link>}>
             <div className="sensor-peek">
-              {sensors.slice(0, 3).map((sensor) => (
+              {sensors.slice(0, 4).map((sensor) => (
                 <div key={sensor.id}><StatusDot state={sensor.online ? 'live' : 'attention'} label={sensor.name} /><strong>{power(sensor.currentPowerW)}</strong></div>
               ))}
             </div>
           </Surface>}
+          <Surface title="Current pricing" subtitle={summary.currentPlan ?? 'No active rate plan'}>
+            {summary.currentPlan ? (
+              <div className="rate-now">
+                <span className="icon-tile"><BatteryCharging /></span>
+                <div><small>{summary.currentTier ? 'Current tier' : 'Current period'}</small><strong>{summary.currentTier ?? summary.currentPeriod ?? 'Flat rate'}</strong><span>{rate(summary.currentRate, home.currency)}</span></div>
+              </div>
+            ) : (
+              <EmptyState compact title="Rate plan needed" message="Upload a reviewed bill or select a published plan to calculate costs." action={<Link className="button secondary compact" to="/billing?action=upload">Set up billing</Link>} />
+            )}
+            {summary.nextPeriod && <p className="next-rate">Next: {summary.nextPeriod} at {rate(summary.nextRate, home.currency)}</p>}
+          </Surface>
         </div>
       </div>
 
-      {!summary.currentPlan ? (
-        <Surface className="bill-empty">
-          <EmptyState
-            title="Upload your electric bill"
-            message="Add a reviewed rate plan to see current pricing and better bill estimates."
-            action={<Link className="button primary" to="/billing?action=upload"><ReceiptText size={17} /> Upload electric bill</Link>}
-          />
+      {summary.currentPlan ? (
+        <Surface title="Billing snapshot" subtitle={dateRange(cycle?.startsAt, cycle?.endsAt)} action={<Link className="text-link" to="/billing">Review billing <ArrowRight /></Link>}>
+          <StatGrid className="home-billing-grid">
+            <Metric label="Cycle usage" value={energy(summary.cycleEnergyKwh)} identity="billing.cycle_energy" />
+            <Metric label="Energy charge" value={money(summary.cycleEstimatedCost, home.currency)} identity="billing.energy_charge" />
+            <Metric label="Projected bill" value={money(summary.projectedBill, home.currency)} identity="billing.estimate" detail={summary.cycleConfidence ? `${statusLabel(summary.cycleConfidence)} confidence` : undefined} />
+            <Metric label="Days remaining" value={cycle?.daysRemaining ?? '—'} identity="billing.days_remaining" />
+          </StatGrid>
         </Surface>
       ) : (
-        <div className="home-secondary-grid">
-          <Surface title="Billing cycle" subtitle={dateRange(cycle?.startsAt, cycle?.endsAt)}>
-            <div className="metric-row compact">
-              <Metric label="Usage" value={energy(summary.cycleEnergyKwh)} identity="billing.cycle_energy" />
-              <Metric label="Energy charge" value={money(summary.cycleEstimatedCost, home.currency)} identity="billing.energy_charge" />
-              <Metric label="Projected bill" value={money(summary.projectedBill, home.currency)} identity="billing.estimate" detail={summary.cycleConfidence ? `${statusLabel(summary.cycleConfidence)} confidence` : undefined} />
-              <Metric label="Days remaining" value={cycle?.daysRemaining ?? '—'} identity="billing.days_remaining" />
-            </div>
-          </Surface>
-          <Surface title="Current rate" subtitle={summary.currentPlan}>
-            <div className="rate-now">
-              <span className="icon-tile"><BatteryCharging /></span>
-              <div>
-                <small>{summary.currentTier ? 'Current tier' : 'Current period'}</small>
-                <strong>{summary.currentTier ?? summary.currentPeriod ?? 'Flat rate'}</strong>
-                <span>{rate(summary.currentRate, home.currency)}</span>
-              </div>
-            </div>
-            {summary.remainingTierKwh && <div className="progress-line"><span style={{ width: `${Math.min(100, Number(summary.tierProgressPercent ?? 0))}%` }} /><small>{energy(summary.remainingTierKwh)} remaining in this tier</small></div>}
-            {summary.nextPeriod && <p className="next-rate">Next: {summary.nextPeriod} at {rate(summary.nextRate, home.currency)}</p>}
-            <Link className="text-link" to="/billing">Review billing <ArrowRight /></Link>
-          </Surface>
-        </div>
+        <Surface className="home-billing-callout">
+          <EmptyState compact title="Add billing to see energy costs" message="Upload an electric bill to prepare a reviewed rate plan and exact cycle dates." action={<Link className="button primary" to="/billing?action=upload"><ReceiptText size={17} /> Upload electric bill</Link>} />
+        </Surface>
       )}
 
       {appearance.showDailyChart && <Surface
         title="Today’s energy"
-        subtitle="A simple view of whole-home usage. Missing readings remain gaps."
+        subtitle="Whole-home intervals; missing readings remain visible gaps."
         action={<Link className="text-link" to="/history">Explore History <ArrowRight /></Link>}
       >
         {dailyHistory.isLoading ? <LoadingState label="Loading today’s readings…" /> : dailyHistory.error ? <ErrorState error={dailyHistory.error} retry={() => void dailyHistory.refetch()} /> : dailyHistory.data?.points.length ? (
           <EnergyChart points={dailyHistory.data.points} mode="energy" currency={home.currency} title="Today’s whole-home energy" />
         ) : (
-          <EmptyState title="Waiting for today’s history" message="Intervals appear after synchronized sensor readings are stored." />
+          <EmptyState compact title="Waiting for today’s history" message="Intervals appear after synchronized sensor readings are stored." />
         )}
       </Surface>}
 
@@ -157,12 +188,8 @@ export function HomePage() {
         </Surface>
       )}
       <p className="estimate-disclosure"><AlertTriangle size={16} /> {summary.disclosure}</p>
-    </div>
+    </Page>
   )
-}
-
-function PageHeading({ title, description }: { title: string; description: string }) {
-  return <header className="page-heading"><div><h1>{title}</h1><p>{description}</p></div></header>
 }
 
 function dayPart(): string {

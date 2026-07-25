@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, FileSearch, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Archive, FileSearch, Plus, RefreshCw, ShieldCheck } from 'lucide-react'
+import { useState } from 'react'
 import { errorMessage, json, request } from '../../api/client'
+import { adaptRateEvidence, adaptRateSources, adaptRateVersions } from '../../api/adapters'
 import { objectList, record, stringValue } from '../../api/validation'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
 import { TabList } from '../../components/layout/Layout'
-import type { ElectricService, Home } from '../../types/models'
+import type { ElectricService, Home, RateEvidence, RatePlanVersion, RateSource } from '../../types/models'
 import { statusLabel } from '../../utils/format'
+import { StructuredRateEditor, type SavedDraft } from './StructuredRateEditor'
+import { adaptRatePlanDraft } from './rateDocument'
 
 interface PlanRow {
   id: string
@@ -17,15 +20,6 @@ interface PlanRow {
   pricingModel?: string
   versionId?: string
   version?: number
-}
-
-interface SourceRow {
-  id: string
-  name: string
-  url: string
-  parser: string
-  enabled: boolean
-  lastSuccess?: string
 }
 
 type RateView = 'plans' | 'sources' | 'versions' | 'evidence' | 'removed' | 'adjustments'
@@ -58,18 +52,6 @@ function plansAdapter(value: unknown): PlanRow[] {
   })
 }
 
-function sourcesAdapter(value: unknown): SourceRow[] {
-  const source = record(value, 'rate sources')
-  return objectList(source.sources).map((item) => ({
-    id: stringValue(item.id),
-    name: stringValue(item.name),
-    url: stringValue(item.url),
-    parser: stringValue(item.parser_id),
-    enabled: item.enabled !== false,
-    lastSuccess: stringValue(item.last_success_at) || undefined,
-  }))
-}
-
 export function AdvancedRateSettings({
   home,
   services,
@@ -90,7 +72,7 @@ export function AdvancedRateSettings({
     },
     enabled: view === 'removed',
   })
-  const sources = useQuery({ queryKey: ['rate-sources'], queryFn: () => request('/api/v1/admin/rate-sources', {}, sourcesAdapter), enabled: view === 'sources' })
+  const sources = useQuery({ queryKey: ['rate-sources'], queryFn: () => request('/api/v1/admin/rate-sources', {}, adaptRateSources), enabled: view === 'sources' })
   return (
     <div className="advanced-rates">
       <TabList idBase="advanced-rates" label="Advanced rate settings" value={view} items={rateViews} onChange={setView} />
@@ -101,15 +83,60 @@ export function AdvancedRateSettings({
         aria-labelledby={`advanced-rates-tab-${view}`}
         tabIndex={0}
       >
-        {view === 'plans' && <PlanManager home={home} plans={plans.data ?? []} loading={plans.isLoading} error={plans.error} />}
+        {view === 'plans' && <PlanManager home={home} services={services} plans={plans.data ?? []} loading={plans.isLoading} error={plans.error} />}
         {view === 'sources' && <SourceManager sources={sources.data ?? []} loading={sources.isLoading} error={sources.error} />}
-        {view === 'versions' && <RateList title="Rate versions" empty="No rate versions are available." plans={plans.data ?? []} loading={plans.isLoading} error={plans.error} detail={(plan) => `Version ${plan.version ?? '—'} · ${statusLabel(plan.status)}`} />}
-        {view === 'evidence' && <RateList title="Source evidence" empty="Evidence appears after a managed source check or bill import." plans={plans.data ?? []} loading={plans.isLoading} error={plans.error} detail={(plan) => `${plan.code || 'Custom'} · Evidence retained with each version`} />}
+        {view === 'versions' && <VersionList plans={plans.data ?? []} />}
+        {view === 'evidence' && <EvidenceList plans={plans.data ?? []} />}
         {view === 'removed' && <RemovedPlans plans={removedPlans.data ?? []} loading={removedPlans.isLoading} error={removedPlans.error} />}
         {view === 'adjustments' && <Adjustments services={services} />}
       </div>
     </div>
   )
+}
+
+function VersionList({ plans }: { plans: PlanRow[] }) {
+  const versions = useQuery({
+    queryKey: ['all-rate-versions', plans.map((plan) => plan.id).join(':')],
+    queryFn: async () => {
+      const rows = await Promise.all(plans.map(async (plan) => {
+        const items = await request(`/api/v1/rates/plans/${plan.id}/versions`, {}, adaptRateVersions)
+        return items.map((version) => ({ ...version, planName: plan.name, planCode: plan.code }))
+      }))
+      return rows.flat()
+    },
+    enabled: plans.length > 0,
+  })
+  if (versions.isLoading) return <LoadingState label="Loading rate versions…" />
+  if (versions.error) return <ErrorState error={versions.error} retry={() => { void versions.refetch() }} />
+  return <PagedVersionList rows={versions.data ?? []} />
+}
+
+function PagedVersionList({ rows }: { rows: Array<RatePlanVersion & { planName: string; planCode: string }> }) {
+  const [query, setQuery] = useState('')
+  const matching = rows.filter((row) => `${row.planName} ${row.planCode} ${row.status} ${row.version}`.toLowerCase().includes(query.trim().toLowerCase()))
+  return <section className="rate-advanced-panel"><div className="section-heading"><div><h3>Rate versions</h3><p>Every effective-dated version, including immutable history.</p></div><label className="compact-search"><span className="sr-only">Search rate versions</span><input type="search" placeholder="Search versions" value={query} onChange={(event) => { setQuery(event.target.value) }} /></label></div>{matching.length === 0 ? <EmptyState compact title="No rate versions" message="Create or import a rate plan to prepare its first draft." /> : <ul className="structured-list">{matching.map((row) => <li key={row.id}><div><strong>{row.planName} · v{row.version}</strong><span>{row.planCode} · {statusLabel(row.status)} · effective {row.effectiveFrom ?? 'not set'}{row.immutable ? ' · immutable' : ' · editable draft'}</span></div><span className={`pill ${row.status === 'active' ? 'success' : ''}`}>{statusLabel(row.pricingModel ?? 'unknown')}</span></li>)}</ul>}</section>
+}
+
+function EvidenceList({ plans }: { plans: PlanRow[] }) {
+  const evidence = useQuery({
+    queryKey: ['all-rate-evidence', plans.map((plan) => plan.versionId).join(':')],
+    queryFn: async () => {
+      const rows = await Promise.all(plans.map(async (plan) => {
+        const versions = await request(`/api/v1/rates/plans/${plan.id}/versions`, {}, adaptRateVersions)
+        const versionEvidence = await Promise.all(versions.map(async (version) => {
+          const response = await request<unknown>(`/api/v1/rates/versions/${version.id}`)
+          return adaptRateEvidence(response).map((item) => ({ ...item, versionId: version.id, planName: plan.name }))
+        }))
+        return versionEvidence.flat()
+      }))
+      return rows.flat()
+    },
+    enabled: plans.some((plan) => Boolean(plan.versionId)),
+  })
+  if (evidence.isLoading) return <LoadingState label="Loading source evidence…" />
+  if (evidence.error) return <ErrorState error={evidence.error} retry={() => { void evidence.refetch() }} />
+  const rows: Array<RateEvidence & { planName: string }> = evidence.data ?? []
+  return <section className="rate-advanced-panel"><div className="section-heading"><div><h3>Source evidence</h3><p>Checksums and capture references retained with exact rate versions.</p></div></div>{rows.length === 0 ? <EmptyState compact title="No source evidence" message="Evidence appears after a managed source check or reviewed bill import." /> : <ul className="structured-list">{rows.map((row) => <li key={`${row.versionId}-${row.id}`}><div><strong>{row.planName}</strong><span>{row.displaySource} · {statusLabel(row.relationship)}{row.capturedAt ? ` · captured ${row.capturedAt}` : ''}</span><details className="technical-details"><summary>Checksum</summary><code>{row.checksum ?? 'Not provided'}</code></details></div><FileSearch /></li>)}</ul>}</section>
 }
 
 function RemovedPlans({ plans, loading, error }: { plans: PlanRow[]; loading: boolean; error: unknown }) {
@@ -140,6 +167,7 @@ function RemovedPlans({ plans, loading, error }: { plans: PlanRow[]; loading: bo
   )
 }
 
+/*
 function RateList({
   title,
   empty,
@@ -176,7 +204,7 @@ function RateList({
   )
 }
 
-function PlanManager({ home, plans, loading, error }: { home: Home; plans: PlanRow[]; loading: boolean; error: unknown }) {
+function ReducedPlanManager({ home, plans, loading, error }: { home: Home; plans: PlanRow[]; loading: boolean; error: unknown }) {
   const client = useQueryClient()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('My electric plan')
@@ -298,7 +326,124 @@ function PlanManager({ home, plans, loading, error }: { home: Home; plans: PlanR
   )
 }
 
-function SourceManager({ sources, loading, error }: { sources: SourceRow[]; loading: boolean; error: unknown }) {
+*/
+
+function PlanManager({ home, services, plans, loading, error }: { home: Home; services: ElectricService[]; plans: PlanRow[]; loading: boolean; error: unknown }) {
+  const client = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [target, setTarget] = useState<PlanRow>()
+  const [lifecycleTarget, setLifecycleTarget] = useState<PlanRow>()
+  const [lifecycleReason, setLifecycleReason] = useState('Administrator reviewed rate-plan lifecycle')
+  const [lifecycleConfirmation, setLifecycleConfirmation] = useState('')
+  const editorDraft = useQuery({
+    queryKey: ['rate-editor-version', target?.versionId],
+    queryFn: () => request(`/api/v1/rates/versions/${target?.versionId ?? ''}`, {}, adaptRatePlanDraft),
+    enabled: open && Boolean(target?.versionId),
+  })
+  const dependencies = useQuery({
+    queryKey: ['rate-plan-dependencies', lifecycleTarget?.id],
+    queryFn: () => request<Record<string, unknown>>(`/api/v1/admin/rate-plans/${lifecycleTarget?.id ?? ''}/dependencies`),
+    enabled: Boolean(lifecycleTarget),
+  })
+  const clone = useMutation({
+    mutationFn: (plan: PlanRow) => request(`/api/v1/rates/plans/${plan.id}/clone`, json('POST')),
+    onSuccess: async () => client.invalidateQueries({ queryKey: ['managed-rate-plans'] }),
+  })
+  const newVersion = useMutation({
+    mutationFn: async (plan: PlanRow) => {
+      const response = record(await request(`/api/v1/rates/plans/${plan.id}/versions`, json('POST')), 'new rate version')
+      const versionId = stringValue(response.id)
+      if (!versionId) throw new Error('The server did not return the new draft version.')
+      return { ...plan, versionId, status: 'draft', version: Number(response.version ?? (plan.version ?? 0) + 1) }
+    },
+    onSuccess: (plan) => {
+      setTarget(plan)
+      setOpen(true)
+      void client.invalidateQueries({ queryKey: ['managed-rate-plans'] })
+    },
+  })
+  const retire = useMutation({
+    mutationFn: (plan: PlanRow) => {
+      if (!plan.versionId) throw new Error('This plan does not have a version to retire.')
+      return request(`/api/v1/rates/versions/${plan.versionId}/retire`, json('POST'))
+    },
+    onSuccess: async () => {
+      setLifecycleTarget(undefined)
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['managed-rate-plans'] }),
+        client.invalidateQueries({ queryKey: ['removed-rate-plans'] }),
+      ])
+    },
+  })
+  const remove = useMutation({
+    mutationFn: (plan: PlanRow) => {
+      const review = dependencies.data ?? {}
+      const deleteDraft = review.permanent_draft_deletion_eligible === true
+      return request(
+        deleteDraft ? `/api/v1/admin/rate-plan-drafts/${plan.id}` : `/api/v1/admin/rate-plans/${plan.id}/remove`,
+        json(deleteDraft ? 'DELETE' : 'POST', {
+          expected_revision: plan.revision,
+          confirmation: lifecycleConfirmation,
+          reason: lifecycleReason,
+          idempotency_key: `remove-${plan.id}-${crypto.randomUUID()}`,
+        }),
+      )
+    },
+    onSuccess: async () => {
+      setLifecycleTarget(undefined)
+      setLifecycleConfirmation('')
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['managed-rate-plans'] }),
+        client.invalidateQueries({ queryKey: ['removed-rate-plans'] }),
+      ])
+    },
+  })
+  if (loading) return <LoadingState label="Loading rate plans…" />
+  if (error) return <ErrorState error={error} />
+  const removalBlocked = dependencies.data?.removal_blocked === true
+  const removalReady = Boolean(
+    lifecycleTarget
+    && lifecycleConfirmation.trim().toLocaleLowerCase() === lifecycleTarget.code.trim().toLocaleLowerCase()
+    && lifecycleReason.trim().length >= 8
+    && !removalBlocked,
+  )
+  return (
+    <section className="rate-advanced-panel">
+      <div className="section-heading">
+        <div><h3>Custom plan editor</h3><p>Build, validate, preview, publish, and assign complete flat, TOU, tiered, or hybrid plans.</p></div>
+        <button type="button" className="button secondary" onClick={() => { setTarget(undefined); setOpen(!open) }}><Plus size={16} /> {open && !target ? 'Hide editor' : 'New plan'}</button>
+      </div>
+      {open && (!target ? <StructuredRateEditor home={home} services={services} onClose={() => { setOpen(false) }} /> : editorDraft.isLoading ? <LoadingState label="Opening editable rate version…" /> : editorDraft.error ? <ErrorState error={editorDraft.error} retry={() => { void editorDraft.refetch() }} /> : editorDraft.data ? <StructuredRateEditor key={target.versionId} home={home} services={services} initialDraft={editorDraft.data} initialSaved={{ planId: target.id, versionId: target.versionId ?? '', status: target.status } satisfies SavedDraft} onClose={() => { setOpen(false); setTarget(undefined) }} /> : null)}
+      {lifecycleTarget && (
+        <section className="plan-lifecycle-panel" aria-label={`Lifecycle controls for ${lifecycleTarget.name}`}>
+          <div className="section-heading"><div><h4>Retire or remove {lifecycleTarget.name}</h4><p>The server reviews assignments, history, evidence, and plan kind before allowing removal.</p></div><button type="button" className="button ghost compact" onClick={() => { setLifecycleTarget(undefined); setLifecycleConfirmation('') }}>Cancel</button></div>
+          {dependencies.isLoading ? <LoadingState label="Reviewing plan dependencies…" /> : dependencies.error ? <ErrorState error={dependencies.error} retry={() => { void dependencies.refetch() }} /> : (
+            <>
+              <div className="dependency-summary">
+                <span><small>Permanent draft deletion</small><strong>{dependencies.data?.permanent_draft_deletion_eligible === true ? 'Eligible' : 'Not eligible'}</strong></span>
+                <span><small>Removal</small><strong>{removalBlocked ? 'Blocked by active assignments' : 'Available after confirmation'}</strong></span>
+                <span><small>History</small><strong>Versions and evidence preserved</strong></span>
+              </div>
+              <div className="form-grid">
+                <label><span>Reason</span><input value={lifecycleReason} onChange={(event) => { setLifecycleReason(event.target.value) }} /></label>
+                <label><span>Type {lifecycleTarget.code} to confirm removal</span><input value={lifecycleConfirmation} onChange={(event) => { setLifecycleConfirmation(event.target.value) }} /></label>
+              </div>
+              {removalBlocked && <InlineNotice tone="warning">Replace or end active and future assignments before removing this plan.</InlineNotice>}
+              <div className="inline-actions">
+                {lifecycleTarget.versionId && !['draft', 'retired'].includes(lifecycleTarget.status) && <button type="button" className="button secondary compact" disabled={retire.isPending} onClick={() => { retire.mutate(lifecycleTarget) }}><Archive size={15} /> {retire.isPending ? 'Retiring…' : 'Retire version'}</button>}
+                <button type="button" className="button danger compact" disabled={!removalReady || remove.isPending} onClick={() => { remove.mutate(lifecycleTarget) }}>{remove.isPending ? 'Removing…' : dependencies.data?.permanent_draft_deletion_eligible === true ? 'Delete unused draft' : 'Remove plan'}</button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+      {plans.length === 0 ? <EmptyState compact title="No rate plans" message="Create a custom plan or upload an electric bill." /> : <ul className="structured-list rate-plan-library">{plans.map((plan) => <li key={plan.id}><div><strong>{plan.name}</strong><span>{plan.code} · {statusLabel(plan.pricingModel ?? 'unknown')} · {statusLabel(plan.status)}</span></div><div className="inline-actions">{plan.status === 'draft' && plan.versionId ? <button type="button" className="button ghost compact" onClick={() => { setTarget(plan); setOpen(true) }}>Edit draft</button> : plan.versionId && <button type="button" className="button ghost compact" disabled={newVersion.isPending} onClick={() => { newVersion.mutate(plan) }}>New version</button>}<button type="button" className="button ghost compact" disabled={clone.isPending} onClick={() => { clone.mutate(plan) }}>Clone</button><button type="button" className="button ghost compact" onClick={() => { setLifecycleTarget(plan); setLifecycleConfirmation('') }}>Lifecycle</button></div></li>)}</ul>}
+      {(clone.error || newVersion.error || retire.error || remove.error) && <InlineNotice tone="danger">{errorMessage(clone.error ?? newVersion.error ?? retire.error ?? remove.error)}</InlineNotice>}
+    </section>
+  )
+}
+
+function SourceManager({ sources, loading, error }: { sources: RateSource[]; loading: boolean; error: unknown }) {
   const client = useQueryClient()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -324,7 +469,7 @@ function SourceManager({ sources, loading, error }: { sources: SourceRow[]; load
     <section className="rate-advanced-panel">
       <div className="section-heading"><div><h3>Managed rate sources</h3><p>Approved HTTPS sources are archived and reviewed before activation.</p></div><div className="inline-actions"><button type="button" className="button secondary" onClick={() => { check.mutate(); }} disabled={check.isPending}><RefreshCw size={16} /> Check now</button><button type="button" className="button secondary" onClick={() => { setOpen(!open); }}><Plus size={16} /> Add source</button></div></div>
       {open && <form className="structured-editor" onSubmit={(event) => { event.preventDefault(); create.mutate() }}><div className="form-grid"><label><span>Name</span><input value={name} onChange={(event) => { setName(event.target.value); }} required minLength={3} /></label><label><span>Approved HTTPS URL</span><input type="url" value={url} onChange={(event) => { setUrl(event.target.value); }} required /></label><label><span>Source type</span><select value={parser} onChange={(event) => { setParser(event.target.value); }}><option value="sce_public_tou_html_v1">SCE public TOU page</option><option value="sce_tariff_pdf_v1">SCE tariff PDF</option></select></label>{parser === 'sce_public_tou_html_v1' && <label><span>Effective date</span><input type="date" value={effective} onChange={(event) => { setEffective(event.target.value); }} /></label>}</div>{create.error && <p className="form-error" role="alert">{errorMessage(create.error)}</p>}<div className="form-actions"><button className="button primary" disabled={create.isPending}>Add approved source</button></div></form>}
-      {sources.length === 0 ? <EmptyState compact title="No approved sources" message="Add an official SCE page or tariff PDF to start managed checks." /> : <ul className="structured-list">{sources.map((source) => <li key={source.id}><div><strong>{source.name}</strong><span>{source.url} · {statusLabel(source.parser)}</span></div><span className={`pill ${source.enabled ? 'success' : ''}`}>{source.enabled ? 'Enabled' : 'Disabled'}</span></li>)}</ul>}
+      {sources.length === 0 ? <EmptyState compact title="No approved sources" message="Add an official SCE page or tariff PDF to start managed checks." /> : <ul className="structured-list">{sources.map((source) => <li key={source.id}><div><strong>{source.name}</strong><span>{source.displayOrigin} · {source.sourceType}{source.lastSuccessAt ? ' · Checked successfully' : ''}</span><details className="technical-details"><summary>Technical details</summary><code>{source.technicalUrl}</code><code>{source.parserId}</code></details></div><span className={`pill ${source.enabled ? 'success' : ''}`}>{source.enabled ? 'Enabled' : 'Disabled'}</span></li>)}</ul>}
     </section>
   )
 }

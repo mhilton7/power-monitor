@@ -188,6 +188,80 @@ export interface BillImportDetail extends BillSummary {
   conflicts: Array<{ id: string; path: string; message: string }>
 }
 
+export type BillImportSession = BillImportDetail
+
+export interface RatePlanVersion {
+  id: string
+  version: number
+  status: string
+  effectiveFrom?: string
+  effectiveThrough?: string
+  pricingModel?: string
+  integritySha256?: string
+  immutable: boolean
+}
+
+export interface RatePlanAssignment {
+  id: string
+  serviceId: string
+  versionId: string
+  effectiveFrom: string
+  effectiveThrough?: string
+}
+
+export interface RateSource {
+  id: string
+  name: string
+  sourceType: string
+  enabled: boolean
+  lastSuccessAt?: string
+  displayOrigin: string
+  technicalUrl?: string
+  parserId?: string
+}
+
+export interface RateEvidence {
+  id: string
+  versionId: string
+  capturedAt?: string
+  relationship: string
+  checksum?: string
+  displaySource: string
+}
+
+export interface RateAdjustment {
+  name: string
+  component: string
+  operation: string
+  value: string
+  unit: string
+  scope: string
+}
+
+export interface HomeLiveStatus {
+  connected: boolean
+  currentPowerW: string
+  latestDataAt?: string
+  reportingSensors: number
+  totalSensors: number
+}
+
+export interface HomeBillingSnapshot {
+  plan?: string
+  currentRate?: string
+  currentPeriod?: string
+  cycleEnergyKwh: string
+  cycleEstimatedCost: string
+  projectedBill?: string
+}
+
+export interface HomeDashboardSummary {
+  home: Home
+  live: HomeLiveStatus
+  billing: HomeBillingSnapshot
+  summary: HomeSummary
+}
+
 export type HistoryRange = 'today' | '7d' | '30d' | 'cycle' | 'custom'
 export type HistoryMetric = 'power' | 'energy' | 'cost' | 'energy_cost'
 export type HistoryScope = 'home' | 'sensor'
