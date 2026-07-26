@@ -16,10 +16,16 @@ not exposed as a browser API.
 Guided utility-account APIs are under `/api/v1/admin/sites/{site_id}/utility-accounts` and
 `/api/v1/admin/utility-accounts/{account_id}`. Subresources provide immutable rate-assignment
 history/creation, cost-scope changes, effective-dated adjustments, recalculation, and archive.
-`POST /api/v1/admin/utility-accounts/{account_id}/rate-assignments` accepts
-`replace_current: true` for an administrator-confirmed switch. The server serializes the account,
-closes the prior effective window, retains future schedules when possible, updates the active
-version pointer, returns replaced assignment IDs, and records `rate_assignment.replaced`.
+The canonical assignment mutations are
+`POST /api/v1/rates/assignments/replace` and
+`POST /api/v1/rates/assignments/end`. They require an idempotency key, explicit
+reason, and confirmation. The server serializes the account, uses half-open
+effective intervals, rejects current/future overlap with `409 Conflict`, closes
+the prior effective window for an explicit replacement, updates the compatibility
+pointer, returns preserved/replaced assignment IDs, and records immutable audit
+evidence. `GET /api/v1/rates/assignments/conflicts` and
+`POST /api/v1/rates/assignments/conflicts/resolve` provide the explicit Owner
+repair workflow for retained legacy conflicts.
 `GET /api/v1/sites/{site_id}/setup-readiness` returns separate monitoring and rate/cost readiness.
 Sensor network APIs are under `/api/v1/admin/network/policies`, `/cidrs`, `/test-address`,
 `/observed-devices`, and `/suggest-current`. All mutations require CSRF and granular server-side
@@ -81,9 +87,27 @@ Rate-plan lifecycle endpoints live under `/api/v1/rates/plans`,
 `/api/v1/rates/versions`, and `/api/v1/rates/assignments`. Approved-source,
 check, artifact, and candidate-review endpoints live under
 `/api/v1/admin/rate-*`; asynchronous check status is
-`GET /api/v1/jobs/{job_id}`. See
+`GET /api/v1/jobs/{job_id}`. A source check returns an observable, deduplicated
+job; `/api/v1/admin/rate-sources/check-runs` exposes run history and
+`/api/v1/admin/rate-sources/{source_id}/check-runs` supports a scoped retry.
+Each run includes per-source progress, result, last-checked time, candidate
+count, artifact count, and a safe error summary. See
 `docs/rate-automation-and-custom-plans.md` for request semantics, immutable
 activation, source evidence, and custom-plan schema behavior.
+
+Version publication and effective assignment are distinct. Publishing changes
+a version from `draft` to `published` and supersedes the previous published
+revision under the same plan identity; it does not make the version Current.
+`POST /api/v1/rates/plans/{plan_id}/versions` creates or reuses the plan's
+unpublished adjustment draft. Version dependency, retire, remove, restore, and
+unused-draft delete operations preserve assignment, cost, bill, source, and
+audit history.
+
+Effective-dated account adjustments use
+`/api/v1/admin/utility-accounts/{account_id}/adjustments`. Create and update
+require a reason, update requires the current revision, and delete performs an
+audited soft removal. The optional evidence reference is metadata only and
+never exposes private bill contents.
 
 Dependency-aware removal uses
 `GET /api/v1/admin/rate-plans/{plan_id}/dependencies`,

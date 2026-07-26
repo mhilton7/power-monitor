@@ -1,5 +1,29 @@
 # Power Monitor Server 1.0.0
 
+## Authoritative rate assignments and observable source checks
+
+- Separates plan-library publication from electric-service assignment.
+  Published versions are available; only an effective `RateAssignment` is
+  labelled Current.
+- Enforces zero or one current/scheduled version at each instant with locked,
+  idempotent, half-open assignment writes and a PostgreSQL overlap guard. Adds
+  explicit Make current, Replace current, end, conflict review, and Owner repair
+  workflows while preserving historical pricing provenance.
+- Replaces clone-only changes with same-plan **Adjust Rates** drafts. Publishing
+  never silently reassigns service; unused drafts can be deleted, while used or
+  published versions use audited retirement, soft removal, Removed view, and
+  restoration without reassignment.
+- Makes **Sources > Check now** a deduplicated observable background job with
+  loading/progress, per-source results, last-checked timestamps, candidate and
+  artifact counts, history, scoped Retry, safe errors, and end-to-end audit
+  records.
+- Adds revision-safe, reasoned, effective-dated manual adjustment create/edit/
+  remove controls with optional evidence references.
+- Adds append-only Alembic revision `20260725_0017`, regenerated OpenAPI,
+  backend/frontend/migration regressions, and TrueNAS upgrade/rollback
+  guidance. No ESP32 firmware, protocol, service, dataset, secret, capability,
+  network, mount, or host port changes.
+
 ## Normalized bill review, rate-plan lifecycle, and dropdown repair
 
 - Stores a normative `normalized-utility-bill/1.0` artifact with every

@@ -1,5 +1,46 @@
 # Testing and release gates
 
+## Rate assignment, version, adjustment, and source-check acceptance (2026-07-25)
+
+`backend/tests/test_rate_assignment_version_source_workflows.py` covers
+atomic immediate replacement, adjacent half-open boundaries, future schedules,
+overlap rejection, idempotent replay, legacy conflict repair, same-plan draft
+revision reuse, publish/supersede behavior, dependency-aware version lifecycle,
+observable and deduplicated source jobs, scoped Retry, per-source results,
+adjustment revision conflicts, soft removal, and audit evidence.
+
+`frontend-next/tests/rateWorkflows.test.tsx` verifies that Published and Current
+are rendered independently, Adjust Rates stays under the same plan identity,
+historical preservation is explained before replacement, and Check now exposes
+loading, progress, and completion. Adapter tests validate all new runtime
+contracts. Migration contract coverage checks append-only revision
+`20260725_0017`, the active-job dedupe index, and the PostgreSQL overlap guard.
+
+Release validation must also run the complete Python and greenfield frontend
+quality gates, generated OpenAPI and contract drift checks, populated/prior/
+clean migration paths, production image builds, Compose health checks,
+gateway-only port assertions, backup creation and clean restoration, and the
+TrueNAS YAML validator. Record the actual final results in
+`docs/implementation/rate-assignment-version-adjustment-source-check.md`.
+
+The final 2026-07-25 run passed 190 configured backend/worker/simulator tests,
+the separately enabled PostgreSQL 17 migration gate, and the separately enabled
+100-device/18,000-reading resilience gate. The frontend passed lint, strict
+TypeScript, 25 unit/component tests, its production bundle check, and 91
+Chromium browser/accessibility/visual scenarios with 13 intentional
+project-specific skips. The viewport/zoom overlap matrix passed through 390 px
+mobile and 150% reflow.
+
+Fresh API, frontend, and backup images built successfully. The standard Compose
+stack reported every long-running service healthy at `20260725_0017`. The
+digest-pinned seven-service TrueNAS-equivalent workflow then completed its
+one-shot migration, enrolled 3 signed devices, accepted 90 historical readings,
+created 2 effective utility accounts, applied 1 canonical network CIDR,
+calculated the SCE rate, verified gateway-only host publication, checksummed and
+encrypted all 5 backup artifacts, and restored them into a clean database at
+`20260725_0017`. The standard template and NET_RAW-only optional ICMP overlay
+both passed the fail-closed validator.
+
 ## Normalized bill, plan lifecycle, and dropdown acceptance (2026-07-25)
 
 The complete command/result matrix is recorded in

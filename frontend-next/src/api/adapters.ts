@@ -19,6 +19,8 @@ import type {
   RatePlanDependencySummary,
   RatePlanAssignment,
   RatePlanVersion,
+  RateAdjustment,
+  RateSourceCheckRun,
   RateSource,
   UserSession,
 } from '../types/models'
@@ -525,16 +527,28 @@ export function adaptHealth(value: unknown): AdvancedHealthSummary {
 
 export function adaptRateVersions(value: unknown): RatePlanVersion[] {
   const rows = Array.isArray(value) ? objectList(value) : objectList(record(value, 'rate versions').versions)
-  return rows.map((item) => ({
-    id: stringValue(item.id),
-    version: numberValue(item.version),
-    status: stringValue(item.status, 'draft'),
-    effectiveFrom: optionalString(item.effective_from),
-    effectiveThrough: optionalString(item.effective_through) ?? optionalString(item.effective_to),
-    pricingModel: optionalString(item.pricing_model),
-    integritySha256: optionalString(item.integrity_sha256) ?? optionalString(item.content_hash),
-    immutable: booleanValue(item.immutable) || booleanValue(item.immutable_after_use),
-  }))
+  return rows.map((item) => {
+    const publicationStatus = stringValue(item.publication_status, stringValue(item.status, 'draft'))
+    const assignmentStatus = stringValue(item.assignment_status, 'unassigned')
+    return {
+      id: stringValue(item.id),
+      version: numberValue(item.version),
+      status: publicationStatus,
+      publicationStatus,
+      assignmentStatus,
+      displayStatus: stringValue(item.display_status, assignmentStatus === 'unassigned' ? publicationStatus : assignmentStatus),
+      effectiveFrom: optionalString(item.effective_from),
+      effectiveThrough: optionalString(item.effective_through) ?? optionalString(item.effective_to),
+      pricingModel: optionalString(item.pricing_model),
+      integritySha256: optionalString(item.integrity_sha256) ?? optionalString(item.content_hash),
+      immutable: booleanValue(item.immutable) || booleanValue(item.immutable_after_use),
+      parentVersionId: optionalString(item.parent_version_id),
+      lifecycleRevision: numberValue(item.lifecycle_revision, 1),
+      removedAt: optionalString(item.removed_at),
+      removalReason: optionalString(item.removal_reason),
+      assignments: adaptRateAssignments(objectList(item.assignments)),
+    }
+  })
 }
 
 export function adaptRateAssignments(value: unknown): RatePlanAssignment[] {
@@ -545,6 +559,8 @@ export function adaptRateAssignments(value: unknown): RatePlanAssignment[] {
     versionId: stringValue(item.rate_version_id),
     effectiveFrom: stringValue(item.effective_from),
     effectiveThrough: optionalString(item.effective_to),
+    state: stringValue(item.state, 'historical'),
+    revision: numberValue(item.revision, 1),
   }))
 }
 
@@ -559,11 +575,92 @@ export function adaptRateSources(value: unknown): RateSource[] {
       sourceType: friendlySourceType(parserId),
       enabled: item.enabled !== false,
       lastSuccessAt: optionalString(item.last_success_at),
+      lastCheckedAt: optionalString(item.last_checked_at),
+      consecutiveFailures: numberValue(item.consecutive_failures),
+      candidateCount: numberValue(item.candidate_count),
+      lastResult: item.last_result ? adaptRateSourceResult(record(item.last_result)) : undefined,
       displayOrigin: friendlySourceOrigin(technicalUrl),
       technicalUrl,
       parserId,
     }
   })
+}
+
+function adaptRateSourceResult(
+  item: Record<string, unknown>,
+): NonNullable<RateSource['lastResult']> {
+  return {
+    checkId: stringValue(item.check_id, stringValue(item.id)),
+    jobId: stringValue(item.job_id),
+    outcome: stringValue(item.outcome, 'unknown'),
+    checkedAt: optionalString(item.checked_at),
+    finishedAt: optionalString(item.finished_at),
+    durationMs: typeof item.duration_ms === 'number' ? item.duration_ms : undefined,
+    httpStatus: typeof item.http_status === 'number' ? item.http_status : undefined,
+    candidateCount: numberValue(item.candidate_count),
+    artifactCount: numberValue(item.artifact_count),
+    errorCode: optionalString(item.error_code),
+    errorDetail: optionalString(item.error_detail),
+  }
+}
+
+export function adaptRateSourceCheckRun(value: unknown): RateSourceCheckRun {
+  const source = record(value, 'rate source check run')
+  const progress = source.progress ? record(source.progress, 'source check progress') : {}
+  return {
+    id: stringValue(source.id),
+    status: stringValue(source.status, 'queued'),
+    triggerType: stringValue(source.trigger_type, 'manual'),
+    requestedAt: optionalString(source.requested_at),
+    startedAt: optionalString(source.started_at),
+    completedAt: optionalString(source.completed_at),
+    progress: {
+      completed: numberValue(progress.completed),
+      total: numberValue(progress.total),
+      currentSourceId: optionalString(progress.current_source_id),
+    },
+    sourcesAttempted: numberValue(source.sources_attempted),
+    successes: numberValue(source.successes),
+    failures: numberValue(source.failures),
+    candidates: numberValue(source.candidates),
+    archivedEvidence: numberValue(source.archived_evidence),
+    error: source.error
+      ? {
+          code: stringValue(record(source.error).code),
+          detail: stringValue(record(source.error).detail),
+        }
+      : undefined,
+    items: objectList(source.items).map((item) => ({
+      ...adaptRateSourceResult(item),
+      sourceId: stringValue(item.source_id),
+      sourceName: stringValue(item.source_name, 'Managed source'),
+    })),
+  }
+}
+
+export function adaptRateSourceCheckRuns(value: unknown): RateSourceCheckRun[] {
+  return (Array.isArray(value) ? value : objectList(record(value).runs)).map(
+    adaptRateSourceCheckRun,
+  )
+}
+
+export function adaptRateAdjustments(value: unknown): RateAdjustment[] {
+  return (Array.isArray(value) ? objectList(value) : objectList(record(value).adjustments)).map(
+    (item) => ({
+      id: stringValue(item.id),
+      component: stringValue(item.component),
+      value: stringValue(item.value),
+      unit: stringValue(item.unit),
+      provenance: stringValue(item.provenance),
+      reason: stringValue(item.reason),
+      evidenceReference: optionalString(item.evidence_reference),
+      effectiveFrom: stringValue(item.effective_from),
+      effectiveThrough: optionalString(item.effective_to),
+      enabled: item.enabled !== false,
+      status: stringValue(item.status, 'active'),
+      revision: numberValue(item.revision, 1),
+    }),
+  )
 }
 
 export function adaptRateEvidence(value: unknown): RateEvidence[] {

@@ -416,7 +416,7 @@ async def test_custom_plan_draft_activation_immutability_and_clone(session) -> N
     assert report.valid
 
     status, _ = await activate_version(session, version, "admin-user")
-    assert status == "active"
+    assert status == "published"
     assert version.immutable_after_use
     with pytest.raises(ProblemError) as immutable:
         await update_draft_version(session, version, document)
@@ -687,7 +687,7 @@ async def test_rate_management_api_lifecycle_and_async_check(api_client: Any) ->
         f"/api/v1/rates/versions/{version_id}/activate", headers=csrf(client)
     )
     assert activated.status_code == 200, activated.text
-    assert activated.json()["status"] == "active"
+    assert activated.json()["status"] == "published"
 
     immutable = await client.patch(
         f"/api/v1/rates/versions/{version_id}",

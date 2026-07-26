@@ -553,25 +553,18 @@ async def activate_version(
             extra={"validation": report.model_dump(mode="json")},
         )
     now = datetime.now(UTC)
-    if version.effective_from > date.today():
-        version.status = "approved"
-        version.approved_by = user_id
-        version.approved_at = now
-        version.automatically_activated = automatically
-        return "scheduled", report
     siblings = list(
         await session.scalars(
             select(RateVersion).where(RateVersion.rate_plan_id == version.rate_plan_id)
         )
     )
-    superseded_ids: list[str] = []
     for sibling in siblings:
         if sibling.id != version.id and sibling.is_active:
-            superseded_ids.append(sibling.id)
             sibling.is_active = False
-            sibling.status = "superseded"
+            if sibling.status not in {"retired", "removed"}:
+                sibling.status = "superseded"
     version.is_active = True
-    version.status = "active"
+    version.status = "published"
     version.immutable_after_use = True
     version.approved_by = version.approved_by or user_id
     version.approved_at = version.approved_at or now
@@ -580,8 +573,7 @@ async def activate_version(
     version.automatically_activated = automatically
     if plan:
         plan.status = "active"
-    await _move_assignments_and_queue_recalculations(session, version, superseded_ids, user_id)
-    return "active", report
+    return "published", report
 
 
 async def _move_assignments_and_queue_recalculations(

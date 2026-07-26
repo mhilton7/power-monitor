@@ -7,8 +7,11 @@ import {
   adaptHistory,
   adaptPermissions,
   adaptRateAssignments,
+  adaptRateAdjustments,
   adaptRateEvidence,
   adaptRatePlanDependencies,
+  adaptRateSourceCheckRun,
+  adaptRateSourceCheckRuns,
   adaptRateSources,
   adaptRateVersions,
   resolveSingleHome,
@@ -211,12 +214,36 @@ describe('typed homeowner adapters', () => {
     expect(adaptRateVersions([{
       id: 'version-1',
       version: 3,
-      status: 'draft',
+      status: 'published',
+      publication_status: 'published',
+      assignment_status: 'current',
+      display_status: 'current',
       effective_from: '2026-07-24',
       pricing_model: 'time_of_use_tiered',
       integrity_sha256: 'abc123',
       immutable_after_use: false,
-    }])[0]).toMatchObject({ id: 'version-1', version: 3, pricingModel: 'time_of_use_tiered', integritySha256: 'abc123' })
+      parent_version_id: 'version-0',
+      lifecycle_revision: 4,
+      assignments: [{
+        id: 'assignment-1',
+        utility_account_id: 'service-1',
+        rate_version_id: 'version-1',
+        effective_from: '2026-07-24T00:00:00Z',
+        state: 'current',
+        revision: 2,
+      }],
+    }])[0]).toMatchObject({
+      id: 'version-1',
+      version: 3,
+      pricingModel: 'time_of_use_tiered',
+      integritySha256: 'abc123',
+      publicationStatus: 'published',
+      assignmentStatus: 'current',
+      displayStatus: 'current',
+      parentVersionId: 'version-0',
+      lifecycleRevision: 4,
+      assignments: [expect.objectContaining({ id: 'assignment-1', state: 'current' })],
+    })
     expect(adaptRateAssignments([{
       id: 'assignment-1',
       utility_account_id: 'service-1',
@@ -260,6 +287,66 @@ describe('typed homeowner adapters', () => {
       displayOrigin: 'Private uploaded utility bill',
       sourceType: 'Reviewed bill evidence',
       technicalUrl: 'urn:power-monitor:utility-bill:service-1',
+    })
+  })
+
+  it('adapts observable source-check progress, results, history, and adjustments', () => {
+    const runPayload = {
+      id: 'job-1',
+      status: 'succeeded',
+      trigger_type: 'manual',
+      requested_at: '2026-07-25T12:00:00Z',
+      started_at: '2026-07-25T12:00:01Z',
+      completed_at: '2026-07-25T12:00:03Z',
+      progress: { completed: 1, total: 1, current_source_id: null },
+      sources_attempted: 1,
+      successes: 1,
+      failures: 0,
+      candidates: 2,
+      archived_evidence: 1,
+      items: [{
+        id: 'check-1',
+        source_id: 'source-1',
+        source_name: 'SCE source',
+        job_id: 'job-1',
+        outcome: 'succeeded',
+        checked_at: '2026-07-25T12:00:01Z',
+        finished_at: '2026-07-25T12:00:03Z',
+        candidate_count: 2,
+        artifact_count: 1,
+      }],
+    }
+    expect(adaptRateSourceCheckRun(runPayload)).toMatchObject({
+      id: 'job-1',
+      status: 'succeeded',
+      progress: { completed: 1, total: 1 },
+      candidates: 2,
+      archivedEvidence: 1,
+      items: [expect.objectContaining({
+        sourceId: 'source-1',
+        sourceName: 'SCE source',
+        candidateCount: 2,
+      })],
+    })
+    expect(adaptRateSourceCheckRuns({ runs: [runPayload] })).toHaveLength(1)
+    expect(adaptRateAdjustments([{
+      id: 'adjustment-1',
+      component: 'custom_per_kwh',
+      value: '0.01250000',
+      unit: 'per_kwh',
+      provenance: 'Reviewed tariff',
+      reason: 'Administrator-approved local adjustment',
+      evidence_reference: 'tariff-page-2',
+      effective_from: '2026-07-25T12:00:00Z',
+      enabled: true,
+      status: 'active',
+      revision: 3,
+    }])[0]).toMatchObject({
+      id: 'adjustment-1',
+      value: '0.01250000',
+      reason: 'Administrator-approved local adjustment',
+      evidenceReference: 'tariff-page-2',
+      revision: 3,
     })
   })
 })

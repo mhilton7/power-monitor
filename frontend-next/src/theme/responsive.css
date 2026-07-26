@@ -94,6 +94,7 @@
   .auth-card form { margin-top: 1.5rem; }
   .page-heading, .surface-header { align-items: stretch; flex-direction: column; }
   .metric-grid, .stat-grid, .form-grid, .detail-picker, .billing-top-metrics, .history-summary, .cycle-metrics, .dependency-summary { grid-template-columns: 1fr; }
+  .assignment-lifecycle-row { align-items: stretch; flex-direction: column; }
   .surface { padding: 1rem; }
   .service-card-heading, .section-heading { align-items: stretch; flex-direction: column; }
   .metadata-list { grid-template-columns: 1fr; }
@@ -113,7 +114,11 @@
   .chart-canvas { min-height: 280px; }
   .advanced-disclosure > summary,
   .rate-tab-panel { padding: 1rem; }
-  .structured-list li { align-items: flex-start; }
+  .structured-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .structured-list li > div { width: 100%; }
   .tier-editor > div { grid-template-columns: 1fr; }
   .pagination { justify-content: space-between; }
   .list-row, .sensor-row { align-items: flex-start; flex-wrap: wrap; }

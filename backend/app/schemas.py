@@ -187,6 +187,38 @@ class RatePlanUnassignRequest(ApiModel):
     _effective_aware = field_validator("effective_at")(require_aware)
 
 
+class RateVersionLifecycleRequest(ApiModel):
+    expected_revision: int = Field(ge=1)
+    reason: str = Field(min_length=3, max_length=500)
+    confirmation: str = Field(min_length=1, max_length=180)
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
+class RateVersionRestoreRequest(ApiModel):
+    expected_revision: int = Field(ge=1)
+    reason: str = Field(min_length=3, max_length=500)
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
+class RateAssignmentEndRequest(ApiModel):
+    utility_account_id: str = Field(min_length=1, max_length=36)
+    effective_at: datetime
+    reason: str = Field(min_length=8, max_length=500)
+    confirmation: Literal["END CURRENT"]
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+    _effective_aware = field_validator("effective_at")(require_aware)
+
+
+class RateAssignmentRepairRequest(ApiModel):
+    utility_account_id: str = Field(min_length=1, max_length=36)
+    keep_assignment_id: str = Field(min_length=1, max_length=36)
+    expected_assignment_ids: list[str] = Field(min_length=2, max_length=50)
+    reason: str = Field(min_length=8, max_length=500)
+    confirmation: Literal["REPAIR ASSIGNMENTS"]
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
 class SiteSensorResolution(ApiModel):
     device_id: str
     action: Literal["archive", "transfer"]
@@ -309,6 +341,7 @@ class RateAssignmentWrite(ApiModel):
     effective_to: datetime | None = None
     assignment_reason: str | None = Field(default=None, max_length=500)
     replace_current: bool = False
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
 
     _from_aware = field_validator("effective_from")(require_aware)
     _to_aware = field_validator("effective_to")(
@@ -320,6 +353,11 @@ class RateAssignmentWrite(ApiModel):
         if self.effective_to is not None and self.effective_to <= self.effective_from:
             raise ValueError("effective-through must follow effective-from")
         return self
+
+
+class RateAssignmentReplaceRequest(RateAssignmentWrite):
+    utility_account_id: str = Field(min_length=1, max_length=36)
+    confirmation: Literal["REPLACE CURRENT"]
 
 
 class UtilityAdjustmentWrite(ApiModel):
@@ -335,6 +373,8 @@ class UtilityAdjustmentWrite(ApiModel):
     value: Decimal
     unit: Literal["per_kwh", "fixed", "percent", "included"]
     provenance: str = Field(min_length=1, max_length=240)
+    reason: str = Field(min_length=1, max_length=500)
+    evidence_reference: str | None = Field(default=None, max_length=500)
     effective_from: datetime
     effective_to: datetime | None = None
     enabled: bool = True
@@ -343,6 +383,16 @@ class UtilityAdjustmentWrite(ApiModel):
     _to_aware = field_validator("effective_to")(
         lambda value: require_aware(value) if value else value
     )
+
+    @model_validator(mode="after")
+    def valid_window(self) -> UtilityAdjustmentWrite:
+        if self.effective_to is not None and self.effective_to <= self.effective_from:
+            raise ValueError("effective-through must follow effective-from")
+        return self
+
+
+class UtilityAdjustmentUpdate(UtilityAdjustmentWrite):
+    revision: int = Field(ge=1)
 
 
 class UtilityAccountWizardCreate(ApiModel):

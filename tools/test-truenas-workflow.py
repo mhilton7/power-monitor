@@ -328,7 +328,10 @@ async def exercise_application(
                 version
                 for plan in plans
                 for version in plan.get("versions", [])
-                if version.get("status") in {"active", "approved"}
+                if (
+                    version.get("publication_status") == "published"
+                    or version.get("status") in {"active", "approved"}
+                )
             ),
             None,
         )

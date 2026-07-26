@@ -397,11 +397,17 @@ class UtilityAccountAdjustment(Base):
     value: Mapped[Decimal] = mapped_column(Numeric(18, 8))
     unit: Mapped[str] = mapped_column(String(24))
     provenance: Mapped[str] = mapped_column(String(240))
+    reason: Mapped[str | None] = mapped_column(String(500))
+    evidence_reference: Mapped[str | None] = mapped_column(String(500))
     effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(24), default="active", index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         CheckConstraint(
             "component IN ('cca_generation','direct_access','baseline_credit',"
@@ -413,6 +419,11 @@ class UtilityAccountAdjustment(Base):
             "effective_to IS NULL OR effective_to > effective_from",
             name="adjustment_effective_window",
         ),
+        CheckConstraint(
+            "status IN ('active','removed')",
+            name="utility_adjustment_status",
+        ),
+        CheckConstraint("revision > 0", name="utility_adjustment_revision"),
     )
 
 
@@ -930,6 +941,16 @@ class RateVersion(Base):
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     normalized_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     automatically_activated: Mapped[bool] = mapped_column(Boolean, default=False)
+    parent_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="SET NULL"), index=True
+    )
+    lifecycle_revision: Mapped[int] = mapped_column(Integer, default=1)
+    status_before_removal: Mapped[str | None] = mapped_column(String(24))
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    removed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    removal_reason: Mapped[str | None] = mapped_column(String(500))
+    restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    restored_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     __table_args__ = (
@@ -1161,10 +1182,23 @@ class BackgroundJob(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     correlation_id: Mapped[str] = mapped_column(String(128), index=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String(160), index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), index=True)
+    trigger_type: Mapped[str] = mapped_column(String(24), default="manual")
     progress: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     result: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     error_code: Mapped[str | None] = mapped_column(String(80))
     error_detail: Mapped[str | None] = mapped_column(Text)
+    __table_args__ = (
+        Index(
+            "uq_background_jobs_active_dedupe",
+            "job_type",
+            "dedupe_key",
+            unique=True,
+            postgresql_where=text("dedupe_key IS NOT NULL AND status IN ('queued','running')"),
+            sqlite_where=text("dedupe_key IS NOT NULL AND status IN ('queued','running')"),
+        ),
+    )
 
 
 class RateSourceCheckRun(Base):
@@ -1177,6 +1211,7 @@ class RateSourceCheckRun(Base):
         ForeignKey("rate_sources.id", ondelete="RESTRICT"), index=True
     )
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     http_status: Mapped[int | None] = mapped_column(Integer)
     outcome: Mapped[str] = mapped_column(String(32), index=True)
     final_url: Mapped[str | None] = mapped_column(String(500))
@@ -1184,6 +1219,8 @@ class RateSourceCheckRun(Base):
     last_modified: Mapped[str | None] = mapped_column(String(200))
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     response_bytes: Mapped[int | None] = mapped_column(Integer)
+    candidate_count: Mapped[int] = mapped_column(Integer, default=0)
+    artifact_count: Mapped[int] = mapped_column(Integer, default=0)
     error_code: Mapped[str | None] = mapped_column(String(80))
     error_detail: Mapped[str | None] = mapped_column(Text)
 
@@ -1536,12 +1573,18 @@ class RateAssignment(Base):
     effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     assignment_reason: Mapped[str | None] = mapped_column(String(500))
     assigned_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    cancelled_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    cancellation_reason: Mapped[str | None] = mapped_column(String(500))
+    idempotency_key: Mapped[str | None] = mapped_column(String(160), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
         CheckConstraint(
             "effective_to IS NULL OR effective_to > effective_from",
             name="rate_assignment_effective_window",
         ),
+        CheckConstraint("revision > 0", name="rate_assignment_revision"),
     )
 
 

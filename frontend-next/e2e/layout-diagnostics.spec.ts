@@ -65,6 +65,17 @@ const plans = [
     version: index + 1,
     pricing_model: pricingModel,
   },
+  versions: [{
+    id: `version-${index + 1}`,
+    version: index + 1,
+    status: 'published',
+    publication_status: 'published',
+    assignment_status: 'unassigned',
+    display_status: 'published',
+    pricing_model: pricingModel,
+    lifecycle_revision: 1,
+    assignments: [],
+  }],
 }))
 
 const bill = {
@@ -96,7 +107,7 @@ async function mockLayoutServer(page: Page) {
           email: 'owner@example.test',
           display_name: 'Home Owner',
           roles: ['admin'],
-          permissions: ['rates.view', 'rates.manage_custom', 'rates.manage_sources'],
+          permissions: ['rates.view', 'rates.manage_custom', 'rates.manage_sources', 'rates.check_sources', 'rates.review_candidates', 'rates.assign', 'adjustments.manage'],
           all_sites: true,
           site_ids: [],
         },
@@ -129,7 +140,12 @@ async function mockLayoutServer(page: Page) {
       '/api/v1/alerts': [],
       '/api/v1/admin/utility-bill-imports': [bill],
       '/api/v1/rates/plans': { plans },
+      '/api/v1/rates/assignments/conflicts': {
+        conflicts: [],
+        requires_explicit_resolution: false,
+      },
       '/api/v1/admin/rate-sources': { sources: [] },
+      '/api/v1/admin/rate-sources/check-runs': [],
       '/api/v1/history/query': {
         scope: { display_name: 'Home total' },
         summary: {

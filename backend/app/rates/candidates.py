@@ -192,7 +192,7 @@ async def create_candidate_from_document(
         select(RateVersion.id).where(
             RateVersion.rate_plan_id == plan.id,
             RateVersion.content_hash == document_hash(document),
-            RateVersion.status.in_(["candidate", "approved", "active"]),
+            RateVersion.status.in_(["candidate", "approved", "active", "published"]),
         )
     )
     if existing_version:
@@ -344,7 +344,7 @@ async def create_candidate_from_document(
         auto_reasons = sorted(set(auto_reasons))
         if validation.valid and not auto_reasons:
             status, _ = await activate_version(session, version, None, automatically=True)
-            candidate.status = "automatically_activated" if status == "active" else "scheduled"
+            candidate.status = "automatically_activated" if status == "published" else "scheduled"
             candidate.risk_level = "verified"
             candidate.reviewed_at = datetime.now(UTC)
             candidate.summary = {**candidate.summary, "automatic_activation": status}

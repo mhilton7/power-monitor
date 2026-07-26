@@ -246,6 +246,13 @@ PERMISSION_DEFINITIONS = (
         "rates.assign", "Rates", "Assign rates", "Assign effective rates to accounts.", True
     ),
     _permission(
+        "adjustments.manage",
+        "Rates",
+        "Manage rate adjustments",
+        "Create, revise, and remove effective-dated electric-service adjustments.",
+        True,
+    ),
+    _permission(
         "rates.remove",
         "Rates",
         "Remove rate plans",
@@ -397,6 +404,7 @@ RATE_MANAGER_PERMISSIONS = VIEWER_PERMISSIONS | {
     "rates.review_candidates",
     "rates.approve_candidates",
     "rates.assign",
+    "adjustments.manage",
     "rates.remove",
     "rates.restore",
 }
@@ -427,6 +435,7 @@ PERMISSION_DEPENDENCIES: dict[str, frozenset[str]] = {
     "rates.review_candidates": frozenset({"rates.view"}),
     "rates.approve_candidates": frozenset({"rates.review_candidates", "rates.view"}),
     "rates.assign": frozenset({"rates.view"}),
+    "adjustments.manage": frozenset({"rates.view", "sites.view"}),
     "rates.remove": frozenset({"rates.manage_custom", "rates.view"}),
     "rates.restore": frozenset({"rates.manage_custom", "rates.view"}),
     "costs.recalculate": frozenset({"costs.view"}),

@@ -269,6 +269,14 @@ export interface RatePlanVersion {
   pricingModel?: string
   integritySha256?: string
   immutable: boolean
+  publicationStatus: string
+  assignmentStatus: string
+  displayStatus: string
+  parentVersionId?: string
+  lifecycleRevision: number
+  removedAt?: string
+  removalReason?: string
+  assignments: RatePlanAssignment[]
 }
 
 export interface RatePlanAssignment {
@@ -277,11 +285,14 @@ export interface RatePlanAssignment {
   versionId: string
   effectiveFrom: string
   effectiveThrough?: string
+  state: string
+  revision: number
 }
 
 export type DropdownAction =
-  | 'rate_plan.replace_assignment'
-  | 'rate_plan.unassign'
+  | 'rate_assignment.replace_current'
+  | 'rate_assignment.make_current'
+  | 'rate_assignment.end'
   | 'rate_plan.retire'
   | 'rate_plan.remove'
   | 'rate_plan.restore'
@@ -306,9 +317,48 @@ export interface RateSource {
   sourceType: string
   enabled: boolean
   lastSuccessAt?: string
+  lastCheckedAt?: string
+  consecutiveFailures: number
+  candidateCount: number
+  lastResult?: RateSourceResult
   displayOrigin: string
   technicalUrl?: string
   parserId?: string
+}
+
+export interface RateSourceResult {
+  checkId: string
+  jobId: string
+  outcome: string
+  checkedAt?: string
+  finishedAt?: string
+  durationMs?: number
+  httpStatus?: number
+  candidateCount: number
+  artifactCount: number
+  errorCode?: string
+  errorDetail?: string
+}
+
+export interface RateSourceCheckRun {
+  id: string
+  status: string
+  triggerType: string
+  requestedAt?: string
+  startedAt?: string
+  completedAt?: string
+  progress: {
+    completed: number
+    total: number
+    currentSourceId?: string
+  }
+  sourcesAttempted: number
+  successes: number
+  failures: number
+  candidates: number
+  archivedEvidence: number
+  error?: { code: string; detail: string }
+  items: Array<RateSourceResult & { sourceId: string; sourceName: string }>
 }
 
 export interface RateEvidence {
@@ -321,12 +371,18 @@ export interface RateEvidence {
 }
 
 export interface RateAdjustment {
-  name: string
+  id: string
   component: string
-  operation: string
   value: string
   unit: string
-  scope: string
+  provenance: string
+  reason: string
+  evidenceReference?: string
+  effectiveFrom: string
+  effectiveThrough?: string
+  enabled: boolean
+  status: string
+  revision: number
 }
 
 export interface HomeLiveStatus {

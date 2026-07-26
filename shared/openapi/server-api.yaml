@@ -2111,6 +2111,120 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/adjustments/{adjustment_id}:
+    patch:
+      tags:
+      - utility accounts and sensor network
+      summary: Update Account Adjustment
+      operationId: update_account_adjustment_api_v1_admin_utility_accounts__account_id__adjustments__adjustment_id__patch
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: adjustment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Adjustment Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UtilityAdjustmentUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Update Account Adjustment Api V1 Admin Utility Accounts  Account
+                  Id  Adjustments  Adjustment Id  Patch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - utility accounts and sensor network
+      summary: Remove Account Adjustment
+      operationId: remove_account_adjustment_api_v1_admin_utility_accounts__account_id__adjustments__adjustment_id__delete
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: adjustment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Adjustment Id
+      - name: revision
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          title: Revision
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Remove Account Adjustment Api V1 Admin Utility Accounts  Account
+                  Id  Adjustments  Adjustment Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sites/{site_id}/setup-readiness:
     get:
       tags:
@@ -8075,6 +8189,14 @@ paths:
           - type: string
           - type: 'null'
           title: Pm Session
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/RateVersionLifecycleRequest'
+              - type: 'null'
+              title: Payload
       responses:
         '200':
           description: Successful Response
@@ -8086,6 +8208,189 @@ paths:
                   type: string
                 title: Response Retire Managed Version Api V1 Rates Versions  Version
                   Id  Retire Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/versions/{version_id}/dependencies:
+    get:
+      tags:
+      - rate management
+      summary: Rate Version Dependencies
+      operationId: rate_version_dependencies_api_v1_rates_versions__version_id__dependencies_get
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Rate Version Dependencies Api V1 Rates Versions  Version
+                  Id  Dependencies Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/versions/{version_id}/remove:
+    post:
+      tags:
+      - rate management
+      summary: Remove Rate Version
+      operationId: remove_rate_version_api_v1_rates_versions__version_id__remove_post
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateVersionLifecycleRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Remove Rate Version Api V1 Rates Versions  Version
+                  Id  Remove Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/versions/{version_id}/restore:
+    post:
+      tags:
+      - rate management
+      summary: Restore Rate Version
+      operationId: restore_rate_version_api_v1_rates_versions__version_id__restore_post
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateVersionRestoreRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Restore Rate Version Api V1 Rates Versions  Version
+                  Id  Restore Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/versions/{version_id}/draft:
+    delete:
+      tags:
+      - rate management
+      summary: Delete Rate Version Draft
+      operationId: delete_rate_version_draft_api_v1_rates_versions__version_id__draft_delete
+      parameters:
+      - name: version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Version Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateVersionLifecycleRequest'
+      responses:
+        '204':
+          description: Successful Response
         '422':
           description: Validation Error
           content:
@@ -8297,6 +8602,172 @@ paths:
                 additionalProperties: true
                 title: Response Validate Rate Document Api V1 Rates Validate Document
                   Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/assignments/replace:
+    post:
+      tags:
+      - rate management
+      summary: Replace Current Assignment
+      operationId: replace_current_assignment_api_v1_rates_assignments_replace_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateAssignmentReplaceRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Replace Current Assignment Api V1 Rates Assignments
+                  Replace Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/assignments/end:
+    post:
+      tags:
+      - rate management
+      summary: End Current Rate Assignment
+      operationId: end_current_rate_assignment_api_v1_rates_assignments_end_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateAssignmentEndRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response End Current Rate Assignment Api V1 Rates Assignments
+                  End Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/assignments/conflicts:
+    get:
+      tags:
+      - rate management
+      summary: List Assignment Conflicts
+      operationId: list_assignment_conflicts_api_v1_rates_assignments_conflicts_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Assignment Conflicts Api V1 Rates Assignments
+                  Conflicts Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rates/assignments/conflicts/resolve:
+    post:
+      tags:
+      - rate management
+      summary: Repair Assignment Conflicts
+      operationId: repair_assignment_conflicts_api_v1_rates_assignments_conflicts_resolve_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateAssignmentRepairRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Repair Assignment Conflicts Api V1 Rates Assignments
+                  Conflicts Resolve Post
         '422':
           description: Validation Error
           content:
@@ -8545,6 +9016,76 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-sources/check-runs:
+    get:
+      tags:
+      - rate management
+      summary: List Source Check Runs
+      operationId: list_source_check_runs_api_v1_admin_rate_sources_check_runs_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response List Source Check Runs Api V1 Admin Rate Sources Check
+                  Runs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/rate-sources/check-runs/{run_id}:
+    get:
+      tags:
+      - rate management
+      summary: Get Source Check Run
+      operationId: get_source_check_run_api_v1_admin_rate_sources_check_runs__run_id__get
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Run Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Source Check Run Api V1 Admin Rate Sources Check
+                  Runs  Run Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/admin/rate-sources/{source_id}:
     get:
       tags:
@@ -8711,8 +9252,7 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties:
-                  type: string
+                additionalProperties: true
                 title: Response Check All Sources Api V1 Admin Rate Sources Check
                   Now Post
         '422':
@@ -8757,8 +9297,7 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties:
-                  type: string
+                additionalProperties: true
                 title: Response Check One Source Api V1 Admin Rate Sources  Source
                   Id  Check Post
         '422':
@@ -13575,6 +14114,132 @@ components:
       - value
       - unit
       title: RateAdjustmentDocument
+    RateAssignmentEndRequest:
+      properties:
+        utility_account_id:
+          type: string
+          maxLength: 36
+          minLength: 1
+          title: Utility Account Id
+        effective_at:
+          type: string
+          format: date-time
+          title: Effective At
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+        confirmation:
+          type: string
+          const: END CURRENT
+          title: Confirmation
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - utility_account_id
+      - effective_at
+      - reason
+      - confirmation
+      - idempotency_key
+      title: RateAssignmentEndRequest
+    RateAssignmentRepairRequest:
+      properties:
+        utility_account_id:
+          type: string
+          maxLength: 36
+          minLength: 1
+          title: Utility Account Id
+        keep_assignment_id:
+          type: string
+          maxLength: 36
+          minLength: 1
+          title: Keep Assignment Id
+        expected_assignment_ids:
+          items:
+            type: string
+          type: array
+          maxItems: 50
+          minItems: 2
+          title: Expected Assignment Ids
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+        confirmation:
+          type: string
+          const: REPAIR ASSIGNMENTS
+          title: Confirmation
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - utility_account_id
+      - keep_assignment_id
+      - expected_assignment_ids
+      - reason
+      - confirmation
+      - idempotency_key
+      title: RateAssignmentRepairRequest
+    RateAssignmentReplaceRequest:
+      properties:
+        rate_version_id:
+          type: string
+          title: Rate Version Id
+        effective_from:
+          type: string
+          format: date-time
+          title: Effective From
+        effective_to:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Effective To
+        assignment_reason:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Assignment Reason
+        replace_current:
+          type: boolean
+          title: Replace Current
+          default: false
+        idempotency_key:
+          anyOf:
+          - type: string
+            maxLength: 160
+            minLength: 8
+          - type: 'null'
+          title: Idempotency Key
+        utility_account_id:
+          type: string
+          maxLength: 36
+          minLength: 1
+          title: Utility Account Id
+        confirmation:
+          type: string
+          const: REPLACE CURRENT
+          title: Confirmation
+      additionalProperties: false
+      type: object
+      required:
+      - rate_version_id
+      - effective_from
+      - utility_account_id
+      - confirmation
+      title: RateAssignmentReplaceRequest
     RateAssignmentWrite:
       properties:
         rate_version_id:
@@ -13600,6 +14265,13 @@ components:
           type: boolean
           title: Replace Current
           default: false
+        idempotency_key:
+          anyOf:
+          - type: string
+            maxLength: 160
+            minLength: 8
+          - type: 'null'
+          title: Idempotency Key
       additionalProperties: false
       type: object
       required:
@@ -14065,6 +14737,58 @@ components:
       - start
       - end
       title: RateSeasonDocument
+    RateVersionLifecycleRequest:
+      properties:
+        expected_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected Revision
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+        confirmation:
+          type: string
+          maxLength: 180
+          minLength: 1
+          title: Confirmation
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - expected_revision
+      - reason
+      - confirmation
+      - idempotency_key
+      title: RateVersionLifecycleRequest
+    RateVersionRestoreRequest:
+      properties:
+        expected_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected Revision
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - expected_revision
+      - reason
+      - idempotency_key
+      title: RateVersionRestoreRequest
     Reading:
       properties:
         sequence:
@@ -15843,6 +16567,77 @@ components:
       - rate_assignment
       - confirmation
       title: UtilityAccountWizardCreate
+    UtilityAdjustmentUpdate:
+      properties:
+        component:
+          type: string
+          enum:
+          - cca_generation
+          - direct_access
+          - baseline_credit
+          - service_charge
+          - tax_fee
+          - custom_fixed
+          - custom_per_kwh
+          title: Component
+        value:
+          anyOf:
+          - type: number
+          - type: string
+          title: Value
+        unit:
+          type: string
+          enum:
+          - per_kwh
+          - fixed
+          - percent
+          - included
+          title: Unit
+        provenance:
+          type: string
+          maxLength: 240
+          minLength: 1
+          title: Provenance
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Reason
+        evidence_reference:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Evidence Reference
+        effective_from:
+          type: string
+          format: date-time
+          title: Effective From
+        effective_to:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Effective To
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+      additionalProperties: false
+      type: object
+      required:
+      - component
+      - value
+      - unit
+      - provenance
+      - reason
+      - effective_from
+      - revision
+      title: UtilityAdjustmentUpdate
     UtilityAdjustmentWrite:
       properties:
         component:
@@ -15874,6 +16669,17 @@ components:
           maxLength: 240
           minLength: 1
           title: Provenance
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Reason
+        evidence_reference:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Evidence Reference
         effective_from:
           type: string
           format: date-time
@@ -15895,6 +16701,7 @@ components:
       - value
       - unit
       - provenance
+      - reason
       - effective_from
       title: UtilityAdjustmentWrite
     UtilityCostScopeWrite:

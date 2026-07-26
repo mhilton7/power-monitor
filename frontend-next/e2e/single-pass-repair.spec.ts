@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import path from 'node:path'
+import { newRateDraft } from '../src/features/rates/rateDocument'
 
 const home = {
   id: 'home-1',
@@ -9,6 +10,13 @@ const home = {
   lifecycle_state: 'active',
   is_default: true,
   revision: 1,
+}
+
+const currentRateDocument = {
+  ...newRateDraft(home),
+  plan_name: 'TOU-D 4 PM to 9 PM',
+  plan_code: 'TOU-D-4-9PM',
+  effective_from: '2026-07-01',
 }
 
 const service = {
@@ -104,46 +112,102 @@ const bill = {
 }
 
 const ratePlans = {
-  plans: [{
-    id: 'plan-1',
-    name: 'TOU-D 4 PM to 9 PM',
-    code: 'TOU-D-4-9PM',
-    status: 'active',
-    lifecycle_revision: 2,
-    versions: [{ id: 'version-1', version: 2, status: 'active', pricing_model: 'time_of_use' }],
-  }],
+  plans: [
+    {
+      id: 'plan-1',
+      name: 'TOU-D 4 PM to 9 PM',
+      code: 'TOU-D-4-9PM',
+      status: 'active',
+      lifecycle_revision: 2,
+      versions: [{
+        id: 'version-1',
+        version: 2,
+        status: 'published',
+        publication_status: 'published',
+        assignment_status: 'current',
+        display_status: 'current',
+        pricing_model: 'time_of_use',
+        lifecycle_revision: 1,
+        assignments: [{
+          id: 'assignment-current',
+          utility_account_id: service.id,
+          rate_version_id: 'version-1',
+          effective_from: '2026-07-01T07:00:00Z',
+          effective_to: null,
+          state: 'current',
+          revision: 1,
+        }],
+      }],
+    },
+    {
+      id: 'plan-2',
+      name: 'Summer adjustment candidate',
+      code: 'SUMMER-ADJUST',
+      status: 'active',
+      lifecycle_revision: 1,
+      versions: [{
+        id: 'version-2',
+        version: 1,
+        status: 'published',
+        publication_status: 'published',
+        assignment_status: 'unassigned',
+        display_status: 'published',
+        pricing_model: 'time_of_use',
+        lifecycle_revision: 1,
+        assignments: [],
+      }],
+    },
+  ],
 }
 
 interface MockOptions {
   failFirstBillUpload?: boolean
   billingOnly?: boolean
+  sourceDelayMs?: number
 }
 
 interface ObservedRequests {
   rateDraft?: Record<string, unknown>
   assignment?: Record<string, unknown>
+  assignmentRequestCount: number
   billPublished: boolean
   cycleImported: boolean
+  draftDeleted: boolean
   retired: boolean
   removed: boolean
   restored: boolean
   sourceAdded: boolean
+  sourceCheckStarted: boolean
+  sourceCheckRequests: number
+  adjustmentCreated: boolean
+  adjustmentUpdated: boolean
+  adjustmentRemoved: boolean
 }
 
 async function mockRepairServer(page: Page, configured = false, options: MockOptions = {}) {
   let billUploadAttempts = 0
+  let sourceRunPolls = 0
+  let adjustment: Record<string, unknown> | undefined
   const hasBilling = configured || options.billingOnly === true
   const observed: ObservedRequests = {
+    assignmentRequestCount: 0,
     billPublished: false,
     cycleImported: false,
+    draftDeleted: false,
     retired: false,
     removed: false,
     restored: false,
     sourceAdded: false,
+    sourceCheckStarted: false,
+    sourceCheckRequests: 0,
+    adjustmentCreated: false,
+    adjustmentUpdated: false,
+    adjustmentRemoved: false,
   }
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
-    const pathname = new URL(request.url()).pathname
+    const requestUrl = new URL(request.url())
+    const pathname = requestUrl.pathname
     if (pathname === '/api/v1/events/stream') return route.fulfill({ status: 204 })
     if (pathname === '/api/v1/admin/utility-bill-imports' && request.method() === 'POST') {
       billUploadAttempts += 1
@@ -181,13 +245,54 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
       return route.fulfill({ json: { energy_charge: '125.00000000', blended_energy_rate: '0.25000000', display_total: '125.00' } })
     }
     if (pathname === '/api/v1/rates/versions/draft-version/activate' && request.method() === 'POST') {
-      return route.fulfill({ json: { status: 'active' } })
+      return route.fulfill({
+        json: {
+          id: 'draft-version',
+          status: 'published',
+          publication_status: 'published',
+          assignment_status: 'unassigned',
+          display_status: 'published',
+        },
+      })
     }
-    if (pathname === '/api/v1/rates/assignments' && request.method() === 'POST') {
-      observed.assignment = request.postDataJSON() as Record<string, unknown>
-      return route.fulfill({ status: 201, json: { id: 'assignment-1' } })
+    if (pathname === '/api/v1/rates/assignments/replace' && request.method() === 'POST') {
+      observed.assignmentRequestCount += 1
+      const assignmentPayload = request.postDataJSON() as Record<string, unknown>
+      if (
+        assignmentPayload.rate_version_id === 'version-2' &&
+        String(assignmentPayload.effective_from).startsWith('2026-08-01')
+      ) {
+        return route.fulfill({
+          status: 409,
+          contentType: 'application/problem+json',
+          json: {
+            title: 'Rate assignment overlaps an existing assignment',
+            detail: 'The requested effective range overlaps assignment assignment-current.',
+            status: 409,
+            conflicting_assignment_id: 'assignment-current',
+            allowed_resolution_actions: ['replace_current', 'cancel_scheduled'],
+          },
+        })
+      }
+      observed.assignment = assignmentPayload
+      return route.fulfill({
+        status: 201,
+        json: {
+          assignment: {
+            id: 'assignment-1',
+            utility_account_id: service.id,
+            rate_version_id: 'draft-version',
+            effective_from: '2026-07-25T12:00:00Z',
+            effective_to: null,
+            state: 'current',
+            revision: 1,
+          },
+          ended_assignment_ids: ['assignment-current'],
+          recalculation_queued: true,
+        },
+      })
     }
-    if (pathname === '/api/v1/admin/rate-plans/plan-1/dependencies') {
+    if (pathname === '/api/v1/admin/rate-plans/plan-2/dependencies') {
       return route.fulfill({ json: {
         dependency_token: 'b'.repeat(64),
         active_assignments: [],
@@ -202,27 +307,222 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
         preservation: { versions: true, source_evidence: true },
       } })
     }
-    if (pathname === '/api/v1/rates/versions/version-1/retire' && request.method() === 'POST') {
+    if (pathname === '/api/v1/rates/versions/version-2/retire' && request.method() === 'POST') {
       observed.retired = true
       return route.fulfill({ json: { status: 'retired' } })
     }
-    if (pathname === '/api/v1/admin/rate-plans/plan-1/remove' && request.method() === 'POST') {
-      observed.removed = true
-      return route.fulfill({ json: { plan: { id: 'plan-1', status: 'removed' } } })
+    if (
+      pathname === '/api/v1/rates/plans/plan-1/versions' &&
+      request.method() === 'POST'
+    ) {
+      return route.fulfill({
+        status: 201,
+        json: {
+          id: 'draft-adjustment-version',
+          version: 3,
+          parent_version_id: 'version-1',
+          publication_status: 'draft',
+          assignment_status: 'unassigned',
+          lifecycle_revision: 1,
+        },
+      })
     }
-    if (pathname === '/api/v1/admin/rate-plans/plan-1/restore' && request.method() === 'POST') {
+    if (pathname === '/api/v1/rates/versions/draft-adjustment-version') {
+      return route.fulfill({
+        json: {
+          document: {
+            ...currentRateDocument,
+            effective_from: '2026-08-01',
+          },
+        },
+      })
+    }
+    if (pathname === '/api/v1/rates/versions/version-1') {
+      return route.fulfill({ json: { document: currentRateDocument } })
+    }
+    if (pathname === '/api/v1/rates/plans/plan-1/versions') {
+      return route.fulfill({ json: ratePlans.plans[0]?.versions ?? [] })
+    }
+    if (pathname === '/api/v1/rates/plans/plan-2/versions') {
+      return route.fulfill({
+        json: [
+          ...(ratePlans.plans[1]?.versions ?? []),
+          {
+            id: 'version-draft-unused',
+            version: 2,
+            status: 'draft',
+            publication_status: 'draft',
+            assignment_status: 'unassigned',
+            display_status: 'draft',
+            pricing_model: 'time_of_use',
+            lifecycle_revision: 1,
+            assignments: [],
+          },
+        ],
+      })
+    }
+    if (pathname === '/api/v1/rates/versions/version-draft-unused/dependencies') {
+      return route.fulfill({
+        json: {
+          current_assignment_count: 0,
+          future_assignment_count: 0,
+          historical_assignment_count: 0,
+          historical_calculation_count: 0,
+          source_evidence_count: 0,
+          delete_draft_eligible: true,
+        },
+      })
+    }
+    if (
+      pathname === '/api/v1/rates/versions/version-draft-unused/draft' &&
+      request.method() === 'DELETE'
+    ) {
+      observed.draftDeleted = true
+      return route.fulfill({ status: 204 })
+    }
+    if (pathname === '/api/v1/rates/versions/version-2/dependencies') {
+      return route.fulfill({
+        json: {
+          current_assignment_count: 0,
+          future_assignment_count: 0,
+          historical_assignment_count: 0,
+          historical_calculation_count: 0,
+          source_evidence_count: 1,
+          delete_draft_eligible: false,
+        },
+      })
+    }
+    if (pathname === '/api/v1/admin/rate-plans/plan-2/remove' && request.method() === 'POST') {
+      observed.removed = true
+      return route.fulfill({ json: { plan: { id: 'plan-2', status: 'removed' } } })
+    }
+    if (pathname === '/api/v1/admin/rate-plans/plan-2/restore' && request.method() === 'POST') {
       observed.restored = true
-      return route.fulfill({ json: { plan: { id: 'plan-1', status: 'active' } } })
+      observed.removed = false
+      return route.fulfill({ json: { plan: { id: 'plan-2', status: 'active' } } })
     }
     if (pathname === '/api/v1/admin/rate-sources' && request.method() === 'POST') {
       observed.sourceAdded = true
       return route.fulfill({ status: 201, json: { id: 'source-3' } })
     }
+    if (pathname === '/api/v1/admin/rate-sources/check-now' && request.method() === 'POST') {
+      observed.sourceCheckStarted = true
+      observed.sourceCheckRequests += 1
+      return route.fulfill({
+        status: 202,
+        json: {
+          job_id: 'source-job-1',
+          status: 'queued',
+          deduplicated: false,
+          progress: { completed: 0, total: 1 },
+        },
+      })
+    }
+    if (pathname === '/api/v1/admin/rate-sources/check-runs/source-job-1') {
+      sourceRunPolls += 1
+      if (options.sourceDelayMs) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(options.sourceDelayMs ?? 0, 100)),
+        )
+      }
+      const running = Boolean(options.sourceDelayMs && sourceRunPolls === 1)
+      return route.fulfill({
+        json: {
+          id: 'source-job-1',
+          status: running ? 'running' : 'succeeded',
+          trigger_type: 'manual',
+          requested_at: '2026-07-25T12:00:00Z',
+          started_at: '2026-07-25T12:00:01Z',
+          completed_at: running ? null : '2026-07-25T12:00:02Z',
+          progress: {
+            completed: running ? 0 : 1,
+            total: 1,
+            current_source_id: running ? 'source-1' : null,
+          },
+          sources_attempted: 1,
+          successes: running ? 0 : 1,
+          failures: 0,
+          candidates: running ? 0 : 1,
+          archived_evidence: running ? 0 : 1,
+          items: running ? [] : [{
+            id: 'source-result-1',
+            source_id: 'source-1',
+            source_name: 'SCE Residential TOU Page',
+            outcome: 'succeeded',
+            checked_at: '2026-07-25T12:00:01Z',
+            finished_at: '2026-07-25T12:00:02Z',
+            http_status: 200,
+            candidate_count: 1,
+            artifact_count: 1,
+          }],
+        },
+      })
+    }
+    if (
+      pathname === `/api/v1/admin/utility-accounts/${service.id}/adjustments`
+      && request.method() === 'GET'
+    ) {
+      return route.fulfill({ json: adjustment ? [adjustment] : [] })
+    }
+    if (
+      pathname === `/api/v1/admin/utility-accounts/${service.id}/adjustments`
+      && request.method() === 'POST'
+    ) {
+      adjustment = {
+        id: 'adjustment-1',
+        utility_account_id: service.id,
+        ...(request.postDataJSON() as Record<string, unknown>),
+        status: 'active',
+        revision: 1,
+      }
+      observed.adjustmentCreated = true
+      return route.fulfill({ status: 201, json: adjustment })
+    }
+    if (
+      pathname === `/api/v1/admin/utility-accounts/${service.id}/adjustments/adjustment-1`
+      && request.method() === 'PATCH'
+    ) {
+      adjustment = {
+        ...(adjustment ?? {}),
+        ...(request.postDataJSON() as Record<string, unknown>),
+        revision: 2,
+      }
+      observed.adjustmentUpdated = true
+      return route.fulfill({ json: adjustment })
+    }
+    if (
+      pathname === `/api/v1/admin/utility-accounts/${service.id}/adjustments/adjustment-1`
+      && request.method() === 'DELETE'
+    ) {
+      adjustment = undefined
+      observed.adjustmentRemoved = true
+      return route.fulfill({ status: 204 })
+    }
+    if (pathname === '/api/v1/rates/plans' && request.method() === 'GET') {
+      const status = requestUrl.searchParams.get('status')
+      if (status === 'removed') {
+        return route.fulfill({
+          json: {
+            plans: observed.removed
+              ? [{ ...ratePlans.plans[1], status: 'removed', removal_reason: 'Lifecycle test' }]
+              : [],
+          },
+        })
+      }
+      if (status === 'retired') return route.fulfill({ json: { plans: [] } })
+      return route.fulfill({
+        json: {
+          plans: observed.removed
+            ? ratePlans.plans.filter((plan) => plan.id !== 'plan-2')
+            : ratePlans.plans,
+        },
+      })
+    }
     const responses: Record<string, unknown> = {
       '/api/v1/auth/session': {
         authenticated: true,
         bootstrap_required: false,
-        user: { id: 'owner-1', email: 'owner@example.test', display_name: 'Home Owner', roles: ['admin'], permissions: ['rates.view', 'rates.manage_custom', 'rates.manage_sources', 'rates.assign', 'rates.remove', 'rates.restore'], all_sites: true, site_ids: [] },
+        user: { id: 'owner-1', email: 'owner@example.test', display_name: 'Home Owner', roles: ['admin'], permissions: ['rates.view', 'rates.manage_custom', 'rates.manage_sources', 'rates.check_sources', 'rates.review_candidates', 'rates.assign', 'rates.remove', 'rates.restore', 'adjustments.manage'], all_sites: true, site_ids: [] },
       },
       '/api/v1/sites': [home],
       '/api/v1/devices': configured ? [{
@@ -273,7 +573,11 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
       },
       '/api/v1/alerts': [],
       '/api/v1/admin/utility-bill-imports': [],
-      '/api/v1/rates/plans': ratePlans,
+      '/api/v1/rates/assignments/conflicts': {
+        conflicts: [],
+        requires_explicit_resolution: false,
+      },
+      '/api/v1/admin/rate-sources/check-runs': [],
       '/api/v1/admin/rate-sources': {
         sources: [
           { id: 'source-1', name: 'SCE Residential TOU Page', url: 'https://www.sce.com/rates', parser_id: 'sce_public_tou_html_v1', enabled: true, last_success_at: '2026-07-24T20:00:00Z' },
@@ -379,9 +683,9 @@ test('Billing rate-plan menus close predictably before lifecycle confirmation', 
   await page.getByRole('button', { name: 'Cancel' }).click()
 
   await trigger.click()
-  await page.getByRole('menuitem', { name: 'Remove from Electric Service' }).click()
+  await page.getByRole('menuitem', { name: 'End current assignment' }).click()
   await expect(page.getByRole('menu')).toHaveCount(0)
-  await expect(page.getByRole('dialog', { name: 'Remove plan from Electric Service' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'End current assignment' })).toBeVisible()
 })
 
 test('reviewed bill applies its plan and cycle and refreshes Billing', async ({ page }) => {
@@ -403,17 +707,65 @@ test('reviewed bill applies its plan and cycle and refreshes Billing', async ({ 
   await expect(page.getByRole('table').locator('tbody').getByText('Imported', { exact: true })).toBeVisible()
 })
 
-test('advanced rate editor restores every structured section without raw source noise', async ({ page }) => {
-  const observed = await mockRepairServer(page)
+test('Owner completes the current-plan, revision, lifecycle, adjustment, and source-check workflow', async ({ page }) => {
+  test.setTimeout(60_000)
+  const browserErrors: string[] = []
+  page.on('pageerror', (error) => {
+    browserErrors.push(error.message)
+  })
+  page.on('console', (message) => {
+    const text = message.text()
+    const expectedConflict =
+      text.includes('Failed to load resource') && text.includes('409')
+    if (message.type() === 'error' && !expectedConflict) {
+      browserErrors.push(text)
+    }
+  })
+  const observed = await mockRepairServer(page, false, { sourceDelayMs: 400 })
   await page.goto('/billing?advanced=rates')
+  const library = page.locator('.rate-plan-library')
+  await expect(library.getByText(/Current v2/)).toHaveCount(1)
+  const replacementRow = library
+    .getByRole('listitem')
+    .filter({ hasText: 'Summer adjustment candidate' })
+  await expect(replacementRow).toContainText('Published v1')
+  await expect(replacementRow).toContainText('Not current')
+
+  await replacementRow.getByRole('button', { name: 'Replace current' }).click()
+  const replacementPanel = page.getByRole('region', { name: 'Replace current plan' })
+  await expect(replacementPanel).toContainText('Historical costs')
+  await expect(replacementPanel).toContainText('Preserved')
+  await replacementPanel.getByRole('button', { name: 'Replace current' }).click()
+  await expect.poll(() => observed.assignmentRequestCount).toBe(1)
+
+  const currentPlanRow = page
+    .getByRole('listitem')
+    .filter({ hasText: 'TOU-D 4 PM to 9 PM' })
+  await currentPlanRow.getByRole('button', { name: 'Adjust rates' }).click()
+  let editor = page.locator('.rate-editor-shell')
+  await editor.getByRole('tab', { name: '9 Preview' }).click()
+  await expect(
+    editor.getByRole('region', { name: 'Rate revision comparison' }),
+  ).toContainText('Published v2 compared with Draft v3')
+  await expect(
+    editor.getByRole('region', { name: 'Rate revision comparison' }),
+  ).toContainText('Same plan identity')
+  await expect(page).toHaveScreenshot('rate-editor-adjust-rates-compare.png', {
+    fullPage: true,
+    animations: 'disabled',
+  })
+  await editor.getByRole('button', { name: 'Close editor' }).click()
+
   await page.getByRole('button', { name: 'New plan' }).click()
-  const editor = page.locator('.rate-editor-shell')
+  editor = page.locator('.rate-editor-shell')
   await expect(editor.getByRole('tab')).toHaveCount(10)
   await expect(editor.getByText('Plan details', { exact: true })).toBeVisible()
   await expect(page).toHaveScreenshot('rate-editor-details.png', { fullPage: true, animations: 'disabled' })
   await editor.getByRole('tab', { name: '5 TOU schedules' }).click()
   await expect(editor.getByText('Time-of-use schedules', { exact: true })).toBeVisible()
   await expect(page).toHaveScreenshot('rate-editor-schedules.png', { fullPage: true, animations: 'disabled' })
+  await editor.getByRole('tab', { name: '8 Assignment' }).click()
+  await editor.getByRole('checkbox', { name: /I understand this replaces/i }).check()
   await editor.getByRole('tab', { name: '10 Publish' }).click()
   await expect(editor.getByText('Save, publish, and assign')).toBeVisible()
   await expect(page).toHaveScreenshot('rate-editor-lifecycle.png', { fullPage: true, animations: 'disabled' })
@@ -421,20 +773,44 @@ test('advanced rate editor restores every structured section without raw source 
   await lifecycle.getByRole('button', { name: 'Save draft' }).click()
   await lifecycle.getByRole('button', { name: 'Validate' }).click()
   await lifecycle.getByRole('button', { name: 'Publish version' }).click()
-  await lifecycle.getByRole('button', { name: 'Assign plan' }).click()
+  await lifecycle.getByRole('button', { name: 'Replace current' }).click()
   await expect.poll(() => observed.assignment).toBeTruthy()
   expect(observed.rateDraft?.schema_version).toBe('power-monitor-rate-plan/1.0')
   expect((observed.rateDraft?.seasons as Array<{ schedules: Array<{ periods: Array<{ price_per_kwh: unknown }> }> }>)[0]?.schedules[0]?.periods[0]?.price_per_kwh).toBe('0.25000000')
   expect(observed.assignment?.rate_version_id).toBe('draft-version')
   await editor.getByRole('button', { name: 'Close editor' }).click()
 
-  await page.getByRole('button', { name: 'Lifecycle' }).click()
-  const lifecyclePanel = page.getByRole('region', { name: 'Lifecycle controls for TOU-D 4 PM to 9 PM' })
-  await expect(lifecyclePanel).toBeVisible()
-  await lifecyclePanel.getByRole('button', { name: 'Retire version' }).click()
+  await page.getByRole('tab', { name: 'Versions', exact: true }).click()
+  const unusedDraftRow = page
+    .getByRole('listitem')
+    .filter({ hasText: /Summer adjustment candidate.*v2/ })
+  await unusedDraftRow.getByRole('button', { name: 'Lifecycle' }).click()
+  await page.getByLabel('Type version 2').fill('2')
+  await page.getByRole('button', { name: 'Delete unused draft' }).click()
+  await expect.poll(() => observed.draftDeleted).toBe(true)
+
+  const currentVersionRow = page
+    .getByRole('listitem')
+    .filter({ hasText: /TOU-D 4 PM to 9 PM.*v2/ })
+  await currentVersionRow.getByRole('button', { name: 'Lifecycle' }).click()
+  await page.getByLabel('Type version 2').fill('2')
+  await expect(page.getByRole('button', { name: 'Remove', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+
+  const versionRow = page
+    .getByRole('listitem')
+    .filter({ hasText: /Summer adjustment candidate.*v1/ })
+  await versionRow.getByRole('button', { name: 'Lifecycle' }).click()
+  await page.getByLabel('Type version 1').fill('1')
+  await page.getByRole('button', { name: 'Retire', exact: true }).click()
   await expect.poll(() => observed.retired).toBe(true)
-  await page.getByRole('button', { name: 'Lifecycle' }).click()
-  await page.getByLabel('Type TOU-D-4-9PM to confirm removal').fill('TOU-D-4-9PM')
+
+  await page.getByRole('tab', { name: 'Custom editor', exact: true }).click()
+  const removablePlanRow = page.getByRole('listitem').filter({ hasText: 'Summer adjustment candidate' })
+  await removablePlanRow.getByRole('button', { name: 'Lifecycle' }).click()
+  const lifecyclePanel = page.getByRole('region', { name: 'Lifecycle controls for Summer adjustment candidate' })
+  await expect(lifecyclePanel).toBeVisible()
+  await lifecyclePanel.getByLabel('Type SUMMER-ADJUST').fill('SUMMER-ADJUST')
   await page.getByRole('button', { name: 'Remove plan' }).click()
   await expect.poll(() => observed.removed).toBe(true)
 
@@ -442,6 +818,20 @@ test('advanced rate editor restores every structured section without raw source 
   await expect(page.getByText('sce.com · Official source')).toBeVisible()
   await expect(page.getByText('urn:power-monitor:utility-bill:service-1')).toBeHidden()
   await expect(page).toHaveScreenshot('rate-editor-sources.png', { fullPage: true, animations: 'disabled' })
+  const checkButton = page.getByRole('button', {
+    name: 'Check rate sources now',
+  })
+  await checkButton.click()
+  await expect.poll(() => observed.sourceCheckRequests).toBe(1)
+  await expect(checkButton).toBeDisabled()
+  await checkButton.evaluate((element) => {
+    const button = element as HTMLButtonElement
+    button.click()
+    button.click()
+  })
+  await expect(page.getByRole('heading', { name: 'Source check completed' })).toBeVisible()
+  await expect(page.getByText(/1 of 1 sources.*1 candidates.*1 archived/)).toBeVisible()
+  expect(observed.sourceCheckRequests).toBe(1)
   await page.getByRole('button', { name: 'Add source' }).click()
   await page.getByLabel('Name').fill('SCE official tariff')
   await page.getByLabel('Approved HTTPS URL').fill('https://www.sce.com/rates/tariffs')
@@ -451,6 +841,69 @@ test('advanced rate editor restores every structured section without raw source 
   await page.getByRole('tab', { name: 'Removed', exact: true }).click()
   await page.getByRole('button', { name: 'Restore' }).first().click()
   await expect.poll(() => observed.restored).toBe(true)
+
+  await page.getByRole('tab', { name: 'Custom editor', exact: true }).click()
+  await replacementRow.getByRole('button', { name: 'Replace current' }).click()
+  await replacementPanel.getByLabel('Effective timing').selectOption('custom')
+  await replacementPanel.getByLabel('Effective from').fill('2026-08-01T00:00')
+  await replacementPanel.getByRole('button', { name: 'Replace current' }).click()
+  await expect(page.getByText(/overlaps assignment assignment-current/i)).toBeVisible()
+  await expect.poll(() => observed.assignmentRequestCount).toBe(3)
+  await replacementPanel.getByRole('button', { name: 'Cancel' }).click()
+
+  await page.getByRole('tab', { name: 'Adjustments', exact: true }).click()
+  await page.getByLabel('Value').fill('0.01500000')
+  await page.getByLabel('Reason').fill('Reviewed seasonal delivery adjustment')
+  await page.getByLabel('Evidence reference (optional)').fill('SCE tariff review 2026-07')
+  await page.getByRole('button', { name: 'Add adjustment' }).click()
+  await expect.poll(() => observed.adjustmentCreated).toBe(true)
+  const adjustmentRow = page.getByRole('listitem').filter({ hasText: 'Custom Per Kwh' })
+  await adjustmentRow.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Value').fill('0.01700000')
+  await page.getByLabel('Reason').fill('Corrected after second tariff review')
+  await page.getByRole('button', { name: 'Save revision' }).click()
+  await expect.poll(() => observed.adjustmentUpdated).toBe(true)
+  await adjustmentRow.getByRole('button', { name: 'Remove' }).click()
+  await expect.poll(() => observed.adjustmentRemoved).toBe(true)
+  expect(browserErrors).toEqual([])
+})
+
+test('source checks and manual adjustments expose their complete observable lifecycle', async ({ page }) => {
+  const observed = await mockRepairServer(page, true)
+  await page.goto('/billing?advanced=rates')
+
+  await page.getByRole('tab', { name: 'Sources', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Check rate sources now' })
+    .click()
+  await expect(page.getByRole('heading', { name: 'Source check completed' })).toBeVisible()
+  await expect(page.getByText(/1 of 1 sources.*1 candidates.*1 archived/)).toBeVisible()
+  await expect(page.getByText('SCE Residential TOU Page', { exact: true }).last()).toBeVisible()
+  await expect(page).toHaveScreenshot('rate-editor-source-check-completed.png', {
+    fullPage: true,
+    animations: 'disabled',
+  })
+  expect(observed.sourceCheckStarted).toBe(true)
+
+  await page.getByRole('tab', { name: 'Adjustments', exact: true }).click()
+  await page.getByLabel('Value').fill('0.01500000')
+  await page.getByLabel('Reason').fill('Reviewed seasonal delivery adjustment')
+  await page.getByLabel('Evidence reference (optional)').fill('SCE tariff review 2026-07')
+  await page.getByRole('button', { name: 'Add adjustment' }).click()
+  await expect.poll(() => observed.adjustmentCreated).toBe(true)
+  const row = page.getByRole('listitem').filter({ hasText: 'Custom Per Kwh' })
+  await expect(row).toContainText('Reviewed seasonal delivery adjustment')
+
+  await row.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Value').fill('0.01700000')
+  await page.getByLabel('Reason').fill('Corrected after second tariff review')
+  await page.getByRole('button', { name: 'Save revision' }).click()
+  await expect.poll(() => observed.adjustmentUpdated).toBe(true)
+  await expect(row).toContainText('0.01700000')
+
+  await row.getByRole('button', { name: 'Remove' }).click()
+  await expect.poll(() => observed.adjustmentRemoved).toBe(true)
+  await expect(page.getByText('No manual adjustments')).toBeVisible()
 })
 
 test('bill importer exposes a recoverable error state and retries the same file', async ({ page }) => {

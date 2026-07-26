@@ -74,6 +74,15 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             table_count = await connection.fetchval(
                 "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
             )
+            assignment_overlap_trigger = await connection.fetchval(
+                """
+                SELECT pg_get_triggerdef(trigger.oid)
+                FROM pg_trigger AS trigger
+                WHERE trigger.tgrelid = 'rate_assignments'::regclass
+                  AND trigger.tgname = 'trg_rate_assignment_no_overlap'
+                  AND NOT trigger.tgisinternal
+                """
+            )
             migrated = await connection.fetchrow(
                 """
                 SELECT lifecycle_status, lifecycle_generation, decommission_reason
@@ -88,8 +97,11 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 ORDER BY direction
                 """
             )
-            assert revision == "20260725_0016"
+            assert revision == "20260725_0017"
             assert table_count == 98
+            assert assignment_overlap_trigger is not None
+            assert "BEFORE INSERT OR UPDATE" in assignment_overlap_trigger
+            assert "prevent_rate_assignment_overlap" in assignment_overlap_trigger
             assert (
                 await connection.fetchval(
                     """
@@ -130,7 +142,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260725_0016"
+                "20260725_0017"
             )
 
             await connection.execute("DROP SCHEMA public CASCADE")
@@ -168,7 +180,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 await connection.fetchval(
                     "SELECT count(*) FROM role_permissions WHERE role_name = 'admin'"
                 )
-                == 65
+                == 66
             )
             status_state = await connection.fetchrow(
                 """
@@ -190,7 +202,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260725_0016"
+                "20260725_0017"
             )
             assert (
                 await connection.fetchval(

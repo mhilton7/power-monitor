@@ -44,6 +44,7 @@ from app.network_policy import (
     private_sensor_address,
 )
 from app.problem import ProblemError
+from app.rates.assignments import assign_version as create_effective_assignment
 from app.rates.documents import engine_plan
 from app.rates.engine import RateEngine
 from app.rates.service import version_document
@@ -55,6 +56,7 @@ from app.schemas import (
     UtilityAccountRateContextView,
     UtilityAccountUpdate,
     UtilityAccountWizardCreate,
+    UtilityAdjustmentUpdate,
     UtilityAdjustmentWrite,
     UtilityCostScopeWrite,
 )
@@ -151,7 +153,12 @@ async def _account_or_404(
 
 async def _version_or_error(session: DbSession, version_id: str) -> RateVersion:
     version = await session.get(RateVersion, version_id)
-    if version is None or version.status not in {"active", "approved"}:
+    if version is None or version.status not in {
+        "published",
+        "active",
+        "approved",
+        "superseded",
+    }:
         raise ProblemError(
             422,
             "Rate version unavailable",
@@ -173,7 +180,10 @@ async def _account_assignments(session: DbSession, account_id: str) -> list[Rate
     return list(
         await session.scalars(
             select(RateAssignment)
-            .where(RateAssignment.utility_account_id == account_id)
+            .where(
+                RateAssignment.utility_account_id == account_id,
+                RateAssignment.cancelled_at.is_(None),
+            )
             .order_by(RateAssignment.effective_from, RateAssignment.created_at)
         )
     )
@@ -185,85 +195,18 @@ async def _create_assignment(
     payload: RateAssignmentWrite,
     actor_id: str,
 ) -> tuple[RateAssignment, bool, list[str]]:
-    # Serialize assignment-window changes for one account. Application-level
-    # overlap checks alone are vulnerable to concurrent administrator saves.
-    locked_account = await session.scalar(
-        select(UtilityAccount).where(UtilityAccount.id == account.id).with_for_update()
+    assignment, replaced, effective_now = await create_effective_assignment(
+        session,
+        account_id=account.id,
+        rate_version_id=payload.rate_version_id,
+        effective_from=payload.effective_from,
+        effective_to=payload.effective_to,
+        replace_current=payload.replace_current,
+        reason=payload.assignment_reason,
+        actor_id=actor_id,
+        idempotency_key=payload.idempotency_key,
     )
-    if locked_account is None:
-        raise ProblemError(404, "Utility account not found", "Unknown account", "not_found")
-    account = locked_account
-    if account.status != "active":
-        raise ProblemError(
-            409,
-            "Active utility account required",
-            "Restore the utility account before changing its rate plan",
-            "utility_account_archived",
-        )
-    version = await _version_or_error(session, payload.rate_version_id)
-    start = _as_utc(payload.effective_from)
-    end = _as_utc(payload.effective_to) if payload.effective_to else None
-    assignments = await _account_assignments(session, account.id)
-    close_previous: list[RateAssignment] = []
-    preserved_future_start: datetime | None = None
-    for item in assignments:
-        item_start = (
-            item.effective_from.replace(tzinfo=UTC)
-            if item.effective_from.tzinfo is None
-            else item.effective_from
-        )
-        item_end = item.effective_to
-        if item_end and item_end.tzinfo is None:
-            item_end = item_end.replace(tzinfo=UTC)
-        overlaps = item_start < (end or datetime.max.replace(tzinfo=UTC)) and (
-            item_end is None or item_end > start
-        )
-        if not overlaps:
-            continue
-        if item_start < start:
-            close_previous.append(item)
-            continue
-        if payload.replace_current and end is None and item_start > start:
-            # Preserve an already scheduled future change. The replacement is
-            # effective immediately and ends when that schedule begins.
-            preserved_future_start = (
-                item_start
-                if preserved_future_start is None
-                else min(preserved_future_start, item_start)
-            )
-            continue
-        raise ProblemError(
-            409,
-            "Rate assignment overlaps",
-            (
-                "The account already has a rate assignment at that exact time. "
-                "Choose a later effective time or review its assignment history."
-                if payload.replace_current
-                else "The account already has a rate assignment in this effective window"
-            ),
-            "rate_assignment_overlap",
-            extra={"conflicting_assignment_id": item.id},
-        )
-    if preserved_future_start is not None:
-        end = preserved_future_start
-    for item in close_previous:
-        item.effective_to = start
-    assignment = RateAssignment(
-        utility_account_id=account.id,
-        rate_version_id=version.id,
-        effective_from=start,
-        effective_to=end,
-        assignment_reason=payload.assignment_reason,
-        assigned_by=actor_id,
-        created_at=datetime.now(UTC),
-    )
-    session.add(assignment)
-    now = datetime.now(UTC)
-    effective_now = start <= now and (end is None or end > now)
-    if effective_now:
-        account.active_rate_version_id = version.id
-    await session.flush()
-    return assignment, effective_now, [item.id for item in close_previous]
+    return assignment, effective_now, replaced
 
 
 async def _rate_context(
@@ -687,9 +630,13 @@ async def create_site_account(
                 value=item.value,
                 unit=item.unit,
                 provenance=item.provenance,
+                reason=item.reason,
+                evidence_reference=item.evidence_reference,
                 effective_from=_as_utc(item.effective_from),
                 effective_to=_as_utc(item.effective_to) if item.effective_to else None,
                 enabled=item.enabled,
+                status="active",
+                revision=1,
                 created_by=principal.user.id,
                 created_at=datetime.now(UTC),
             )
@@ -817,6 +764,8 @@ async def account_rate_assignments(
                 "effective_from": item.effective_from,
                 "effective_to": item.effective_to,
                 "assignment_reason": item.assignment_reason,
+                "cancelled_at": item.cancelled_at,
+                "revision": item.revision,
                 "created_at": item.created_at,
             }
         )
@@ -967,7 +916,10 @@ async def list_account_adjustments(
     await _account_or_404(session, principal, account_id)
     rows = await session.scalars(
         select(UtilityAccountAdjustment)
-        .where(UtilityAccountAdjustment.utility_account_id == account_id)
+        .where(
+            UtilityAccountAdjustment.utility_account_id == account_id,
+            UtilityAccountAdjustment.status != "removed",
+        )
         .order_by(UtilityAccountAdjustment.effective_from.desc())
     )
     return [
@@ -977,9 +929,17 @@ async def list_account_adjustments(
             "value": item.value,
             "unit": item.unit,
             "provenance": item.provenance,
+            "reason": item.reason,
+            "evidence_reference": item.evidence_reference,
             "effective_from": item.effective_from,
             "effective_to": item.effective_to,
             "enabled": item.enabled,
+            "status": item.status,
+            "revision": item.revision,
+            "created_by": item.created_by,
+            "created_at": item.created_at,
+            "updated_by": item.updated_by,
+            "updated_at": item.updated_at,
         }
         for item in rows
     ]
@@ -993,7 +953,7 @@ async def add_account_adjustment(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    _permission(principal, "utility_accounts.manage")
+    _permission(principal, "adjustments.manage")
     account = await _account_or_404(session, principal, account_id)
     item = UtilityAccountAdjustment(
         utility_account_id=account.id,
@@ -1001,13 +961,18 @@ async def add_account_adjustment(
         value=payload.value,
         unit=payload.unit,
         provenance=payload.provenance,
+        reason=payload.reason,
+        evidence_reference=payload.evidence_reference,
         effective_from=_as_utc(payload.effective_from),
         effective_to=_as_utc(payload.effective_to) if payload.effective_to else None,
         enabled=payload.enabled,
+        status="active",
+        revision=1,
         created_by=principal.user.id,
         created_at=datetime.now(UTC),
     )
     session.add(item)
+    await session.flush()
     account.revision += 1
     session.add(
         audit_event(
@@ -1022,6 +987,8 @@ async def add_account_adjustment(
                 "component": item.component,
                 "unit": item.unit,
                 "provenance": item.provenance,
+                "reason": item.reason,
+                "evidence_reference": item.evidence_reference,
             },
         )
     )
@@ -1032,9 +999,145 @@ async def add_account_adjustment(
         "value": item.value,
         "unit": item.unit,
         "provenance": item.provenance,
+        "reason": item.reason,
+        "evidence_reference": item.evidence_reference,
         "effective_from": item.effective_from,
         "effective_to": item.effective_to,
         "enabled": item.enabled,
+        "status": item.status,
+        "revision": item.revision,
+    }
+
+
+@router.patch("/admin/utility-accounts/{account_id}/adjustments/{adjustment_id}")
+async def update_account_adjustment(
+    account_id: str,
+    adjustment_id: str,
+    payload: UtilityAdjustmentUpdate,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _permission(principal, "adjustments.manage")
+    account = await _account_or_404(session, principal, account_id)
+    item = await session.get(UtilityAccountAdjustment, adjustment_id)
+    if item is None or item.utility_account_id != account.id or item.status == "removed":
+        raise ProblemError(
+            404,
+            "Adjustment not found",
+            "The adjustment does not exist for this electric service",
+            "adjustment_missing",
+        )
+    if item.revision != payload.revision:
+        raise ProblemError(
+            409,
+            "Adjustment changed",
+            "Reload the adjustment before saving your changes",
+            "adjustment_revision_conflict",
+            extra={"current_revision": item.revision},
+        )
+    item.component = payload.component
+    item.value = payload.value
+    item.unit = payload.unit
+    item.provenance = payload.provenance
+    item.reason = payload.reason
+    item.evidence_reference = payload.evidence_reference
+    item.effective_from = _as_utc(payload.effective_from)
+    item.effective_to = _as_utc(payload.effective_to) if payload.effective_to else None
+    item.enabled = payload.enabled
+    item.revision += 1
+    item.updated_by = principal.user.id
+    item.updated_at = datetime.now(UTC)
+    account.revision += 1
+    session.add(
+        audit_event(
+            action="utility_account.adjustment_updated",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="utility_account_adjustment",
+            object_id=item.id,
+            details={
+                "utility_account_id": account.id,
+                "component": item.component,
+                "unit": item.unit,
+                "revision": item.revision,
+                "reason": item.reason,
+                "evidence_reference": item.evidence_reference,
+            },
+        )
+    )
+    await session.commit()
+    return {
+        "id": item.id,
+        "component": item.component,
+        "value": item.value,
+        "unit": item.unit,
+        "provenance": item.provenance,
+        "reason": item.reason,
+        "evidence_reference": item.evidence_reference,
+        "effective_from": item.effective_from,
+        "effective_to": item.effective_to,
+        "enabled": item.enabled,
+        "status": item.status,
+        "revision": item.revision,
+    }
+
+
+@router.delete("/admin/utility-accounts/{account_id}/adjustments/{adjustment_id}")
+async def remove_account_adjustment(
+    account_id: str,
+    adjustment_id: str,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+    revision: int = Query(ge=1),
+) -> dict[str, Any]:
+    _permission(principal, "adjustments.manage")
+    account = await _account_or_404(session, principal, account_id)
+    item = await session.get(UtilityAccountAdjustment, adjustment_id)
+    if item is None or item.utility_account_id != account.id or item.status == "removed":
+        raise ProblemError(
+            404,
+            "Adjustment not found",
+            "The adjustment does not exist for this electric service",
+            "adjustment_missing",
+        )
+    if item.revision != revision:
+        raise ProblemError(
+            409,
+            "Adjustment changed",
+            "Reload the adjustment before removing it",
+            "adjustment_revision_conflict",
+            extra={"current_revision": item.revision},
+        )
+    item.status = "removed"
+    item.enabled = False
+    item.revision += 1
+    item.updated_by = principal.user.id
+    item.updated_at = datetime.now(UTC)
+    account.revision += 1
+    session.add(
+        audit_event(
+            action="utility_account.adjustment_removed",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="utility_account_adjustment",
+            object_id=item.id,
+            details={
+                "utility_account_id": account.id,
+                "history_preserved": True,
+                "revision": item.revision,
+            },
+        )
+    )
+    await session.commit()
+    return {
+        "id": item.id,
+        "status": item.status,
+        "revision": item.revision,
+        "history_preserved": True,
     }
 
 

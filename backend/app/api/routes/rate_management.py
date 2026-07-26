@@ -11,6 +11,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.access import can_access_site
 from app.api.deps import CsrfPrincipal, DbSession, Principal, Viewer, audit_event
@@ -18,6 +19,7 @@ from app.config import get_settings
 from app.db.models import (
     AuditEvent,
     BackgroundJob,
+    BillingCycle,
     CostCalculationRun,
     RateApprovalDecision,
     RateAssignment,
@@ -41,6 +43,13 @@ from app.formatting import (
     format_tier_range,
 )
 from app.problem import ProblemError
+from app.rates.assignments import (
+    assign_version,
+    assignment_conflict_report,
+    assignment_state,
+    end_assignment,
+    resolve_assignment_conflict,
+)
 from app.rates.candidates import create_candidate_from_document
 from app.rates.documents import RatePlanDocument, engine_plan, validate_document
 from app.rates.engine import RateEngine
@@ -63,10 +72,15 @@ from app.rates.sources import (
     validate_source_url,
 )
 from app.schemas import (
+    RateAssignmentEndRequest,
+    RateAssignmentRepairRequest,
+    RateAssignmentReplaceRequest,
     RatePlanDraftDeleteRequest,
     RatePlanLifecycleRequest,
     RatePlanRestoreRequest,
     RatePlanUnassignRequest,
+    RateVersionLifecycleRequest,
+    RateVersionRestoreRequest,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["rate management"])
@@ -83,11 +97,36 @@ def _rate_manager(principal: Principal, permission: str = "rates.manage_custom")
         )
 
 
-def _version_summary(version: RateVersion) -> dict[str, Any]:
+def _version_summary(
+    version: RateVersion, assignments: list[RateAssignment] | None = None
+) -> dict[str, Any]:
     payload = version.normalized_payload or {}
     tiers = payload.get("tiers", []) if isinstance(payload, dict) else []
     billing_cycle = payload.get("billing_cycle", {}) if isinstance(payload, dict) else {}
     threshold = billing_cycle.get("threshold", {}) if isinstance(billing_cycle, dict) else {}
+    assignment_rows = assignments or []
+    states = [assignment_state(item) for item in assignment_rows]
+    current_count = states.count("current")
+    assignment_status = (
+        "conflict"
+        if current_count > 1
+        else "current"
+        if current_count == 1
+        else "scheduled"
+        if "scheduled" in states
+        else "historical"
+        if "historical" in states
+        else "unassigned"
+    )
+    publication_status = {
+        "active": "published",
+        "approved": "published",
+    }.get(version.status, version.status)
+    display_status = (
+        assignment_status
+        if assignment_status in {"current", "scheduled", "conflict"}
+        else publication_status
+    )
     return {
         "id": version.id,
         "version": version.version,
@@ -96,7 +135,10 @@ def _version_summary(version: RateVersion) -> dict[str, Any]:
         "threshold_basis": (threshold.get("basis") if isinstance(threshold, dict) else None),
         "effective_from": version.effective_from,
         "effective_through": version.effective_to,
-        "status": version.status,
+        "status": publication_status,
+        "publication_status": publication_status,
+        "assignment_status": assignment_status,
+        "display_status": display_status,
         "source_kind": version.source_kind,
         "source_checked_at": version.source_checked_at,
         "source_label": version.source_label,
@@ -106,6 +148,22 @@ def _version_summary(version: RateVersion) -> dict[str, Any]:
         "created_at": version.created_at,
         "approved_at": version.approved_at,
         "activated_at": version.activated_at,
+        "parent_version_id": version.parent_version_id,
+        "lifecycle_revision": version.lifecycle_revision,
+        "removed_at": version.removed_at,
+        "removed_by": version.removed_by,
+        "removal_reason": version.removal_reason,
+        "assignments": [
+            {
+                "id": item.id,
+                "utility_account_id": item.utility_account_id,
+                "effective_from": item.effective_from.isoformat(),
+                "effective_to": item.effective_to.isoformat() if item.effective_to else None,
+                "state": assignment_state(item),
+                "revision": item.revision,
+            }
+            for item in assignment_rows
+        ],
     }
 
 
@@ -117,6 +175,25 @@ async def _plan_payload(session: DbSession, plan: RatePlan) -> dict[str, Any]:
             .order_by(RateVersion.version.desc())
         )
     )
+    version_ids = [item.id for item in versions]
+    assignments = (
+        list(
+            await session.scalars(
+                select(RateAssignment)
+                .where(
+                    RateAssignment.rate_version_id.in_(version_ids),
+                    RateAssignment.cancelled_at.is_(None),
+                )
+                .order_by(RateAssignment.effective_from)
+            )
+        )
+        if version_ids
+        else []
+    )
+    assignments_by_version = {
+        version_id: [item for item in assignments if item.rate_version_id == version_id]
+        for version_id in version_ids
+    }
     return {
         "id": plan.id,
         "code": plan.code,
@@ -136,8 +213,34 @@ async def _plan_payload(session: DbSession, plan: RatePlan) -> dict[str, Any]:
         "restored_at": plan.restored_at,
         "restored_by": plan.restored_by,
         "cloned_from_rate_version_id": plan.cloned_from_rate_version_id,
-        "versions": [_version_summary(version) for version in versions],
+        "versions": [
+            _version_summary(version, assignments_by_version.get(version.id, []))
+            for version in versions
+        ],
     }
+
+
+async def _queue_unfinalized_cost_runs(session: DbSession, account_id: str) -> dict[str, int]:
+    finalized = list(
+        await session.scalars(
+            select(BillingCycle).where(
+                BillingCycle.utility_account_id == account_id,
+                BillingCycle.finalized_at.is_not(None),
+            )
+        )
+    )
+    queued = 0
+    for run in await session.scalars(
+        select(CostCalculationRun).where(CostCalculationRun.utility_account_id == account_id)
+    ):
+        protected = any(
+            run.input_start < cycle.ends_at and run.input_end > cycle.starts_at
+            for cycle in finalized
+        )
+        if not protected:
+            run.status = "queued"
+            queued += 1
+    return {"queued_runs": queued, "finalized_cycles_preserved": len(finalized)}
 
 
 @router.get("/rates/plans")
@@ -176,6 +279,32 @@ async def list_admin_rate_plans(
 
 def _aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+async def _idempotent_operation(
+    session: DbSession,
+    *,
+    action: str,
+    idempotency_key: str,
+    utility_account_id: str,
+) -> dict[str, Any] | None:
+    events = list(
+        await session.scalars(
+            select(AuditEvent)
+            .where(AuditEvent.action == action)
+            .order_by(AuditEvent.occurred_at.desc())
+            .limit(200)
+        )
+    )
+    for event in events:
+        details = event.details or {}
+        if (
+            details.get("idempotency_key") == idempotency_key
+            and details.get("utility_account_id") == utility_account_id
+        ):
+            result = details.get("result")
+            return result if isinstance(result, dict) else {}
+    return None
 
 
 async def _rate_plan_dependencies(session: DbSession, plan: RatePlan) -> dict[str, Any]:
@@ -1026,7 +1155,7 @@ async def create_plan_version(
     session: DbSession,
 ) -> dict[str, Any]:
     _rate_manager(principal)
-    plan = await session.get(RatePlan, plan_id)
+    plan = await session.scalar(select(RatePlan).where(RatePlan.id == plan_id).with_for_update())
     if plan is None:
         raise ProblemError(
             404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
@@ -1038,6 +1167,33 @@ async def create_plan_version(
             "Restore the rate plan before creating another version",
             "rate_plan_removed",
         )
+    existing_draft = await session.scalar(
+        select(RateVersion)
+        .where(
+            RateVersion.rate_plan_id == plan_id,
+            RateVersion.status == "draft",
+        )
+        .order_by(RateVersion.version.desc())
+        .limit(1)
+    )
+    if existing_draft is not None:
+        session.add(
+            audit_event(
+                action="rate_version.draft_reopened",
+                actor_type="user",
+                actor_id=principal.user.id,
+                request=request,
+                object_type="rate_version",
+                object_id=existing_draft.id,
+                details={"plan_id": plan_id, "reused": True},
+            )
+        )
+        await session.commit()
+        return {
+            **_version_summary(existing_draft),
+            "reused": True,
+            "editor_url": (f"/billing/rate-plans/{plan.id}/versions/{existing_draft.id}"),
+        }
     source = await session.scalar(
         select(RateVersion)
         .where(RateVersion.rate_plan_id == plan_id)
@@ -1068,6 +1224,8 @@ async def create_plan_version(
         normalized_payload=document.model_dump(mode="json"),
         immutable_after_use=False,
         is_active=False,
+        parent_version_id=source.id,
+        lifecycle_revision=1,
         created_at=datetime.now(UTC),
         created_by=principal.user.id,
     )
@@ -1086,19 +1244,44 @@ async def create_plan_version(
         )
     )
     await session.commit()
-    return _version_summary(version)
+    return {
+        **_version_summary(version),
+        "reused": False,
+        "editor_url": f"/billing/rate-plans/{plan.id}/versions/{version.id}",
+    }
 
 
 @router.get("/rates/plans/{plan_id}/versions")
 async def list_plan_versions(
     plan_id: str, _viewer: Viewer, session: DbSession
 ) -> list[dict[str, Any]]:
-    versions = await session.scalars(
-        select(RateVersion)
-        .where(RateVersion.rate_plan_id == plan_id)
-        .order_by(RateVersion.version.desc())
+    versions = list(
+        await session.scalars(
+            select(RateVersion)
+            .where(RateVersion.rate_plan_id == plan_id)
+            .order_by(RateVersion.version.desc())
+        )
     )
-    return [_version_summary(item) for item in versions]
+    version_ids = [item.id for item in versions]
+    assignments = (
+        list(
+            await session.scalars(
+                select(RateAssignment).where(
+                    RateAssignment.rate_version_id.in_(version_ids),
+                    RateAssignment.cancelled_at.is_(None),
+                )
+            )
+        )
+        if version_ids
+        else []
+    )
+    return [
+        _version_summary(
+            item,
+            [assignment for assignment in assignments if assignment.rate_version_id == item.id],
+        )
+        for item in versions
+    ]
 
 
 @router.get("/rates/versions/{version_id}")
@@ -1132,8 +1315,16 @@ async def get_rate_version(version_id: str, _viewer: Viewer, session: DbSession)
                     "relationship": link.relationship,
                 }
             )
+    assignments = list(
+        await session.scalars(
+            select(RateAssignment).where(
+                RateAssignment.rate_version_id == version.id,
+                RateAssignment.cancelled_at.is_(None),
+            )
+        )
+    )
     return {
-        "version": _version_summary(version),
+        "version": _version_summary(version, assignments),
         "document": await version_document(session, version),
         "source_evidence": evidence,
     }
@@ -1198,7 +1389,7 @@ async def activate_managed_version(
     status, report = await activate_version(session, version, principal.user.id)
     session.add(
         audit_event(
-            action="rate_version.activated" if status == "active" else "rate_version.scheduled",
+            action="rate_version.published",
             actor_type="user",
             actor_id=principal.user.id,
             request=request,
@@ -1216,16 +1407,35 @@ async def activate_managed_version(
 
 @router.post("/rates/versions/{version_id}/retire")
 async def retire_managed_version(
-    version_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
+    version_id: str,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+    payload: RateVersionLifecycleRequest | None = None,
 ) -> dict[str, str]:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.remove")
     version = await session.get(RateVersion, version_id)
     if version is None:
         raise ProblemError(
             404, "Rate version not found", "Version does not exist", "rate_version_missing"
         )
+    dependencies = await _rate_version_dependencies(session, version)
+    if dependencies["current_assignments"] or dependencies["future_assignments"]:
+        raise ProblemError(
+            409,
+            "Assigned rate version cannot be retired",
+            "Replace, end, or cancel the effective assignments first",
+            "rate_version_assignment_blocked",
+            extra={"dependencies": dependencies},
+        )
+    if payload:
+        _validate_version_lifecycle(version, dependencies, payload)
     version.status = "retired"
     version.is_active = False
+    version.lifecycle_revision += 1
+    version.removal_reason = payload.reason if payload else "Retired through compatibility API"
+    version.removed_by = principal.user.id
+    version.removed_at = datetime.now(UTC)
     plan = await session.get(RatePlan, version.rate_plan_id)
     if plan and not await session.scalar(
         select(RateVersion.id).where(
@@ -1243,17 +1453,20 @@ async def retire_managed_version(
             request=request,
             object_type="rate_version",
             object_id=version.id,
+            details={"reason": version.removal_reason, "dependencies": dependencies},
         )
     )
     await session.commit()
-    return {"status": "retired"}
+    return {"status": "retired", "lifecycle_revision": str(version.lifecycle_revision)}
 
 
 @router.delete("/rates/versions/{version_id}", status_code=204)
 async def delete_draft_version(
-    version_id: str, principal: CsrfPrincipal, session: DbSession
+    version_id: str,
+    principal: CsrfPrincipal,
+    session: DbSession,
 ) -> None:
-    _rate_manager(principal)
+    _rate_manager(principal, "rates.remove")
     version = await session.get(RateVersion, version_id)
     if version is None:
         return
@@ -1264,6 +1477,294 @@ async def delete_draft_version(
             "Only unused drafts can be deleted",
             "rate_version_in_use",
         )
+    await session.delete(version)
+    await session.commit()
+
+
+async def _rate_version_dependencies(session: DbSession, version: RateVersion) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    assignments = list(
+        await session.scalars(
+            select(RateAssignment)
+            .where(RateAssignment.rate_version_id == version.id)
+            .order_by(RateAssignment.effective_from)
+        )
+    )
+    current = [
+        item
+        for item in assignments
+        if item.cancelled_at is None and assignment_state(item, now) == "current"
+    ]
+    future = [
+        item
+        for item in assignments
+        if item.cancelled_at is None and assignment_state(item, now) == "scheduled"
+    ]
+    historical = [
+        item for item in assignments if assignment_state(item, now) in {"historical", "cancelled"}
+    ]
+    costs = int(
+        await session.scalar(
+            select(func.count(CostCalculationRun.id)).where(
+                CostCalculationRun.rate_version_id == version.id
+            )
+        )
+        or 0
+    )
+    evidence = int(
+        await session.scalar(
+            select(func.count(RateVersionSource.rate_version_id)).where(
+                RateVersionSource.rate_version_id == version.id
+            )
+        )
+        or 0
+    )
+    bills = int(
+        await session.scalar(
+            select(func.count(UtilityBillImport.id)).where(
+                UtilityBillImport.rate_version_id == version.id
+            )
+        )
+        or 0
+    )
+    candidates = int(
+        await session.scalar(
+            select(func.count(RateChangeCandidate.id)).where(
+                (RateChangeCandidate.base_rate_version_id == version.id)
+                | (RateChangeCandidate.candidate_rate_version_id == version.id)
+            )
+        )
+        or 0
+    )
+    payload = {
+        "version_id": version.id,
+        "lifecycle_revision": version.lifecycle_revision,
+        "state": _version_summary(version)["publication_status"],
+        "current_assignments": [
+            {
+                "id": item.id,
+                "utility_account_id": item.utility_account_id,
+                "effective_from": item.effective_from.isoformat(),
+                "effective_to": item.effective_to.isoformat() if item.effective_to else None,
+            }
+            for item in current
+        ],
+        "future_assignments": [
+            {
+                "id": item.id,
+                "utility_account_id": item.utility_account_id,
+                "effective_from": item.effective_from.isoformat(),
+                "effective_to": item.effective_to.isoformat() if item.effective_to else None,
+            }
+            for item in future
+        ],
+        "historical_assignment_count": len(historical),
+        "cost_rows": costs,
+        "billing_cycles": bills,
+        "evidence": evidence,
+        "candidate_references": candidates,
+        "report_count": 0,
+        "delete_draft_eligible": (
+            version.status == "draft"
+            and not version.immutable_after_use
+            and not assignments
+            and not costs
+            and not evidence
+            and not bills
+            and not candidates
+        ),
+        "restore_behavior": "Restoring returns the version to the library and never assigns it.",
+    }
+    token_source = json.dumps(payload, default=str, sort_keys=True, separators=(",", ":"))
+    payload["dependency_token"] = hashlib.sha256(token_source.encode()).hexdigest()
+    return payload
+
+
+def _validate_version_lifecycle(
+    version: RateVersion,
+    dependencies: dict[str, Any],
+    payload: RateVersionLifecycleRequest,
+) -> None:
+    if version.lifecycle_revision != payload.expected_revision:
+        raise ProblemError(
+            409,
+            "Rate version changed",
+            "Reload the version lifecycle review",
+            "stale_revision",
+            extra={"current_revision": version.lifecycle_revision},
+        )
+    expected = f"{version.version}"
+    if payload.confirmation.strip().casefold() not in {
+        expected.casefold(),
+        version.id.casefold(),
+    }:
+        raise ProblemError(
+            422,
+            "Version confirmation does not match",
+            f"Type version {version.version} or its identifier to continue",
+            "rate_version_confirmation_invalid",
+        )
+    if dependencies["current_assignments"] or dependencies["future_assignments"]:
+        raise ProblemError(
+            409,
+            "Assigned rate version cannot be changed",
+            "Replace, end, or cancel its assignments first",
+            "rate_version_assignment_blocked",
+            extra={"dependencies": dependencies},
+        )
+
+
+@router.get("/rates/versions/{version_id}/dependencies")
+async def rate_version_dependencies(
+    version_id: str, principal: Viewer, session: DbSession
+) -> dict[str, Any]:
+    _rate_manager(principal, "rates.view")
+    version = await session.get(RateVersion, version_id)
+    if version is None:
+        raise ProblemError(
+            404, "Rate version not found", "Version does not exist", "rate_version_missing"
+        )
+    return await _rate_version_dependencies(session, version)
+
+
+@router.post("/rates/versions/{version_id}/remove")
+async def remove_rate_version(
+    version_id: str,
+    payload: RateVersionLifecycleRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _rate_manager(principal, "rates.remove")
+    version = await session.get(RateVersion, version_id)
+    if version is None:
+        raise ProblemError(
+            404, "Rate version not found", "Version does not exist", "rate_version_missing"
+        )
+    if version.status == "removed":
+        return {"idempotent": True, "version": _version_summary(version)}
+    dependencies = await _rate_version_dependencies(session, version)
+    _validate_version_lifecycle(version, dependencies, payload)
+    if version.status == "draft" and dependencies["delete_draft_eligible"]:
+        raise ProblemError(
+            409,
+            "Unused draft should be deleted",
+            "Use Delete draft for a version with no dependencies",
+            "rate_version_delete_draft_available",
+            extra={"dependencies": dependencies},
+        )
+    version.status_before_removal = version.status
+    version.status = "removed"
+    version.is_active = False
+    version.removed_at = datetime.now(UTC)
+    version.removed_by = principal.user.id
+    version.removal_reason = payload.reason
+    version.lifecycle_revision += 1
+    session.add(
+        audit_event(
+            action="rate_version.removed",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="rate_version",
+            object_id=version.id,
+            details={"reason": payload.reason, "dependencies": dependencies},
+        )
+    )
+    await session.commit()
+    return {
+        "idempotent": False,
+        "version": _version_summary(version),
+        "dependencies": await _rate_version_dependencies(session, version),
+    }
+
+
+@router.post("/rates/versions/{version_id}/restore")
+async def restore_rate_version(
+    version_id: str,
+    payload: RateVersionRestoreRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _rate_manager(principal, "rates.restore")
+    version = await session.get(RateVersion, version_id)
+    if version is None:
+        raise ProblemError(
+            404, "Rate version not found", "Version does not exist", "rate_version_missing"
+        )
+    if version.status not in {"removed", "retired"}:
+        return {"idempotent": True, "version": _version_summary(version)}
+    if version.lifecycle_revision != payload.expected_revision:
+        raise ProblemError(
+            409,
+            "Rate version changed",
+            "Reload before restoring it",
+            "stale_revision",
+            extra={"current_revision": version.lifecycle_revision},
+        )
+    restored_status = (
+        str(version.status_before_removal)
+        if version.status_before_removal not in {None, "active", "approved"}
+        else ("published" if version.immutable_after_use else "draft")
+    )
+    version.status = restored_status
+    version.status_before_removal = None
+    version.restored_at = datetime.now(UTC)
+    version.restored_by = principal.user.id
+    version.lifecycle_revision += 1
+    session.add(
+        audit_event(
+            action="rate_version.restored",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="rate_version",
+            object_id=version.id,
+            details={"reason": payload.reason, "assignments_restored": False},
+        )
+    )
+    await session.commit()
+    return {
+        "idempotent": False,
+        "assignments_restored": False,
+        "version": _version_summary(version),
+    }
+
+
+@router.delete("/rates/versions/{version_id}/draft", status_code=204)
+async def delete_rate_version_draft(
+    version_id: str,
+    payload: RateVersionLifecycleRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> None:
+    _rate_manager(principal, "rates.remove")
+    version = await session.get(RateVersion, version_id)
+    if version is None:
+        return
+    dependencies = await _rate_version_dependencies(session, version)
+    _validate_version_lifecycle(version, dependencies, payload)
+    if not dependencies["delete_draft_eligible"]:
+        raise ProblemError(
+            409,
+            "Rate draft cannot be deleted",
+            "Assignments, costs, bills, candidates, or evidence require preservation",
+            "rate_version_in_use",
+            extra={"dependencies": dependencies},
+        )
+    session.add(
+        audit_event(
+            action="rate_version.draft_deleted",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="rate_version",
+            object_id=version.id,
+            details={"reason": payload.reason, "plan_id": version.rate_plan_id},
+        )
+    )
     await session.delete(version)
     await session.commit()
 
@@ -1484,6 +1985,228 @@ async def validate_rate_document(
     return validate_document(payload).model_dump(mode="json")
 
 
+@router.post("/rates/assignments/replace")
+async def replace_current_assignment(
+    payload: RateAssignmentReplaceRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _rate_manager(principal, "rates.assign")
+    if payload.idempotency_key:
+        existing = await session.scalar(
+            select(RateAssignment).where(RateAssignment.idempotency_key == payload.idempotency_key)
+        )
+        if existing is not None:
+            if (
+                existing.utility_account_id != payload.utility_account_id
+                or existing.rate_version_id != payload.rate_version_id
+                or _aware(existing.effective_from) != _aware(payload.effective_from)
+            ):
+                raise ProblemError(
+                    409,
+                    "Idempotency key already used",
+                    "Use a new operation identifier for different assignment values",
+                    "idempotency_key_reused",
+                )
+            prior = await session.scalar(
+                select(AuditEvent)
+                .where(
+                    AuditEvent.object_id == existing.id,
+                    AuditEvent.action.in_(["rate_assignment.replaced", "rate_assignment.created"]),
+                )
+                .order_by(AuditEvent.occurred_at.desc())
+                .limit(1)
+            )
+            details = prior.details if prior else {}
+            return {
+                "assignment_id": existing.id,
+                "effective_from": existing.effective_from,
+                "effective_to": existing.effective_to,
+                "effective_now": assignment_state(existing) == "current",
+                "replaced_assignment_ids": details.get("replaced_assignment_ids", []),
+                "history_preserved": True,
+                "cost_recalculation": details.get("cost_recalculation", {}),
+                "idempotent": True,
+            }
+    try:
+        assignment, replaced_ids, effective_now = await assign_version(
+            session,
+            account_id=payload.utility_account_id,
+            rate_version_id=payload.rate_version_id,
+            effective_from=payload.effective_from,
+            effective_to=payload.effective_to,
+            replace_current=True,
+            reason=payload.assignment_reason or "Owner replaced the current rate plan",
+            actor_id=principal.user.id,
+            idempotency_key=payload.idempotency_key,
+        )
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ProblemError(
+            409,
+            "Rate assignment overlaps",
+            "Another assignment changed concurrently; reload before replacing it",
+            "rate_assignment_overlap",
+            extra={"allowed_resolution_actions": ["reload", "review_conflicts"]},
+        ) from exc
+    recalculation = await _queue_unfinalized_cost_runs(session, payload.utility_account_id)
+    result = {
+        "assignment_id": assignment.id,
+        "effective_from": assignment.effective_from,
+        "effective_to": assignment.effective_to,
+        "effective_now": effective_now,
+        "replaced_assignment_ids": replaced_ids,
+        "history_preserved": True,
+        "cost_recalculation": recalculation,
+        "idempotent": False,
+    }
+    audit_result = {
+        **result,
+        "effective_from": assignment.effective_from.isoformat(),
+        "effective_to": (assignment.effective_to.isoformat() if assignment.effective_to else None),
+    }
+    session.add(
+        audit_event(
+            action="rate_assignment.replaced" if replaced_ids else "rate_assignment.created",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="rate_assignment",
+            object_id=assignment.id,
+            details={
+                "utility_account_id": payload.utility_account_id,
+                "rate_version_id": payload.rate_version_id,
+                "replaced_assignment_ids": replaced_ids,
+                "effective_now": effective_now,
+                "history_preserved": True,
+                "cost_recalculation": recalculation,
+                "idempotency_key": payload.idempotency_key,
+                "result": audit_result,
+            },
+        )
+    )
+    await session.commit()
+    return result
+
+
+@router.post("/rates/assignments/end")
+async def end_current_rate_assignment(
+    payload: RateAssignmentEndRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _rate_manager(principal, "rates.assign")
+    repeated = await _idempotent_operation(
+        session,
+        action="rate_assignment.ended",
+        idempotency_key=payload.idempotency_key,
+        utility_account_id=payload.utility_account_id,
+    )
+    if repeated is not None:
+        return {**repeated, "idempotent": True}
+    assignment = await end_assignment(
+        session,
+        account_id=payload.utility_account_id,
+        effective_at=payload.effective_at,
+        reason=payload.reason,
+        actor_id=principal.user.id,
+    )
+    recalculation = await _queue_unfinalized_cost_runs(session, payload.utility_account_id)
+    result = {
+        "assignment_id": assignment.id,
+        "effective_to": assignment.effective_to,
+        "cost_estimates_available_after": False,
+        "cost_recalculation": recalculation,
+        "idempotent": False,
+    }
+    audit_result = {
+        **result,
+        "effective_to": (assignment.effective_to.isoformat() if assignment.effective_to else None),
+    }
+    session.add(
+        audit_event(
+            action="rate_assignment.ended",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="rate_assignment",
+            object_id=assignment.id,
+            details={
+                "utility_account_id": payload.utility_account_id,
+                "effective_to": (
+                    assignment.effective_to.isoformat() if assignment.effective_to else None
+                ),
+                "warning_acknowledged": True,
+                "cost_recalculation": recalculation,
+                "idempotency_key": payload.idempotency_key,
+                "result": audit_result,
+            },
+        )
+    )
+    await session.commit()
+    return result
+
+
+@router.get("/rates/assignments/conflicts")
+async def list_assignment_conflicts(principal: Viewer, session: DbSession) -> dict[str, Any]:
+    _rate_manager(principal, "rates.assign")
+    conflicts = await assignment_conflict_report(session)
+    return {"conflicts": conflicts, "requires_explicit_resolution": bool(conflicts)}
+
+
+@router.post("/rates/assignments/conflicts/resolve")
+async def repair_assignment_conflicts(
+    payload: RateAssignmentRepairRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _rate_manager(principal, "rates.assign")
+    repeated = await _idempotent_operation(
+        session,
+        action="rate_assignment.conflict_repaired",
+        idempotency_key=payload.idempotency_key,
+        utility_account_id=payload.utility_account_id,
+    )
+    if repeated is not None:
+        return {**repeated, "idempotent": True}
+    result = await resolve_assignment_conflict(
+        session,
+        account_id=payload.utility_account_id,
+        keep_assignment_id=payload.keep_assignment_id,
+        expected_assignment_ids=payload.expected_assignment_ids,
+        reason=payload.reason,
+        actor_id=principal.user.id,
+    )
+    recalculation = await _queue_unfinalized_cost_runs(session, payload.utility_account_id)
+    response = {
+        **result,
+        "cost_recalculation": recalculation,
+        "idempotent": result.get("idempotent", False),
+    }
+    session.add(
+        audit_event(
+            action="rate_assignment.conflict_repaired",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="utility_account",
+            object_id=payload.utility_account_id,
+            details={
+                **result,
+                "reason": payload.reason,
+                "cost_recalculation": recalculation,
+                "idempotency_key": payload.idempotency_key,
+                "result": response,
+            },
+        )
+    )
+    await session.commit()
+    return response
+
+
 @router.get("/rates/assignments")
 async def list_rate_assignments(_viewer: Viewer, session: DbSession) -> list[dict[str, Any]]:
     _rate_manager(_viewer, "rates.view")
@@ -1497,6 +2220,9 @@ async def list_rate_assignments(_viewer: Viewer, session: DbSession) -> list[dic
             "rate_version_id": item.rate_version_id,
             "effective_from": item.effective_from,
             "effective_to": item.effective_to,
+            "state": assignment_state(item),
+            "cancelled_at": item.cancelled_at,
+            "revision": item.revision,
         }
         for item in assignments
     ]
@@ -1516,44 +2242,21 @@ async def create_rate_assignment(
             .order_by(UtilityAccount.created_at)
             .limit(1)
         )
-    version = await session.get(RateVersion, str(payload["rate_version_id"]))
-    if account is None or version is None or version.status not in {"active", "approved"}:
+    if account is None or not payload.get("rate_version_id"):
         raise ProblemError(
             422,
             "Invalid rate assignment",
-            "Account and active or scheduled version are required",
+            "Electric service and published rate version are required",
             "rate_assignment_invalid",
-        )
-    plan = await session.get(RatePlan, version.rate_plan_id)
-    if plan is None or plan.status in {"removed", "retired"}:
-        raise ProblemError(
-            409,
-            "Rate plan unavailable",
-            "Removed or retired rate plans cannot receive new assignments",
-            "rate_plan_removed",
         )
     effective_from = datetime.fromisoformat(
         str(payload.get("effective_from") or datetime.now(UTC).isoformat())
     )
-    current = list(
-        await session.scalars(
-            select(RateAssignment).where(
-                RateAssignment.utility_account_id == account.id,
-                RateAssignment.effective_to.is_(None),
-            )
-        )
+    effective_to = (
+        datetime.fromisoformat(str(payload["effective_to"]))
+        if payload.get("effective_to")
+        else None
     )
-    for item in current:
-        item.effective_to = effective_from
-    assignment = RateAssignment(
-        utility_account_id=account.id,
-        rate_version_id=version.id,
-        effective_from=effective_from,
-        effective_to=None,
-        assigned_by=principal.user.id,
-        created_at=datetime.now(UTC),
-    )
-    account.active_rate_version_id = version.id
     provider_mode = str(payload.get("provider_mode", account.provider_mode))
     cost_scope = str(payload.get("cost_scope", account.cost_scope_default))
     if provider_mode not in {
@@ -1583,26 +2286,63 @@ async def create_rate_assignment(
         )
     if payload.get("generation_provider"):
         account.generation_provider = str(payload["generation_provider"])[:32]
-    session.add(assignment)
-    await session.flush()
+    try:
+        assignment, replaced_ids, effective_now = await assign_version(
+            session,
+            account_id=account.id,
+            rate_version_id=str(payload["rate_version_id"]),
+            effective_from=effective_from,
+            effective_to=effective_to,
+            replace_current=bool(payload.get("replace_current", False)),
+            reason=str(payload.get("assignment_reason") or "Assigned through rate editor"),
+            actor_id=principal.user.id,
+            idempotency_key=(
+                str(payload["idempotency_key"]) if payload.get("idempotency_key") else None
+            ),
+        )
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ProblemError(
+            409,
+            "Rate assignment overlaps",
+            "Another assignment changed at the same time; reload and try again",
+            "rate_assignment_overlap",
+            extra={"allowed_resolution_actions": ["reload", "replace_current"]},
+        ) from exc
+    recalculation = await _queue_unfinalized_cost_runs(session, account.id)
     session.add(
         audit_event(
-            action="rate_assignment.created",
+            action=(
+                "rate_assignment.replaced"
+                if replaced_ids
+                else "rate_assignment.created"
+                if effective_now
+                else "rate_assignment.scheduled"
+            ),
             actor_type="user",
             actor_id=principal.user.id,
             request=request,
             object_type="rate_assignment",
             object_id=assignment.id,
             details={
-                "rate_version_id": version.id,
+                "rate_version_id": assignment.rate_version_id,
                 "utility_account_id": account.id,
                 "provider_mode": account.provider_mode,
                 "cost_scope": account.cost_scope_default,
+                "replaced_assignment_ids": replaced_ids,
+                "cost_recalculation": recalculation,
             },
         )
     )
     await session.commit()
-    return {"id": assignment.id, "effective_from": assignment.effective_from}
+    return {
+        "id": assignment.id,
+        "effective_from": assignment.effective_from,
+        "effective_to": assignment.effective_to,
+        "effective_now": effective_now,
+        "replaced_assignment_ids": replaced_ids,
+        "cost_recalculation": recalculation,
+    }
 
 
 @router.patch("/rates/assignments/{assignment_id}")
@@ -1619,15 +2359,41 @@ async def patch_rate_assignment(
         raise ProblemError(
             404, "Rate assignment not found", "Assignment does not exist", "rate_assignment_missing"
         )
+    if assignment_state(assignment) == "historical":
+        raise ProblemError(
+            409,
+            "Historical assignment is immutable",
+            "Historical rate authority and calculated costs must be preserved",
+            "rate_assignment_historical",
+        )
+    expected_revision = payload.get("revision")
+    if expected_revision is None or int(expected_revision) != assignment.revision:
+        raise ProblemError(
+            409,
+            "Rate assignment changed",
+            "Reload the assignment before changing its boundary",
+            "stale_revision",
+            extra={"current_revision": assignment.revision},
+        )
     if payload.get("effective_to") is not None:
-        assignment.effective_to = datetime.fromisoformat(str(payload["effective_to"]))
-        if assignment.effective_to <= assignment.effective_from:
+        proposed_end = datetime.fromisoformat(str(payload["effective_to"]))
+        if proposed_end <= assignment.effective_from:
             raise ProblemError(
                 422,
                 "Invalid assignment dates",
                 "Assignment end must follow its start",
                 "rate_assignment_invalid",
             )
+        if assignment.effective_to is not None and proposed_end > assignment.effective_to:
+            raise ProblemError(
+                409,
+                "Assignment window cannot be expanded",
+                "Use the explicit Replace current workflow to change rate authority",
+                "rate_assignment_replace_required",
+            )
+        assignment.effective_to = proposed_end
+        assignment.revision += 1
+    recalculation = await _queue_unfinalized_cost_runs(session, assignment.utility_account_id)
     session.add(
         audit_event(
             action="rate_assignment.updated",
@@ -1639,12 +2405,19 @@ async def patch_rate_assignment(
             details={
                 "effective_to": assignment.effective_to.isoformat()
                 if assignment.effective_to
-                else None
+                else None,
+                "revision": assignment.revision,
+                "cost_recalculation": recalculation,
             },
         )
     )
     await session.commit()
-    return {"id": assignment.id, "effective_to": assignment.effective_to}
+    return {
+        "id": assignment.id,
+        "effective_to": assignment.effective_to,
+        "revision": assignment.revision,
+        "cost_recalculation": recalculation,
+    }
 
 
 @router.delete("/rates/assignments/{assignment_id}", status_code=204)
@@ -1657,18 +2430,31 @@ async def delete_rate_assignment(
     _rate_manager(principal, "rates.assign")
     assignment = await session.get(RateAssignment, assignment_id)
     if assignment:
+        if assignment_state(assignment) != "scheduled":
+            raise ProblemError(
+                409,
+                "Only scheduled assignments can be cancelled",
+                "End a current assignment explicitly; historical assignments are immutable",
+                "rate_assignment_delete_blocked",
+            )
+        assignment.cancelled_at = datetime.now(UTC)
+        assignment.cancelled_by = principal.user.id
+        assignment.cancellation_reason = "Cancelled scheduled assignment"
+        assignment.revision += 1
         session.add(
             audit_event(
-                action="rate_assignment.deleted",
+                action="rate_assignment.cancelled",
                 actor_type="user",
                 actor_id=principal.user.id,
                 request=request,
                 object_type="rate_assignment",
                 object_id=assignment.id,
-                details={"rate_version_id": assignment.rate_version_id},
+                details={
+                    "rate_version_id": assignment.rate_version_id,
+                    "history_preserved": True,
+                },
             )
         )
-        await session.delete(assignment)
         await session.commit()
 
 
@@ -1690,7 +2476,32 @@ def _rate_sync_configuration(config: RateSyncConfiguration) -> dict[str, Any]:
     }
 
 
-def _rate_source_payload(source: RateSource) -> dict[str, Any]:
+async def _rate_source_payload(session: DbSession, source: RateSource) -> dict[str, Any]:
+    latest = await session.scalar(
+        select(RateSourceCheckRun)
+        .where(RateSourceCheckRun.rate_source_id == source.id)
+        .order_by(RateSourceCheckRun.checked_at.desc())
+        .limit(1)
+    )
+    candidate_count = int(
+        await session.scalar(
+            select(func.count(RateChangeCandidate.id))
+            .join(
+                RateExtractionResult,
+                RateExtractionResult.id == RateChangeCandidate.extraction_result_id,
+            )
+            .join(
+                RateSourceArtifact,
+                RateSourceArtifact.id == RateExtractionResult.artifact_id,
+            )
+            .join(
+                RateSourceCheckRun,
+                RateSourceCheckRun.id == RateSourceArtifact.source_check_id,
+            )
+            .where(RateSourceCheckRun.rate_source_id == source.id)
+        )
+        or 0
+    )
     return {
         "id": source.id,
         "name": source.name,
@@ -1702,6 +2513,24 @@ def _rate_source_payload(source: RateSource) -> dict[str, Any]:
         "last_success_at": source.last_success_at,
         "consecutive_failures": source.consecutive_failures,
         "created_at": source.created_at,
+        "last_result": (
+            {
+                "check_id": latest.id,
+                "job_id": latest.job_id,
+                "outcome": latest.outcome,
+                "checked_at": latest.checked_at,
+                "finished_at": latest.finished_at,
+                "duration_ms": latest.duration_ms,
+                "http_status": latest.http_status,
+                "candidate_count": latest.candidate_count,
+                "artifact_count": latest.artifact_count,
+                "error_code": latest.error_code,
+                "error_detail": latest.error_detail,
+            }
+            if latest
+            else None
+        ),
+        "candidate_count": candidate_count,
     }
 
 
@@ -1719,7 +2548,7 @@ async def list_rate_sources(principal: Principal, session: DbSession) -> dict[st
     return {
         "configuration": _rate_sync_configuration(config) if config else None,
         "last_successful_check": last_success,
-        "sources": [_rate_source_payload(item) for item in sources],
+        "sources": [await _rate_source_payload(session, item) for item in sources],
     }
 
 
@@ -1838,7 +2667,91 @@ async def create_rate_source(
         )
     )
     await session.commit()
-    return _rate_source_payload(source)
+    return await _rate_source_payload(session, source)
+
+
+async def _source_run_payload(session: DbSession, job: BackgroundJob) -> dict[str, Any]:
+    checks = list(
+        await session.scalars(
+            select(RateSourceCheckRun)
+            .where(RateSourceCheckRun.job_id == job.id)
+            .order_by(RateSourceCheckRun.checked_at)
+        )
+    )
+    items: list[dict[str, Any]] = []
+    for check in checks:
+        source = await session.get(RateSource, check.rate_source_id)
+        items.append(
+            {
+                "id": check.id,
+                "source_id": check.rate_source_id,
+                "source_name": source.name if source else "Removed source",
+                "parser_id": source.parser_id if source else None,
+                "outcome": check.outcome,
+                "checked_at": check.checked_at,
+                "finished_at": check.finished_at,
+                "duration_ms": check.duration_ms,
+                "http_status": check.http_status,
+                "candidate_count": check.candidate_count,
+                "artifact_count": check.artifact_count,
+                "error_code": check.error_code,
+                "error_detail": check.error_detail,
+            }
+        )
+    return {
+        "id": job.id,
+        "status": job.status,
+        "trigger_type": job.trigger_type,
+        "requested_by": job.requested_by,
+        "requested_at": job.requested_at,
+        "started_at": job.started_at,
+        "completed_at": job.completed_at,
+        "progress": job.progress,
+        "sources_attempted": len(items),
+        "successes": sum(
+            item["outcome"]
+            in {
+                "succeeded",
+                "manual_review",
+                "not_modified",
+                "unchanged_content",
+                "verified",
+            }
+            for item in items
+        ),
+        "failures": sum(item["outcome"] == "failed" for item in items),
+        "candidates": sum(int(item["candidate_count"] or 0) for item in items),
+        "archived_evidence": sum(int(item["artifact_count"] or 0) for item in items),
+        "error": ({"code": job.error_code, "detail": job.error_detail} if job.error_code else None),
+        "items": items,
+    }
+
+
+@router.get("/admin/rate-sources/check-runs")
+async def list_source_check_runs(principal: Principal, session: DbSession) -> list[dict[str, Any]]:
+    _rate_manager(principal, "rates.manage_sources")
+    jobs = list(
+        await session.scalars(
+            select(BackgroundJob)
+            .where(BackgroundJob.job_type == "rate_source_sync")
+            .order_by(BackgroundJob.requested_at.desc())
+            .limit(50)
+        )
+    )
+    return [await _source_run_payload(session, job) for job in jobs]
+
+
+@router.get("/admin/rate-sources/check-runs/{run_id}")
+async def get_source_check_run(
+    run_id: str, principal: Principal, session: DbSession
+) -> dict[str, Any]:
+    _rate_manager(principal, "rates.manage_sources")
+    job = await session.get(BackgroundJob, run_id)
+    if job is None or job.job_type != "rate_source_sync":
+        raise ProblemError(
+            404, "Source check not found", "The source check run does not exist", "job_missing"
+        )
+    return await _source_run_payload(session, job)
 
 
 @router.get("/admin/rate-sources/{source_id}")
@@ -1983,7 +2896,57 @@ async def patch_rate_settings(
     return {"updated": True, "configuration": _rate_sync_configuration(config)}
 
 
-async def _queue_check(session: DbSession, user_id: str, source_ids: list[str]) -> BackgroundJob:
+async def _queue_check(
+    session: DbSession,
+    user_id: str,
+    source_ids: list[str],
+    *,
+    idempotency_key: str | None,
+    all_enabled: bool,
+) -> tuple[BackgroundJob, bool]:
+    if all_enabled:
+        source_ids = list(
+            await session.scalars(
+                select(RateSource.id).where(RateSource.enabled.is_(True)).order_by(RateSource.url)
+            )
+        )
+    dedupe_key = "all-enabled" if all_enabled else f"source:{','.join(sorted(source_ids))}"
+    if idempotency_key:
+        previous = await session.scalar(
+            select(BackgroundJob).where(
+                BackgroundJob.job_type == "rate_source_sync",
+                BackgroundJob.idempotency_key == idempotency_key,
+            )
+        )
+        if previous is not None:
+            return previous, True
+    running = await session.scalar(
+        select(BackgroundJob)
+        .where(
+            BackgroundJob.job_type == "rate_source_sync",
+            BackgroundJob.dedupe_key == dedupe_key,
+            BackgroundJob.status.in_(["queued", "running"]),
+        )
+        .order_by(BackgroundJob.requested_at)
+        .limit(1)
+    )
+    if running is not None:
+        return running, True
+    if not all_enabled:
+        active_all = await session.scalar(
+            select(BackgroundJob)
+            .where(
+                BackgroundJob.job_type == "rate_source_sync",
+                BackgroundJob.dedupe_key == "all-enabled",
+                BackgroundJob.status.in_(["queued", "running"]),
+            )
+            .order_by(BackgroundJob.requested_at)
+            .limit(1)
+        )
+        if active_all is not None and set(source_ids).issubset(
+            set(active_all.progress.get("source_ids", []))
+        ):
+            return active_all, True
     job = BackgroundJob(
         job_type="rate_source_sync",
         status="queued",
@@ -1991,20 +2954,51 @@ async def _queue_check(session: DbSession, user_id: str, source_ids: list[str]) 
         requested_at=datetime.now(UTC),
         scheduled_for=None,
         correlation_id=f"rate-sync-{secrets.token_hex(12)}",
-        progress={"source_ids": source_ids, "completed": 0},
+        dedupe_key=dedupe_key,
+        idempotency_key=idempotency_key,
+        trigger_type="manual",
+        progress={
+            "source_ids": source_ids,
+            "completed": 0,
+            "total": len(source_ids),
+            "current_source_id": None,
+        },
         result={},
     )
     session.add(job)
     await session.flush()
-    return job
+    return job, False
 
 
 @router.post("/admin/rate-sources/check-now", status_code=202)
 async def check_all_sources(
     request: Request, principal: CsrfPrincipal, session: DbSession
-) -> dict[str, str]:
+) -> dict[str, Any]:
     _rate_manager(principal, "rates.check_sources")
-    job = await _queue_check(session, principal.user.id, [])
+    try:
+        job, deduplicated = await _queue_check(
+            session,
+            principal.user.id,
+            [],
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            all_enabled=True,
+        )
+    except IntegrityError:
+        await session.rollback()
+        recovered_job = await session.scalar(
+            select(BackgroundJob)
+            .where(
+                BackgroundJob.job_type == "rate_source_sync",
+                BackgroundJob.dedupe_key == "all-enabled",
+                BackgroundJob.status.in_(["queued", "running"]),
+            )
+            .order_by(BackgroundJob.requested_at)
+            .limit(1)
+        )
+        if recovered_job is None:
+            raise
+        job = recovered_job
+        deduplicated = True
     session.add(
         audit_event(
             action="rate_source.check_requested",
@@ -2016,32 +3010,73 @@ async def check_all_sources(
         )
     )
     await session.commit()
-    return {"job_id": job.id, "status": "queued"}
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "deduplicated": deduplicated,
+        "progress": job.progress,
+    }
 
 
 @router.post("/admin/rate-sources/{source_id}/check", status_code=202)
 async def check_one_source(
     source_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
-) -> dict[str, str]:
+) -> dict[str, Any]:
     _rate_manager(principal, "rates.check_sources")
-    if await session.get(RateSource, source_id) is None:
+    source = await session.get(RateSource, source_id)
+    if source is None:
         raise ProblemError(
             404, "Rate source not found", "Source does not exist", "rate_source_missing"
         )
-    job = await _queue_check(session, principal.user.id, [source_id])
+    if not source.enabled:
+        raise ProblemError(
+            409,
+            "Rate source is disabled",
+            "Enable this managed source before checking it",
+            "rate_source_disabled",
+        )
+    try:
+        job, deduplicated = await _queue_check(
+            session,
+            principal.user.id,
+            [source_id],
+            idempotency_key=request.headers.get("Idempotency-Key"),
+            all_enabled=False,
+        )
+    except IntegrityError:
+        await session.rollback()
+        recovered_job = await session.scalar(
+            select(BackgroundJob)
+            .where(
+                BackgroundJob.job_type == "rate_source_sync",
+                BackgroundJob.dedupe_key.in_(["all-enabled", f"source:{source_id}"]),
+                BackgroundJob.status.in_(["queued", "running"]),
+            )
+            .order_by(BackgroundJob.requested_at)
+            .limit(1)
+        )
+        if recovered_job is None:
+            raise
+        job = recovered_job
+        deduplicated = True
     session.add(
         audit_event(
             action="rate_source.check_requested",
             actor_type="user",
             actor_id=principal.user.id,
             request=request,
-            object_type="rate_source",
-            object_id=source_id,
-            details={"job_id": job.id},
+            object_type="background_job",
+            object_id=job.id,
+            details={"source_ids": [source_id], "deduplicated": deduplicated},
         )
     )
     await session.commit()
-    return {"job_id": job.id, "status": "queued"}
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "deduplicated": deduplicated,
+        "progress": job.progress,
+    }
 
 
 @router.get("/admin/rate-checks")

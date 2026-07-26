@@ -90,6 +90,32 @@ backfilled as `missing`, never as confirmed. This revision adds no dataset,
 secret, service, capability, network, mount, environment variable, or host
 port.
 
+The rate-assignment and source-observability release adds append-only revision
+`20260725_0017`. It normalizes legacy published-version labels, adds immutable
+version lifecycle and assignment cancellation metadata, adjustment revision
+evidence, source-run completion counters, an active-job dedupe index, and a
+PostgreSQL assignment-overlap guard. It does not delete or rewrite historical
+assignments, costs, bills, source artifacts, candidates, or audit events and
+adds no dataset, secret, service, capability, network, mount, environment
+variable, or host port.
+
+Before saving the upgraded App YAML, take the logical backup and recursive ZFS
+snapshots described above. After migration, open **Billing > Advanced Rate
+Settings** and confirm Published and Current are shown separately. If an
+existing account reports an assignment conflict, do not guess which rate won:
+review its dates and historical evidence, use the explicit conflict-repair
+workflow, and retain the selected winner. Verify **Adjust Rates** creates a
+draft revision under the same plan, publishing does not silently assign it,
+and **Replace current** preserves the prior assignment. Then run **Sources >
+Check now**, watch the job complete, and inspect its per-source results and
+history.
+
+Rollback must restore both the pre-upgrade logical backup and matching ZFS
+snapshots before returning to the prior digest-pinned image set. Do not run an
+Alembic downgrade against data written after `20260725_0017`, because newer
+assignment cancellations, version lifecycle evidence, source-run counters, and
+adjustment revisions would be lost.
+
 After migration, upload the sanitized regression bill and verify that the
 review header shows its filename, utility/document type, page count, extraction
 method, status, and import time. Confirm recognized charges appear once, absent

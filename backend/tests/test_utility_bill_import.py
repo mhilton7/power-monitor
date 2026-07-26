@@ -273,7 +273,7 @@ async def test_complete_bill_api_workflow_is_reviewed_separate_and_private(
         version
         for plan in plans
         for version in plan["versions"]
-        if version["status"] in {"active", "approved"}
+        if version["status"] == "published"
     )
     account_response = await api_client.post(
         f"/api/v1/admin/sites/{site['id']}/utility-accounts",
@@ -435,7 +435,7 @@ async def test_complete_bill_api_workflow_is_reviewed_separate_and_private(
     )
     assert published.status_code == 200, published.text
     version = await session.get(RateVersion, imported["rate_version_id"])
-    assert version is not None and version.status in {"active", "approved"}
+    assert version is not None and version.status == "published"
     cycle = await api_client.post(
         f"/api/v1/admin/utility-bill-imports/{imported['id']}/import-billing-cycle",
         headers=csrf(api_client),

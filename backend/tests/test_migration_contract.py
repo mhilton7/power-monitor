@@ -206,6 +206,30 @@ def test_normalized_utility_bill_migration_is_additive_and_repairs_confidence() 
     assert "DROP SCHEMA" not in revision
 
 
+def test_rate_assignment_lifecycle_migration_is_additive_and_guards_overlap() -> None:
+    root = Path(__file__).parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260725_0017_rate_assignment_lifecycle_source_runs.py"
+    ).read_text()
+    upgrade = revision.split("def downgrade()", maxsplit=1)[0]
+    assert 'down_revision = "20260725_0016"' in revision
+    assert "parent_version_id" in upgrade
+    assert "status_before_removal" in upgrade
+    assert "cancelled_at" in upgrade
+    assert "idempotency_key" in upgrade
+    assert "uq_background_jobs_active_dedupe" in upgrade
+    assert "candidate_count" in upgrade
+    assert "evidence_reference" in upgrade
+    assert "adjustments.manage" in upgrade
+    assert "prevent_rate_assignment_overlap" in upgrade
+    assert "tstzrange" in upgrade
+    assert "UPDATE rate_versions SET status = 'published'" in upgrade
+    assert "DELETE FROM rate_assignments" not in upgrade
+    assert "DELETE FROM rate_versions" not in upgrade
+    assert "DROP TABLE" not in upgrade
+    assert "def downgrade()" in revision
+
+
 def test_user_lifecycle_cleanup_migration_is_additive_and_preserves_identity() -> None:
     root = Path(__file__).resolve().parents[1]
     revision = (

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db.models import (
+    AuditEvent,
     BackgroundJob,
     RateChangeCandidate,
     RateExtractionResult,
@@ -65,7 +66,10 @@ async def enqueue_scheduled_sync(session: AsyncSession, settings: Settings) -> b
         requested_at=now,
         scheduled_for=due_at,
         correlation_id=f"rate-sync-{secrets.token_hex(12)}",
-        progress={"source_ids": [], "completed": 0},
+        dedupe_key="all-enabled",
+        idempotency_key=f"scheduled:{scheduled.isoformat()}",
+        trigger_type="scheduled",
+        progress={"source_ids": [], "completed": 0, "total": 0},
         result={},
     )
     config.last_scheduled_for = scheduled
@@ -99,12 +103,12 @@ async def process_rate_sync_jobs(
     failed = 0
     candidates = 0
     for job in jobs:
+        job_candidates = 0
         config = await session.get(RateSyncConfiguration, "default")
         job.status = "running"
         job.started_at = datetime.now(UTC)
         if config:
             config.last_attempted_run = job.started_at
-        await session.flush()
         source_query = (
             select(RateSource)
             .where(RateSource.enabled.is_(True))
@@ -115,7 +119,38 @@ async def process_rate_sync_jobs(
             source_query = source_query.where(RateSource.id.in_(requested_ids))
         sources = list(await session.scalars(source_query))
         outcomes: list[dict[str, Any]] = []
-        for source in sources:
+        job.progress = {
+            "source_ids": [source.id for source in sources],
+            "completed": 0,
+            "total": len(sources),
+            "current_source_id": None,
+        }
+        session.add(
+            AuditEvent(
+                occurred_at=job.started_at,
+                actor_type="system",
+                actor_id=job.requested_by,
+                action="rate_source.check_started",
+                object_type="background_job",
+                object_id=job.id,
+                source_ip=None,
+                outcome="success",
+                correlation_id=job.correlation_id,
+                details={
+                    "trigger_type": job.trigger_type,
+                    "source_count": len(sources),
+                },
+            )
+        )
+        await session.commit()
+        for source_index, source in enumerate(sources):
+            source_candidate_count = 0
+            source_artifact_count = 0
+            job.progress = {
+                **job.progress,
+                "completed": source_index,
+                "current_source_id": source.id,
+            }
             check = RateSourceCheckRun(
                 job_id=job.id,
                 rate_source_id=source.id,
@@ -123,7 +158,21 @@ async def process_rate_sync_jobs(
                 outcome="running",
             )
             session.add(check)
-            await session.flush()
+            session.add(
+                AuditEvent(
+                    occurred_at=check.checked_at,
+                    actor_type="system",
+                    actor_id=job.requested_by,
+                    action="rate_source.source_check_started",
+                    object_type="rate_source",
+                    object_id=source.id,
+                    source_ip=None,
+                    outcome="success",
+                    correlation_id=job.correlation_id,
+                    details={"job_id": job.id, "check_id": check.id},
+                )
+            )
+            await session.commit()
             try:
                 fetched = await fetch_source(
                     source.url,
@@ -150,6 +199,35 @@ async def process_rate_sync_jobs(
                     source.last_success_at = datetime.now(UTC)
                     source.consecutive_failures = 0
                     outcomes.append({"source_id": source.id, "outcome": "not_modified"})
+                    check.finished_at = datetime.now(UTC)
+                    check.candidate_count = 0
+                    check.artifact_count = 0
+                    job.progress = {
+                        **job.progress,
+                        "completed": source_index + 1,
+                        "current_source_id": None,
+                    }
+                    session.add(
+                        AuditEvent(
+                            occurred_at=check.finished_at,
+                            actor_type="system",
+                            actor_id=job.requested_by,
+                            action="rate_source.source_check_completed",
+                            object_type="rate_source",
+                            object_id=source.id,
+                            source_ip=None,
+                            outcome="success",
+                            correlation_id=job.correlation_id,
+                            details={
+                                "job_id": job.id,
+                                "check_id": check.id,
+                                "outcome": check.outcome,
+                                "candidate_count": 0,
+                                "artifact_count": 0,
+                            },
+                        )
+                    )
+                    await session.commit()
                     continue
                 digest = hashlib.sha256(fetched.content).hexdigest()
                 previous_sha = await session.scalar(
@@ -169,6 +247,35 @@ async def process_rate_sync_jobs(
                     outcomes.append(
                         {"source_id": source.id, "outcome": "unchanged_content"}
                     )
+                    check.finished_at = datetime.now(UTC)
+                    check.candidate_count = 0
+                    check.artifact_count = 0
+                    job.progress = {
+                        **job.progress,
+                        "completed": source_index + 1,
+                        "current_source_id": None,
+                    }
+                    session.add(
+                        AuditEvent(
+                            occurred_at=check.finished_at,
+                            actor_type="system",
+                            actor_id=job.requested_by,
+                            action="rate_source.source_check_completed",
+                            object_type="rate_source",
+                            object_id=source.id,
+                            source_ip=None,
+                            outcome="success",
+                            correlation_id=job.correlation_id,
+                            details={
+                                "job_id": job.id,
+                                "check_id": check.id,
+                                "outcome": check.outcome,
+                                "candidate_count": 0,
+                                "artifact_count": 0,
+                            },
+                        )
+                    )
+                    await session.commit()
                     continue
                 if config:
                     config.last_source_change = datetime.now(UTC)
@@ -212,6 +319,7 @@ async def process_rate_sync_jobs(
                 )
                 session.add(artifact)
                 await session.flush()
+                source_artifact_count = 1
                 adapter = ADAPTERS[source.parser_id]
                 parsed = adapter.parse(
                     fetched.content,
@@ -274,6 +382,8 @@ async def process_rate_sync_jobs(
                     )
                     if candidate:
                         candidates += 1
+                        job_candidates += 1
+                        source_candidate_count += 1
                         if config:
                             config.last_candidate_created = candidate.created_at
                             if candidate.status in {
@@ -300,8 +410,38 @@ async def process_rate_sync_jobs(
                         "source_id": source.id,
                         "outcome": parsed.status,
                         "artifact_id": artifact.id,
+                        "candidate_count": source_candidate_count,
                     }
                 )
+                check.finished_at = datetime.now(UTC)
+                check.candidate_count = source_candidate_count
+                check.artifact_count = source_artifact_count
+                job.progress = {
+                    **job.progress,
+                    "completed": source_index + 1,
+                    "current_source_id": None,
+                }
+                session.add(
+                    AuditEvent(
+                        occurred_at=check.finished_at,
+                        actor_type="system",
+                        actor_id=job.requested_by,
+                        action="rate_source.source_check_completed",
+                        object_type="rate_source",
+                        object_id=source.id,
+                        source_ip=None,
+                        outcome="success" if parsed.status != "failed" else "failure",
+                        correlation_id=job.correlation_id,
+                        details={
+                            "job_id": job.id,
+                            "check_id": check.id,
+                            "outcome": check.outcome,
+                            "candidate_count": source_candidate_count,
+                            "artifact_count": source_artifact_count,
+                        },
+                    )
+                )
+                await session.commit()
             except (SourceFetchError, ValueError, KeyError) as exc:
                 check.outcome = "failed"
                 check.error_code = getattr(exc, "code", "processing_error")
@@ -316,6 +456,32 @@ async def process_rate_sync_jobs(
                     }
                 )
                 failed += 1
+                check.finished_at = datetime.now(UTC)
+                check.candidate_count = source_candidate_count
+                check.artifact_count = source_artifact_count
+                job.progress = {
+                    **job.progress,
+                    "completed": source_index + 1,
+                    "current_source_id": None,
+                }
+                session.add(
+                    AuditEvent(
+                        occurred_at=check.finished_at,
+                        actor_type="system",
+                        actor_id=job.requested_by,
+                        action="rate_source.source_check_failed",
+                        object_type="rate_source",
+                        object_id=source.id,
+                        source_ip=None,
+                        outcome="failure",
+                        correlation_id=job.correlation_id,
+                        details={
+                            "job_id": job.id,
+                            "check_id": check.id,
+                            "error_code": check.error_code,
+                        },
+                    )
+                )
                 await emit_rate_alert(
                     session,
                     "rate_source_unavailable",
@@ -326,6 +492,7 @@ async def process_rate_sync_jobs(
                     },
                     dedupe_key=source.id,
                 )
+                await session.commit()
         job.status = (
             "succeeded"
             if all(item["outcome"] != "failed" for item in outcomes)
@@ -335,8 +502,27 @@ async def process_rate_sync_jobs(
         job.progress = {
             "source_ids": [item.id for item in sources],
             "completed": len(outcomes),
+            "total": len(sources),
+            "current_source_id": None,
         }
-        job.result = {"sources": outcomes, "candidate_count": candidates}
+        job.result = {
+            "sources": outcomes,
+            "candidate_count": job_candidates,
+            "summary": {
+                "updated": sum(
+                    1
+                    for item in outcomes
+                    if item["outcome"]
+                    not in {"failed", "not_modified", "unchanged_content"}
+                ),
+                "unchanged": sum(
+                    1
+                    for item in outcomes
+                    if item["outcome"] in {"not_modified", "unchanged_content"}
+                ),
+                "failed": sum(1 for item in outcomes if item["outcome"] == "failed"),
+            },
+        }
         if job.status == "failed":
             job.error_code = "source_check_failed"
             job.error_detail = "One or more approved sources could not be checked"
@@ -353,9 +539,32 @@ async def process_rate_sync_jobs(
                 {
                     "job_id": job.id,
                     "source_count": len(outcomes),
-                    "candidate_count": candidates,
+                    "candidate_count": job_candidates,
                 },
             )
+        session.add(
+            AuditEvent(
+                occurred_at=job.completed_at,
+                actor_type="system",
+                actor_id=job.requested_by,
+                action=(
+                    "rate_source.check_completed"
+                    if job.status == "succeeded"
+                    else "rate_source.check_failed"
+                ),
+                object_type="background_job",
+                object_id=job.id,
+                source_ip=None,
+                outcome="success" if job.status == "succeeded" else "failure",
+                correlation_id=job.correlation_id,
+                details={
+                    "source_count": len(outcomes),
+                    "candidate_count": job_candidates,
+                    "summary": job.result["summary"],
+                },
+            )
+        )
+        await session.commit()
     return {
         "jobs_completed": completed,
         "source_failures": failed,
@@ -367,6 +576,7 @@ async def activate_due_versions(session: AsyncSession) -> int:
     versions = list(
         await session.scalars(
             select(RateVersion).where(
+                # Backward-compatible cleanup for pre-migration scheduled candidates.
                 RateVersion.status == "approved",
                 RateVersion.effective_from <= date.today(),
             )
@@ -377,7 +587,7 @@ async def activate_due_versions(session: AsyncSession) -> int:
         status, _report = await activate_version(
             session, version, None, automatically=version.automatically_activated
         )
-        if status != "active":
+        if status != "published":
             continue
         await emit_rate_alert(
             session,

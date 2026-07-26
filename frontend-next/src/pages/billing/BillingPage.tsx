@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useSearchParams } from '../../app/router'
-import { adaptBills, adaptRatePlanDependencies } from '../../api/adapters'
+import { adaptBills, adaptRatePlanDependencies, adaptRateVersions } from '../../api/adapters'
 import { errorMessage, json, request } from '../../api/client'
 import { objectList, record, stringValue } from '../../api/validation'
 import { Metric, Surface } from '../../components/data-display/Surface'
@@ -46,26 +46,31 @@ interface LibraryPlan {
   removedAt?: string
   removedBy?: string
   removalReason?: string
+  publicationStatus: string
+  assignmentStatus: string
 }
 
 function libraryPlans(value: unknown): LibraryPlan[] {
   const rows = Array.isArray(value) ? objectList(value) : objectList(record(value).plans)
   return rows.map((row) => {
-    const latest = row.latest_version && typeof row.latest_version === 'object'
-      ? record(row.latest_version)
-      : objectList(row.versions)[0] ?? {}
+    const versions = adaptRateVersions(objectList(row.versions))
+    const current = versions.find((version) => version.assignmentStatus === 'current')
+    const published = versions.find((version) => version.publicationStatus === 'published')
+    const assignable = current ?? published
     return {
       id: stringValue(row.id),
       name: stringValue(row.name, stringValue(row.plan_name, 'Rate plan')),
       code: stringValue(row.code, stringValue(row.plan_code)),
       status: stringValue(row.status, 'draft'),
       lifecycleRevision: Number(row.lifecycle_revision ?? row.revision ?? 1),
-      versionId: stringValue(latest.id, stringValue(row.rate_version_id)) || undefined,
-      version: Number(latest.version ?? row.version ?? 0) || undefined,
-      pricingModel: stringValue(latest.pricing_model, stringValue(row.pricing_model)) || undefined,
+      versionId: assignable?.id ?? (stringValue(row.rate_version_id) || undefined),
+      version: assignable?.version ?? (Number(row.version ?? 0) || undefined),
+      pricingModel: assignable?.pricingModel ?? (stringValue(row.pricing_model) || undefined),
       removedAt: stringValue(row.removed_at) || undefined,
       removedBy: stringValue(row.removed_by) || undefined,
       removalReason: stringValue(row.removal_reason) || undefined,
+      publicationStatus: assignable?.publicationStatus ?? 'draft',
+      assignmentStatus: current ? 'current' : 'unassigned',
     }
   })
 }
@@ -158,8 +163,8 @@ export function BillingPage() {
                 {isOwner(session ?? { authenticated: false, bootstrapRequired: false }) && <button type="button" className="button secondary" onClick={() => { setAdvancedOpen(true); }}><Pencil size={16} /> Edit plan</button>}
                 <div className="more-menu">
                   <DropdownMenu label="Rate plan actions" trigger={<><MoreHorizontal size={17} /> More <ChevronDown size={14} /></>}>
-                    <DropdownMenuItem actionId="rate_plan.replace_assignment" onSelect={() => { setReplaceOpen(true) }}>Replace plan</DropdownMenuItem>
-                    {currentLibraryPlan && <DropdownMenuItem actionId="rate_plan.unassign" onSelect={() => { setLifecycleAction('unassign') }}><CircleOff size={15} /> Remove from Electric Service</DropdownMenuItem>}
+                    <DropdownMenuItem actionId={service.currentPlan ? 'rate_assignment.replace_current' : 'rate_assignment.make_current'} onSelect={() => { setReplaceOpen(true) }}>{service.currentPlan ? 'Replace current plan' : 'Make a plan current'}</DropdownMenuItem>
+                    {currentLibraryPlan && <DropdownMenuItem actionId="rate_assignment.end" onSelect={() => { setLifecycleAction('unassign') }}><CircleOff size={15} /> End current assignment</DropdownMenuItem>}
                     <DropdownMenuItem onSelect={() => { setAdvancedOpen(true) }}>View versions</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => { setAdvancedOpen(true) }}>View evidence</DropdownMenuItem>
                     {currentLibraryPlan && <DropdownMenuItem actionId="rate_plan.retire" onSelect={() => { setLifecycleAction('retire') }}><Archive size={15} /> Retire plan</DropdownMenuItem>}
@@ -168,7 +173,7 @@ export function BillingPage() {
                 </div>
               </div>
               {planDetail && <PlanDetail service={service} model={currentLibraryPlan?.pricingModel} cycle={cycle} currency={home.currency} />}
-              {replaceOpen && <ReplacePlan service={service} plans={plans.data ?? []} onClose={() => { setReplaceOpen(false); }} onDone={() => { setReplaceOpen(false); void refresh() }} />}
+              {replaceOpen && <ReplacePlanV2 service={service} plans={plans.data ?? []} onClose={() => { setReplaceOpen(false); }} onDone={() => { setReplaceOpen(false); void refresh() }} />}
             </Surface>
 
             <Surface title="Billing-cycle details" subtitle={dateRange(cycle?.startsAt, cycle?.endsAt)}>
@@ -237,7 +242,138 @@ function PlanDetail({ service, model, cycle, currency }: { service: ElectricServ
   return <div className="plan-detail"><dl><div><dt>Plan</dt><dd>{service.currentPlan ?? 'Not configured'}</dd></div><div><dt>Pricing model</dt><dd>{statusLabel(model ?? cycle?.pricingModel ?? 'unknown')}</dd></div><div><dt>Effective version</dt><dd>{service.currentVersion ? `Version ${service.currentVersion}` : 'Unavailable'}</dd></div><div><dt>Current period</dt><dd>{service.currentPeriod ?? cycle?.currentPeriod ?? 'Flat rate'}</dd></div><div><dt>Current price</dt><dd>{rate(service.currentRate ?? cycle?.currentRate, currency)}</dd></div><div><dt>Evidence</dt><dd>Retained with this exact version</dd></div></dl></div>
 }
 
-function ReplacePlan({ service, plans, onClose, onDone }: { service: ElectricService; plans: LibraryPlan[]; onClose: () => void; onDone: () => void }) {
+function ReplacePlanV2({
+  service,
+  plans,
+  onClose,
+  onDone,
+}: {
+  service: ElectricService
+  plans: LibraryPlan[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [versionId, setVersionId] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [reason, setReason] = useState(
+    'Owner reviewed the current rate-plan replacement',
+  )
+  const [effectiveChoice, setEffectiveChoice] = useState<'now' | 'next_cycle' | 'custom'>('now')
+  const [customEffective, setCustomEffective] = useState(new Date().toISOString().slice(0, 16))
+  const mutation = useMutation({
+    mutationFn: () => {
+      const effectiveFrom = effectiveChoice === 'now'
+        ? new Date().toISOString()
+        : effectiveChoice === 'next_cycle'
+          ? service.billingEndsAt
+          : new Date(customEffective).toISOString()
+      if (!effectiveFrom) throw new Error('The next billing-cycle boundary is unavailable.')
+      return request(
+        '/api/v1/rates/assignments/replace',
+        json('POST', {
+          utility_account_id: service.id,
+          rate_version_id: versionId,
+          effective_from: effectiveFrom,
+          effective_to: null,
+          assignment_reason: reason,
+          replace_current: true,
+          idempotency_key: crypto.randomUUID(),
+          confirmation: 'REPLACE CURRENT',
+        }),
+      )
+    },
+    onSuccess: onDone,
+  })
+  const hasCurrent = Boolean(service.currentPlan)
+  return (
+    <div className="replace-plan">
+      <h3>{hasCurrent ? 'Replace current plan' : 'Make plan current'}</h3>
+      <p>
+        {hasCurrent ? 'The previous assignment and historical costs remain preserved.' : 'This creates the first effective plan assignment.'}
+        Unfinalized estimates are recalculated from the effective boundary.
+      </p>
+      <label>
+        <span>Published plan</span>
+        <select
+          value={versionId}
+          onChange={(event) => {
+            setVersionId(event.target.value)
+          }}
+        >
+          <option value="">Choose a plan</option>
+          {plans
+            .filter(
+              (plan) =>
+                plan.versionId &&
+                plan.name !== service.currentPlan &&
+                plan.publicationStatus === 'published' &&
+                !['removed', 'retired'].includes(plan.status),
+            )
+            .map((plan) => (
+              <option key={plan.id} value={plan.versionId}>
+                {plan.name} · v{plan.version}
+              </option>
+            ))}
+        </select>
+      </label>
+      <label>
+        <span>Effective timing</span>
+        <select value={effectiveChoice} onChange={(event) => { setEffectiveChoice(event.target.value as typeof effectiveChoice) }}>
+          <option value="now">Now</option>
+          <option value="next_cycle" disabled={!service.billingEndsAt}>Next billing cycle</option>
+          <option value="custom">Custom date and time</option>
+        </select>
+      </label>
+      {effectiveChoice === 'custom' && <label><span>Effective from</span><input type="datetime-local" value={customEffective} onChange={(event) => { setCustomEffective(event.target.value) }} /></label>}
+      <label>
+        <span>Reason</span>
+        <input
+          value={reason}
+          onChange={(event) => {
+            setReason(event.target.value)
+          }}
+        />
+      </label>
+      <label className="confirmation-check">
+        <input
+          type="checkbox"
+          checked={confirmed}
+          onChange={(event) => {
+            setConfirmed(event.target.checked)
+          }}
+        />
+        <span>I confirm this plan should become Current at the selected effective boundary.</span>
+      </label>
+      {mutation.error && (
+        <p className="form-error" role="alert">
+          {errorMessage(mutation.error)}
+        </p>
+      )}
+      <div className="inline-actions">
+        <button type="button" className="button secondary" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="button primary"
+          disabled={
+            !versionId ||
+            !confirmed ||
+            reason.trim().length < 8 ||
+            mutation.isPending
+          }
+          onClick={() => {
+            mutation.mutate()
+          }}
+        >
+          {mutation.isPending ? 'Switching…' : hasCurrent ? 'Replace current' : 'Make current'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function LegacyReplacePlan({ service, plans, onClose, onDone }: { service: ElectricService; plans: LibraryPlan[]; onClose: () => void; onDone: () => void }) {
   const [versionId, setVersionId] = useState('')
   const mutation = useMutation({
     mutationFn: () => request(`/api/v1/admin/utility-accounts/${service.id}/rate-assignments`, json('POST', { rate_version_id: versionId, effective_from: new Date().toISOString(), assignment_reason: 'Replaced from Single Home Billing', replace_current: true })),
@@ -274,13 +410,11 @@ function PlanLifecycleDialog({
     mutationFn: () => {
       if (!dependencies.data) throw new Error('Dependency review is still loading.')
       if (action === 'unassign') {
-        return request(`/api/v1/admin/rate-plans/${plan.id}/unassign`, json('POST', {
+        return request('/api/v1/rates/assignments/end', json('POST', {
           utility_account_id: service.id,
-          expected_revision: plan.lifecycleRevision,
-          expected_dependency_token: dependencies.data.dependencyToken,
           effective_at: new Date(effectiveAt).toISOString(),
           reason,
-          confirmation,
+          confirmation: 'END CURRENT',
           idempotency_key: crypto.randomUUID(),
         }))
       }
@@ -294,14 +428,14 @@ function PlanLifecycleDialog({
     },
     onSuccess: onDone,
   })
-  const expectedConfirmation = action === 'unassign' ? `UNASSIGN ${plan.code}` : plan.code
+  const expectedConfirmation = action === 'unassign' ? 'END CURRENT' : plan.code
   const blocked = action !== 'unassign' && dependencies.data?.removalBlocked === true
   const ready = confirmation.trim().toLocaleLowerCase() === expectedConfirmation.toLocaleLowerCase()
     && reason.trim().length >= 8
     && Boolean(dependencies.data)
     && !blocked
   const title = action === 'unassign'
-    ? 'Remove plan from Electric Service'
+    ? 'End current assignment'
     : action === 'retire'
       ? 'Retire rate plan'
       : 'Remove rate plan'
@@ -311,7 +445,7 @@ function PlanLifecycleDialog({
       <div className="workflow-body">
         <InlineNotice tone="warning">
           {action === 'unassign'
-            ? 'Cost calculation stops after the effective time. Historical assignments, costs, reports, bill imports, and evidence remain intact.'
+            ? 'Cost estimates will be unavailable after this date until another plan is assigned. Historical assignments, costs, reports, bill imports, and evidence remain intact.'
             : 'This plan cannot be changed while any active or future electric-service assignment remains.'}
         </InlineNotice>
         {dependencies.isLoading ? <LoadingState label="Reviewing plan impact…" /> : dependencies.error ? <ErrorState error={dependencies.error} retry={() => { void dependencies.refetch() }} /> : dependencies.data && (

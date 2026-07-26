@@ -1,5 +1,21 @@
 # Rate sources
 
+## Manual checks
+
+**Sources > Check now** queues a real `rate_source_sync` background job and
+returns its job identifier. Only one queued or running job exists for the same
+source scope; repeated clicks join the existing run instead of duplicating
+network retrieval. The browser polls job status and renders queued, running,
+completed, partial, or failed state with per-source results, timestamps,
+artifact counts, candidate counts, and safe error summaries.
+
+Each enabled HTTPS source records its last check result. Completed runs remain
+available from the source-check history endpoint, and a failed source can be
+retried without rerunning unrelated sources. Retrieval, parsing, evidence
+archival, candidate creation, retry, and completion are audited against the
+same job. Private uploaded-bill evidence remains disabled as a network source
+and is never fetched by the public source checker.
+
 An uploaded utility bill is archived through the same artifact and extraction
 evidence infrastructure as a managed rate source. Its default role is
 supporting; an administrator may review it as authoritative account-specific or

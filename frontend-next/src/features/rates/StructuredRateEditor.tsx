@@ -47,6 +47,12 @@ interface PreviewResult {
   integrity_sha256?: string
 }
 
+export interface RateRevisionComparison {
+  currentLabel: string
+  proposedLabel: string
+  current: RatePlanDraft
+}
+
 function validationAdapter(value: unknown): RateValidationResult {
   const source = record(value, 'rate validation')
   const issues = (key: 'errors' | 'warnings') => objectList(source[key]).map((item) => ({
@@ -84,12 +90,14 @@ export function StructuredRateEditor({
   onClose,
   initialDraft,
   initialSaved,
+  comparison,
 }: {
   home: Home
   services: ElectricService[]
   onClose: () => void
   initialDraft?: RatePlanDraft
   initialSaved?: SavedDraft
+  comparison?: RateRevisionComparison
 }) {
   const client = useQueryClient()
   const [section, setSection] = useState<EditorSection>('details')
@@ -97,10 +105,20 @@ export function StructuredRateEditor({
   const [saved, setSaved] = useState<SavedDraft | undefined>(initialSaved)
   const [validation, setValidation] = useState<RateValidationResult>()
   const [preview, setPreview] = useState<PreviewResult>()
+  const [comparisonPreview, setComparisonPreview] = useState<PreviewResult>()
   const [sampleKwh, setSampleKwh] = useState('500')
   const [serviceId, setServiceId] = useState(services[0]?.id ?? '')
   const [assigned, setAssigned] = useState(false)
-  const [activated, setActivated] = useState(false)
+  const [activated, setActivated] = useState(
+    Boolean(
+      initialSaved &&
+        ['published', 'superseded'].includes(initialSaved.status),
+    ),
+  )
+  const [assignmentConfirmed, setAssignmentConfirmed] = useState(false)
+  const [assignmentReason, setAssignmentReason] = useState(
+    'Owner reviewed the effective rate-plan change',
+  )
 
   const isTou = draft.pricing_model === 'time_of_use' || draft.pricing_model === 'time_of_use_tiered'
   const isTiered = draft.pricing_model === 'tiered' || draft.pricing_model === 'time_of_use_tiered'
@@ -132,15 +150,29 @@ export function StructuredRateEditor({
     mutationFn: () => request('/api/v1/rates/validate-document', json('POST', draft), validationAdapter),
     onSuccess: setValidation,
   })
+  const previewRequest = (document: RatePlanDraft) =>
+    request<PreviewResult>(
+      '/api/v1/rates/preview-cost',
+      json('POST', {
+        document,
+        interval_start: `${document.effective_from}T00:00:00-07:00`,
+        interval_end: `${document.effective_from}T01:00:00-07:00`,
+        energy_kwh: sampleKwh,
+        cost_scope: document.cost_scope_default,
+      }),
+    )
   const calculate = useMutation({
-    mutationFn: () => request<PreviewResult>('/api/v1/rates/preview-cost', json('POST', {
-      document: draft,
-      interval_start: `${draft.effective_from}T00:00:00-07:00`,
-      interval_end: `${draft.effective_from}T01:00:00-07:00`,
-      energy_kwh: sampleKwh,
-      cost_scope: draft.cost_scope_default,
-    })),
-    onSuccess: setPreview,
+    mutationFn: async () => {
+      const [proposed, current] = await Promise.all([
+        previewRequest(draft),
+        comparison ? previewRequest(comparison.current) : Promise.resolve(undefined),
+      ])
+      return { proposed, current }
+    },
+    onSuccess: ({ proposed, current }) => {
+      setPreview(proposed)
+      setComparisonPreview(current)
+    },
   })
   const activate = useMutation({
     mutationFn: async () => {
@@ -149,18 +181,23 @@ export function StructuredRateEditor({
     },
     onSuccess: () => {
       setActivated(true)
-      setSaved((current) => current ? { ...current, status: 'active' } : current)
+      setSaved((current) =>
+        current ? { ...current, status: 'published' } : current,
+      )
     },
   })
   const assign = useMutation({
     mutationFn: async () => {
       if (!saved || !serviceId) throw new Error('Choose an electric service and publish this version first.')
-      return request('/api/v1/rates/assignments', json('POST', {
+      return request('/api/v1/rates/assignments/replace', json('POST', {
         utility_account_id: serviceId,
         rate_version_id: saved.versionId,
-        provider_mode: draft.provider_mode,
-        cost_scope: draft.cost_scope_default,
         effective_from: new Date().toISOString(),
+        effective_to: null,
+        replace_current: true,
+        assignment_reason: assignmentReason,
+        idempotency_key: crypto.randomUUID(),
+        confirmation: 'REPLACE CURRENT',
       }))
     },
     onSuccess: async () => {
@@ -303,15 +340,26 @@ export function StructuredRateEditor({
           {draft.billing_cycle.threshold.basis === 'daily_baseline_kwh' && <div className="cycle-threshold-preview">{[28, 29, 30, 31].map((days) => <span key={days}><small>{days}-day cycle</small><strong>{(Number(draft.billing_cycle.threshold.daily_baseline_kwh ?? 0) * days).toFixed(3)} kWh</strong></span>)}</div>}
         </EditorPanel>}
 
-        {section === 'assignment' && <EditorPanel title="Electric-service assignment" description="Assignment is a separate effective-dated action after validation and activation.">
+        {section === 'assignment' && <EditorPanel title="Electric-service assignment" description="Assignment is a separate effective-dated action after validation and publication.">
           {services.length === 0 ? <InlineNotice tone="warning">Create an electric service before assigning this plan. You can still save and validate the draft.</InlineNotice> : <div className="form-grid">
             <Field label="Electric service"><select value={serviceId} onChange={(event) => { setServiceId(event.target.value) }}>{services.map((service) => <option key={service.id} value={service.id}>{service.name} · {statusLabel(service.costScope)}</option>)}</select></Field>
             <Field label="Cost scope"><select value={draft.cost_scope_default} onChange={(event) => { update((next) => { next.cost_scope_default = event.target.value as RatePlanDraft['cost_scope_default'] }) }}><option value="energy_only">Energy only</option><option value="allocated_account_estimate">Allocated account estimate</option><option value="full_account_estimate">Complete utility-account estimate</option></select></Field>
+            <Field label="Assignment reason" wide><input value={assignmentReason} onChange={(event) => { setAssignmentReason(event.target.value) }} required /></Field>
           </div>}
           <InlineNotice>Fixed charges and baseline credits remain disabled unless topology explicitly represents the complete utility account.</InlineNotice>
+          <label className="confirmation-check"><input type="checkbox" checked={assignmentConfirmed} onChange={(event) => { setAssignmentConfirmed(event.target.checked) }} /><span>I understand this replaces the effective plan from now, preserves prior assignments, and recalculates only unfinalized estimates.</span></label>
         </EditorPanel>}
 
         {section === 'preview' && <EditorPanel title="Validation and cost preview" description="The server validates exact decimals, effective dates, schedule coverage, tier boundaries, and scope.">
+          {comparison && (
+            <RevisionComparison
+              comparison={comparison}
+              proposed={draft}
+              currentPreview={comparisonPreview}
+              proposedPreview={preview}
+              currency={draft.currency}
+            />
+          )}
           <div className="preview-toolbar">
             <Field label="Sample energy (kWh)"><DecimalInput label="Sample energy" value={sampleKwh} onChange={setSampleKwh} /></Field>
             <button type="button" className="button secondary" disabled={validate.isPending} onClick={() => { validate.mutate() }}>Validate draft</button>
@@ -322,12 +370,12 @@ export function StructuredRateEditor({
           <details className="json-preview"><summary>Normalized plan document</summary><pre>{JSON.stringify(draft, null, 2)}</pre></details>
         </EditorPanel>}
 
-        {section === 'lifecycle' && <EditorPanel title="Save, publish, and assign" description="Drafts stay editable. Activated versions are immutable and historical assignments remain preserved.">
+        {section === 'lifecycle' && <EditorPanel title="Save, publish, and assign" description="Drafts stay editable. Published versions are immutable; they are not Current until explicitly assigned.">
           <ol className="lifecycle-steps">
             <li className={saved ? 'complete' : ''}><span>{saved ? <Check /> : 1}</span><div><strong>Save draft</strong><p>Create or update the editable version.</p></div><button type="button" className="button secondary compact" disabled={save.isPending || activated} onClick={() => { save.mutate() }}>{save.isPending ? 'Saving…' : saved ? 'Save changes' : 'Save draft'}</button></li>
-            <li className={validation?.valid ? 'complete' : ''}><span>{validation?.valid ? <Check /> : 2}</span><div><strong>Validate exact document</strong><p>Resolve every blocking issue before activation.</p></div><button type="button" className="button secondary compact" disabled={!saved || validate.isPending || activated} onClick={() => { validate.mutate() }}>Validate</button></li>
-            <li className={activated ? 'complete' : ''}><span>{activated ? <Check /> : 3}</span><div><strong>Publish version</strong><p>Activates now or schedules by its effective date; the version becomes immutable.</p></div><button type="button" className="button primary compact" disabled={!saved || !validation?.valid || activate.isPending || activated} onClick={() => { activate.mutate() }}>{activate.isPending ? 'Publishing…' : activated ? 'Published' : 'Publish version'}</button></li>
-            <li className={assigned ? 'complete' : ''}><span>{assigned ? <Check /> : 4}</span><div><strong>Assign to electric service</strong><p>Closes the previous effective assignment without changing historical costs.</p></div><button type="button" className="button secondary compact" disabled={!activated || !serviceId || assign.isPending || assigned} onClick={() => { assign.mutate() }}>{assign.isPending ? 'Assigning…' : assigned ? 'Assigned' : 'Assign plan'}</button></li>
+            <li className={validation?.valid ? 'complete' : ''}><span>{validation?.valid ? <Check /> : 2}</span><div><strong>Validate exact document</strong><p>Resolve every blocking issue before publication.</p></div><button type="button" className="button secondary compact" disabled={!saved || validate.isPending || activated} onClick={() => { validate.mutate() }}>Validate</button></li>
+            <li className={activated ? 'complete' : ''}><span>{activated ? <Check /> : 3}</span><div><strong>Publish version</strong><p>Makes the immutable version available without changing the Current plan.</p></div><button type="button" className="button primary compact" disabled={!saved || !validation?.valid || activate.isPending || activated} onClick={() => { activate.mutate() }}>{activate.isPending ? 'Publishing…' : activated ? 'Published' : 'Publish version'}</button></li>
+            <li className={assigned ? 'complete' : ''}><span>{assigned ? <Check /> : 4}</span><div><strong>Replace current assignment</strong><p>Atomic effective-dated replacement preserves assignment and cost history.</p></div><button type="button" className="button secondary compact" disabled={!activated || !serviceId || !assignmentConfirmed || assignmentReason.trim().length < 8 || assign.isPending || assigned} onClick={() => { assign.mutate() }}>{assign.isPending ? 'Assigning…' : assigned ? 'Current' : 'Replace current'}</button></li>
           </ol>
         </EditorPanel>}
 
@@ -369,6 +417,126 @@ export function StructuredRateEditor({
       change(item)
     })
   }
+}
+
+function RevisionComparison({
+  comparison,
+  proposed,
+  currentPreview,
+  proposedPreview,
+  currency,
+}: {
+  comparison: RateRevisionComparison
+  proposed: RatePlanDraft
+  currentPreview?: PreviewResult
+  proposedPreview?: PreviewResult
+  currency: string
+}) {
+  const currentPeriods = comparison.current.seasons.reduce(
+    (seasonTotal, season) =>
+      seasonTotal +
+      season.schedules.reduce(
+        (scheduleTotal, schedule) =>
+          scheduleTotal + schedule.periods.length,
+        0,
+      ),
+    0,
+  )
+  const proposedPeriods = proposed.seasons.reduce(
+    (seasonTotal, season) =>
+      seasonTotal +
+      season.schedules.reduce(
+        (scheduleTotal, schedule) =>
+          scheduleTotal + schedule.periods.length,
+        0,
+      ),
+    0,
+  )
+  const currentTotal = currentPreview?.display_total
+  const proposedTotal = proposedPreview?.display_total
+  const estimatedImpact =
+    currentTotal !== undefined && proposedTotal !== undefined
+      ? money(String(Number(proposedTotal) - Number(currentTotal)), currency)
+      : 'Calculate preview'
+  const rows: Array<readonly [string, string, string]> = [
+    [
+      'Plan identity',
+      comparison.current.plan_code,
+      proposed.plan_code,
+    ],
+    [
+      'Pricing model',
+      statusLabel(comparison.current.pricing_model),
+      statusLabel(proposed.pricing_model),
+    ],
+    [
+      'Effective date',
+      comparison.current.effective_from,
+      proposed.effective_from,
+    ],
+    [
+      'Billing-cycle tiers',
+      String(comparison.current.tiers.length),
+      String(proposed.tiers.length),
+    ],
+    ['TOU periods', String(currentPeriods), String(proposedPeriods)],
+    [
+      'Charges and adjustments',
+      String(comparison.current.adjustments.length),
+      String(proposed.adjustments.length),
+    ],
+    [
+      'Sample estimated total',
+      currentPreview
+        ? currentPreview.display?.estimated_total ??
+          money(currentPreview.display_total, currency)
+        : 'Calculate preview',
+      proposedPreview
+        ? proposedPreview.display?.estimated_total ??
+          money(proposedPreview.display_total, currency)
+        : 'Calculate preview',
+    ],
+  ]
+  return (
+    <section className="revision-comparison" aria-label="Rate revision comparison">
+      <header>
+        <div>
+          <strong>Current versus proposed</strong>
+          <span>
+            {comparison.currentLabel} compared with {comparison.proposedLabel}
+          </span>
+        </div>
+        <span className="pill">Same plan identity</span>
+      </header>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Field</th>
+              <th scope="col">Current</th>
+              <th scope="col">Proposed</th>
+              <th scope="col">Difference</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(([label, current, next]) => (
+              <tr key={label}>
+                <th scope="row">{label}</th>
+                <td>{current}</td>
+                <td>{next}</td>
+                <td>{current === next ? 'Unchanged' : 'Changed'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <InlineNotice>
+        Estimated bill impact for the sample interval: {estimatedImpact}.
+        Server preview results use the exact current and proposed documents;
+        finalized historical costs remain unchanged.
+      </InlineNotice>
+    </section>
+  )
 }
 
 function normalizeTiers(draft: RatePlanDraft) {

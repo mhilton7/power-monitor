@@ -78,7 +78,7 @@ async def test_switching_active_rate_closes_previous_window_and_preserves_histor
         (plan, version)
         for plan in plans
         for version in plan["versions"]
-        if version["status"] in {"active", "approved"}
+        if version["status"] == "published"
     ]
     assert len(published) >= 2
     first_plan, first_version = published[0]
@@ -148,7 +148,7 @@ async def test_guided_account_creation_rate_context_history_and_archive(
         version
         for plan in plans
         for version in plan["versions"]
-        if version["status"] in {"active", "approved"}
+        if version["status"] == "published"
     )
     created = await api_client.post(
         f"/api/v1/admin/sites/{site['id']}/utility-accounts",
@@ -245,6 +245,7 @@ async def test_guided_account_creation_rate_context_history_and_archive(
             "value": "0.01250000",
             "unit": "per_kwh",
             "provenance": "Administrator contract fixture",
+            "reason": "Administrator verified the manual contract adjustment",
             "effective_from": datetime.now(UTC).isoformat(),
         },
     )
@@ -273,6 +274,7 @@ async def test_guided_account_creation_rate_context_history_and_archive(
             "rate_version_id": version["id"],
             "effective_from": (datetime.now(UTC) + timedelta(days=30)).isoformat(),
             "assignment_reason": "Scheduled annual update",
+            "replace_current": True,
         },
     )
     assert future.status_code == 201, future.text
@@ -620,7 +622,7 @@ async def test_account_adjustment_is_consumed_by_cost_worker(
         version
         for plan in plans
         for version in plan["versions"]
-        if version["status"] in {"active", "approved"}
+        if version["status"] == "published"
     )
     payload = account_payload(version["id"], "CCA cost account")
     payload["utility_provider"] = "cca"
@@ -632,6 +634,7 @@ async def test_account_adjustment_is_consumed_by_cost_worker(
             "value": "0.05000000",
             "unit": "per_kwh",
             "provenance": "Deterministic test tariff",
+            "reason": "Exercise an effective-dated per-kWh adjustment",
             "effective_from": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
             "enabled": True,
         },
@@ -640,6 +643,7 @@ async def test_account_adjustment_is_consumed_by_cost_worker(
             "value": "10.00",
             "unit": "fixed",
             "provenance": "Must not apply to energy-only scope",
+            "reason": "Verify fixed charges remain outside energy-only scope",
             "effective_from": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
             "enabled": True,
         },
@@ -770,10 +774,7 @@ async def test_recalculation_preserves_finalized_cycles_and_queues_only_mutable_
     site = (await api_client.get("/api/v1/sites")).json()[0]
     plans = (await api_client.get("/api/v1/rates/plans")).json()
     version = next(
-        item
-        for plan in plans
-        for item in plan["versions"]
-        if item["status"] in {"active", "approved"}
+        item for plan in plans for item in plan["versions"] if item["status"] == "published"
     )
     created = await api_client.post(
         f"/api/v1/admin/sites/{site['id']}/utility-accounts",

@@ -1,5 +1,30 @@
 # Rate engine
 
+## Publication and assignment
+
+A rate plan is a stable library identity, and a rate version is an immutable
+set of tariff rules. A `published` version is available for use; it is not
+necessarily the version currently pricing the Single Home Electric Service.
+Only an effective, non-cancelled `RateAssignment` makes a version **Current**.
+Assignments use half-open UTC intervals, `[effective_from, effective_to)`, so
+one assignment may end exactly when the next begins without overlap.
+
+New assignments are serialized while holding the utility-account lock and are
+rejected when they overlap a current or scheduled assignment. PostgreSQL also
+enforces this invariant. **Make current** is available when no assignment is
+effective. **Replace current** atomically ends the current interval and starts
+the replacement while preserving the old assignment and all cost provenance.
+Existing legacy overlaps are displayed as conflicts and require an explicit
+Owner repair that selects a winner and states how the other rows are ended or
+cancelled.
+
+Publishing never assigns a version. Adjusting an unpublished version edits its
+draft in place; adjusting a published version creates a draft revision under
+the same plan identity for comparison, preview, publication, and an explicit
+scheduled or immediate replacement. Published or historically used versions
+are retired or soft-removed rather than deleted. Restoration returns a version
+to the library but does not reassign it.
+
 Measurements remain UTC. Pricing converts each instant to the account timezone and splits intervals at every TOU, midnight, season, effective-date, and billing-cycle boundary. Energy is allocated by elapsed UTC seconds, so spring-forward fabricates no missing hour and repeated fall-back times remain distinct by offset.
 
 The same engine supports `flat`, `time_of_use`, billing-cycle `tiered`, and
@@ -15,6 +40,13 @@ All quantities and currency use `Decimal`; unrounded component values are preser
 The SCE seed includes summer/winter and weekday/weekend periods for TOU-D-4-9PM, TOU-D-5-8PM, and TOU-D-PRIME. Bucket identity is preserved even when prices match. Holiday treatment is explicit per version and has no invented default.
 
 `energy_only` applies per-kWh monitored energy and is the one-CT default. `allocated_account` applies explicitly allocated account components. `full_account` is administrator-selected only; it may apply the base service charge once per utility account and limit baseline credit to a configured allocation. CCA/Direct Access replacement, discounts, taxes/surcharges, and manual credits are separate components.
+
+Account-level manual adjustments are effective-dated records separate from
+rate components. Creating or changing one requires a reason; an optional
+evidence reference may identify the bill or approval that supports it.
+Updates are optimistic-revision checked, and removal is a reversible
+soft-removal recorded in the audit log. Fixed charges and credits remain
+subject to the selected cost scope and are never multiplied across sensors.
 
 Every cost view/report states: estimate, not utility bill. See [Rate sources](RATE_SOURCES.md).
 
