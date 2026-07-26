@@ -6,6 +6,16 @@ Browser routes use an opaque `pm_session` cookie and `X-CSRF-Token` on mutations
 
 Key groups are `/api/v1/auth`, `/sites`, `/utility-accounts`, `/circuits`, `/aggregate-sets`, `/devices`, `/readings/history`, `/history/query`, `/history/export`, `/rates`, `/billing`, `/alerts`, `/exports`, `/firmware-*`, `/reports`, `/backups`, `/audit-events`, `/system/info`, and `/events/stream`. Administrator log discovery and export use `/api/v1/admin/logs/availability`, `POST /api/v1/admin/logs/exports`, export status, and the short-lived authorized download route. Safe sensor removal uses `POST /api/v1/admin/devices/{device_id}/unclaim`; it requires CSRF, an administrator, and exact name-or-ID confirmation. Health endpoints are outside `/api/v1`. Metrics are authenticated.
 
+Single Home current-rate state is server authoritative. `GET
+/api/v1/electric-services/default/current-rate-assignment` returns the exact
+effective assignment, plan, and version or an explicit null assignment. `POST
+/api/v1/rates/assignments/replace` returns
+`rate-assignment-result/1.0`, validates optimistic Electric Service and
+assignment revisions, and atomically replaces or schedules the selected
+published version. `GET /api/v1/configuration-status` returns the shared
+actionable readiness model used throughout the greenfield frontend. See
+`docs/CURRENT_PLAN_AND_CONFIGURATION_STATUS.md`.
+
 `GET /api/v1/backup-requests` lists authorized request state and
 `POST /api/v1/backup-requests` queues either an idempotent `create` or a
 confirmed `restore_preflight` operation. Responses never contain secret values

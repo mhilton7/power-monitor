@@ -75,6 +75,7 @@ from app.schemas import (
     RateAssignmentEndRequest,
     RateAssignmentRepairRequest,
     RateAssignmentReplaceRequest,
+    RateAssignmentResult,
     RatePlanDraftDeleteRequest,
     RatePlanLifecycleRequest,
     RatePlanRestoreRequest,
@@ -220,7 +221,7 @@ async def _plan_payload(session: DbSession, plan: RatePlan) -> dict[str, Any]:
     }
 
 
-async def _queue_unfinalized_cost_runs(session: DbSession, account_id: str) -> dict[str, int]:
+async def _queue_unfinalized_cost_runs(session: DbSession, account_id: str) -> dict[str, Any]:
     finalized = list(
         await session.scalars(
             select(BillingCycle).where(
@@ -230,6 +231,7 @@ async def _queue_unfinalized_cost_runs(session: DbSession, account_id: str) -> d
         )
     )
     queued = 0
+    queued_ids: list[str] = []
     for run in await session.scalars(
         select(CostCalculationRun).where(CostCalculationRun.utility_account_id == account_id)
     ):
@@ -240,7 +242,56 @@ async def _queue_unfinalized_cost_runs(session: DbSession, account_id: str) -> d
         if not protected:
             run.status = "queued"
             queued += 1
-    return {"queued_runs": queued, "finalized_cycles_preserved": len(finalized)}
+            queued_ids.append(run.id)
+    return {
+        "queued_runs": queued,
+        "queued_run_ids": queued_ids,
+        "finalized_cycles_preserved": len(finalized),
+    }
+
+
+async def _assignment_result(
+    session: DbSession,
+    assignment: RateAssignment,
+    *,
+    replaced_ids: list[str],
+    recalculation: dict[str, Any],
+    idempotent: bool,
+) -> RateAssignmentResult:
+    version = await session.get(RateVersion, assignment.rate_version_id)
+    plan = await session.get(RatePlan, version.rate_plan_id) if version else None
+    account = await session.get(UtilityAccount, assignment.utility_account_id)
+    if version is None or plan is None or account is None:
+        raise ProblemError(
+            500,
+            "Assignment result is incomplete",
+            "The committed assignment could not be resolved to its service and rate version",
+            "rate_assignment_result_invalid",
+        )
+    report = validate_document(await version_document(session, version))
+    state = assignment_state(assignment)
+    return RateAssignmentResult.model_validate(
+        {
+            "schema_version": "rate-assignment-result/1.0",
+            "assignment_id": assignment.id,
+            "electric_service_id": account.id,
+            "plan_id": plan.id,
+            "version_id": version.id,
+            "version": version.version,
+            "effective_from": assignment.effective_from,
+            "effective_to": assignment.effective_to,
+            "state": state,
+            "effective_now": state == "current",
+            "replaced_assignment_id": replaced_ids[0] if len(replaced_ids) == 1 else None,
+            "replaced_assignment_ids": replaced_ids,
+            "recalculation_job_id": next(iter(recalculation.get("queued_run_ids", [])), None),
+            "cost_recalculation": recalculation,
+            "warnings": [item.message for item in report.warnings],
+            "service_revision": account.revision,
+            "history_preserved": True,
+            "idempotent": idempotent,
+        }
+    )
 
 
 @router.get("/rates/plans")
@@ -1985,13 +2036,13 @@ async def validate_rate_document(
     return validate_document(payload).model_dump(mode="json")
 
 
-@router.post("/rates/assignments/replace")
+@router.post("/rates/assignments/replace", response_model=RateAssignmentResult)
 async def replace_current_assignment(
     payload: RateAssignmentReplaceRequest,
     request: Request,
     principal: CsrfPrincipal,
     session: DbSession,
-) -> dict[str, Any]:
+) -> RateAssignmentResult:
     _rate_manager(principal, "rates.assign")
     if payload.idempotency_key:
         existing = await session.scalar(
@@ -2019,16 +2070,13 @@ async def replace_current_assignment(
                 .limit(1)
             )
             details = prior.details if prior else {}
-            return {
-                "assignment_id": existing.id,
-                "effective_from": existing.effective_from,
-                "effective_to": existing.effective_to,
-                "effective_now": assignment_state(existing) == "current",
-                "replaced_assignment_ids": details.get("replaced_assignment_ids", []),
-                "history_preserved": True,
-                "cost_recalculation": details.get("cost_recalculation", {}),
-                "idempotent": True,
-            }
+            return await _assignment_result(
+                session,
+                existing,
+                replaced_ids=details.get("replaced_assignment_ids", []),
+                recalculation=details.get("cost_recalculation", {}),
+                idempotent=True,
+            )
     try:
         assignment, replaced_ids, effective_now = await assign_version(
             session,
@@ -2040,6 +2088,8 @@ async def replace_current_assignment(
             reason=payload.assignment_reason or "Owner replaced the current rate plan",
             actor_id=principal.user.id,
             idempotency_key=payload.idempotency_key,
+            expected_account_revision=payload.expected_account_revision,
+            expected_current_assignment_revision=payload.expected_current_assignment_revision,
         )
     except IntegrityError as exc:
         await session.rollback()
@@ -2051,21 +2101,14 @@ async def replace_current_assignment(
             extra={"allowed_resolution_actions": ["reload", "review_conflicts"]},
         ) from exc
     recalculation = await _queue_unfinalized_cost_runs(session, payload.utility_account_id)
-    result = {
-        "assignment_id": assignment.id,
-        "effective_from": assignment.effective_from,
-        "effective_to": assignment.effective_to,
-        "effective_now": effective_now,
-        "replaced_assignment_ids": replaced_ids,
-        "history_preserved": True,
-        "cost_recalculation": recalculation,
-        "idempotent": False,
-    }
-    audit_result = {
-        **result,
-        "effective_from": assignment.effective_from.isoformat(),
-        "effective_to": (assignment.effective_to.isoformat() if assignment.effective_to else None),
-    }
+    result = await _assignment_result(
+        session,
+        assignment,
+        replaced_ids=replaced_ids,
+        recalculation=recalculation,
+        idempotent=False,
+    )
+    audit_result = result.model_dump(mode="json")
     session.add(
         audit_event(
             action="rate_assignment.replaced" if replaced_ids else "rate_assignment.created",

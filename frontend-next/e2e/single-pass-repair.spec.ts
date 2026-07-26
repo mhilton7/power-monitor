@@ -275,20 +275,28 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
         })
       }
       observed.assignment = assignmentPayload
+      const assignedVersion = String(assignmentPayload.rate_version_id)
       return route.fulfill({
-        status: 201,
+        status: 200,
         json: {
-          assignment: {
-            id: 'assignment-1',
-            utility_account_id: service.id,
-            rate_version_id: 'draft-version',
-            effective_from: '2026-07-25T12:00:00Z',
-            effective_to: null,
-            state: 'current',
-            revision: 1,
-          },
-          ended_assignment_ids: ['assignment-current'],
-          recalculation_queued: true,
+          schema_version: 'rate-assignment-result/1.0',
+          assignment_id: 'assignment-1',
+          electric_service_id: service.id,
+          plan_id: assignedVersion === 'version-2' ? 'plan-2' : 'draft-plan',
+          version_id: assignedVersion,
+          version: assignedVersion === 'version-2' ? 1 : 1,
+          effective_from: String(assignmentPayload.effective_from),
+          effective_to: null,
+          state: 'current',
+          effective_now: true,
+          replaced_assignment_id: 'assignment-current',
+          replaced_assignment_ids: ['assignment-current'],
+          recalculation_job_id: 'cost-recalculation-1',
+          cost_recalculation: { queued_runs: 1, queued_run_ids: ['cost-recalculation-1'] },
+          warnings: [],
+          service_revision: 2,
+          history_preserved: true,
+          idempotent: false,
         },
       })
     }
@@ -536,6 +544,58 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
         ct_rating_amps: '200',
       }] : [],
       '/api/v1/utility-accounts': [service],
+      '/api/v1/electric-services/default/current-rate-assignment': {
+        schema_version: 'current-rate-assignment/1.0',
+        home_id: home.id,
+        electric_service_id: service.id,
+        service_revision: service.revision,
+        assignment: {
+          assignment_id: 'assignment-current',
+          assignment_revision: 1,
+          plan_id: 'plan-1',
+          plan_code: 'TOU-D-4-9PM',
+          plan_name: 'TOU-D 4 PM to 9 PM',
+          version_id: 'version-1',
+          version: 2,
+          pricing_model: 'time_of_use',
+          effective_from: '2026-07-01T07:00:00Z',
+          effective_to: null,
+          state: 'current',
+        },
+      },
+      '/api/v1/configuration-status': configured ? {
+        schema_version: 'configuration-status/1.0',
+        home_id: home.id,
+        electric_service_id: service.id,
+        state: 'ready',
+        label: 'Ready',
+        summary: 'Configuration is complete.',
+        generated_at: '2026-07-25T12:00:00Z',
+        issues: [],
+      } : {
+        schema_version: 'configuration-status/1.0',
+        home_id: home.id,
+        electric_service_id: service.id,
+        state: 'waiting_for_data',
+        label: 'Waiting for data',
+        summary: '1 blocking and 0 advisory issues.',
+        generated_at: '2026-07-25T12:00:00Z',
+        issues: [{
+          id: 'sensor.missing',
+          category: 'sensor',
+          state: 'waiting_for_data',
+          title: 'Connect a sensor',
+          what_is_wrong: 'No active sensor is enrolled for this home.',
+          why_it_matters: 'Live power and history require signed sensor readings.',
+          how_to_fix: 'Generate an enrollment code and claim the sensor.',
+          blocking: true,
+          action: {
+            id: 'sensor.enroll',
+            label: 'Connect sensor',
+            target: '/settings/sensors?action=add',
+          },
+        }],
+      },
       [`/api/v1/utility-accounts/${service.id}/tier-status`]: {
         available: hasBilling,
         cycle: { starts_at: '2026-07-01T07:00:00Z', ends_at: '2026-08-01T07:00:00Z', days_remaining: 8 },
@@ -608,6 +668,8 @@ test.beforeEach(async ({ page }) => {
 test('bill importer is visible, keyboard contained, retryable, and URL-backed', async ({ page }) => {
   await mockRepairServer(page)
   await page.goto('/billing')
+  await expect(page.getByRole('heading', { name: 'Billing', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Upload electric bill' }).first()).toBeVisible()
   await expect(page).toHaveScreenshot('billing-simple.png', { fullPage: true, animations: 'disabled' })
   const trigger = page.getByRole('button', { name: 'Upload electric bill' }).first()
   await trigger.click()

@@ -3,6 +3,8 @@ import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'r
 import {
   adaptAlerts,
   adaptBillingCycle,
+  adaptConfigurationStatus,
+  adaptCurrentRateAssignment,
   adaptElectricServices,
   adaptHomeSummary,
   adaptSensors,
@@ -12,6 +14,8 @@ import type {
   AlertSummary,
   BillingCycleSummary,
   ElectricService,
+  ConfigurationStatus,
+  CurrentRateAssignment,
   HomeSummary,
   SensorSummary,
 } from '../types/models'
@@ -23,6 +27,8 @@ interface LiveHomeValue {
   alerts: AlertSummary[]
   services: ElectricService[]
   cycle?: BillingCycleSummary
+  configuration?: ConfigurationStatus
+  currentAssignment?: CurrentRateAssignment
   loading: boolean
   error: unknown
   refresh: () => Promise<void>
@@ -45,6 +51,28 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     queryFn: () => request('/api/v1/utility-accounts', {}, adaptElectricServices),
     enabled: Boolean(homeId),
     select: (items) => items.filter((item) => item.homeId === homeId && item.status === 'active'),
+    refetchInterval: 60_000,
+  })
+  const configuration = useQuery({
+    queryKey: ['configuration-status', homeId],
+    queryFn: () => request(
+      `/api/v1/configuration-status?site_id=${encodeURIComponent(homeId ?? '')}`,
+      {},
+      adaptConfigurationStatus,
+    ),
+    enabled: Boolean(homeId),
+    retry: 1,
+    refetchInterval: 60_000,
+  })
+  const currentAssignment = useQuery({
+    queryKey: ['current-rate-assignment', homeId],
+    queryFn: () => request(
+      `/api/v1/electric-services/default/current-rate-assignment?site_id=${encodeURIComponent(homeId ?? '')}`,
+      {},
+      adaptCurrentRateAssignment,
+    ),
+    enabled: Boolean(homeId),
+    retry: 1,
     refetchInterval: 60_000,
   })
   const activeService = services.data?.[0]
@@ -101,6 +129,8 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     alerts: alerts.data ?? [],
     services: services.data ?? [],
     cycle: cycle.data,
+    configuration: configuration.data,
+    currentAssignment: currentAssignment.data,
     loading: fleet.isLoading || sensors.isLoading || services.isLoading,
     error,
     refresh: async () => {
@@ -110,6 +140,8 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
         services.refetch(),
         alerts.refetch(),
         cycle.refetch(),
+        configuration.refetch(),
+        currentAssignment.refetch(),
       ])
     },
   }

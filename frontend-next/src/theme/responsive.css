@@ -1,3 +1,8 @@
+@media (max-width: 1250px) {
+  /* Preserve the actionable configuration control before dropping live context. */
+  .live-facts .freshness { display: none; }
+}
+
 @media (max-width: 1100px) {
   .auth-page { grid-template-columns: minmax(0, 1fr) minmax(27rem, .85fr); }
   .auth-brand { padding: clamp(2.5rem, 5vw, 4.5rem); }
@@ -6,11 +11,13 @@
   .billing-main-grid { grid-template-columns: 1fr; }
   .billing-side-column { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .history-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .live-facts .freshness { display: none; }
   .detail-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-onboarding-grid, .home-main-grid { grid-template-columns: 1fr; }
   .home-setup-card { min-height: auto; }
   .home-side-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; }
+  .user-button span,
+  .user-button > svg:last-child { display: none; }
+  .user-button > svg:first-child { width: 30px; }
 }
 
 @media (max-width: 900px) {

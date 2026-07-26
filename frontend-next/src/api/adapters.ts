@@ -5,6 +5,8 @@ import type {
   BillImportDetail,
   BillSummary,
   BillingCycleSummary,
+  ConfigurationStatus,
+  CurrentRateAssignment,
   ElectricService,
   FamilyMember,
   FamilyRoleOption,
@@ -20,6 +22,7 @@ import type {
   RatePlanAssignment,
   RatePlanVersion,
   RateAdjustment,
+  RateAssignmentResult,
   RateSourceCheckRun,
   RateSource,
   UserSession,
@@ -139,6 +142,10 @@ export function adaptElectricServices(value: unknown): ElectricService[] {
       currentPlan: optionalString(context.current_plan),
       planCode: optionalString(context.plan_code),
       rateVersionId: optionalString(context.rate_version_id),
+      currentAssignmentId: optionalString(context.current_assignment_id),
+      currentAssignmentRevision: typeof context.current_assignment_revision === 'number'
+        ? context.current_assignment_revision
+        : undefined,
       currentVersion: typeof context.current_version === 'number' ? context.current_version : undefined,
       currentPeriod: optionalString(context.current_period),
       currentRate: optionalString(context.current_price_per_kwh),
@@ -153,6 +160,107 @@ export function adaptElectricServices(value: unknown): ElectricService[] {
       },
     }
   })
+}
+
+export function adaptConfigurationStatus(value: unknown): ConfigurationStatus {
+  const source = record(value, 'configuration status')
+  const allowedStates = new Set([
+    'ready',
+    'setup_needed',
+    'partially_configured',
+    'waiting_for_data',
+    'attention_required',
+    'error',
+  ])
+  const state = stringValue(source.state)
+  if (!allowedStates.has(state)) throw new Error('Configuration status returned an unknown state')
+  return {
+    homeId: stringValue(source.home_id),
+    electricServiceId: optionalString(source.electric_service_id),
+    state: state as ConfigurationStatus['state'],
+    label: stringValue(source.label),
+    summary: stringValue(source.summary),
+    generatedAt: stringValue(source.generated_at),
+    issues: objectList(source.issues).map((item) => {
+      const issueState = stringValue(item.state)
+      if (issueState === 'ready' || !allowedStates.has(issueState)) {
+        throw new Error('Configuration issue returned an unknown state')
+      }
+      const action = record(item.action, 'configuration action')
+      return {
+        id: stringValue(item.id),
+        category: stringValue(item.category),
+        state: issueState as ConfigurationStatus['issues'][number]['state'],
+        title: stringValue(item.title),
+        whatIsWrong: stringValue(item.what_is_wrong),
+        whyItMatters: stringValue(item.why_it_matters),
+        howToFix: stringValue(item.how_to_fix),
+        blocking: booleanValue(item.blocking),
+        action: {
+          id: stringValue(action.id),
+          label: stringValue(action.label),
+          target: stringValue(action.target),
+        },
+      }
+    }),
+  }
+}
+
+export function adaptRateAssignmentResult(value: unknown): RateAssignmentResult {
+  const source = record(value, 'rate assignment result')
+  if (stringValue(source.schema_version) !== 'rate-assignment-result/1.0') {
+    throw new Error('Rate assignment response uses an unsupported schema')
+  }
+  const state = stringValue(source.state)
+  if (!['current', 'scheduled', 'historical', 'cancelled'].includes(state)) {
+    throw new Error('Rate assignment response returned an unknown state')
+  }
+  return {
+    assignmentId: stringValue(source.assignment_id),
+    electricServiceId: stringValue(source.electric_service_id),
+    planId: stringValue(source.plan_id),
+    versionId: stringValue(source.version_id),
+    version: numberValue(source.version),
+    effectiveFrom: stringValue(source.effective_from),
+    effectiveThrough: optionalString(source.effective_to),
+    state: state as RateAssignmentResult['state'],
+    replacedAssignmentId: optionalString(source.replaced_assignment_id),
+    recalculationJobId: optionalString(source.recalculation_job_id),
+    warnings: stringList(source.warnings),
+    serviceRevision: numberValue(source.service_revision),
+    idempotent: booleanValue(source.idempotent),
+  }
+}
+
+export function adaptCurrentRateAssignment(value: unknown): CurrentRateAssignment {
+  const source = record(value, 'current rate assignment')
+  if (stringValue(source.schema_version) !== 'current-rate-assignment/1.0') {
+    throw new Error('Current assignment response uses an unsupported schema')
+  }
+  const assignment = source.assignment ? record(source.assignment, 'current assignment') : undefined
+  if (assignment && stringValue(assignment.state) !== 'current') {
+    throw new Error('Current assignment response returned a non-current state')
+  }
+  return {
+    homeId: stringValue(source.home_id),
+    electricServiceId: optionalString(source.electric_service_id),
+    serviceRevision: typeof source.service_revision === 'number'
+      ? source.service_revision
+      : undefined,
+    assignment: assignment ? {
+      assignmentId: stringValue(assignment.assignment_id),
+      assignmentRevision: numberValue(assignment.assignment_revision),
+      planId: optionalString(assignment.plan_id),
+      planCode: optionalString(assignment.plan_code),
+      planName: optionalString(assignment.plan_name),
+      versionId: stringValue(assignment.version_id),
+      version: typeof assignment.version === 'number' ? assignment.version : undefined,
+      pricingModel: optionalString(assignment.pricing_model),
+      effectiveFrom: stringValue(assignment.effective_from),
+      effectiveThrough: optionalString(assignment.effective_to),
+      state: 'current',
+    } : undefined,
+  }
 }
 
 export function adaptBillingCycle(value: unknown): BillingCycleSummary {

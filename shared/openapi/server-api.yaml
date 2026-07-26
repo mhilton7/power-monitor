@@ -1535,6 +1535,80 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/configuration-status:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: Configuration Status
+      operationId: configuration_status_api_v1_configuration_status_get
+      parameters:
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigurationStatus'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/electric-services/default/current-rate-assignment:
+    get:
+      tags:
+      - utility accounts and sensor network
+      summary: Current Rate Assignment
+      description: Return the assignment table's current row; never infer it from
+        a plan flag.
+      operationId: current_rate_assignment_api_v1_electric_services_default_current_rate_assignment_get
+      parameters:
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentRateAssignment'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/rates/versions/{version_id}/current-context:
     get:
       tags:
@@ -8643,10 +8717,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-                title: Response Replace Current Assignment Api V1 Rates Assignments
-                  Replace Post
+                $ref: '#/components/schemas/RateAssignmentResult'
         '422':
           description: Validation Error
           content:
@@ -12269,6 +12340,131 @@ components:
       - version
       - status
       title: ConfigReport
+    ConfigurationAction:
+      properties:
+        id:
+          type: string
+          title: Id
+        label:
+          type: string
+          title: Label
+        target:
+          type: string
+          title: Target
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - label
+      - target
+      title: ConfigurationAction
+    ConfigurationIssue:
+      properties:
+        id:
+          type: string
+          title: Id
+        category:
+          type: string
+          enum:
+          - electric_service
+          - rate_plan
+          - billing_cycle
+          - sensor
+          - notification
+          - backup
+          - rate_source
+          - system
+          title: Category
+        state:
+          type: string
+          enum:
+          - setup_needed
+          - partially_configured
+          - waiting_for_data
+          - attention_required
+          - error
+          title: State
+        title:
+          type: string
+          title: Title
+        what_is_wrong:
+          type: string
+          title: What Is Wrong
+        why_it_matters:
+          type: string
+          title: Why It Matters
+        how_to_fix:
+          type: string
+          title: How To Fix
+        blocking:
+          type: boolean
+          title: Blocking
+        action:
+          $ref: '#/components/schemas/ConfigurationAction'
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - category
+      - state
+      - title
+      - what_is_wrong
+      - why_it_matters
+      - how_to_fix
+      - blocking
+      - action
+      title: ConfigurationIssue
+    ConfigurationStatus:
+      properties:
+        schema_version:
+          type: string
+          const: configuration-status/1.0
+          title: Schema Version
+        home_id:
+          type: string
+          title: Home Id
+        electric_service_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Electric Service Id
+        state:
+          type: string
+          enum:
+          - ready
+          - setup_needed
+          - partially_configured
+          - waiting_for_data
+          - attention_required
+          - error
+          title: State
+        label:
+          type: string
+          title: Label
+        summary:
+          type: string
+          title: Summary
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        issues:
+          items:
+            $ref: '#/components/schemas/ConfigurationIssue'
+          type: array
+          title: Issues
+      additionalProperties: false
+      type: object
+      required:
+      - schema_version
+      - home_id
+      - electric_service_id
+      - state
+      - label
+      - summary
+      - generated_at
+      - issues
+      title: ConfigurationStatus
     CostComponent:
       properties:
         name:
@@ -12323,6 +12519,102 @@ components:
       additionalProperties: false
       type: object
       title: CredentialRotationRequest
+    CurrentRateAssignment:
+      properties:
+        schema_version:
+          type: string
+          const: current-rate-assignment/1.0
+          title: Schema Version
+        home_id:
+          type: string
+          title: Home Id
+        electric_service_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Electric Service Id
+        service_revision:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Service Revision
+        assignment:
+          anyOf:
+          - $ref: '#/components/schemas/CurrentRateAssignmentDetail'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - schema_version
+      - home_id
+      - electric_service_id
+      - assignment
+      title: CurrentRateAssignment
+    CurrentRateAssignmentDetail:
+      properties:
+        assignment_id:
+          type: string
+          title: Assignment Id
+        assignment_revision:
+          type: integer
+          title: Assignment Revision
+        plan_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Plan Id
+        plan_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Plan Code
+        plan_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Plan Name
+        version_id:
+          type: string
+          title: Version Id
+        version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Version
+        pricing_model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pricing Model
+        effective_from:
+          type: string
+          format: date-time
+          title: Effective From
+        effective_to:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Effective To
+        state:
+          type: string
+          const: current
+          title: State
+      additionalProperties: false
+      type: object
+      required:
+      - assignment_id
+      - assignment_revision
+      - plan_id
+      - plan_code
+      - plan_name
+      - version_id
+      - version
+      - pricing_model
+      - effective_from
+      - effective_to
+      - state
+      title: CurrentRateAssignmentDetail
     DayScheduleDocument:
       properties:
         day_type:
@@ -14232,6 +14524,18 @@ components:
           type: string
           const: REPLACE CURRENT
           title: Confirmation
+        expected_account_revision:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Expected Account Revision
+        expected_current_assignment_revision:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Expected Current Assignment Revision
       additionalProperties: false
       type: object
       required:
@@ -14240,6 +14544,103 @@ components:
       - utility_account_id
       - confirmation
       title: RateAssignmentReplaceRequest
+    RateAssignmentResult:
+      properties:
+        schema_version:
+          type: string
+          const: rate-assignment-result/1.0
+          title: Schema Version
+        assignment_id:
+          type: string
+          title: Assignment Id
+        electric_service_id:
+          type: string
+          title: Electric Service Id
+        plan_id:
+          type: string
+          title: Plan Id
+        version_id:
+          type: string
+          title: Version Id
+        version:
+          type: integer
+          title: Version
+        effective_from:
+          type: string
+          format: date-time
+          title: Effective From
+        effective_to:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Effective To
+        state:
+          type: string
+          enum:
+          - current
+          - scheduled
+          - historical
+          - cancelled
+          title: State
+        effective_now:
+          type: boolean
+          title: Effective Now
+        replaced_assignment_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Replaced Assignment Id
+        replaced_assignment_ids:
+          items:
+            type: string
+          type: array
+          title: Replaced Assignment Ids
+        recalculation_job_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recalculation Job Id
+        cost_recalculation:
+          additionalProperties: true
+          type: object
+          title: Cost Recalculation
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+        service_revision:
+          type: integer
+          title: Service Revision
+        history_preserved:
+          type: boolean
+          title: History Preserved
+        idempotent:
+          type: boolean
+          title: Idempotent
+      additionalProperties: false
+      type: object
+      required:
+      - schema_version
+      - assignment_id
+      - electric_service_id
+      - plan_id
+      - version_id
+      - version
+      - effective_from
+      - effective_to
+      - state
+      - effective_now
+      - replaced_assignment_id
+      - replaced_assignment_ids
+      - recalculation_job_id
+      - cost_recalculation
+      - warnings
+      - service_revision
+      - history_preserved
+      - idempotent
+      title: RateAssignmentResult
     RateAssignmentWrite:
       properties:
         rate_version_id:

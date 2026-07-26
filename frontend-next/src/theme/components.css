@@ -346,6 +346,29 @@
 .service-card-heading p,
 .section-heading p { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 .service-card-heading > .pill { flex: 0 0 auto; }
+
+.configuration-status-chip { display: inline-flex; align-items: center; gap: .45rem; min-height: 2.35rem; padding: .48rem .72rem; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--text); font: inherit; font-size: .78rem; font-weight: 760; cursor: pointer; }
+.configuration-status-chip svg { width: 1rem; height: 1rem; }
+.configuration-status-chip.ready { color: var(--success); }
+.configuration-status-chip.setup_needed, .configuration-status-chip.partially_configured, .configuration-status-chip.waiting_for_data { color: var(--warning); background: color-mix(in srgb, var(--warning) 8%, var(--panel)); }
+.configuration-status-chip.attention_required, .configuration-status-chip.error { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--panel)); }
+.configuration-status-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.configuration-status-dialog { width: min(880px, calc(100vw - 2rem)); }
+.configuration-status-dialog > header { align-items: flex-start; }
+.configuration-status-dialog > header p { margin: .35rem 0 0; color: var(--muted); }
+.configuration-issue-list { display: grid; gap: .9rem; padding: 1.25rem 1.4rem; overflow-y: auto; }
+.configuration-issue { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .85rem; padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel-raised); }
+.configuration-issue-icon { display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border-radius: .65rem; color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); }
+.configuration-issue.error .configuration-issue-icon, .configuration-issue.attention_required .configuration-issue-icon { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.configuration-issue-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.configuration-issue-heading h3 { margin: .15rem 0 .7rem; font-size: 1rem; }
+.configuration-issue dl { display: grid; gap: .55rem; margin: 0 0 .9rem; }
+.configuration-issue dl div { display: grid; grid-template-columns: minmax(7.5rem, .25fr) minmax(0, 1fr); gap: .65rem; }
+.configuration-issue dt { color: var(--muted); font-size: .76rem; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; }
+.configuration-issue dd { margin: 0; color: var(--text); }
+.configuration-ready { display: flex; align-items: center; gap: .8rem; min-height: 7rem; padding: 1rem; }
+.configuration-ready svg { color: var(--success); }
+.configuration-ready p { margin: .25rem 0 0; color: var(--muted); }
 .service-facts { margin: var(--space-5) 0; border-block: 1px solid var(--line-subtle); }
 .metadata-list {
   display: grid;

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AdvancedRateSettings } from '../src/features/rates/AdvancedRateSettings'
@@ -138,6 +138,103 @@ describe('rate assignment, version, and source workflows', () => {
     expect(screen.getByText(/remains in assignment and cost history/i)).toBeVisible()
     expect(screen.getByText('Historical costs')).toBeVisible()
     expect(screen.getByText('Preserved')).toBeVisible()
+  })
+
+  it('applies Set as current and refreshes the canonical plan state without a reload', async () => {
+    let currentVersion = 'version-current'
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      await Promise.resolve()
+      const path = requestPath(input)
+      const method = (init?.method ?? 'GET').toUpperCase()
+      if (path === '/api/v1/rates/plans') {
+        return jsonResponse([
+          {
+            id: 'plan-current',
+            name: 'Current plan',
+            code: 'CURRENT',
+            status: 'active',
+            lifecycle_revision: 1,
+            versions: [{
+              id: 'version-current',
+              version: 1,
+              publication_status: 'published',
+              assignment_status: currentVersion === 'version-current' ? 'current' : 'historical',
+              display_status: currentVersion === 'version-current' ? 'current' : 'published',
+              pricing_model: 'time_of_use',
+              lifecycle_revision: 1,
+              assignments: [],
+            }],
+          },
+          {
+            id: 'plan-available',
+            name: 'Available plan',
+            code: 'AVAILABLE',
+            status: 'active',
+            lifecycle_revision: 1,
+            versions: [{
+              id: 'version-available',
+              version: 2,
+              publication_status: 'published',
+              assignment_status: currentVersion === 'version-available' ? 'current' : 'unassigned',
+              display_status: currentVersion === 'version-available' ? 'current' : 'published',
+              pricing_model: 'flat',
+              lifecycle_revision: 1,
+              assignments: [],
+            }],
+          },
+        ])
+      }
+      if (path === '/api/v1/rates/assignments/conflicts') {
+        return jsonResponse({ conflicts: [] })
+      }
+      if (path === '/api/v1/rates/assignments/replace' && method === 'POST') {
+        if (typeof init?.body !== 'string') throw new Error('Assignment request body is missing')
+        const body = JSON.parse(init.body) as Record<string, unknown>
+        expect(body).toMatchObject({
+          utility_account_id: 'service-1',
+          rate_version_id: 'version-available',
+          confirmation: 'REPLACE CURRENT',
+          expected_account_revision: 1,
+        })
+        currentVersion = 'version-available'
+        return jsonResponse({
+          schema_version: 'rate-assignment-result/1.0',
+          assignment_id: 'assignment-available',
+          electric_service_id: 'service-1',
+          plan_id: 'plan-available',
+          version_id: 'version-available',
+          version: 2,
+          effective_from: '2026-07-25T12:00:00Z',
+          effective_to: null,
+          state: 'current',
+          effective_now: true,
+          replaced_assignment_id: 'assignment-current',
+          replaced_assignment_ids: ['assignment-current'],
+          recalculation_job_id: null,
+          cost_recalculation: { queued_runs: 0 },
+          warnings: [],
+          service_revision: 2,
+          history_preserved: true,
+          idempotent: false,
+        })
+      }
+      throw new Error(`Unexpected request: ${method} ${path}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    renderRates()
+
+    await user.click(await screen.findByRole('button', { name: 'Replace current' }))
+    const region = screen.getByRole('region', { name: 'Replace current plan' })
+    await user.click(within(region).getByRole('button', { name: 'Replace current' }))
+    await waitFor(() => {
+      expect(region).not.toBeInTheDocument()
+    })
+    expect(await screen.findByText(/AVAILABLE.*Published v2.*Current v2/)).toBeVisible()
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/rates/assignments/replace',
+      expect.objectContaining({ method: 'POST' }),
+    )
   })
 
   it('executes and renders a completed observable source-check job', async () => {

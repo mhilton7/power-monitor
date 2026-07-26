@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   adaptBillDetail,
+  adaptConfigurationStatus,
+  adaptCurrentRateAssignment,
   adaptElectricServices,
   adaptFamily,
   adaptFamilyRoles,
@@ -8,6 +10,7 @@ import {
   adaptPermissions,
   adaptRateAssignments,
   adaptRateAdjustments,
+  adaptRateAssignmentResult,
   adaptRateEvidence,
   adaptRatePlanDependencies,
   adaptRateSourceCheckRun,
@@ -18,6 +21,33 @@ import {
 } from '../src/api/adapters'
 
 describe('typed homeowner adapters', () => {
+  it('validates the authoritative current-assignment context', () => {
+    expect(adaptCurrentRateAssignment({
+      schema_version: 'current-rate-assignment/1.0',
+      home_id: 'home-1',
+      electric_service_id: 'service-1',
+      service_revision: 4,
+      assignment: {
+        assignment_id: 'assignment-1',
+        assignment_revision: 2,
+        plan_id: 'plan-1',
+        plan_name: 'Domestic',
+        version_id: 'version-1',
+        version: 3,
+        pricing_model: 'tiered',
+        effective_from: '2026-07-25T12:00:00Z',
+        effective_to: null,
+        state: 'current',
+      },
+    }).assignment).toMatchObject({
+      assignmentId: 'assignment-1',
+      assignmentRevision: 2,
+      planName: 'Domestic',
+      version: 3,
+      state: 'current',
+    })
+  })
+
   it('does not dereference a missing current plan', () => {
     expect(adaptElectricServices([{
       id: 'service-1',
@@ -29,6 +59,94 @@ describe('typed homeowner adapters', () => {
       billing_cycle_start_day: 1,
       current_plan: null,
     }])[0]).toMatchObject({ id: 'service-1', currentPlan: undefined })
+  })
+
+  it('uses the canonical rate context and validates assignment results', () => {
+    expect(adaptElectricServices([{
+      id: 'service-1',
+      site_id: 'home-1',
+      name: 'Home electric service',
+      status: 'active',
+      timezone: 'America/Los_Angeles',
+      currency: 'USD',
+      billing_cycle_start_day: 1,
+      revision: 4,
+      rate_context: {
+        state: 'rate_configured_effective',
+        current_plan: 'TOU-D',
+        plan_code: 'TOU-D-4-9PM',
+        rate_version_id: 'version-2',
+        current_version: 2,
+        current_assignment_id: 'assignment-2',
+        current_assignment_revision: 1,
+        current_period: 'Off Peak',
+        current_price_per_kwh: '0.34',
+      },
+    }])[0]).toMatchObject({
+      currentPlan: 'TOU-D',
+      rateVersionId: 'version-2',
+      currentVersion: 2,
+      currentAssignmentId: 'assignment-2',
+      currentAssignmentRevision: 1,
+      currentPeriod: 'Off Peak',
+      currentRate: '0.34',
+    })
+    expect(adaptRateAssignmentResult({
+      schema_version: 'rate-assignment-result/1.0',
+      assignment_id: 'assignment-2',
+      electric_service_id: 'service-1',
+      plan_id: 'plan-2',
+      version_id: 'version-2',
+      version: 2,
+      effective_from: '2026-07-25T12:00:00Z',
+      effective_to: null,
+      state: 'current',
+      replaced_assignment_id: 'assignment-1',
+      recalculation_job_id: 'cost-job-1',
+      warnings: [],
+      service_revision: 4,
+      idempotent: false,
+    })).toMatchObject({
+      assignmentId: 'assignment-2',
+      electricServiceId: 'service-1',
+      versionId: 'version-2',
+      state: 'current',
+      serviceRevision: 4,
+    })
+  })
+
+  it('adapts actionable configuration issues without guessing status in pages', () => {
+    expect(adaptConfigurationStatus({
+      schema_version: 'configuration-status/1.0',
+      home_id: 'home-1',
+      electric_service_id: 'service-1',
+      state: 'setup_needed',
+      label: 'Setup needed',
+      summary: '1 blocking and 0 advisory issues.',
+      generated_at: '2026-07-25T12:00:00Z',
+      issues: [{
+        id: 'rate-assignment.missing',
+        category: 'rate_plan',
+        state: 'setup_needed',
+        title: 'Choose a current rate plan',
+        what_is_wrong: 'No plan is effective now.',
+        why_it_matters: 'Costs are unavailable.',
+        how_to_fix: 'Choose a published version.',
+        blocking: true,
+        action: {
+          id: 'rate_assignment.make_current',
+          label: 'Choose current plan',
+          target: '/billing?advanced=rates&tab=versions',
+        },
+      }],
+    })).toMatchObject({
+      state: 'setup_needed',
+      issues: [{
+        id: 'rate-assignment.missing',
+        blocking: true,
+        action: { target: '/billing?advanced=rates&tab=versions' },
+      }],
+    })
   })
 
   it('keeps exact history decimals as strings and explicit gaps', () => {

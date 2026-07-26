@@ -19,6 +19,7 @@ import { Metric, StatusDot, Surface } from '../../components/data-display/Surfac
 import { EmptyState, ErrorState, LoadingState } from '../../components/feedback/States'
 import { Page, PageHeader, StatGrid } from '../../components/layout/Layout'
 import { historyPayload } from '../../features/history/historyQuery'
+import { ConfigurationStatusChip } from '../../features/configuration/ConfigurationStatusSurface'
 import { useAppearance } from '../../state/AppearanceContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
@@ -29,7 +30,7 @@ const todayFilters: HistoryFilters = { range: 'today', metric: 'energy', scope: 
 
 export function HomePage() {
   const { resolution } = useSingleHome()
-  const { summary, sensors, alerts, cycle, loading, error, refresh } = useLiveHome()
+  const { summary, sensors, alerts, cycle, configuration, loading, error, refresh } = useLiveHome()
   const appearance = useAppearance()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const dailyHistory = useQuery({
@@ -93,7 +94,14 @@ export function HomePage() {
           </Surface>
         </div>
         <Surface className="home-ready-note">
-          <div><ShieldCheck /><span><strong>Your system is ready</strong><small>Monitoring, signed ingestion, alerts, local backups, and billing history remain active while setup is incomplete.</small></span></div>
+          <div>
+            <ShieldCheck />
+            <span>
+              <strong>{configuration?.label ?? 'Configuration status'}</strong>
+              <small>{configuration?.summary ?? 'Open configuration status for exact setup guidance.'}</small>
+            </span>
+            <ConfigurationStatusChip status={configuration} />
+          </div>
         </Surface>
         <p className="estimate-disclosure"><AlertTriangle size={16} /> {summary.disclosure}</p>
       </Page>

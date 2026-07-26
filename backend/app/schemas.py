@@ -358,6 +358,102 @@ class RateAssignmentWrite(ApiModel):
 class RateAssignmentReplaceRequest(RateAssignmentWrite):
     utility_account_id: str = Field(min_length=1, max_length=36)
     confirmation: Literal["REPLACE CURRENT"]
+    expected_account_revision: int | None = Field(default=None, ge=1)
+    expected_current_assignment_revision: int | None = Field(default=None, ge=1)
+
+
+class RateAssignmentResult(ApiModel):
+    schema_version: Literal["rate-assignment-result/1.0"]
+    assignment_id: str
+    electric_service_id: str
+    plan_id: str
+    version_id: str
+    version: int
+    effective_from: datetime
+    effective_to: datetime | None
+    state: Literal["current", "scheduled", "historical", "cancelled"]
+    effective_now: bool
+    replaced_assignment_id: str | None
+    replaced_assignment_ids: list[str]
+    recalculation_job_id: str | None
+    cost_recalculation: dict[str, Any]
+    warnings: list[str]
+    service_revision: int
+    history_preserved: bool
+    idempotent: bool
+
+
+class CurrentRateAssignmentDetail(ApiModel):
+    assignment_id: str
+    assignment_revision: int
+    plan_id: str | None
+    plan_code: str | None
+    plan_name: str | None
+    version_id: str
+    version: int | None
+    pricing_model: str | None
+    effective_from: datetime
+    effective_to: datetime | None
+    state: Literal["current"]
+
+
+class CurrentRateAssignment(ApiModel):
+    schema_version: Literal["current-rate-assignment/1.0"]
+    home_id: str
+    electric_service_id: str | None
+    service_revision: int | None = None
+    assignment: CurrentRateAssignmentDetail | None
+
+
+class ConfigurationAction(ApiModel):
+    id: str
+    label: str
+    target: str
+
+
+class ConfigurationIssue(ApiModel):
+    id: str
+    category: Literal[
+        "electric_service",
+        "rate_plan",
+        "billing_cycle",
+        "sensor",
+        "notification",
+        "backup",
+        "rate_source",
+        "system",
+    ]
+    state: Literal[
+        "setup_needed",
+        "partially_configured",
+        "waiting_for_data",
+        "attention_required",
+        "error",
+    ]
+    title: str
+    what_is_wrong: str
+    why_it_matters: str
+    how_to_fix: str
+    blocking: bool
+    action: ConfigurationAction
+
+
+class ConfigurationStatus(ApiModel):
+    schema_version: Literal["configuration-status/1.0"]
+    home_id: str
+    electric_service_id: str | None
+    state: Literal[
+        "ready",
+        "setup_needed",
+        "partially_configured",
+        "waiting_for_data",
+        "attention_required",
+        "error",
+    ]
+    label: str
+    summary: str
+    generated_at: datetime
+    issues: list[ConfigurationIssue]
 
 
 class UtilityAdjustmentWrite(ApiModel):

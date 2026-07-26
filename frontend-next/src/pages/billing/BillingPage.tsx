@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
   CalendarDays,
@@ -17,7 +17,12 @@ import {
 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { useSearchParams } from '../../app/router'
-import { adaptBills, adaptRatePlanDependencies, adaptRateVersions } from '../../api/adapters'
+import {
+  adaptBills,
+  adaptRateAssignmentResult,
+  adaptRatePlanDependencies,
+  adaptRateVersions,
+} from '../../api/adapters'
 import { errorMessage, json, request } from '../../api/client'
 import { objectList, record, stringValue } from '../../api/validation'
 import { Metric, Surface } from '../../components/data-display/Surface'
@@ -27,10 +32,11 @@ import { ModalLayer } from '../../components/overlays/ModalLayer'
 import { DropdownMenu, DropdownMenuItem } from '../../components/overlays/DropdownMenu'
 import { BillImportFlow } from '../../features/bill-import/BillImportFlow'
 import { AdvancedRateSettings } from '../../features/rates/AdvancedRateSettings'
+import { ConfigurationStatusChip } from '../../features/configuration/ConfigurationStatusSurface'
 import { useAuth } from '../../state/AuthContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
-import type { BillSummary, ElectricService } from '../../types/models'
+import type { BillSummary, ElectricService, RateAssignmentResult } from '../../types/models'
 import { dateRange, dateTime, energy, money, rate, statusLabel } from '../../utils/format'
 import { isOwner } from '../../access/permissions'
 
@@ -77,7 +83,7 @@ function libraryPlans(value: unknown): LibraryPlan[] {
 
 export function BillingPage() {
   const { resolution } = useSingleHome()
-  const { services, cycle, refresh } = useLiveHome()
+  const { services, cycle, configuration, refresh } = useLiveHome()
   const { session } = useAuth()
   const [params, setParams] = useSearchParams()
   const importOpen = params.get('action') === 'upload'
@@ -85,6 +91,7 @@ export function BillingPage() {
   const [advancedOpen, setAdvancedOpen] = useState(params.get('advanced') === 'rates')
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [lifecycleAction, setLifecycleAction] = useState<'unassign' | 'retire' | 'remove'>()
+  const [assignmentNotice, setAssignmentNotice] = useState('')
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const service = services[0]
   const bills = useQuery({
@@ -119,6 +126,17 @@ export function BillingPage() {
     setParams(next, { replace: true })
     void bills.refetch()
   }, [bills, params, setParams])
+  const advancedTab = ['plans', 'sources', 'versions', 'evidence', 'removed', 'adjustments'].includes(params.get('tab') ?? '')
+    ? params.get('tab') as 'plans' | 'sources' | 'versions' | 'evidence' | 'removed' | 'adjustments'
+    : 'plans'
+  const openAdvanced = useCallback((tab: typeof advancedTab = 'plans') => {
+    const next = new URLSearchParams(params)
+    next.set('advanced', 'rates')
+    next.set('tab', tab)
+    setParams(next)
+    setAdvancedOpen(true)
+  }, [params, setParams])
+  const advancedRequested = params.get('advanced') === 'rates'
 
   if (!home) return <ErrorState error={new Error('The default home is unavailable.')} />
   return (
@@ -130,6 +148,7 @@ export function BillingPage() {
           <Upload size={17} /> Upload electric bill
         </button>}
       />
+      {assignmentNotice && <InlineNotice tone="success">{assignmentNotice}</InlineNotice>}
 
       <StatGrid className="billing-top-metrics">
         <Metric label="Electric service" value={service ? '1' : '0'} identity="billing.service_count" detail={service ? service.name : 'Setup needed'} />
@@ -148,7 +167,7 @@ export function BillingPage() {
             <Surface className="service-card">
               <div className="service-card-heading">
                 <div><span>{service.provider}</span><h2>{service.name}</h2><p>{home.name} · {service.currentPlan ?? 'Rate plan not configured'}{service.currentVersion ? ` (v${service.currentVersion})` : ''}</p></div>
-                <span className={`pill ${service.currentPlan ? 'success' : 'warning'}`}>{service.currentPlan ? 'Rate active' : 'Setup needed'}</span>
+                <ConfigurationStatusChip status={configuration} />
               </div>
               <div className="service-facts">
                 <MetadataList>
@@ -160,20 +179,26 @@ export function BillingPage() {
               </div>
               <div className="card-actions">
                 <button type="button" className="button secondary" onClick={() => { setPlanDetail(!planDetail); }}><FileSearch size={16} /> Review plan</button>
-                {isOwner(session ?? { authenticated: false, bootstrapRequired: false }) && <button type="button" className="button secondary" onClick={() => { setAdvancedOpen(true); }}><Pencil size={16} /> Edit plan</button>}
+                {isOwner(session ?? { authenticated: false, bootstrapRequired: false }) && <button type="button" className="button secondary" onClick={() => { openAdvanced('plans'); }}><Pencil size={16} /> Edit plan</button>}
                 <div className="more-menu">
                   <DropdownMenu label="Rate plan actions" trigger={<><MoreHorizontal size={17} /> More <ChevronDown size={14} /></>}>
                     <DropdownMenuItem actionId={service.currentPlan ? 'rate_assignment.replace_current' : 'rate_assignment.make_current'} onSelect={() => { setReplaceOpen(true) }}>{service.currentPlan ? 'Replace current plan' : 'Make a plan current'}</DropdownMenuItem>
                     {currentLibraryPlan && <DropdownMenuItem actionId="rate_assignment.end" onSelect={() => { setLifecycleAction('unassign') }}><CircleOff size={15} /> End current assignment</DropdownMenuItem>}
-                    <DropdownMenuItem onSelect={() => { setAdvancedOpen(true) }}>View versions</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => { setAdvancedOpen(true) }}>View evidence</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => { openAdvanced('versions'); }}>View versions</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => { openAdvanced('evidence'); }}>View evidence</DropdownMenuItem>
                     {currentLibraryPlan && <DropdownMenuItem actionId="rate_plan.retire" onSelect={() => { setLifecycleAction('retire') }}><Archive size={15} /> Retire plan</DropdownMenuItem>}
                     {currentLibraryPlan && <DropdownMenuItem actionId="rate_plan.remove" className="danger" onSelect={() => { setLifecycleAction('remove') }}><Trash2 size={15} /> Remove plan</DropdownMenuItem>}
                   </DropdownMenu>
                 </div>
               </div>
               {planDetail && <PlanDetail service={service} model={currentLibraryPlan?.pricingModel} cycle={cycle} currency={home.currency} />}
-              {replaceOpen && <ReplacePlanV2 service={service} plans={plans.data ?? []} onClose={() => { setReplaceOpen(false); }} onDone={() => { setReplaceOpen(false); void refresh() }} />}
+              {replaceOpen && <ReplacePlanV2 service={service} homeId={home.id} plans={plans.data ?? []} onClose={() => { setReplaceOpen(false); }} onDone={(result) => {
+                setReplaceOpen(false)
+                setAssignmentNotice(result.state === 'current'
+                  ? `Current plan updated to version ${result.version}. Billing, Home, and History now use this assignment.`
+                  : `Version ${result.version} is scheduled for ${dateTime(result.effectiveFrom)}.`)
+                void refresh()
+              }} />}
             </Surface>
 
             <Surface title="Billing-cycle details" subtitle={dateRange(cycle?.startsAt, cycle?.endsAt)}>
@@ -212,9 +237,17 @@ export function BillingPage() {
       )}
 
       {isOwner(session ?? { authenticated: false, bootstrapRequired: false }) && (
-        <details className="advanced-disclosure" open={advancedOpen} onToggle={(event) => { setAdvancedOpen(event.currentTarget.open); }}>
+        <details className="advanced-disclosure" open={advancedOpen || advancedRequested} onToggle={(event) => {
+          setAdvancedOpen(event.currentTarget.open)
+          if (!event.currentTarget.open && advancedRequested) {
+            const next = new URLSearchParams(params)
+            next.delete('advanced')
+            next.delete('tab')
+            setParams(next, { replace: true })
+          }
+        }}>
           <summary><span><strong>Advanced Rate Settings</strong><small>Custom editor, exact components, sources, versions, evidence, and adjustments</small></span><ChevronDown /></summary>
-          <AdvancedRateSettings home={home} services={services} />
+          <AdvancedRateSettings key={advancedTab} home={home} services={services} initialView={advancedTab} />
         </details>
       )}
 
@@ -244,15 +277,18 @@ function PlanDetail({ service, model, cycle, currency }: { service: ElectricServ
 
 function ReplacePlanV2({
   service,
+  homeId,
   plans,
   onClose,
   onDone,
 }: {
   service: ElectricService
+  homeId: string
   plans: LibraryPlan[]
   onClose: () => void
-  onDone: () => void
+  onDone: (result: RateAssignmentResult) => void
 }) {
+  const client = useQueryClient()
   const [versionId, setVersionId] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [reason, setReason] = useState(
@@ -279,10 +315,40 @@ function ReplacePlanV2({
           replace_current: true,
           idempotency_key: crypto.randomUUID(),
           confirmation: 'REPLACE CURRENT',
+          expected_account_revision: service.revision,
+          expected_current_assignment_revision: service.currentAssignmentRevision,
         }),
+        adaptRateAssignmentResult,
       )
     },
-    onSuccess: onDone,
+    onSuccess: (result) => {
+      const selectedPlan = plans.find((plan) => plan.versionId === result.versionId)
+      client.setQueryData<ElectricService[]>(
+        ['electric-services', homeId],
+        (current) => current?.map((item) => item.id === result.electricServiceId
+          ? {
+              ...item,
+              revision: result.serviceRevision,
+              currentPlan: selectedPlan?.name,
+              planCode: selectedPlan?.code,
+              rateVersionId: result.versionId,
+              currentVersion: result.version,
+              readiness: { ...item.readiness, rate: result.state === 'current' ? 'rate_configured_effective' : 'rate_not_yet_effective' },
+            }
+          : item),
+      )
+      onDone(result)
+      void Promise.all([
+        client.invalidateQueries({ queryKey: ['electric-services'] }),
+        client.invalidateQueries({ queryKey: ['managed-rate-plans'] }),
+        client.invalidateQueries({ queryKey: ['billing-plan-library'] }),
+        client.invalidateQueries({ queryKey: ['home-summary'] }),
+        client.invalidateQueries({ queryKey: ['billing-cycle-summary'] }),
+        client.invalidateQueries({ queryKey: ['history'] }),
+        client.invalidateQueries({ queryKey: ['configuration-status'] }),
+        client.invalidateQueries({ queryKey: ['current-rate-assignment'] }),
+      ]).then(() => client.refetchQueries({ queryKey: ['electric-services', homeId], exact: true }))
+    },
   })
   const hasCurrent = Boolean(service.currentPlan)
   return (

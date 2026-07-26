@@ -228,25 +228,15 @@ async def delete_site(
 @router.get("/utility-accounts")
 async def list_utility_accounts(principal: Viewer, session: DbSession) -> list[dict[str, Any]]:
     _permission(principal, "utility_accounts.view")
+    # Import locally so the management router and account/network router keep
+    # independent module initialization while sharing one authoritative view.
+    from app.api.routes.account_network import account_view
+
     query = select(UtilityAccount).order_by(UtilityAccount.name)
     if not principal.all_sites:
         query = query.where(UtilityAccount.site_id.in_(principal.site_ids))
     accounts = list(await session.scalars(query))
-    return [
-        {
-            "id": account.id,
-            "site_id": account.site_id,
-            "name": account.name,
-            "status": account.status,
-            "timezone": account.timezone,
-            "currency": account.currency,
-            "billing_cycle_start_day": account.billing_cycle_start_day,
-            "baseline_allocation_kwh": account.baseline_allocation_kwh,
-            "generation_provider": account.generation_provider,
-            "active_rate_version_id": account.active_rate_version_id,
-        }
-        for account in accounts
-    ]
+    return [await account_view(session, account) for account in accounts]
 
 
 @router.post("/utility-accounts", status_code=201)

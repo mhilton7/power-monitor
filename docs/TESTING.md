@@ -1,5 +1,21 @@
 # Testing and release gates
 
+## Current-plan and Configuration Status regression
+
+Run the focused assignment and UI regression before the full suites:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest backend/tests/test_current_plan_configuration_status.py
+Set-Location frontend-next
+npm run test -- --run tests/adapters.test.ts tests/configurationStatus.test.tsx tests/rateWorkflows.test.tsx
+npm run build
+npx playwright test e2e/current-plan-status.spec.ts
+```
+
+The browser test must run after `npm run build`; Playwright previews the
+production `dist` directory and intentionally does not substitute a development
+bundle.
+
 ## Rate assignment, version, adjustment, and source-check acceptance (2026-07-25)
 
 `backend/tests/test_rate_assignment_version_source_workflows.py` covers

@@ -6,6 +6,7 @@ import {
   adaptRateAdjustments,
   adaptRateEvidence,
   adaptRatePlanDependencies,
+  adaptRateAssignmentResult,
   adaptRateSourceCheckRun,
   adaptRateSourceCheckRuns,
   adaptRateSources,
@@ -92,11 +93,13 @@ function plansAdapter(value: unknown): PlanRow[] {
 export function AdvancedRateSettings({
   home,
   services,
+  initialView = 'plans',
 }: {
   home: Home
   services: ElectricService[]
+  initialView?: RateView
 }) {
-  const [view, setView] = useState<RateView>('plans')
+  const [view, setView] = useState<RateView>(initialView)
   const plans = useQuery({ queryKey: ['managed-rate-plans'], queryFn: () => request('/api/v1/rates/plans', {}, plansAdapter) })
   const removedPlans = useQuery({
     queryKey: ['removed-rate-plans'],
@@ -144,7 +147,7 @@ export function AdvancedRateSettings({
       >
         {view === 'plans' && <PlanManagerV2 home={home} services={services} plans={plans.data ?? []} loading={plans.isLoading} error={plans.error} />}
         {view === 'sources' && <SourceManager sources={sources.data ?? []} loading={sources.isLoading} error={sources.error} />}
-        {view === 'versions' && <VersionList plans={plans.data ?? []} />}
+        {view === 'versions' && <VersionList home={home} service={services[0]} plans={plans.data ?? []} />}
         {view === 'evidence' && <EvidenceList plans={plans.data ?? []} />}
         {view === 'removed' && <><RemovedPlans plans={removedPlans.data ?? []} loading={removedPlans.isLoading} error={removedPlans.error} /><PagedVersionList rows={removedVersions.data ?? []} /></>}
         {view === 'adjustments' && <Adjustments services={services} />}
@@ -153,7 +156,15 @@ export function AdvancedRateSettings({
   )
 }
 
-function VersionList({ plans }: { plans: PlanRow[] }) {
+function VersionList({
+  home,
+  service,
+  plans,
+}: {
+  home: Home
+  service?: ElectricService
+  plans: PlanRow[]
+}) {
   const versions = useQuery({
     queryKey: ['all-rate-versions', plans.map((plan) => plan.id).join(':')],
     queryFn: async () => {
@@ -167,7 +178,7 @@ function VersionList({ plans }: { plans: PlanRow[] }) {
   })
   if (versions.isLoading) return <LoadingState label="Loading rate versions…" />
   if (versions.error) return <ErrorState error={versions.error} retry={() => { void versions.refetch() }} />
-  return <PagedVersionList rows={versions.data ?? []} />
+  return <PagedVersionList home={home} service={service} rows={versions.data ?? []} />
 }
 
 export function LegacyPagedVersionList({ rows }: { rows: Array<RatePlanVersion & { planName: string; planCode: string }> }) {
@@ -178,8 +189,12 @@ export function LegacyPagedVersionList({ rows }: { rows: Array<RatePlanVersion &
 
 function PagedVersionList({
   rows,
+  home,
+  service,
 }: {
   rows: Array<RatePlanVersion & { planName: string; planCode: string }>
+  home?: Home
+  service?: ElectricService
 }) {
   const client = useQueryClient()
   const [query, setQuery] = useState('')
@@ -188,6 +203,16 @@ function PagedVersionList({
   >()
   const [reason, setReason] = useState('Administrator reviewed version lifecycle')
   const [confirmation, setConfirmation] = useState('')
+  const [assignmentTarget, setAssignmentTarget] = useState<
+    RatePlanVersion & { planName: string; planCode: string }
+  >()
+  const [assignmentReason, setAssignmentReason] = useState(
+    'Owner reviewed the current rate-plan version',
+  )
+  const [effectiveChoice, setEffectiveChoice] = useState<'now' | 'next_cycle' | 'custom'>('now')
+  const [customEffective, setCustomEffective] = useState(
+    new Date().toISOString().slice(0, 16),
+  )
   const dependencies = useQuery({
     queryKey: ['rate-version-dependencies', selected?.id],
     queryFn: () =>
@@ -250,6 +275,65 @@ function PagedVersionList({
       ])
     },
   })
+  const makeCurrent = useMutation({
+    mutationFn: (version: RatePlanVersion & { planName: string; planCode: string }) => {
+      if (!service) throw new Error('Create an electric service before assigning a plan.')
+      const effectiveFrom = effectiveChoice === 'now'
+        ? new Date().toISOString()
+        : effectiveChoice === 'next_cycle'
+          ? service.billingEndsAt
+          : new Date(customEffective).toISOString()
+      if (!effectiveFrom) throw new Error('The next billing-cycle boundary is unavailable.')
+      return request(
+        '/api/v1/rates/assignments/replace',
+        json('POST', {
+          utility_account_id: service.id,
+          rate_version_id: version.id,
+          effective_from: effectiveFrom,
+          effective_to: null,
+          assignment_reason: assignmentReason,
+          replace_current: true,
+          confirmation: 'REPLACE CURRENT',
+          idempotency_key: crypto.randomUUID(),
+          expected_account_revision: service.revision,
+          expected_current_assignment_revision: service.currentAssignmentRevision,
+        }),
+        adaptRateAssignmentResult,
+      )
+    },
+    onSuccess: async (result, version) => {
+      if (home) {
+        client.setQueryData<ElectricService[]>(
+          ['electric-services', home.id],
+          (current) => current?.map((item) => item.id === result.electricServiceId
+            ? {
+                ...item,
+                revision: result.serviceRevision,
+                currentPlan: version.planName,
+                planCode: version.planCode,
+                rateVersionId: version.id,
+                currentVersion: version.version,
+                readiness: { ...item.readiness, rate: result.state === 'current' ? 'rate_configured_effective' : 'rate_not_yet_effective' },
+              }
+            : item),
+        )
+      }
+      setAssignmentTarget(undefined)
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['all-rate-versions'] }),
+        client.invalidateQueries({ queryKey: ['managed-rate-plans'] }),
+        client.invalidateQueries({ queryKey: ['electric-services'] }),
+        client.invalidateQueries({ queryKey: ['home-summary'] }),
+        client.invalidateQueries({ queryKey: ['billing-cycle-summary'] }),
+        client.invalidateQueries({ queryKey: ['history'] }),
+        client.invalidateQueries({ queryKey: ['configuration-status'] }),
+        client.invalidateQueries({ queryKey: ['current-rate-assignment'] }),
+      ])
+      if (home) {
+        await client.refetchQueries({ queryKey: ['electric-services', home.id], exact: true })
+      }
+    },
+  })
   const matching = rows.filter((row) =>
     `${row.planName} ${row.planCode} ${row.publicationStatus} ${row.assignmentStatus} ${row.version}`
       .toLowerCase()
@@ -281,6 +365,20 @@ function PagedVersionList({
           />
         </label>
       </div>
+      {assignmentTarget && service && (
+        <section className="plan-lifecycle-panel" aria-label="Make rate version current">
+          <div className="section-heading">
+            <div><h4>Make {assignmentTarget.planName} v{assignmentTarget.version} current</h4><p>The previous effective assignment and finalized costs remain in history.</p></div>
+            <button type="button" className="button ghost compact" onClick={() => { setAssignmentTarget(undefined); makeCurrent.reset() }}>Cancel</button>
+          </div>
+          <div className="form-grid">
+            <label><span>Effective timing</span><select value={effectiveChoice} onChange={(event) => { setEffectiveChoice(event.target.value as typeof effectiveChoice) }}><option value="now">Now</option><option value="next_cycle" disabled={!service.billingEndsAt}>Next billing cycle</option><option value="custom">Custom date and time</option></select></label>
+            {effectiveChoice === 'custom' && <label><span>Effective from</span><input type="datetime-local" value={customEffective} onChange={(event) => { setCustomEffective(event.target.value) }} /></label>}
+            <label className="wide"><span>Reason</span><input value={assignmentReason} onChange={(event) => { setAssignmentReason(event.target.value) }} /></label>
+          </div>
+          <button type="button" className="button primary" disabled={makeCurrent.isPending || assignmentReason.trim().length < 8} onClick={() => { makeCurrent.mutate(assignmentTarget) }}>{makeCurrent.isPending ? 'Applyingâ€¦' : service.currentPlan ? 'Replace current' : 'Make current'}</button>
+        </section>
+      )}
       {selected && (
         <section className="plan-lifecycle-panel">
           <div className="section-heading">
@@ -465,23 +563,30 @@ function PagedVersionList({
                   {row.immutable ? ' · immutable' : ' · editable draft'}
                 </span>
               </div>
-              <button
-                type="button"
-                className="button ghost compact"
-                onClick={() => {
-                  setSelected(row)
-                  setConfirmation('')
-                }}
-              >
-                Lifecycle
-              </button>
+              <div className="inline-actions">
+                {row.publicationStatus === 'published' && row.assignmentStatus !== 'current' && (
+                  <button type="button" className="button primary compact" disabled={!service} onClick={() => { setAssignmentTarget(row); makeCurrent.reset() }}>
+                    {service?.currentPlan ? 'Replace current' : 'Make current'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="button ghost compact"
+                  onClick={() => {
+                    setSelected(row)
+                    setConfirmation('')
+                  }}
+                >
+                  Lifecycle
+                </button>
+              </div>
             </li>
           ))}
         </ul>
       )}
-      {(lifecycle.error || cancelSchedule.error) && (
+      {(lifecycle.error || cancelSchedule.error || makeCurrent.error) && (
         <InlineNotice tone="danger">
-          {errorMessage(lifecycle.error ?? cancelSchedule.error)}
+          {errorMessage(lifecycle.error ?? cancelSchedule.error ?? makeCurrent.error)}
         </InlineNotice>
       )}
     </section>
@@ -963,17 +1068,40 @@ function PlanManagerV2({
           assignment_reason: assignmentReason,
           idempotency_key: crypto.randomUUID(),
           confirmation: 'REPLACE CURRENT',
+          expected_account_revision: service.revision,
+          expected_current_assignment_revision: service.currentAssignmentRevision,
         }),
+        adaptRateAssignmentResult,
       )
     },
-    onSuccess: async () => {
+    onSuccess: async (result, plan) => {
+      const selectedVersion = publishedVersion(plan)
+      client.setQueryData<ElectricService[]>(
+        ['electric-services', home.id],
+        (current) => current?.map((item) => item.id === result.electricServiceId
+          ? {
+              ...item,
+              revision: result.serviceRevision,
+              currentPlan: plan.name,
+              planCode: plan.code,
+              rateVersionId: result.versionId,
+              currentVersion: selectedVersion?.version ?? result.version,
+              readiness: { ...item.readiness, rate: result.state === 'current' ? 'rate_configured_effective' : 'rate_not_yet_effective' },
+            }
+          : item),
+      )
       setAssignmentTarget(undefined)
       await Promise.all([
         client.invalidateQueries({ queryKey: ['managed-rate-plans'] }),
         client.invalidateQueries({ queryKey: ['electric-services'] }),
         client.invalidateQueries({ queryKey: ['rate-assignment-conflicts'] }),
         client.invalidateQueries({ queryKey: ['home-summary'] }),
+        client.invalidateQueries({ queryKey: ['billing-cycle-summary'] }),
+        client.invalidateQueries({ queryKey: ['history'] }),
+        client.invalidateQueries({ queryKey: ['configuration-status'] }),
+        client.invalidateQueries({ queryKey: ['current-rate-assignment'] }),
       ])
+      await client.refetchQueries({ queryKey: ['electric-services', home.id], exact: true })
     },
   })
   const repair = useMutation({

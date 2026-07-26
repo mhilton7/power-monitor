@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query, Request, Response
 from sqlalchemy import func, select
 
 from app.api.deps import AppSettings, CsrfPrincipal, DbSession, Principal, Viewer, audit_event
+from app.configuration_status import build_configuration_status
 from app.db.models import (
     AggregateMember,
     AggregateSet,
@@ -44,11 +45,18 @@ from app.network_policy import (
     private_sensor_address,
 )
 from app.problem import ProblemError
-from app.rates.assignments import assign_version as create_effective_assignment
+from app.rates.assignments import (
+    assign_version as create_effective_assignment,
+)
+from app.rates.assignments import (
+    assignment_state,
+)
 from app.rates.documents import engine_plan
 from app.rates.engine import RateEngine
 from app.rates.service import version_document
 from app.schemas import (
+    ConfigurationStatus,
+    CurrentRateAssignment,
     NetworkAddressTest,
     NetworkCidrWrite,
     NetworkPolicyWrite,
@@ -239,6 +247,8 @@ async def _rate_context(
         "current_currency": account.currency,
         "billing_cycle": _billing_cycle(account, now),
         "assignment_effective_from": None,
+        "current_assignment_id": None,
+        "current_assignment_revision": None,
         "next_assignment": None,
     }
     if future:
@@ -267,6 +277,8 @@ async def _rate_context(
             "current_version": version.version,
             "rate_version_id": version.id,
             "assignment_effective_from": current.effective_from,
+            "current_assignment_id": current.id,
+            "current_assignment_revision": current.revision,
             "source_type": version.source_kind,
             "source_checked_at": version.source_checked_at,
         }
@@ -310,7 +322,8 @@ async def _topology_is_complete(session: DbSession, account_id: str) -> bool:
     )
 
 
-async def _account_view(session: DbSession, account: UtilityAccount) -> dict[str, Any]:
+async def account_view(session: DbSession, account: UtilityAccount) -> dict[str, Any]:
+    """Return the canonical electric-service view used by every client surface."""
     site = await session.get(Site, account.site_id)
     utility = await session.get(Utility, account.utility_id)
     assignments = await _account_assignments(session, account.id)
@@ -367,6 +380,109 @@ async def _account_view(session: DbSession, account: UtilityAccount) -> dict[str
     }
 
 
+async def _visible_site(session: DbSession, principal: Principal, site_id: str | None) -> Site:
+    query = select(Site).where(Site.lifecycle_state == "active")
+    if site_id:
+        query = query.where(Site.id == site_id)
+    else:
+        query = query.order_by(Site.is_default.desc(), Site.created_at).limit(1)
+    if not principal.all_sites:
+        query = query.where(Site.id.in_(principal.site_ids))
+    site = await session.scalar(query)
+    if site is None:
+        raise ProblemError(
+            404,
+            "Home not found",
+            "No active home is available to this account",
+            "site_missing",
+        )
+    return site
+
+
+@router.get("/configuration-status", response_model=ConfigurationStatus)
+async def configuration_status(
+    principal: Viewer,
+    session: DbSession,
+    settings: AppSettings,
+    site_id: str | None = None,
+) -> ConfigurationStatus:
+    _permission(principal, "sites.view")
+    site = await _visible_site(session, principal, site_id)
+    return await build_configuration_status(
+        session,
+        site=site,
+        heartbeat_expectation_seconds=settings.heartbeat_expectation_seconds,
+    )
+
+
+@router.get(
+    "/electric-services/default/current-rate-assignment",
+    response_model=CurrentRateAssignment,
+)
+async def current_rate_assignment(
+    principal: Viewer,
+    session: DbSession,
+    site_id: str | None = None,
+) -> CurrentRateAssignment:
+    """Return the assignment table's current row; never infer it from a plan flag."""
+
+    _permission(principal, "utility_accounts.view")
+    site = await _visible_site(session, principal, site_id)
+    account = await session.scalar(
+        select(UtilityAccount)
+        .where(UtilityAccount.site_id == site.id, UtilityAccount.status == "active")
+        .order_by(UtilityAccount.created_at)
+        .limit(1)
+    )
+    if account is None:
+        return CurrentRateAssignment.model_validate(
+            {
+                "schema_version": "current-rate-assignment/1.0",
+                "home_id": site.id,
+                "electric_service_id": None,
+                "assignment": None,
+            }
+        )
+    assignments = await _account_assignments(session, account.id)
+    current = next(
+        (item for item in assignments if assignment_state(item) == "current"),
+        None,
+    )
+    if current is None:
+        return CurrentRateAssignment.model_validate(
+            {
+                "schema_version": "current-rate-assignment/1.0",
+                "home_id": site.id,
+                "electric_service_id": account.id,
+                "service_revision": account.revision,
+                "assignment": None,
+            }
+        )
+    version = await session.get(RateVersion, current.rate_version_id)
+    plan = await session.get(RatePlan, version.rate_plan_id) if version else None
+    return CurrentRateAssignment.model_validate(
+        {
+            "schema_version": "current-rate-assignment/1.0",
+            "home_id": site.id,
+            "electric_service_id": account.id,
+            "service_revision": account.revision,
+            "assignment": {
+                "assignment_id": current.id,
+                "assignment_revision": current.revision,
+                "plan_id": plan.id if plan else None,
+                "plan_code": plan.code if plan else None,
+                "plan_name": plan.name if plan else None,
+                "version_id": version.id if version else current.rate_version_id,
+                "version": version.version if version else None,
+                "pricing_model": version.pricing_model if version else None,
+                "effective_from": current.effective_from,
+                "effective_to": current.effective_to,
+                "state": assignment_state(current),
+            },
+        }
+    )
+
+
 @router.get("/rates/versions/{version_id}/current-context")
 async def rate_version_current_context(
     version_id: str, principal: Viewer, session: DbSession
@@ -402,7 +518,7 @@ async def utility_bill_import_context(
     if principal.site_ids:
         account_query = account_query.where(UtilityAccount.site_id.in_(principal.site_ids))
     accounts = list(await session.scalars(account_query.order_by(UtilityAccount.name)))
-    views = [await _account_view(session, account) for account in accounts]
+    views = [await account_view(session, account) for account in accounts]
     summaries = [
         {
             "id": account.id,
@@ -532,7 +648,7 @@ async def list_site_accounts(
     if not include_archived:
         query = query.where(UtilityAccount.status == "active")
     accounts = list(await session.scalars(query.order_by(UtilityAccount.name)))
-    return [await _account_view(session, account) for account in accounts]
+    return [await account_view(session, account) for account in accounts]
 
 
 @router.post("/admin/sites/{site_id}/utility-accounts", status_code=201)
@@ -678,13 +794,13 @@ async def create_site_account(
         )
     )
     await session.commit()
-    return await _account_view(session, account)
+    return await account_view(session, account)
 
 
 @router.get("/admin/utility-accounts/{account_id}")
 async def get_account(account_id: str, principal: Viewer, session: DbSession) -> dict[str, Any]:
     _permission(principal, "utility_accounts.view")
-    return await _account_view(session, await _account_or_404(session, principal, account_id))
+    return await account_view(session, await _account_or_404(session, principal, account_id))
 
 
 @router.put("/admin/utility-accounts/{account_id}")
@@ -714,7 +830,7 @@ async def update_account(
         )
     )
     await session.commit()
-    return await _account_view(session, account)
+    return await account_view(session, account)
 
 
 @router.post("/admin/utility-accounts/{account_id}/archive")
@@ -740,7 +856,7 @@ async def archive_account(
             )
         )
         await session.commit()
-    return await _account_view(session, account)
+    return await account_view(session, account)
 
 
 @router.get("/admin/utility-accounts/{account_id}/rate-assignments")
@@ -865,7 +981,7 @@ async def change_cost_scope(
         )
     )
     await session.commit()
-    return await _account_view(session, account)
+    return await account_view(session, account)
 
 
 @router.post("/admin/utility-accounts/{account_id}/recalculate", status_code=202)
@@ -1166,7 +1282,7 @@ async def setup_readiness(
         .order_by(DeviceHeartbeat.received_at.desc())
         .limit(1)
     )
-    account_views = [await _account_view(session, item) for item in account_rows]
+    account_views = [await account_view(session, item) for item in account_rows]
     effective = [
         item
         for item in account_views

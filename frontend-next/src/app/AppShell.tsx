@@ -24,6 +24,7 @@ import { power, relativeTime } from '../utils/format'
 import { AlertDrawer } from '../features/alerts/AlertDrawer'
 import { StatusDot } from '../components/data-display/Surface'
 import { DropdownMenu, DropdownMenuItem } from '../components/overlays/DropdownMenu'
+import { ConfigurationStatusChip } from '../features/configuration/ConfigurationStatusSurface'
 
 export const PRIMARY_DESTINATIONS = [
   { label: 'Home', path: '/home', icon: Home },
@@ -34,7 +35,7 @@ export const PRIMARY_DESTINATIONS = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { resolution } = useSingleHome()
-  const { summary, alerts } = useLiveHome()
+  const { summary, alerts, configuration } = useLiveHome()
   const { session, refresh } = useAuth()
   const { railCollapsed, setRailCollapsed } = useAppearance()
   const location = useLocation()
@@ -92,6 +93,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="freshness"><Clock3 aria-hidden="true" /><span><small>Last data</small><strong>{relativeTime(summary?.latestDataAt)}</strong></span></div>
         </div>
         <div className="top-actions">
+          <ConfigurationStatusChip status={configuration} className="top-configuration-status" />
           <button
             type="button"
             className="icon-button alert-button"

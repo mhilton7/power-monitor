@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import RateAssignment, RatePlan, RateVersion, UtilityAccount
 from app.problem import ProblemError
+from app.rates.documents import validate_document
+from app.rates.service import version_document
 
 ASSIGNABLE_VERSION_STATUSES = frozenset({"published", "active", "approved"})
 
@@ -129,6 +131,8 @@ async def assign_version(
     reason: str | None,
     actor_id: str,
     idempotency_key: str | None = None,
+    expected_account_revision: int | None = None,
+    expected_current_assignment_revision: int | None = None,
 ) -> tuple[RateAssignment, list[str], bool]:
     if idempotency_key:
         existing = await session.scalar(
@@ -149,6 +153,23 @@ async def assign_version(
             "Active electric service required",
             "Restore the electric service before changing its rate plan",
             "utility_account_archived",
+        )
+    if expected_account_revision is not None and account.revision != expected_account_revision:
+        raise ProblemError(
+            409,
+            "Electric service changed",
+            "Reload the electric service before changing its current plan",
+            "stale_electric_service",
+            extra={
+                "blockers": [
+                    {
+                        "code": "service_revision_changed",
+                        "message": "The electric service was updated by another request.",
+                        "action": "reload",
+                    }
+                ],
+                "current_service_revision": account.revision,
+            },
         )
     version = await session.get(RateVersion, rate_version_id)
     if version is None or version.status not in ASSIGNABLE_VERSION_STATUSES:
@@ -174,6 +195,26 @@ async def assign_version(
             "Restore the plan and version before assigning it",
             "rate_plan_removed",
         )
+    document = await version_document(session, version)
+    report = validate_document(document)
+    if not report.valid:
+        raise ProblemError(
+            422,
+            "Rate version is incomplete",
+            "Resolve every validation error and publish a complete rate version before assignment",
+            "rate_version_invalid",
+            extra={
+                "blockers": [
+                    {
+                        "code": item.code,
+                        "path": item.path,
+                        "message": item.message,
+                        "action": "review_and_publish",
+                    }
+                    for item in report.errors
+                ]
+            },
+        )
     start = aware(effective_from)
     end = aware(effective_to) if effective_to else None
     if end is not None and end <= start:
@@ -184,6 +225,36 @@ async def assign_version(
             "rate_assignment_invalid",
         )
     assignments = await account_assignments(session, account.id, include_cancelled=False)
+    now = datetime.now(UTC)
+    current_at_request = next(
+        (item for item in assignments if assignment_state(item, now) == "current"),
+        None,
+    )
+    if expected_current_assignment_revision is not None and (
+        current_at_request is None
+        or current_at_request.revision != expected_current_assignment_revision
+    ):
+        raise ProblemError(
+            409,
+            "Current assignment changed",
+            "Reload the current plan before replacing it",
+            "stale_rate_assignment",
+            extra={
+                "blockers": [
+                    {
+                        "code": "assignment_revision_changed",
+                        "message": (
+                            "The effective assignment changed before this request committed."
+                        ),
+                        "action": "reload",
+                    }
+                ],
+                "current_assignment_id": current_at_request.id if current_at_request else None,
+                "current_assignment_revision": (
+                    current_at_request.revision if current_at_request else None
+                ),
+            },
+        )
     existing_conflicts = conflicting_pairs(assignments)
     if existing_conflicts:
         conflict_ids = sorted({item.id for pair in existing_conflicts for item in pair})
@@ -255,10 +326,10 @@ async def assign_version(
         created_at=datetime.now(UTC),
     )
     session.add(assignment)
-    now = datetime.now(UTC)
     effective_now = start <= now and (end is None or end > now)
     if effective_now:
         account.active_rate_version_id = version.id
+    account.revision += 1
     await session.flush()
     return assignment, [item.id for item in replaced], effective_now
 
@@ -304,6 +375,7 @@ async def end_assignment(
     current.revision += 1
     if instant <= datetime.now(UTC):
         account.active_rate_version_id = None
+    account.revision += 1
     await session.flush()
     return current
 
@@ -367,6 +439,7 @@ async def resolve_assignment_conflict(
         account.active_rate_version_id = keep.rate_version_id
     else:
         account.active_rate_version_id = None
+    account.revision += 1
     await session.flush()
     return {
         "resolved": True,

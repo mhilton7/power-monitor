@@ -1,5 +1,15 @@
 # Power Monitor Server 1.0.0
 
+## Current-plan assignment and actionable Configuration Status
+
+- Fixed the Single Home current-plan read path so Billing, Home, History, and
+  cost context resolve the assignment that was actually committed.
+- Added typed atomic assignment results, optimistic concurrency checks, complete
+  rate-document validation, and explicit current-assignment revision data.
+- Added the server-authoritative Configuration Status resolver and accessible,
+  direct-action status surface.
+- No database migration, firmware change, service, port, or secret was added.
+
 ## Authoritative rate assignments and observable source checks
 
 - Separates plan-library publication from electric-service assignment.

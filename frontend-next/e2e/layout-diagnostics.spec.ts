@@ -115,6 +115,37 @@ async function mockLayoutServer(page: Page) {
       '/api/v1/sites': [home],
       '/api/v1/devices': [],
       '/api/v1/utility-accounts': [service],
+      '/api/v1/electric-services/default/current-rate-assignment': {
+        schema_version: 'current-rate-assignment/1.0',
+        home_id: home.id,
+        electric_service_id: service.id,
+        service_revision: service.revision,
+        assignment: null,
+      },
+      '/api/v1/configuration-status': {
+        schema_version: 'configuration-status/1.0',
+        home_id: home.id,
+        electric_service_id: service.id,
+        state: 'setup_needed',
+        label: 'Setup needed',
+        summary: '2 blocking and 0 advisory issues.',
+        generated_at: '2026-07-25T12:00:00Z',
+        issues: [{
+          id: 'rate-assignment.missing',
+          category: 'rate_plan',
+          state: 'setup_needed',
+          title: 'Choose a current rate plan',
+          what_is_wrong: 'The electric service has no plan effective now.',
+          why_it_matters: 'Current prices and cost estimates cannot be calculated.',
+          how_to_fix: 'Choose a published version and use Make current.',
+          blocking: true,
+          action: {
+            id: 'rate_assignment.make_current',
+            label: 'Choose current plan',
+            target: '/billing?advanced=rates&tab=versions',
+          },
+        }],
+      },
       [`/api/v1/utility-accounts/${service.id}/tier-status`]: {
         available: false,
         cycle: {

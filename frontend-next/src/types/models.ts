@@ -111,6 +111,8 @@ export interface ElectricService {
   currentPlan?: string
   planCode?: string
   rateVersionId?: string
+  currentAssignmentId?: string
+  currentAssignmentRevision?: number
   currentVersion?: number
   currentPeriod?: string
   currentRate?: string
@@ -122,6 +124,77 @@ export interface ElectricService {
     rate: string
     cost: string
     topologyComplete: boolean
+  }
+}
+
+export type ConfigurationState =
+  | 'ready'
+  | 'setup_needed'
+  | 'partially_configured'
+  | 'waiting_for_data'
+  | 'attention_required'
+  | 'error'
+
+export interface ConfigurationAction {
+  id: string
+  label: string
+  target: string
+}
+
+export interface ConfigurationIssue {
+  id: string
+  category: string
+  state: Exclude<ConfigurationState, 'ready'>
+  title: string
+  whatIsWrong: string
+  whyItMatters: string
+  howToFix: string
+  blocking: boolean
+  action: ConfigurationAction
+}
+
+export interface ConfigurationStatus {
+  homeId: string
+  electricServiceId?: string
+  state: ConfigurationState
+  label: string
+  summary: string
+  generatedAt: string
+  issues: ConfigurationIssue[]
+}
+
+export interface RateAssignmentResult {
+  assignmentId: string
+  electricServiceId: string
+  planId: string
+  versionId: string
+  version: number
+  effectiveFrom: string
+  effectiveThrough?: string
+  state: 'current' | 'scheduled' | 'historical' | 'cancelled'
+  replacedAssignmentId?: string
+  recalculationJobId?: string
+  warnings: string[]
+  serviceRevision: number
+  idempotent: boolean
+}
+
+export interface CurrentRateAssignment {
+  homeId: string
+  electricServiceId?: string
+  serviceRevision?: number
+  assignment?: {
+    assignmentId: string
+    assignmentRevision: number
+    planId?: string
+    planCode?: string
+    planName?: string
+    versionId: string
+    version?: number
+    pricingModel?: string
+    effectiveFrom: string
+    effectiveThrough?: string
+    state: 'current'
   }
 }
 
