@@ -186,6 +186,19 @@ authenticated frontend checks it before mounting workspaces and fails safely
 when a mixed release would consume an incompatible response. See
 [PDF import context stabilization](PDF_IMPORT_STABILIZATION.md).
 
+Owner diagnostics use `GET /api/v1/system/health`. The typed
+`system-health/1.0` response separates overall/component states, safe
+remediation, versions, compatibility, and recent findings. It does not expose
+credentials, connection strings, secret values, or sensitive paths. Container
+readiness remains at `/health/ready`; browser code must not call that probe.
+
+Isolated Sensor Test Mode uses `GET /api/v1/test-mode`, `POST /enable`,
+`PUT /api/v1/test-mode`, `POST /disable`, `POST /reset`, plus the `/sensors`
+and `/history` subresources. All calls are owner-only; writes require CSRF and
+an idempotency key. Responses are explicitly `simulated`/`test_mode` and are
+never returned by normal reading, history, billing, export, backup, alert,
+device, credential, or firmware endpoints. See [Sensor Test Mode](SENSOR_TEST_MODE.md).
+
 Log exports accept date values rather than filesystem names, limit selection to
 the retained 90-day window and known service identifiers, and return a streamed
 ZIP with a per-file SHA-256 manifest. The server never exposes its log directory

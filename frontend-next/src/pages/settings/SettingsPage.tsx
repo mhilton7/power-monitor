@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Bell,
+  CheckCircle2,
+  Clock3,
   DatabaseBackup,
+  FlaskConical,
   Gauge,
   Home,
   FileText,
@@ -27,10 +30,12 @@ import {
   adaptBackups,
   adaptFamily,
   adaptFamilyRoles,
-  adaptHealth,
   adaptPermissions,
+  adaptSystemHealth,
+  adaptTestModeHistory,
+  adaptTestModeSensors,
 } from '../../api/adapters'
-import { json, request } from '../../api/client'
+import { ApiError, json, request } from '../../api/client'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
 import { Surface } from '../../components/data-display/Surface'
 import { DropdownMenu, DropdownMenuItem } from '../../components/overlays/DropdownMenu'
@@ -39,8 +44,15 @@ import { useAppearance } from '../../state/AppearanceContext'
 import { useAuth } from '../../state/AuthContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
-import type { FamilyMember, FamilyRoleOption, PermissionOption } from '../../types/models'
-import { fileSize, relativeTime } from '../../utils/format'
+import { useTestMode } from '../../state/TestModeContext'
+import type {
+  FamilyMember,
+  FamilyRoleOption,
+  PermissionOption,
+  SystemHealthStatus,
+  TestLoadProfile,
+} from '../../types/models'
+import { energy, fileSize, money, power, relativeTime } from '../../utils/format'
 import { AdvancedRateSettings } from '../../features/rates/AdvancedRateSettings'
 
 type Section = 'home' | 'sensors' | 'family' | 'notifications' | 'appearance' | 'data' | 'advanced'
@@ -59,8 +71,7 @@ export function SettingsPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const routeSection = location.pathname.split('/')[2]
-  const initialSection = SECTIONS.some(([key]) => key === routeSection) ? routeSection as Section : 'home'
-  const [section, setSection] = useState<Section>(initialSection)
+  const section = SECTIONS.some(([key]) => key === routeSection) ? routeSection as Section : 'home'
   const { session } = useAuth()
   const owner = session ? isOwner(session) : false
   const visible = owner ? SECTIONS : SECTIONS.filter(([key]) => !['data', 'advanced'].includes(key))
@@ -71,7 +82,7 @@ export function SettingsPage() {
       </header>
       <div className="settings-layout">
         <nav className="settings-nav" aria-label="Settings sections">
-          {visible.map(([key, Icon, label]) => <button type="button" key={key} className={section === key ? 'active' : ''} onClick={() => { setSection(key); navigate(`/settings/${key}`); }}><Icon />{label}</button>)}
+          {visible.map(([key, Icon, label]) => <button type="button" key={key} className={section === key ? 'active' : ''} onClick={() => { navigate(`/settings/${key}`); }}><Icon />{label}</button>)}
         </nav>
         <div className="settings-detail">
           {section === 'home' && <HomeSettings />}
@@ -81,6 +92,14 @@ export function SettingsPage() {
           {section === 'appearance' && <AppearanceSettings />}
           {section === 'data' && owner && <DataSettings />}
           {section === 'advanced' && owner && <AdvancedSettings />}
+          {(['data', 'advanced'] as Section[]).includes(section) && !owner && (
+            <Surface>
+              <div className="state-block error-state" role="alert">
+                <Shield aria-hidden="true" />
+                <div><strong>Owner access required</strong><p>This technical settings area is available only to the home owner.</p></div>
+              </div>
+            </Surface>
+          )}
         </div>
       </div>
     </div>
@@ -127,10 +146,28 @@ function HomeSettings() {
 
 function SensorSettings() {
   const location = useLocation()
+  const navigate = useNavigate()
   const client = useQueryClient()
   const { sensors, refresh } = useLiveHome()
   const { resolution } = useSingleHome()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
+  const testMode = useTestMode()
+  const testSensors = useQuery({
+    queryKey: ['sensor-test-mode-sensors'],
+    queryFn: () => request('/api/v1/test-mode/sensors', {}, adaptTestModeSensors),
+    enabled: Boolean(testMode.state?.enabled),
+    refetchInterval: testMode.state?.enabled ? 5_000 : false,
+  })
+  const updateTestSensor = useMutation({
+    mutationFn: ({ id, offline }: { id: string; offline: boolean }) => request(
+      `/api/v1/test-mode/sensors/${id}`,
+      json('PUT', { offline, idempotency_key: crypto.randomUUID() }),
+    ),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['sensor-test-mode-sensors'] })
+      await testMode.refresh()
+    },
+  })
   const [adding, setAdding] = useState(new URLSearchParams(location.search).get('action') === 'add')
   const firmware = useQuery({ queryKey: ['firmware-releases'], queryFn: () => request<Array<{ id: string; version: string; channel: string; active: boolean }>>('/api/v1/firmware-releases') })
   const maintenance = useMutation({
@@ -182,9 +219,44 @@ function SensorSettings() {
             </DropdownMenu>
           </article>)}</div>}
       </Surface>
+      {testMode.state?.enabled && (
+        <Surface
+          className="test-mode-surface"
+          title="Simulated sensors"
+          subtitle="Sensor Test Mode · isolated from enrolled ESP32 devices, alerts, exports, and backups."
+          action={<button type="button" className="button secondary" onClick={() => { navigateToTestMode(); }}><FlaskConical /> Manage test mode</button>}
+        >
+          {testSensors.isLoading ? <LoadingState label="Loading simulated sensors…" /> : testSensors.error ? <ErrorState error={testSensors.error} retry={() => void testSensors.refetch()} /> : testSensors.data?.length ? (
+            <div className="stack-list">
+              {testSensors.data.map((sensor) => (
+                <article className="sensor-row test-sensor-row" key={sensor.id}>
+                  <span className={`sensor-icon ${sensor.online ? 'online' : ''}`}><FlaskConical /></span>
+                  <span>
+                    <strong>{sensor.name} <span className="pill">Test Mode</span></strong>
+                    <small>{power(sensor.currentPowerW)} · {energy(sensor.energyKwh)} · synthetic only</small>
+                  </span>
+                  <span className={`pill ${sensor.online ? 'success' : 'warning'}`}>{sensor.online ? 'Simulated online' : 'Simulated offline'}</span>
+                  <button
+                    type="button"
+                    className="button secondary compact"
+                    disabled={updateTestSensor.isPending}
+                    onClick={() => { updateTestSensor.mutate({ id: sensor.id, offline: sensor.online }); }}
+                  >
+                    {sensor.online ? 'Simulate offline' : 'Bring online'}
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : <EmptyState compact title="No active simulated sensors" message="Increase the simulated active sensor count in Test Mode settings." />}
+        </Surface>
+      )}
       {home && adding && <SensorSetupFlow home={home} onClose={() => { setAdding(false); }} />}
     </>
   )
+
+  function navigateToTestMode() {
+    navigate('/settings/advanced/sensor-test-mode')
+  }
 }
 
 function FamilySettings() {
@@ -513,10 +585,13 @@ function DataSettings() {
 function AdvancedSettings() {
   const { resolution } = useSingleHome()
   const { services } = useLiveHome()
+  const location = useLocation()
+  const navigate = useNavigate()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
-  const [detail, setDetail] = useState('health')
+  const routeDetail = location.pathname.split('/')[3]
   const options = [
-    ['health', Gauge, 'System health'],
+    ['system-health', Gauge, 'System health'],
+    ['sensor-test-mode', FlaskConical, 'Sensor Test Mode'],
     ['network', Wifi, 'Network policy'],
     ['rates', RefreshCw, 'Detailed rates'],
     ['topology', Radio, 'Monitoring topology'],
@@ -526,12 +601,14 @@ function AdvancedSettings() {
     ['logs', DatabaseBackup, 'Application logs'],
     ['security', Shield, 'Permissions & audit'],
   ] as const
+  const detail = options.some(([id]) => id === routeDetail) ? routeDetail : 'system-health'
   return (
-    <>
-      <Surface title="Advanced" subtitle="Technical controls are separated from everyday home settings.">
-        <div className="detail-picker">{options.map(([id, Icon, label]) => <button type="button" className={detail === id ? 'active' : ''} key={id} onClick={() => { setDetail(id); }}><Icon />{label}</button>)}</div>
+    <div className="advanced-settings-stack">
+      <Surface className="advanced-navigation" title="Advanced" subtitle="Technical controls are separated from everyday home settings.">
+        <div className="detail-picker">{options.map(([id, Icon, label]) => <button type="button" className={detail === id ? 'active' : ''} key={id} onClick={() => { navigate(`/settings/advanced/${id}`); }}><Icon />{label}</button>)}</div>
       </Surface>
-      {detail === 'health' && <HealthDetail />}
+      {detail === 'system-health' && <HealthDetail />}
+      {detail === 'sensor-test-mode' && <SensorTestModeDetail homeId={home?.id} currency={home?.currency ?? 'USD'} />}
       {detail === 'network' && <NetworkDetail />}
       {detail === 'rates' && home && <AdvancedRateSettings home={home} services={services} />}
       {detail === 'topology' && home && <TopologyDetail homeId={home.id} />}
@@ -540,16 +617,285 @@ function AdvancedSettings() {
       {detail === 'layout' && <StatusLayoutDetail />}
       {detail === 'logs' && <LogsDetail />}
       {detail === 'security' && <SecurityDetail />}
-    </>
+    </div>
   )
 }
 
 function HealthDetail() {
-  const health = useQuery({ queryKey: ['advanced-health'], queryFn: () => request('/api/v1/health/ready', {}, adaptHealth) })
-  if (health.isLoading) return <LoadingState />
-  if (health.error) return <ErrorState error={health.error} retry={() => void health.refetch()} />
+  const navigate = useNavigate()
+  const health = useQuery({
+    queryKey: ['advanced-health', __FRONTEND_VERSION__],
+    queryFn: async ({ signal }) => {
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => { controller.abort() }, 10_000)
+      signal.addEventListener('abort', () => { controller.abort() }, { once: true })
+      try {
+        return await request(
+          '/api/v1/system/health',
+          {
+            headers: { 'X-Power-Monitor-Frontend-Version': __FRONTEND_VERSION__ },
+            signal: controller.signal,
+          },
+          adaptSystemHealth,
+        )
+      } finally {
+        window.clearTimeout(timeout)
+      }
+    },
+    retry: false,
+  })
+  if (health.isLoading) return <LoadingState label="Checking API, database, worker, storage, backups, live data, and rates…" />
+  if (health.error) return <SystemHealthError error={health.error} retry={() => void health.refetch()} />
   const cssAsset = document.querySelector<HTMLLinkElement>('link[rel="stylesheet"]')?.href.split('/').at(-1) ?? 'development styles'
-  return <Surface title="System health">{Object.entries(health.data ?? {}).map(([label, value]) => <div className="list-row" key={label}><span><strong>{label.replaceAll('_', ' ')}</strong></span><span className="pill success">{value ?? 'unknown'}</span></div>)}<div className="list-row"><span><strong>Frontend release</strong><small>Commit {__FRONTEND_COMMIT__}</small></span><span className="pill">v{__FRONTEND_VERSION__}</span></div><div className="list-row"><span><strong>CSS bundle</strong><small>Hashed production asset currently loaded by this browser</small></span><code className="bundle-identity">{cssAsset}</code></div></Surface>
+  const data = health.data
+  if (!data) return <SystemHealthError error={new Error('The System Health response was empty.')} retry={() => void health.refetch()} />
+  return (
+    <div className="health-dashboard">
+      <Surface
+        className={`health-overall ${data.status}`}
+        title="System health"
+        subtitle={`Checked ${relativeTime(data.checkedAt)} · specific diagnostics contain no credentials or sensitive paths.`}
+        action={<span className={`health-status ${data.status}`}>{healthStateLabel(data.status)}</span>}
+      >
+        <p>{healthOverallSummary(data.status)}</p>
+        <button type="button" className="button secondary compact" onClick={() => void health.refetch()}><RefreshCw /> Check again</button>
+      </Surface>
+      <div className="health-component-grid">
+        {data.components.map((component) => (
+          <Surface className={`health-component ${component.status}`} key={component.key}>
+            <header>
+              <span className={`health-indicator ${component.status}`} aria-hidden="true">
+                {component.status === 'healthy' ? <CheckCircle2 /> : component.status === 'unknown' ? <Clock3 /> : <Gauge />}
+              </span>
+              <div><small>{component.label}</small><strong>{healthStateLabel(component.status)}</strong></div>
+            </header>
+            <p>{component.summary}</p>
+            <dl>
+              {component.lastSuccessAt && <><dt>Last success</dt><dd>{relativeTime(component.lastSuccessAt)}</dd></>}
+              {component.latencyMs !== undefined && <><dt>Latency</dt><dd>{component.latencyMs.toFixed(1)} ms</dd></>}
+            </dl>
+            {component.remediation?.route && (
+              <button type="button" className="text-button" onClick={() => { navigate(component.remediation?.route ?? '/settings/advanced/system-health'); }}>
+                {component.remediation.label}
+              </button>
+            )}
+          </Surface>
+        ))}
+      </div>
+      <Surface title="Release compatibility" subtitle="Frontend, API contract, protocol, and container identity.">
+        {data.versions.compatibility === 'mismatch' && (
+          <InlineNotice tone="danger">
+            Frontend and API versions differ. Update the immutable frontend and API images together before relying on these diagnostics.
+          </InlineNotice>
+        )}
+        <div className="health-version-grid">
+          {Object.entries(data.versions).map(([label, value]) => (
+            <div key={label}><small>{label.replaceAll('_', ' ')}</small><strong>{value ?? 'Not reported'}</strong></div>
+          ))}
+          <div><small>frontend commit</small><strong>{__FRONTEND_COMMIT__}</strong></div>
+          <div><small>CSS bundle</small><code className="bundle-identity">{cssAsset}</code></div>
+        </div>
+      </Surface>
+      <Surface title="Recent health events" subtitle="Current diagnostic findings, newest first.">
+        {data.recentEvents.length ? data.recentEvents.map((event) => (
+          <div className="list-row" key={`${event.component}-${event.occurredAt}`}>
+            <span><strong>{event.component.replaceAll('_', ' ')}</strong><small>{event.summary}</small></span>
+            <span className={`pill ${event.status === 'healthy' ? 'success' : 'warning'}`}>{healthStateLabel(event.status)}</span>
+          </div>
+        )) : <EmptyState compact title="No current health events" message="All available checks are healthy or not yet applicable." />}
+      </Surface>
+    </div>
+  )
+}
+
+function SystemHealthError({ error, retry }: { error: unknown; retry: () => void }) {
+  const [showVersions, setShowVersions] = useState(false)
+  let title = 'System Health request failed'
+  let message = error instanceof Error ? error.message : 'The request could not be completed.'
+  if (error instanceof ApiError) {
+    if (error.problem.status === 401) {
+      title = 'Sign in again'
+      message = 'Your session expired before System Health could be checked.'
+    } else if (error.problem.status === 403) {
+      title = 'Owner access required'
+      message = 'System Health contains administrator diagnostics and is available only to a home owner.'
+    } else if (error.problem.status === 404) {
+      title = 'System Health service is unavailable'
+      message = 'The settings page loaded, but the server health endpoint could not be found.'
+    } else if (error.problem.status >= 500) {
+      title = 'System Health service error'
+      message = 'The API received the request but could not complete its diagnostic checks.'
+    }
+  } else if (error instanceof TypeError && error.message.includes('incompatible')) {
+    title = 'Frontend and API versions differ'
+    message = 'The running frontend and API use different System Health contracts. Update both immutable images to the same release.'
+  } else if (error instanceof DOMException && error.name === 'AbortError') {
+    title = 'System Health request timed out'
+    message = 'The server did not complete the health check within 10 seconds. Retry, then review the API container if it continues.'
+  }
+  return (
+    <Surface>
+      <div className="state-block error-state" role="alert">
+        <Gauge aria-hidden="true" />
+        <div>
+          <strong>{title}</strong>
+          <p>{message}</p>
+          <div className="inline-actions">
+            <button type="button" className="button secondary" onClick={retry}><RefreshCw /> Retry health check</button>
+            <button type="button" className="button secondary" onClick={() => { setShowVersions(!showVersions); }}>View versions</button>
+          </div>
+          {showVersions && (
+            <dl className="health-error-versions">
+              <dt>Frontend</dt><dd>{__FRONTEND_VERSION__}</dd>
+              <dt>Frontend commit</dt><dd>{__FRONTEND_COMMIT__}</dd>
+              <dt>API</dt><dd>Unavailable from this request</dd>
+            </dl>
+          )}
+        </div>
+      </div>
+    </Surface>
+  )
+}
+
+function healthStateLabel(status: SystemHealthStatus): string {
+  return status.slice(0, 1).toUpperCase() + status.slice(1)
+}
+
+function healthOverallSummary(status: SystemHealthStatus): string {
+  if (status === 'healthy') return 'All applicable core checks are healthy.'
+  if (status === 'degraded') return 'The server is available, but one or more components need attention.'
+  if (status === 'unhealthy') return 'A core service is unavailable. Use the component guidance below.'
+  return 'The server responded, but enough component evidence is not available yet.'
+}
+
+function SensorTestModeDetail({ homeId, currency }: { homeId?: string; currency: string }) {
+  const testMode = useTestMode()
+  if (testMode.loading && !testMode.state) return <LoadingState label="Checking Sensor Test Mode…" />
+  return (
+    <>
+      {testMode.state?.endReason === 'expired' && (
+        <InlineNotice tone="warning">
+          Sensor Test Mode expired {testMode.state.endedAt ? relativeTime(testMode.state.endedAt) : ''}. All synthetic sensors and session history were discarded; real readings were unchanged.
+        </InlineNotice>
+      )}
+      <SensorTestModeControls key={testMode.state?.sessionId ?? 'disabled'} homeId={homeId} currency={currency} />
+    </>
+  )
+}
+
+function SensorTestModeControls({ homeId, currency }: { homeId?: string; currency: string }) {
+  const testMode = useTestMode()
+  const [sensorCount, setSensorCount] = useState(testMode.state?.sensorCount ?? 1)
+  const [loadProfile, setLoadProfile] = useState<TestLoadProfile>(testMode.state?.loadProfile ?? 'variable_household')
+  const [offlineIndexes, setOfflineIndexes] = useState('')
+  const [customLoadW, setCustomLoadW] = useState(String(testMode.state?.customLoadW ?? 1800))
+  const [baseLoadW, setBaseLoadW] = useState(String(testMode.state?.baseLoadW ?? 1000))
+  const [variationPercent, setVariationPercent] = useState(String(testMode.state?.variationPercent ?? 20))
+  const [sampleInterval, setSampleInterval] = useState(testMode.state?.sampleIntervalSeconds ?? 5)
+  const [expiryMinutes, setExpiryMinutes] = useState<number | null>(
+    testMode.state?.expiresAt && testMode.state.startedAt
+      ? Math.max(5, Math.round((new Date(testMode.state.expiresAt).getTime() - new Date(testMode.state.startedAt).getTime()) / 60_000))
+      : testMode.state?.enabled
+        ? null
+        : 15,
+  )
+  const [costPreview, setCostPreview] = useState(testMode.state?.costPreviewEnabled ?? false)
+  const sensors = useQuery({
+    queryKey: ['sensor-test-mode-sensors'],
+    queryFn: () => request('/api/v1/test-mode/sensors', {}, adaptTestModeSensors),
+    enabled: Boolean(testMode.state?.enabled),
+    refetchInterval: testMode.state?.enabled ? 5_000 : false,
+  })
+  const history = useQuery({
+    queryKey: ['sensor-test-mode-history'],
+    queryFn: () => request('/api/v1/test-mode/history?limit=96', {}, adaptTestModeHistory),
+    enabled: Boolean(testMode.state?.enabled),
+    refetchInterval: testMode.state?.enabled ? 5_000 : false,
+  })
+  const indexes = offlineIndexes
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value >= 1 && value <= sensorCount)
+  const configuration = {
+    sensorCount,
+    loadProfile,
+    offlineSensorIndexes: [...new Set(indexes)],
+    customLoadW: loadProfile === 'custom' ? Number(customLoadW) : undefined,
+    baseLoadW: Number(baseLoadW),
+    variationPercent: Number(variationPercent),
+    sampleIntervalSeconds: sampleInterval,
+    expiresInMinutes: expiryMinutes,
+    costPreviewEnabled: costPreview,
+    paused: testMode.state?.paused ?? false,
+    siteId: homeId,
+  }
+  const save = async () => {
+    if (testMode.state?.enabled) await testMode.update(configuration)
+    else await testMode.enable(configuration)
+  }
+  return (
+    <div className="test-mode-settings">
+      <Surface
+        className={testMode.state?.enabled ? 'test-mode-surface active' : 'test-mode-surface'}
+        title="Sensor Test Mode"
+        subtitle="Owner-only, temporary synthetic readings for verifying dashboard behavior without an ESP32."
+        action={<span className={`pill ${testMode.state?.enabled ? 'warning' : ''}`}>{testMode.state?.enabled ? 'Test Mode active' : 'Off'}</span>}
+      >
+        <InlineNotice tone="warning">
+          <FlaskConical />
+          Synthetic data stays in process memory and is excluded from real readings, bills, finalized costs, exports, backups, alerts, device credentials, and firmware.
+        </InlineNotice>
+        <form className="test-mode-form" onSubmit={(event) => { event.preventDefault(); void save() }}>
+          <div className="form-grid">
+            <label>Simulated active sensors<input type="number" min={0} max={32} step={1} value={sensorCount} onChange={(event) => { setSensorCount(Number(event.target.value)); }} /></label>
+            <label>Load profile<select value={loadProfile} onChange={(event) => { setLoadProfile(event.target.value as TestLoadProfile); }}><option value="steady">Steady</option><option value="variable_household">Variable household</option><option value="morning_evening_peaks">Morning/evening peaks</option><option value="high_load">High load</option><option value="low_load">Low load</option><option value="solar_day">Daytime solar offset</option><option value="custom">Custom</option></select></label>
+            {loadProfile === 'custom' && <label>Whole-home load (W)<input type="number" min={0} max={250000} value={customLoadW} onChange={(event) => { setCustomLoadW(event.target.value); }} /></label>}
+            <label>Base load (W)<input type="number" min={0} max={250000} value={baseLoadW} onChange={(event) => { setBaseLoadW(event.target.value); }} /></label>
+            <label>Variation (%)<input type="number" min={0} max={100} value={variationPercent} onChange={(event) => { setVariationPercent(event.target.value); }} /></label>
+            <label>Simulate offline sensors<input value={offlineIndexes} onChange={(event) => { setOfflineIndexes(event.target.value); }} placeholder="Indexes, for example 2, 4" /></label>
+            <label>Sample interval<select value={sampleInterval} onChange={(event) => { setSampleInterval(Number(event.target.value)); }}><option value={1}>1 second</option><option value={5}>5 seconds</option><option value={15}>15 seconds</option><option value={30}>30 seconds</option><option value={60}>60 seconds</option></select></label>
+            <label>Automatic expiry<select value={expiryMinutes ?? 'until-disabled'} onChange={(event) => { setExpiryMinutes(event.target.value === 'until-disabled' ? null : Number(event.target.value)); }}><option value={15}>15 minutes</option><option value={60}>1 hour</option><option value={240}>4 hours</option><option value="until-disabled">Until disabled</option></select></label>
+          </div>
+          <label className="toggle-row test-cost-opt-in">
+            <span><strong>Temporary current-rate cost preview</strong><small>Uses the current reviewed energy rate in memory only. It never creates a bill, cost row, or export.</small></span>
+            <input type="checkbox" checked={costPreview} onChange={(event) => { setCostPreview(event.target.checked); }} />
+          </label>
+          <div className="form-actions">
+            <button type="submit" className="button primary" disabled={testMode.changing}>{testMode.state?.enabled ? 'Apply test settings' : 'Enable Sensor Test Mode'}</button>
+            {testMode.state?.enabled && <button type="button" className="button secondary" disabled={testMode.changing} onClick={() => { void testMode.update({ paused: !testMode.state?.paused }) }}>{testMode.state.paused ? 'Resume simulation' : 'Pause simulation'}</button>}
+            {testMode.state?.enabled && <button type="button" className="button secondary" disabled={testMode.changing} onClick={() => { void testMode.reset() }}>Reset synthetic history</button>}
+            {testMode.state?.enabled && <button type="button" className="button danger" disabled={testMode.changing} onClick={() => { if (confirm('Exit Sensor Test Mode and permanently discard all synthetic readings? Real data is not changed.')) void testMode.disable() }}>Exit and clean up</button>}
+          </div>
+          {Boolean(testMode.error) && <InlineNotice tone="danger">{testMode.error instanceof Error ? testMode.error.message : 'Sensor Test Mode could not be changed.'}</InlineNotice>}
+        </form>
+      </Surface>
+      {testMode.state?.enabled && (
+        <>
+          <Surface title="Live test session" subtitle={`${testMode.state.paused ? 'Paused' : testMode.state.expiresAt ? `Expires ${relativeTime(testMode.state.expiresAt)}` : 'Runs until disabled'} · source_type=simulated · environment=test_mode`}>
+            <div className="test-mode-summary">
+              <div><small>Simulated load</small><strong>{power(testMode.state.currentPowerW)}</strong></div>
+              <div><small>Test energy</small><strong>{energy(testMode.state.totalEnergyKwh)}</strong></div>
+              <div><small>Simulated sensors</small><strong>{testMode.state.onlineSensors}/{testMode.state.sensorCount}</strong></div>
+              <div><small>Temporary preview</small><strong>{testMode.state.costPreview?.available ? money(testMode.state.costPreview.estimatedEnergyCost, testMode.state.costPreview.currency ?? currency) : 'Unavailable'}</strong></div>
+            </div>
+            {testMode.state.costPreview && <InlineNotice>{testMode.state.costPreview.disclosure}</InlineNotice>}
+          </Surface>
+          <Surface title="Simulated sensor controls" subtitle="Stable identities last only for this test session.">
+            {sensors.isLoading ? <LoadingState /> : sensors.error ? <ErrorState error={sensors.error} retry={() => void sensors.refetch()} /> : sensors.data?.map((sensor) => (
+              <div className="list-row" key={sensor.id}>
+                <FlaskConical />
+                <span><strong>{sensor.name}</strong><small>{power(sensor.currentPowerW)} · {energy(sensor.energyKwh)}</small></span>
+                <span className={`pill ${sensor.online ? 'success' : 'warning'}`}>{sensor.online ? 'Test online' : 'Test offline'}</span>
+              </div>
+            ))}
+          </Surface>
+          <Surface title="Recent synthetic samples" subtitle="Displayed only inside Test Mode and discarded on exit or expiry.">
+            {history.data?.length ? <div className="test-history-list">{history.data.slice(-12).reverse().map((point) => <div key={`${point.sensorId}-${point.recordedAt}`}><span>{point.sensorName}</span><strong>{point.online ? power(point.powerW) : 'Offline'}</strong><small>{relativeTime(point.recordedAt)}</small></div>)}</div> : <EmptyState compact title="Waiting for the first sample" message="The simulator records the first isolated point within the configured interval." />}
+          </Surface>
+        </>
+      )}
+    </div>
+  )
 }
 
 function NetworkDetail() {

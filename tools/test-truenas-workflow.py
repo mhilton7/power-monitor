@@ -315,6 +315,41 @@ async def exercise_application(
                 "bootstrap did not establish a CSRF-protected session"
             )
         csrf_header = {"X-CSRF-Token": csrf}
+        health_response = _require_success(
+            await client.get(
+                "/api/v1/system/health",
+                headers={"X-Power-Monitor-Frontend-Version": "1.0.0"},
+            ),
+            "read owner System Health",
+        )
+        health = health_response.json()
+        if health.get("schema_version") != "system-health/1.0":
+            raise WorkflowFailure("System Health returned an incompatible schema")
+        if {item.get("key") for item in health.get("components", [])} != {
+            "api",
+            "database",
+            "worker",
+            "storage",
+            "backups",
+            "live_data",
+            "rate_engine",
+        }:
+            raise WorkflowFailure(
+                "System Health omitted one or more required components"
+            )
+        safe_health = health_response.text.lower()
+        if any(
+            forbidden in safe_health
+            for forbidden in (
+                "database_url",
+                "app_master_key",
+                "session_pepper",
+                "/data/",
+            )
+        ):
+            raise WorkflowFailure(
+                "System Health exposed a secret name or sensitive path"
+            )
         sites = _require_success(await client.get("/api/v1/sites"), "list sites").json()
         if len(sites) != 1:
             raise WorkflowFailure("bootstrap did not create exactly one default site")
@@ -386,6 +421,92 @@ async def exercise_application(
             != "rate_configured_effective"
         ):
             raise WorkflowFailure("site readiness did not report the effective rate")
+
+        enabled_test_mode = _require_success(
+            await client.post(
+                "/api/v1/test-mode/enable",
+                headers=csrf_header,
+                json={
+                    "sensor_count": 3,
+                    "load_profile": "variable_household",
+                    "base_load_w": "800",
+                    "variation_percent": "10",
+                    "offline_sensor_indexes": [2],
+                    "sample_interval_seconds": 1,
+                    "expires_in_minutes": 15,
+                    "cost_preview_enabled": False,
+                    "idempotency_key": "truenas-test-mode-enable",
+                },
+            ),
+            "enable isolated Sensor Test Mode",
+        ).json()
+        if (
+            enabled_test_mode.get("source_type") != "simulated"
+            or enabled_test_mode.get("environment") != "test_mode"
+            or enabled_test_mode.get("sensor_count") != 3
+            or enabled_test_mode.get("online_sensors") != 2
+        ):
+            raise WorkflowFailure("Sensor Test Mode returned an invalid isolated state")
+        original_test_sensors = _require_success(
+            await client.get("/api/v1/test-mode/sensors"),
+            "list simulated sensors",
+        ).json()
+        if len(original_test_sensors) != 3:
+            raise WorkflowFailure(
+                "Sensor Test Mode did not create three simulated sensors"
+            )
+        original_ids = [sensor["id"] for sensor in original_test_sensors]
+        updated_test_mode = _require_success(
+            await client.put(
+                "/api/v1/test-mode",
+                headers=csrf_header,
+                json={
+                    "sensor_count": 5,
+                    "offline_sensor_indexes": [2],
+                    "cost_preview_enabled": True,
+                    "idempotency_key": "truenas-test-mode-update",
+                },
+            ),
+            "update isolated Sensor Test Mode",
+        ).json()
+        if (
+            updated_test_mode.get("sensor_count") != 5
+            or updated_test_mode.get("online_sensors") != 4
+            or not updated_test_mode.get("cost_preview", {}).get("available")
+        ):
+            raise WorkflowFailure(
+                "Sensor Test Mode update or temporary cost preview failed"
+            )
+        resized_test_sensors = _require_success(
+            await client.get("/api/v1/test-mode/sensors"),
+            "list resized simulated sensors",
+        ).json()
+        if [sensor["id"] for sensor in resized_test_sensors[:3]] != original_ids:
+            raise WorkflowFailure(
+                "Sensor Test Mode did not preserve stable simulated IDs"
+            )
+        if not _require_success(
+            await client.get("/api/v1/test-mode/history"),
+            "read isolated simulated history",
+        ).json():
+            raise WorkflowFailure("Sensor Test Mode did not produce session history")
+        disabled_test_mode = _require_success(
+            await client.post(
+                "/api/v1/test-mode/disable",
+                headers=csrf_header,
+                json={"idempotency_key": "truenas-test-mode-disable"},
+            ),
+            "disable isolated Sensor Test Mode",
+        ).json()
+        if disabled_test_mode.get("enabled") or disabled_test_mode.get("sensor_count"):
+            raise WorkflowFailure("Sensor Test Mode did not clean up its session")
+        if (await client.get("/api/v1/test-mode/history")).status_code != 409:
+            raise WorkflowFailure("Sensor Test Mode history remained after cleanup")
+        if _require_success(
+            await client.get("/api/v1/devices"),
+            "verify Test Mode did not create real devices",
+        ).json():
+            raise WorkflowFailure("Sensor Test Mode contaminated the real device list")
 
         policies = _require_success(
             await client.get("/api/v1/admin/network/policies"),

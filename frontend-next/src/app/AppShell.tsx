@@ -8,6 +8,7 @@ import {
   Gauge,
   History,
   Home,
+  FlaskConical,
   LogOut,
   Menu,
   Settings,
@@ -25,6 +26,7 @@ import { AlertDrawer } from '../features/alerts/AlertDrawer'
 import { StatusDot } from '../components/data-display/Surface'
 import { DropdownMenu, DropdownMenuItem } from '../components/overlays/DropdownMenu'
 import { ConfigurationStatusChip } from '../features/configuration/ConfigurationStatusSurface'
+import { useTestMode } from '../state/TestModeContext'
 
 export const PRIMARY_DESTINATIONS = [
   { label: 'Home', path: '/home', icon: Home },
@@ -38,6 +40,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { summary, alerts, configuration } = useLiveHome()
   const { session, refresh } = useAuth()
   const { railCollapsed, setRailCollapsed } = useAppearance()
+  const testMode = useTestMode()
   const location = useLocation()
   const [alertsOpen, setAlertsOpen] = useState(new URLSearchParams(location.search).get('alerts') === '1')
   const navigate = useNavigate()
@@ -122,7 +125,32 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main id="main-content" className="page-content" tabIndex={-1}>{children}</main>
+      <main id="main-content" className="page-content" tabIndex={-1}>
+        {testMode.state?.enabled && (
+          <section className="test-mode-banner" role="status" aria-label="Sensor Test Mode is active">
+            <FlaskConical aria-hidden="true" />
+            <div>
+              <strong>Sensor Test Mode</strong>
+              <span>
+                Test Mode is active. Showing {testMode.state.onlineSensors}/{testMode.state.sensorCount} simulated sensors
+                {testMode.state.paused ? ' · paused' : ''}
+                {' · '}{testMode.state.expiresAt ? `expires in ${Math.max(1, Math.ceil(testMode.state.remainingSeconds / 60))} min` : 'runs until disabled'}
+                {' · '}real readings and billing records are not being changed
+              </span>
+            </div>
+            <NavLink className="button secondary compact" to="/settings/advanced/sensor-test-mode">Manage</NavLink>
+            <button
+              className="button secondary compact"
+              type="button"
+              disabled={testMode.changing}
+              onClick={() => { void testMode.disable() }}
+            >
+              Exit test mode
+            </button>
+          </section>
+        )}
+        {children}
+      </main>
 
       <nav className="mobile-nav" aria-label="Primary mobile">
         {PRIMARY_DESTINATIONS.map(({ label, path, icon: Icon }) => (

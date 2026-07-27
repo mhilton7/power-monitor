@@ -17,6 +17,10 @@ import {
   adaptRateSourceCheckRuns,
   adaptRateSources,
   adaptRateVersions,
+  adaptSystemHealth,
+  adaptTestMode,
+  adaptTestModeHistory,
+  adaptTestModeSensors,
   resolveSingleHome,
 } from '../src/api/adapters'
 
@@ -220,6 +224,139 @@ describe('typed homeowner adapters', () => {
   it('rejects malformed parent payloads instead of leaking undefined errors', () => {
     expect(() => adaptBillDetail(undefined)).toThrow(/bill/i)
     expect(() => resolveSingleHome({ homes: 'not-an-array' })).toThrow(/homes/i)
+  })
+
+  it('validates typed System Health components and release compatibility', () => {
+    const health = adaptSystemHealth({
+      schema_version: 'system-health/1.0',
+      status: 'degraded',
+      checked_at: '2026-07-26T20:00:00Z',
+      components: [{
+        key: 'worker',
+        label: 'Worker',
+        status: 'degraded',
+        summary: 'The worker loop is stale.',
+        checked_at: '2026-07-26T20:00:00Z',
+        last_success_at: '2026-07-26T19:58:00Z',
+        latency_ms: '4.25',
+        details: { reported_status: 'running' },
+        remediation: { label: 'Review worker', route: '/settings/advanced/logs' },
+        can_retry: true,
+      }],
+      versions: {
+        backend: '1.0.0',
+        frontend: '1.0.0',
+        compatibility: 'compatible',
+      },
+      recent_events: [{
+        occurred_at: '2026-07-26T20:00:00Z',
+        component: 'worker',
+        status: 'degraded',
+        summary: 'The worker loop is stale.',
+      }],
+    })
+    expect(health).toMatchObject({
+      schemaVersion: 'system-health/1.0',
+      status: 'degraded',
+      components: [{
+        key: 'worker',
+        status: 'degraded',
+        latencyMs: 4.25,
+        remediation: { route: '/settings/advanced/logs' },
+      }],
+    })
+    expect(() => adaptSystemHealth({
+      schema_version: 'system-health/0.9',
+      status: 'healthy',
+      components: [],
+      versions: {},
+    })).toThrow(/incompatible/i)
+    for (const status of ['healthy', 'degraded', 'unhealthy'] as const) {
+      expect(adaptSystemHealth({
+        schema_version: 'system-health/1.0',
+        status,
+        checked_at: '2026-07-26T20:00:00Z',
+        components: [{
+          key: 'api',
+          label: 'API',
+          status,
+          summary: `API is ${status}.`,
+          checked_at: '2026-07-26T20:00:00Z',
+        }],
+        versions: {
+          backend: '1.0.0',
+          frontend: '1.0.0',
+          compatibility: 'compatible',
+        },
+        recent_events: [],
+      })).toMatchObject({
+        status,
+        components: [{ key: 'api', status }],
+      })
+    }
+  })
+
+  it('rejects unclassified synthetic data and adapts isolated Test Mode values', () => {
+    const state = adaptTestMode({
+      enabled: true,
+      session_id: 'session-1',
+      remaining_seconds: 300,
+      sensor_count: 2,
+      online_sensors: 1,
+      offline_sensors: 1,
+      load_profile: 'evening_peak',
+      sample_interval_seconds: 5,
+      cost_preview_enabled: true,
+      current_power_w: '2200.5',
+      total_energy_kwh: '0.0125',
+      source_type: 'simulated',
+      environment: 'test_mode',
+      isolation: {
+        real_readings: true,
+        bills_and_finalized_costs: true,
+        exports_and_backups: true,
+        alerts: true,
+        credentials_and_firmware: true,
+      },
+      cost_preview: {
+        enabled: true,
+        available: true,
+        energy_kwh: '0.0125',
+        estimated_energy_cost: '0.0043',
+        currency: 'USD',
+        disclosure: 'Temporary only.',
+      },
+    })
+    expect(state).toMatchObject({
+      enabled: true,
+      sensorCount: 2,
+      currentPowerW: 2200.5,
+      totalEnergyKwh: 0.0125,
+      sourceType: 'simulated',
+      environment: 'test_mode',
+      costPreview: { estimatedEnergyCost: 0.0043 },
+    })
+    expect(adaptTestModeSensors([{
+      id: 'test-1',
+      name: 'Test Sensor 1',
+      index: 1,
+      online: true,
+      current_power_w: '500',
+      energy_kwh: '0.01',
+      source_type: 'simulated',
+      environment: 'test_mode',
+    }])).toHaveLength(1)
+    expect(adaptTestModeHistory([{
+      recorded_at: '2026-07-26T20:00:00Z',
+      sensor_id: 'test-1',
+      sensor_name: 'Test Sensor 1',
+      online: true,
+      power_w: '500',
+      interval_energy_kwh: '0.001',
+      source_type: 'simulated',
+      environment: 'test_mode',
+    }])[0]).toMatchObject({ powerW: 500, sourceType: 'simulated' })
+    expect(() => adaptTestMode({ ...testModePayload(), source_type: 'real' })).toThrow(/unsafe/i)
   })
 
   it('adapts the canonical normalized bill instead of rendering missing fields as values', () => {
@@ -511,5 +648,22 @@ function billPayloadWithConfidence(confidence: string) {
     }],
     conflicts: [],
     blocking_warnings: [],
+  }
+}
+
+function testModePayload() {
+  return {
+    enabled: false,
+    remaining_seconds: 0,
+    sensor_count: 0,
+    online_sensors: 0,
+    offline_sensors: 0,
+    sample_interval_seconds: 5,
+    cost_preview_enabled: false,
+    current_power_w: '0',
+    total_energy_kwh: '0',
+    source_type: 'simulated',
+    environment: 'test_mode',
+    isolation: {},
   }
 }

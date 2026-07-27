@@ -17,6 +17,13 @@ import type {
   HomeResolution,
   HomeSummary,
   SensorSummary,
+  SystemHealth,
+  SystemHealthComponent,
+  SystemHealthStatus,
+  TestLoadProfile,
+  TestModePoint,
+  TestModeSensor,
+  TestModeState,
   RateEvidence,
   RatePlanDependencySummary,
   RatePlanAssignment,
@@ -38,6 +45,40 @@ import {
   stringValue,
 } from './validation'
 
+function optionalNumber(value: unknown): number | undefined {
+  if ((typeof value === 'number' || typeof value === 'string') && value !== '' && Number.isFinite(Number(value))) {
+    return Number(value)
+  }
+  return undefined
+}
+
+function healthStatus(value: unknown): SystemHealthStatus {
+  const status = stringValue(value)
+  if (!['healthy', 'degraded', 'unhealthy', 'unknown'].includes(status)) {
+    throw new TypeError('system health returned an unknown status')
+  }
+  return status as SystemHealthStatus
+}
+
+function testLoadProfile(value: unknown): TestLoadProfile | undefined {
+  const profile = stringValue(value)
+  if (!profile) return undefined
+  if (![
+    'steady',
+    'home_cycle',
+    'variable_household',
+    'evening_peak',
+    'morning_evening_peaks',
+    'high_load',
+    'low_load',
+    'solar_day',
+    'custom',
+  ].includes(profile)) {
+    throw new TypeError('sensor test mode returned an unknown load profile')
+  }
+  return profile as TestLoadProfile
+}
+
 export function adaptSession(value: unknown): UserSession {
   const source = record(value, 'session')
   const user = source.user ? record(source.user, 'session.user') : undefined
@@ -57,6 +98,143 @@ export function adaptSession(value: unknown): UserSession {
         }
       : undefined,
   }
+}
+
+export function adaptSystemHealth(value: unknown): SystemHealth {
+  const source = record(value, 'system health')
+  const schemaVersion = stringValue(source.schema_version)
+  if (schemaVersion !== 'system-health/1.0') {
+    throw new TypeError('The frontend and System Health API use incompatible schemas')
+  }
+  const components: SystemHealthComponent[] = objectList(source.components).map((item) => {
+    const key = stringValue(item.key)
+    if (!['api', 'database', 'worker', 'storage', 'backups', 'live_data', 'rate_engine'].includes(key)) {
+      throw new TypeError('system health returned an unknown component')
+    }
+    const remediation = item.remediation ? record(item.remediation, 'health remediation') : undefined
+    return {
+      key: key as SystemHealthComponent['key'],
+      label: stringValue(item.label, key),
+      status: healthStatus(item.status),
+      summary: stringValue(item.summary),
+      checkedAt: stringValue(item.checked_at),
+      lastSuccessAt: optionalString(item.last_success_at),
+      latencyMs: optionalNumber(item.latency_ms),
+      details: item.details ? record(item.details, 'health details') : {},
+      remediation: remediation ? {
+        label: stringValue(remediation.label),
+        route: optionalString(remediation.route),
+        action: optionalString(remediation.action),
+      } : undefined,
+      canRetry: booleanValue(item.can_retry, true),
+    }
+  })
+  const versions = record(source.versions, 'health versions')
+  return {
+    schemaVersion,
+    status: healthStatus(source.status),
+    checkedAt: stringValue(source.checked_at),
+    components,
+    versions: Object.fromEntries(
+      Object.entries(versions).map(([key, item]) => [key, optionalString(item)]),
+    ),
+    recentEvents: objectList(source.recent_events).map((item) => ({
+      occurredAt: stringValue(item.occurred_at),
+      component: stringValue(item.component),
+      status: healthStatus(item.status),
+      summary: stringValue(item.summary),
+    })),
+  }
+}
+
+export function adaptTestMode(value: unknown): TestModeState {
+  const source = record(value, 'sensor test mode')
+  const sourceType = stringValue(source.source_type)
+  const environment = stringValue(source.environment)
+  if (sourceType !== 'simulated' || environment !== 'test_mode') {
+    throw new TypeError('Sensor Test Mode returned an unsafe source classification')
+  }
+  const rawPreview = source.cost_preview
+    ? record(source.cost_preview, 'test mode cost preview')
+    : undefined
+  return {
+    enabled: booleanValue(source.enabled),
+    sessionId: optionalString(source.session_id),
+    siteId: optionalString(source.site_id),
+    startedAt: optionalString(source.started_at),
+    expiresAt: optionalString(source.expires_at),
+    remainingSeconds: numberValue(source.remaining_seconds),
+    sensorCount: numberValue(source.sensor_count),
+    onlineSensors: numberValue(source.online_sensors),
+    offlineSensors: numberValue(source.offline_sensors),
+    loadProfile: testLoadProfile(source.load_profile),
+    customLoadW: optionalNumber(source.custom_load_w),
+    baseLoadW: numberValue(source.base_load_w, 1000),
+    variationPercent: numberValue(source.variation_percent, 20),
+    sampleIntervalSeconds: numberValue(source.sample_interval_seconds, 5),
+    costPreviewEnabled: booleanValue(source.cost_preview_enabled),
+    paused: booleanValue(source.paused),
+    currentPowerW: numberValue(source.current_power_w),
+    totalEnergyKwh: numberValue(source.total_energy_kwh),
+    sourceType: 'simulated',
+    environment: 'test_mode',
+    endedAt: optionalString(source.ended_at),
+    endReason: source.end_reason === 'disabled' || source.end_reason === 'expired'
+      ? source.end_reason
+      : undefined,
+    isolation: Object.fromEntries(
+      Object.entries(record(source.isolation, 'test mode isolation')).map(
+        ([key, item]) => [key, booleanValue(item)],
+      ),
+    ),
+    costPreview: rawPreview ? {
+      enabled: booleanValue(rawPreview.enabled),
+      available: booleanValue(rawPreview.available),
+      energyKwh: numberValue(rawPreview.energy_kwh),
+      estimatedEnergyCost: optionalNumber(rawPreview.estimated_energy_cost),
+      currency: optionalString(rawPreview.currency),
+      ratePlan: optionalString(rawPreview.rate_plan),
+      rateVersion: optionalNumber(rawPreview.rate_version),
+      disclosure: stringValue(rawPreview.disclosure),
+    } : undefined,
+  }
+}
+
+export function adaptTestModeSensors(value: unknown): TestModeSensor[] {
+  return records(value, 'test mode sensors').map((source) => {
+    if (source.source_type !== 'simulated' || source.environment !== 'test_mode') {
+      throw new TypeError('A test sensor returned an unsafe source classification')
+    }
+    return {
+      id: stringValue(source.id),
+      name: stringValue(source.name),
+      index: numberValue(source.index),
+      online: booleanValue(source.online),
+      currentPowerW: numberValue(source.current_power_w),
+      energyKwh: numberValue(source.energy_kwh),
+      loadOverrideW: optionalNumber(source.load_override_w),
+      sourceType: 'simulated',
+      environment: 'test_mode',
+    }
+  })
+}
+
+export function adaptTestModeHistory(value: unknown): TestModePoint[] {
+  return records(value, 'test mode history').map((source) => {
+    if (source.source_type !== 'simulated' || source.environment !== 'test_mode') {
+      throw new TypeError('Test history returned an unsafe source classification')
+    }
+    return {
+      recordedAt: stringValue(source.recorded_at),
+      sensorId: stringValue(source.sensor_id),
+      sensorName: stringValue(source.sensor_name),
+      online: booleanValue(source.online),
+      powerW: numberValue(source.power_w),
+      intervalEnergyKwh: numberValue(source.interval_energy_kwh),
+      sourceType: 'simulated',
+      environment: 'test_mode',
+    }
+  })
 }
 
 function adaptHome(source: Record<string, unknown>): Home {

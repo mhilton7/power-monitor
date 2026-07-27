@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CalendarRange, Download, Gauge, Layers3 } from 'lucide-react'
+import { AlertTriangle, CalendarRange, Download, FlaskConical, Gauge, Layers3 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { adaptHistory } from '../../api/adapters'
+import { adaptHistory, adaptTestModeHistory } from '../../api/adapters'
 import { download, errorMessage, json, request, saveBlob } from '../../api/client'
 import { EnergyChart } from '../../components/charts/EnergyChart'
 import { Metric, Surface } from '../../components/data-display/Surface'
@@ -10,6 +10,7 @@ import { Page, PageHeader, SegmentedControl, StatGrid } from '../../components/l
 import { historyPayload } from '../../features/history/historyQuery'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
+import { useTestMode } from '../../state/TestModeContext'
 import type { HistoryFilters, HistoryMetric, HistoryRange, HistoryScope } from '../../types/models'
 import { energy, money, number, power, rate } from '../../utils/format'
 
@@ -31,6 +32,7 @@ const metrics: Array<{ value: HistoryMetric; label: string }> = [
 export function HistoryPage() {
   const { resolution } = useSingleHome()
   const { sensors, cycle } = useLiveHome()
+  const testMode = useTestMode()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const [filters, setFilters] = useState<HistoryFilters>({
     range: '7d',
@@ -47,6 +49,12 @@ export function HistoryPage() {
     queryFn: () => request('/api/v1/history/query', json('POST', payload), adaptHistory),
     enabled: Boolean(payload && validScope),
     placeholderData: (previous) => previous,
+  })
+  const testHistory = useQuery({
+    queryKey: ['sensor-test-mode-history'],
+    queryFn: () => request('/api/v1/test-mode/history?limit=120', {}, adaptTestModeHistory),
+    enabled: Boolean(testMode.state?.enabled),
+    refetchInterval: testMode.state?.enabled ? 5_000 : false,
   })
   const exportHistory = useMutation({
     mutationFn: async () => {
@@ -66,6 +74,25 @@ export function HistoryPage() {
           <Download size={17} /> {exportHistory.isPending ? 'Preparing…' : 'Export'}
         </button>}
       />
+      {testMode.state?.enabled && (
+        <Surface className="test-mode-surface active" title="Test Mode history" subtitle="Ephemeral synthetic samples · excluded from the History export and all real coverage calculations.">
+          <div className="test-mode-inline-heading">
+            <FlaskConical />
+            <span><strong>{testMode.state.sensorCount} simulated sensors</strong><small>{testMode.state.loadProfile?.replaceAll('_', ' ')} profile · {testMode.state.expiresAt ? 'automatically discarded at expiry' : 'discarded when Test Mode is disabled'}</small></span>
+            <span className="pill warning">Test Mode</span>
+          </div>
+          <StatGrid className="test-mode-summary">
+            <Metric label="Current simulated load" value={power(testMode.state.currentPowerW)} identity="test_mode.history.load" />
+            <Metric label="Synthetic energy" value={energy(testMode.state.totalEnergyKwh)} identity="test_mode.history.energy" />
+            <Metric label="Samples in memory" value={testHistory.data?.length ?? 0} identity="test_mode.history.samples" />
+          </StatGrid>
+          {testHistory.data?.length ? (
+            <div className="test-history-list">
+              {testHistory.data.slice(-12).reverse().map((point) => <div key={`${point.sensorId}-${point.recordedAt}`}><span>{point.sensorName}</span><strong>{point.online ? power(point.powerW) : 'Offline'}</strong><small>{new Date(point.recordedAt).toLocaleTimeString()}</small></div>)}
+            </div>
+          ) : <LoadingState label="Waiting for isolated test samples…" />}
+        </Surface>
+      )}
       {exportHistory.error && <InlineNotice tone="danger">{errorMessage(exportHistory.error)}</InlineNotice>}
 
       <Surface className="history-controls-surface">

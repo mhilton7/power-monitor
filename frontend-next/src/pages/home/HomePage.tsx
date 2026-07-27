@@ -5,6 +5,7 @@ import {
   BatteryCharging,
   Check,
   Clock3,
+  FlaskConical,
   RadioTower,
   ReceiptText,
   ShieldCheck,
@@ -23,6 +24,7 @@ import { ConfigurationStatusChip } from '../../features/configuration/Configurat
 import { useAppearance } from '../../state/AppearanceContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
+import { useTestMode } from '../../state/TestModeContext'
 import type { HistoryFilters } from '../../types/models'
 import { dateRange, energy, money, power, rate, relativeTime, statusLabel } from '../../utils/format'
 
@@ -32,6 +34,7 @@ export function HomePage() {
   const { resolution } = useSingleHome()
   const { summary, sensors, alerts, cycle, configuration, loading, error, refresh } = useLiveHome()
   const appearance = useAppearance()
+  const testMode = useTestMode()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const dailyHistory = useQuery({
     queryKey: ['history', 'home-daily', home?.id],
@@ -56,6 +59,7 @@ export function HomePage() {
           description={`Finish the two private setup steps for ${home.name}; live readings will appear automatically after the first signed heartbeat.`}
           action={<Link className="button primary" to="/settings/sensors?action=add"><RadioTower size={17} /> Connect sensor</Link>}
         />
+        {testMode.state?.enabled && <TestModeHomePreview currency={home.currency} />}
         <StatGrid className="home-status-grid">
           <Metric label="Live data" value="Not connected" identity="home.live_status" detail="Waiting for the first signed heartbeat" />
           <Metric label="Current load" value={power(summary.currentPowerW)} identity="home.current_load" detail="No reporting sensors" />
@@ -116,6 +120,7 @@ export function HomePage() {
         description={`Here is what is happening at ${home.name}.`}
         action={<Link className="button secondary" to="/history">View History <ArrowRight size={16} /></Link>}
       />
+      {testMode.state?.enabled && <TestModeHomePreview currency={home.currency} />}
       <StatGrid className="home-status-grid">
         <Metric label="Live data" value={summary.hasLiveData ? 'Connected' : 'Waiting'} identity="home.live_status" detail={`${summary.reportingSensors} of ${summary.totalSensors} sensors reporting`} />
         <Metric label="Sensors" value={`${summary.onlineSensors}/${summary.totalSensors}`} identity="home.sensor_status" detail={summary.attentionSensors ? `${summary.attentionSensors} need attention` : 'All enrolled sensors accounted for'} />
@@ -197,6 +202,31 @@ export function HomePage() {
       )}
       <p className="estimate-disclosure"><AlertTriangle size={16} /> {summary.disclosure}</p>
     </Page>
+  )
+}
+
+function TestModeHomePreview({ currency }: { currency: string }) {
+  const { state } = useTestMode()
+  if (!state?.enabled) return null
+  return (
+    <Surface className="test-mode-surface active">
+      <div className="test-mode-inline-heading">
+        <FlaskConical />
+        <span><strong>Sensor Test Mode preview</strong><small>Synthetic only · real Home data remains unchanged</small></span>
+        <span className="pill warning">Test Mode</span>
+      </div>
+      <StatGrid className="test-mode-summary">
+        <Metric label="Simulated load" value={power(state.currentPowerW)} identity="test_mode.home.load" />
+        <Metric label="Test energy" value={energy(state.totalEnergyKwh)} identity="test_mode.home.energy" />
+        <Metric label="Test sensors" value={`${state.onlineSensors}/${state.sensorCount}`} identity="test_mode.home.sensors" />
+        <Metric
+          label="Temporary cost preview"
+          value={state.costPreview?.available ? money(state.costPreview.estimatedEnergyCost, state.costPreview.currency ?? currency) : 'Off'}
+          identity="test_mode.home.cost"
+          detail="Never saved to bills or finalized costs"
+        />
+      </StatGrid>
+    </Surface>
   )
 }
 

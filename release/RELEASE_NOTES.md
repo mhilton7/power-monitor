@@ -1,5 +1,21 @@
 # Power Monitor Server 1.0.0
 
+## System Health and isolated Sensor Test Mode
+
+- Corrected the greenfield Settings System Health request from the missing
+  `/api/v1/health/ready` path to the new typed, owner-only
+  `/api/v1/system/health` diagnostic contract.
+- Added explicit healthy/degraded/unhealthy/unknown component states, safe
+  remediation, release compatibility, precise 401/403/404/5xx/timeout states,
+  Retry, and legacy route redirects.
+- Added owner-only ephemeral Sensor Test Mode with 0–32 stable simulated
+  sensors, load/offline/interval/duration controls, pause/reset/expiry,
+  persistent labeling, separate Home/History/Billing/Sensors presentation, and
+  opt-in unsaved energy-only cost preview.
+- Synthetic sessions create no real sensor, credential, reading, bill, saved
+  cost, alert, export, backup, or firmware record. No migration, service,
+  dataset, secret, capability, port, or firmware change is required.
+
 ## Current-plan assignment and actionable Configuration Status
 
 - Fixed the Single Home current-plan read path so Billing, Home, History, and

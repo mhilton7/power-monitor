@@ -11,6 +11,7 @@
   .billing-main-grid { grid-template-columns: 1fr; }
   .billing-side-column { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .history-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .health-component-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .detail-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-onboarding-grid, .home-main-grid { grid-template-columns: 1fr; }
   .home-setup-card { min-height: auto; }
@@ -49,6 +50,7 @@
   .home-identity .icon-tile, .home-identity small, .live-facts, .user-button span, .user-button > svg:last-child { display: none; }
   .user-button > svg:first-child { width: 30px; }
   .page-content { min-width: 0; }
+  .test-mode-banner { top: var(--top-height); width: calc(100% - 1.25rem); }
   .workspace-page { width: min(100% - 1.25rem, var(--content-max)); padding: 1.5rem 0 2.5rem; }
   .page-stack { gap: var(--space-4); }
   .billing-top-metrics,
@@ -57,6 +59,8 @@
   .metadata-item:nth-child(odd) { border-inline-start: 0; }
   .metadata-item:nth-child(n + 3) { border-top: 1px solid var(--line-subtle); }
   .cycle-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .test-mode-summary,
+  .health-version-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .billing-side-column { grid-template-columns: 1fr; }
   .subnav { padding-inline: var(--space-3); }
   .rate-tab-panel { padding: var(--space-4); }
@@ -161,6 +165,14 @@
   .onboarding-content > header { padding: 1.5rem 1.25rem .5rem; }
   .onboarding-content > :not(header):not(footer):not(.inline-notice) { margin-inline: 1.25rem; }
   .onboarding-content > footer { padding: 1rem 1.25rem; }
+  .test-mode-banner { align-items: flex-start; flex-wrap: wrap; }
+  .test-mode-banner > div { flex: 1 1 calc(100% - 3rem); }
+  .test-mode-banner .button { flex: 1 1 auto; }
+  .test-mode-summary,
+  .health-component-grid,
+  .health-version-grid { grid-template-columns: 1fr; }
+  .test-history-list > div { grid-template-columns: minmax(0, 1fr) auto; }
+  .test-history-list small { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

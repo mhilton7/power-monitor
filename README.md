@@ -49,6 +49,11 @@ and rollback. Hiding an indicator never disables monitoring or alerts. See the
 [System Health](docs/SYSTEM_HEALTH.md) is the administrator-only home for API,
 database, and worker diagnostics.
 
+Owners can also use the isolated, temporary
+[Sensor Test Mode](docs/SENSOR_TEST_MODE.md) to preview 0–32 synthetic sensors
+on Home, History, Billing, and Settings without creating readings, credentials,
+bills, saved costs, alerts, exports, backups, or firmware records.
+
 The normative interoperability identifier is `pm-protocol/1.0.0`. The browser talks only to this server; device credentials never reach browser code.
 
 The canonical source repository is

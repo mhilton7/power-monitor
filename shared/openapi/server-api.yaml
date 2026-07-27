@@ -11353,6 +11353,328 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/test-mode:
+    get:
+      tags:
+      - sensor-test-mode
+      summary: Get Test Mode
+      operationId: get_test_mode_api_v1_test_mode_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorTestModeState'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - sensor-test-mode
+      summary: Update Test Mode
+      operationId: update_test_mode_api_v1_test_mode_put
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SensorTestModeUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorTestModeState'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/test-mode/enable:
+    post:
+      tags:
+      - sensor-test-mode
+      summary: Enable Test Mode
+      operationId: enable_test_mode_api_v1_test_mode_enable_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SensorTestModeWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorTestModeState'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/test-mode/disable:
+    post:
+      tags:
+      - sensor-test-mode
+      summary: Disable Test Mode
+      operationId: disable_test_mode_api_v1_test_mode_disable_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SensorTestModeAction'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorTestModeState'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/test-mode/reset:
+    post:
+      tags:
+      - sensor-test-mode
+      summary: Reset Test Mode
+      operationId: reset_test_mode_api_v1_test_mode_reset_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SensorTestModeAction'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorTestModeState'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/test-mode/sensors:
+    get:
+      tags:
+      - sensor-test-mode
+      summary: Test Mode Sensors
+      operationId: test_mode_sensors_api_v1_test_mode_sensors_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SensorTestModeSensor'
+                title: Response Test Mode Sensors Api V1 Test Mode Sensors Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/test-mode/sensors/{sensor_id}:
+    put:
+      tags:
+      - sensor-test-mode
+      summary: Update Test Sensor
+      operationId: update_test_sensor_api_v1_test_mode_sensors__sensor_id__put
+      parameters:
+      - name: sensor_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Sensor Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SensorTestModeSensorUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SensorTestModeSensor'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/test-mode/history:
+    get:
+      tags:
+      - sensor-test-mode
+      summary: Test Mode History
+      operationId: test_mode_history_api_v1_test_mode_history_get
+      parameters:
+      - name: sensor_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sensor Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 10000
+          minimum: 1
+          default: 1000
+          title: Limit
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SensorTestModePoint'
+                title: Response Test Mode History Api V1 Test Mode History Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /health/live:
     get:
       tags:
@@ -11420,6 +11742,36 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response System Info Api V1 System Info Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/system/health:
+    get:
+      tags:
+      - system
+      summary: Detailed System Health
+      description: Owner-only diagnostic health without credentials, file paths, or
+        sensitive payloads.
+      operationId: detailed_system_health_api_v1_system_health_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemHealthResponse'
         '422':
           description: Validation Error
           content:
@@ -13068,6 +13420,117 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    HealthComponent:
+      properties:
+        key:
+          type: string
+          enum:
+          - api
+          - database
+          - worker
+          - storage
+          - backups
+          - live_data
+          - rate_engine
+          title: Key
+        label:
+          type: string
+          title: Label
+        status:
+          type: string
+          enum:
+          - healthy
+          - degraded
+          - unhealthy
+          - unknown
+          title: Status
+        summary:
+          type: string
+          title: Summary
+        checked_at:
+          type: string
+          format: date-time
+          title: Checked At
+        last_success_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Success At
+        latency_ms:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Latency Ms
+        details:
+          additionalProperties: true
+          type: object
+          title: Details
+        remediation:
+          anyOf:
+          - $ref: '#/components/schemas/HealthRemediation'
+          - type: 'null'
+        can_retry:
+          type: boolean
+          title: Can Retry
+          default: true
+      additionalProperties: false
+      type: object
+      required:
+      - key
+      - label
+      - status
+      - summary
+      - checked_at
+      title: HealthComponent
+    HealthEvent:
+      properties:
+        occurred_at:
+          type: string
+          format: date-time
+          title: Occurred At
+        component:
+          type: string
+          title: Component
+        status:
+          type: string
+          enum:
+          - healthy
+          - degraded
+          - unhealthy
+          - unknown
+          title: Status
+        summary:
+          type: string
+          title: Summary
+      additionalProperties: false
+      type: object
+      required:
+      - occurred_at
+      - component
+      - status
+      - summary
+      title: HealthEvent
+    HealthRemediation:
+      properties:
+        label:
+          type: string
+          title: Label
+        route:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Route
+        action:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Action
+      additionalProperties: false
+      type: object
+      required:
+      - label
+      title: HealthRemediation
     Heartbeat:
       properties:
         protocol_version:
@@ -15599,6 +16062,476 @@ components:
       - end
       - daily_kwh
       title: SeasonalBaselineDocument
+    SensorTestModeAction:
+      properties:
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - idempotency_key
+      title: SensorTestModeAction
+    SensorTestModeCostPreview:
+      properties:
+        enabled:
+          type: boolean
+          title: Enabled
+        available:
+          type: boolean
+          title: Available
+        energy_kwh:
+          type: string
+          title: Energy Kwh
+        estimated_energy_cost:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Estimated Energy Cost
+        currency:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Currency
+        rate_plan:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rate Plan
+        rate_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rate Version
+        disclosure:
+          type: string
+          title: Disclosure
+      additionalProperties: false
+      type: object
+      required:
+      - enabled
+      - available
+      - energy_kwh
+      - disclosure
+      title: SensorTestModeCostPreview
+    SensorTestModePoint:
+      properties:
+        recorded_at:
+          type: string
+          format: date-time
+          title: Recorded At
+        sensor_id:
+          type: string
+          title: Sensor Id
+        sensor_name:
+          type: string
+          title: Sensor Name
+        online:
+          type: boolean
+          title: Online
+        power_w:
+          type: string
+          title: Power W
+        interval_energy_kwh:
+          type: string
+          title: Interval Energy Kwh
+        source_type:
+          type: string
+          const: simulated
+          title: Source Type
+          default: simulated
+        environment:
+          type: string
+          const: test_mode
+          title: Environment
+          default: test_mode
+      additionalProperties: false
+      type: object
+      required:
+      - recorded_at
+      - sensor_id
+      - sensor_name
+      - online
+      - power_w
+      - interval_energy_kwh
+      title: SensorTestModePoint
+    SensorTestModeSensor:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          type: string
+          title: Name
+        index:
+          type: integer
+          title: Index
+        online:
+          type: boolean
+          title: Online
+        current_power_w:
+          type: string
+          title: Current Power W
+        energy_kwh:
+          type: string
+          title: Energy Kwh
+        load_override_w:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Load Override W
+        source_type:
+          type: string
+          const: simulated
+          title: Source Type
+          default: simulated
+        environment:
+          type: string
+          const: test_mode
+          title: Environment
+          default: test_mode
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - name
+      - index
+      - online
+      - current_power_w
+      - energy_kwh
+      title: SensorTestModeSensor
+    SensorTestModeSensorUpdate:
+      properties:
+        offline:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Offline
+        load_override_w:
+          anyOf:
+          - type: number
+            maximum: 250000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Load Override W
+        name:
+          anyOf:
+          - type: string
+            maxLength: 120
+            minLength: 1
+          - type: 'null'
+          title: Name
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - idempotency_key
+      title: SensorTestModeSensorUpdate
+    SensorTestModeState:
+      properties:
+        enabled:
+          type: boolean
+          title: Enabled
+        session_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Session Id
+        site_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+        started_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Started At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        remaining_seconds:
+          type: integer
+          title: Remaining Seconds
+          default: 0
+        sensor_count:
+          type: integer
+          title: Sensor Count
+          default: 0
+        online_sensors:
+          type: integer
+          title: Online Sensors
+          default: 0
+        offline_sensors:
+          type: integer
+          title: Offline Sensors
+          default: 0
+        load_profile:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Load Profile
+        custom_load_w:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Custom Load W
+        base_load_w:
+          type: string
+          title: Base Load W
+          default: '1000'
+        variation_percent:
+          type: string
+          title: Variation Percent
+          default: '20'
+        sample_interval_seconds:
+          type: integer
+          title: Sample Interval Seconds
+          default: 5
+        cost_preview_enabled:
+          type: boolean
+          title: Cost Preview Enabled
+          default: false
+        paused:
+          type: boolean
+          title: Paused
+          default: false
+        current_power_w:
+          type: string
+          title: Current Power W
+          default: '0'
+        total_energy_kwh:
+          type: string
+          title: Total Energy Kwh
+          default: '0'
+        source_type:
+          type: string
+          const: simulated
+          title: Source Type
+          default: simulated
+        environment:
+          type: string
+          const: test_mode
+          title: Environment
+          default: test_mode
+        ended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ended At
+        end_reason:
+          anyOf:
+          - type: string
+            enum:
+            - disabled
+            - expired
+          - type: 'null'
+          title: End Reason
+        isolation:
+          additionalProperties:
+            type: boolean
+          type: object
+          title: Isolation
+        cost_preview:
+          anyOf:
+          - $ref: '#/components/schemas/SensorTestModeCostPreview'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - enabled
+      title: SensorTestModeState
+    SensorTestModeUpdate:
+      properties:
+        sensor_count:
+          anyOf:
+          - type: integer
+            maximum: 32.0
+            minimum: 0.0
+          - type: 'null'
+          title: Sensor Count
+        load_profile:
+          anyOf:
+          - type: string
+            enum:
+            - steady
+            - home_cycle
+            - variable_household
+            - evening_peak
+            - morning_evening_peaks
+            - high_load
+            - low_load
+            - solar_day
+            - custom
+          - type: 'null'
+          title: Load Profile
+        offline_sensor_indexes:
+          anyOf:
+          - items:
+              type: integer
+            type: array
+            maxItems: 32
+          - type: 'null'
+          title: Offline Sensor Indexes
+        custom_load_w:
+          anyOf:
+          - type: number
+            maximum: 250000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Custom Load W
+        base_load_w:
+          anyOf:
+          - type: number
+            maximum: 250000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Base Load W
+        variation_percent:
+          anyOf:
+          - type: number
+            maximum: 100.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Variation Percent
+        sample_interval_seconds:
+          anyOf:
+          - type: integer
+            maximum: 60.0
+            minimum: 1.0
+          - type: 'null'
+          title: Sample Interval Seconds
+        expires_in_minutes:
+          anyOf:
+          - type: integer
+            maximum: 1440.0
+            minimum: 5.0
+          - type: 'null'
+          title: Expires In Minutes
+        cost_preview_enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Cost Preview Enabled
+        paused:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Paused
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - idempotency_key
+      title: SensorTestModeUpdate
+    SensorTestModeWrite:
+      properties:
+        sensor_count:
+          type: integer
+          maximum: 32.0
+          minimum: 0.0
+          title: Sensor Count
+          default: 1
+        load_profile:
+          type: string
+          enum:
+          - steady
+          - home_cycle
+          - variable_household
+          - evening_peak
+          - morning_evening_peaks
+          - high_load
+          - low_load
+          - solar_day
+          - custom
+          title: Load Profile
+          default: variable_household
+        offline_sensor_indexes:
+          items:
+            type: integer
+          type: array
+          maxItems: 32
+          title: Offline Sensor Indexes
+        custom_load_w:
+          anyOf:
+          - type: number
+            maximum: 250000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Custom Load W
+        base_load_w:
+          anyOf:
+          - type: number
+            maximum: 250000.0
+            minimum: 0.0
+          - type: string
+          title: Base Load W
+          default: '1000'
+        variation_percent:
+          anyOf:
+          - type: number
+            maximum: 100.0
+            minimum: 0.0
+          - type: string
+          title: Variation Percent
+          default: '20'
+        sample_interval_seconds:
+          type: integer
+          maximum: 60.0
+          minimum: 1.0
+          title: Sample Interval Seconds
+          default: 5
+        expires_in_minutes:
+          anyOf:
+          - type: integer
+            maximum: 1440.0
+            minimum: 5.0
+          - type: 'null'
+          title: Expires In Minutes
+          default: 15
+        cost_preview_enabled:
+          type: boolean
+          title: Cost Preview Enabled
+          default: false
+        paused:
+          type: boolean
+          title: Paused
+          default: false
+        site_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - idempotency_key
+      title: SensorTestModeWrite
     SessionView:
       properties:
         authenticated:
@@ -16380,6 +17313,50 @@ components:
       - ok
       - status
       title: SubsystemHealth
+    SystemHealthResponse:
+      properties:
+        schema_version:
+          type: string
+          const: system-health/1.0
+          title: Schema Version
+          default: system-health/1.0
+        status:
+          type: string
+          enum:
+          - healthy
+          - degraded
+          - unhealthy
+          - unknown
+          title: Status
+        checked_at:
+          type: string
+          format: date-time
+          title: Checked At
+        components:
+          items:
+            $ref: '#/components/schemas/HealthComponent'
+          type: array
+          title: Components
+        versions:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: 'null'
+          type: object
+          title: Versions
+        recent_events:
+          items:
+            $ref: '#/components/schemas/HealthEvent'
+          type: array
+          title: Recent Events
+      additionalProperties: false
+      type: object
+      required:
+      - status
+      - checked_at
+      - components
+      - versions
+      title: SystemHealthResponse
     TierDefinitionDocument:
       properties:
         tier_id:

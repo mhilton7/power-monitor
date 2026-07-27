@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
 
 const home = {
   id: 'home-1',
@@ -107,7 +107,42 @@ async function mockServer(page: Page) {
       '/api/v1/notification-channels': [],
       '/api/v1/backups': [],
       '/api/v1/exports': [],
-      '/api/v1/health/ready': { status: 'healthy', checks: { database: 'healthy' } },
+      '/api/v1/system/health': {
+        schema_version: 'system-health/1.0',
+        status: 'healthy',
+        checked_at: '2026-07-26T20:00:00Z',
+        components: [
+          { key: 'api', label: 'API', status: 'healthy', summary: 'The API is responding.', checked_at: '2026-07-26T20:00:00Z', details: {}, can_retry: true },
+          { key: 'database', label: 'Database', status: 'healthy', summary: 'PostgreSQL is ready.', checked_at: '2026-07-26T20:00:00Z', details: {}, can_retry: true },
+          { key: 'worker', label: 'Worker', status: 'healthy', summary: 'The worker is current.', checked_at: '2026-07-26T20:00:00Z', details: {}, can_retry: true },
+          { key: 'storage', label: 'Storage', status: 'healthy', summary: 'Datasets are accessible.', checked_at: '2026-07-26T20:00:00Z', details: {}, can_retry: true },
+          { key: 'backups', label: 'Backups', status: 'healthy', summary: 'The latest backup is verified.', checked_at: '2026-07-26T20:00:00Z', details: {}, can_retry: true },
+          { key: 'live_data', label: 'Live data', status: 'unknown', summary: 'No real sensors are enrolled.', checked_at: '2026-07-26T20:00:00Z', details: {}, can_retry: true },
+          { key: 'rate_engine', label: 'Rate engine', status: 'unknown', summary: 'No service is configured.', checked_at: '2026-07-26T20:00:00Z', details: {}, can_retry: true },
+        ],
+        versions: { backend: '1.0.0', frontend: '1.0.0', compatibility: 'compatible' },
+        recent_events: [],
+      },
+      '/api/v1/test-mode': {
+        enabled: false,
+        remaining_seconds: 0,
+        sensor_count: 0,
+        online_sensors: 0,
+        offline_sensors: 0,
+        sample_interval_seconds: 5,
+        cost_preview_enabled: false,
+        current_power_w: '0',
+        total_energy_kwh: '0',
+        source_type: 'simulated',
+        environment: 'test_mode',
+        isolation: {
+          real_readings: true,
+          bills_and_finalized_costs: true,
+          exports_and_backups: true,
+          alerts: true,
+          credentials_and_firmware: true,
+        },
+      },
       '/api/v1/admin/network/runtime': { ingress: 'signed_private', pull: 'disabled' },
       '/api/v1/audit-events': [],
     }
@@ -164,12 +199,260 @@ test('legacy route matrix resolves only to canonical workspaces', async ({ page 
     { legacy: '/rates', canonical: '/billing' },
     { legacy: '/administration', canonical: '/settings' },
     { legacy: '/users-access', canonical: '/settings/family' },
-    { legacy: '/status-indicators', canonical: '/settings/advanced' },
+    { legacy: '/status-indicators', canonical: '/settings/advanced/layout' },
+    { legacy: '/system-health', canonical: '/settings/advanced/system-health' },
   ]
   for (const { legacy, canonical } of redirects) {
     await page.goto(legacy)
     await expect(page).toHaveURL(new RegExp(`${canonical.replace('/', '\\/')}($|\\?)`))
   }
+})
+
+test('System Health has a canonical direct route and typed component states', async ({ page }) => {
+  await page.goto('/settings/advanced/system-health')
+  await expect(page).toHaveURL(/\/settings\/advanced\/system-health$/)
+  await expect(page.getByRole('heading', { name: 'System health' })).toBeVisible()
+  await expect(page.getByText('PostgreSQL is ready.')).toBeVisible()
+  await expect(page.getByText('Not Found')).toHaveCount(0)
+  const advancedBounds = await page.locator('.advanced-navigation').boundingBox()
+  const healthBounds = await page.locator('.health-overall').boundingBox()
+  expect(advancedBounds).not.toBeNull()
+  expect(healthBounds).not.toBeNull()
+  if (!advancedBounds || !healthBounds) throw new Error('Advanced and System Health panels must be rendered for spacing verification.')
+  expect(healthBounds.y - (advancedBounds.y + advancedBounds.height)).toBeGreaterThanOrEqual(15)
+  await expect(page).toHaveScreenshot('system-health-repaired.png', { fullPage: true })
+})
+
+test('System Health replaces the supplied generic 404 and Retry recovers', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'error-state matrix runs once')
+  let attempts = 0
+  await page.route('**/api/v1/system/health', async (route) => {
+    attempts += 1
+    if (attempts === 1) {
+      return route.fulfill({
+        status: 404,
+        json: {
+          status: 404,
+          title: 'Not Found',
+          detail: 'Not Found',
+          code: 'not_found',
+        },
+      })
+    }
+    return route.fallback()
+  })
+  await page.goto('/settings/advanced/system-health')
+  await expect(page.getByText('System Health service is unavailable')).toBeVisible()
+  await expect(page.getByText('The settings page loaded, but the server health endpoint could not be found.')).toBeVisible()
+  await expect(page.getByText('Not Found', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'View versions' }).click()
+  await expect(page.getByText('Frontend commit')).toBeVisible()
+  await page.getByRole('button', { name: 'Retry health check' }).click()
+  await expect(page.getByRole('heading', { name: 'System health' })).toBeVisible()
+  expect(attempts).toBe(2)
+})
+
+test('System Health distinguishes server, schema, and owner permission states', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'error-state matrix runs once')
+  let mode: 'server' | 'schema' = 'server'
+  const handler = async (route: Route) => {
+    if (mode === 'server') {
+      return route.fulfill({
+        status: 503,
+        json: {
+          status: 503,
+          title: 'Service unavailable',
+          detail: 'diagnostic dependency unavailable',
+          code: 'health_failed',
+        },
+      })
+    }
+    return route.fulfill({
+      json: {
+        schema_version: 'system-health/2.0',
+        status: 'healthy',
+        checked_at: '2026-07-26T20:00:00Z',
+        components: [],
+        versions: {},
+        recent_events: [],
+      },
+    })
+  }
+  await page.route('**/api/v1/system/health', handler)
+  await page.goto('/settings/advanced/system-health')
+  await expect(page.getByText('System Health service error')).toBeVisible()
+  mode = 'schema'
+  await page.reload()
+  await expect(page.getByText('Frontend and API versions differ')).toBeVisible()
+
+  await page.route('**/api/v1/auth/session', async (route) => route.fulfill({
+    json: {
+      authenticated: true,
+      bootstrap_required: false,
+      user: {
+        id: 'viewer-1',
+        email: 'viewer@example.test',
+        display_name: 'Home Viewer',
+        roles: ['viewer'],
+        permissions: ['overview.view'],
+        all_sites: true,
+        site_ids: [],
+      },
+    },
+  }))
+  await page.reload()
+  await expect(page.getByText('Owner access required')).toBeVisible()
+  await expect(page.getByText('This technical settings area is available only to the home owner.')).toBeVisible()
+})
+
+test('System Health reports a bounded request timeout', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'bounded timeout runs once')
+  await page.route('**/api/v1/system/health', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 12_000))
+    await route.abort('timedout')
+  })
+  await page.goto('/settings/advanced/system-health')
+  await expect(page.getByText('System Health request timed out')).toBeVisible({ timeout: 12_000 })
+})
+
+test('owner can enable and completely exit isolated Sensor Test Mode', async ({ page }) => {
+  let enabled = false
+  let sensorCount = 0
+  let offlineSensorIndexes: number[] = []
+  let costPreviewEnabled = false
+  const sensorIds = Array.from({ length: 32 }, (_, index) => `test-sensor-${index + 1}`)
+  await page.route('**/api/v1/test-mode**', async (route) => {
+    const url = new URL(route.request().url())
+    const path = url.pathname
+    if (path === '/api/v1/test-mode/sensors') {
+      return route.fulfill({ json: enabled ? Array.from({ length: sensorCount }, (_, index) => ({
+        id: sensorIds[index],
+        name: `Simulated Sensor ${index + 1}`,
+        index: index + 1,
+        online: !offlineSensorIndexes.includes(index + 1),
+        current_power_w: offlineSensorIndexes.includes(index + 1) ? '0' : '900',
+        energy_kwh: '0.01',
+        source_type: 'simulated',
+        environment: 'test_mode',
+      })) : [] })
+    }
+    if (path === '/api/v1/test-mode/history') {
+      return route.fulfill({ json: enabled ? Array.from({ length: sensorCount }, (_, index) => ({
+        recorded_at: '2026-07-26T20:00:00Z',
+        sensor_id: sensorIds[index],
+        sensor_name: `Simulated Sensor ${index + 1}`,
+        online: !offlineSensorIndexes.includes(index + 1),
+        power_w: offlineSensorIndexes.includes(index + 1) ? '0' : '900',
+        interval_energy_kwh: '0.01',
+        source_type: 'simulated',
+        environment: 'test_mode',
+      })) : [] })
+    }
+    if (path === '/api/v1/test-mode/enable' || (path === '/api/v1/test-mode' && route.request().method() === 'PUT')) {
+      const body = route.request().postDataJSON() as {
+        sensor_count?: number
+        offline_sensor_indexes?: number[]
+        cost_preview_enabled?: boolean
+      }
+      enabled = true
+      sensorCount = body.sensor_count ?? sensorCount
+      offlineSensorIndexes = body.offline_sensor_indexes ?? offlineSensorIndexes
+      costPreviewEnabled = body.cost_preview_enabled ?? costPreviewEnabled
+    }
+    if (path === '/api/v1/test-mode/disable') {
+      enabled = false
+      sensorCount = 0
+      offlineSensorIndexes = []
+      costPreviewEnabled = false
+    }
+    return route.fulfill({ json: enabled ? {
+      enabled: true,
+      session_id: 'test-session-1',
+      site_id: 'home-1',
+      started_at: '2026-07-26T20:00:00Z',
+      expires_at: '2026-07-26T21:00:00Z',
+      remaining_seconds: 3600,
+      sensor_count: sensorCount,
+      online_sensors: sensorCount - offlineSensorIndexes.length,
+      offline_sensors: offlineSensorIndexes.length,
+      load_profile: 'steady',
+      base_load_w: '900',
+      variation_percent: '0',
+      sample_interval_seconds: 5,
+      cost_preview_enabled: costPreviewEnabled,
+      paused: false,
+      current_power_w: String((sensorCount - offlineSensorIndexes.length) * 900),
+      total_energy_kwh: String(sensorCount * 0.01),
+      source_type: 'simulated',
+      environment: 'test_mode',
+      isolation: {
+        real_readings: true,
+        bills_and_finalized_costs: true,
+        exports_and_backups: true,
+        alerts: true,
+        credentials_and_firmware: true,
+      },
+      cost_preview: {
+        enabled: costPreviewEnabled,
+        available: costPreviewEnabled,
+        energy_kwh: String(sensorCount * 0.01),
+        estimated_energy_cost: costPreviewEnabled ? '0.042' : null,
+        currency: 'USD',
+        disclosure: 'Temporary test-only estimate. No bill or saved cost was created.',
+      },
+    } : {
+      enabled: false,
+      remaining_seconds: 0,
+      sensor_count: 0,
+      online_sensors: 0,
+      offline_sensors: 0,
+      base_load_w: '1000',
+      variation_percent: '20',
+      sample_interval_seconds: 5,
+      cost_preview_enabled: false,
+      paused: false,
+      current_power_w: '0',
+      total_energy_kwh: '0',
+      source_type: 'simulated',
+      environment: 'test_mode',
+      isolation: {
+        real_readings: true,
+        bills_and_finalized_costs: true,
+        exports_and_backups: true,
+        alerts: true,
+        credentials_and_firmware: true,
+      },
+    } })
+  })
+  await page.goto('/settings/advanced/sensor-test-mode')
+  await page.getByLabel('Simulated active sensors').fill('3')
+  await page.getByLabel('Simulate offline sensors').fill('2')
+  await page.getByText('Temporary current-rate cost preview').click()
+  await page.getByRole('button', { name: 'Enable Sensor Test Mode' }).click()
+  await expect(page.getByRole('status', { name: 'Sensor Test Mode is active' })).toBeVisible()
+  await expect(page.getByText('2/3 simulated sensors')).toBeVisible()
+  await page.goto('/home')
+  await expect(page.getByText('Sensor Test Mode preview')).toBeVisible()
+  await expect(page.getByText('2/3', { exact: true })).toBeVisible()
+  await page.goto('/history')
+  await expect(page.getByRole('heading', { name: 'Test Mode history' })).toBeVisible()
+  await expect(page.getByText('Simulated Sensor 1')).toBeVisible()
+  await page.goto('/settings/sensors')
+  await expect(page.getByRole('heading', { name: 'Simulated sensors' })).toBeVisible()
+  await expect(page.getByText('Simulated Sensor 3')).toBeVisible()
+  await page.goto('/billing')
+  await expect(page.getByRole('heading', { name: 'Test Mode cost preview' })).toBeVisible()
+  await expect(page.getByText('$0.04')).toBeVisible()
+  await page.goto('/settings/advanced/sensor-test-mode')
+  await page.getByLabel('Simulated active sensors').fill('5')
+  await page.getByLabel('Simulate offline sensors').fill('2')
+  await page.getByRole('button', { name: 'Apply test settings' }).click()
+  await expect(page.getByText('4/5 simulated sensors')).toBeVisible()
+  expect(sensorIds[0]).toBe('test-sensor-1')
+  await page.getByRole('button', { name: 'Exit test mode' }).click()
+  await expect(page.getByRole('status', { name: 'Sensor Test Mode is active' })).toHaveCount(0)
+  await page.goto('/history')
+  await expect(page.getByRole('heading', { name: 'Test Mode history' })).toHaveCount(0)
 })
 
 test('page boundaries keep configuration out of Home and History', async ({ page }) => {

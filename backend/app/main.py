@@ -27,12 +27,14 @@ from app.api.routes import (
     site_management,
     status_indicators,
     system,
+    test_mode,
     tiered_rates,
 )
 from app.config import get_settings
 from app.logging import configure_logging
 from app.problem import ProblemError, problem_response
 from app.security.protocol import ProtocolAuthError
+from app.sensor_test_mode import sensor_test_mode
 
 
 @asynccontextmanager
@@ -50,6 +52,7 @@ async def lifespan(_app: FastAPI) -> Any:
         logger.warning("required_production_secrets_missing")
     logger.info("application_started", version=settings.power_monitor_version)
     yield
+    await sensor_test_mode.shutdown()
     logger.info("application_stopped")
 
 
@@ -78,6 +81,7 @@ for router in (
     status_indicators.router,
     firmware.router,
     exports.router,
+    test_mode.router,
     system.router,
 ):
     app.include_router(router)

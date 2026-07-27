@@ -117,6 +117,19 @@ bridge to the sensor API port and return traffic. Do not rely on mDNS. ICMP is n
 required; enable the NET_RAW overlay only for optional diagnostics. Never use host
 networking or privileged mode to bypass a routing problem.
 
+## System Health is unavailable or versions differ
+
+- Use **Apps > Installed > power-monitor > Workloads** to confirm the API,
+  frontend, and gateway workloads are from the same immutable release.
+- A precise **endpoint unavailable** message means Settings loaded but
+  `/api/v1/system/health` returned 404. Update API and frontend together; do not
+  expose API port 8000 or rewrite the request to the container readiness probe.
+- A version mismatch means the endpoint exists but the release/schema identities
+  differ. Restore the prior complete digest-pinned image set or finish the
+  coordinated upgrade, then use **Retry health check**.
+- Sensor Test Mode is in API memory only. Restarting the API removes the session
+  and its banner; it does not require deleting a dataset or database row.
+
 ## Backups fail or cannot be restored
 
 - Confirm UID 10003 can modify `backups` and read firmware/config/report data.

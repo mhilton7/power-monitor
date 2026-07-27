@@ -1501,3 +1501,188 @@ class FleetSummary(ApiModel):
     latest_heartbeat_at: datetime | None
     coverage_percent: Decimal | None
     disclosure: str
+
+
+class HealthRemediation(ApiModel):
+    label: str
+    route: str | None = None
+    action: str | None = None
+
+
+class HealthComponent(ApiModel):
+    key: Literal[
+        "api",
+        "database",
+        "worker",
+        "storage",
+        "backups",
+        "live_data",
+        "rate_engine",
+    ]
+    label: str
+    status: Literal["healthy", "degraded", "unhealthy", "unknown"]
+    summary: str
+    checked_at: datetime
+    last_success_at: datetime | None = None
+    latency_ms: Decimal | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+    remediation: HealthRemediation | None = None
+    can_retry: bool = True
+
+
+class HealthEvent(ApiModel):
+    occurred_at: datetime
+    component: str
+    status: Literal["healthy", "degraded", "unhealthy", "unknown"]
+    summary: str
+
+
+class SystemHealthResponse(ApiModel):
+    schema_version: Literal["system-health/1.0"] = "system-health/1.0"
+    status: Literal["healthy", "degraded", "unhealthy", "unknown"]
+    checked_at: datetime
+    components: list[HealthComponent]
+    versions: dict[str, str | None]
+    recent_events: list[HealthEvent] = Field(default_factory=list)
+
+
+class SensorTestModeWrite(ApiModel):
+    sensor_count: int = Field(default=1, ge=0, le=32)
+    load_profile: Literal[
+        "steady",
+        "home_cycle",
+        "variable_household",
+        "evening_peak",
+        "morning_evening_peaks",
+        "high_load",
+        "low_load",
+        "solar_day",
+        "custom",
+    ] = "variable_household"
+    offline_sensor_indexes: list[int] = Field(default_factory=list, max_length=32)
+    custom_load_w: Decimal | None = Field(default=None, ge=0, le=250_000)
+    base_load_w: Decimal = Field(default=Decimal("1000"), ge=0, le=250_000)
+    variation_percent: Decimal = Field(default=Decimal("20"), ge=0, le=100)
+    sample_interval_seconds: int = Field(default=5, ge=1, le=60)
+    expires_in_minutes: int | None = Field(default=15, ge=5, le=1440)
+    cost_preview_enabled: bool = False
+    paused: bool = False
+    site_id: str | None = None
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+    @model_validator(mode="after")
+    def validate_test_sensor_configuration(self) -> SensorTestModeWrite:
+        if len(set(self.offline_sensor_indexes)) != len(self.offline_sensor_indexes):
+            raise ValueError("offline sensor indexes must be unique")
+        if any(index < 1 or index > self.sensor_count for index in self.offline_sensor_indexes):
+            raise ValueError("offline sensor indexes must refer to configured sensors")
+        if self.load_profile == "custom" and self.custom_load_w is None:
+            raise ValueError("custom load profile requires custom_load_w")
+        return self
+
+
+class SensorTestModeUpdate(ApiModel):
+    sensor_count: int | None = Field(default=None, ge=0, le=32)
+    load_profile: (
+        Literal[
+            "steady",
+            "home_cycle",
+            "variable_household",
+            "evening_peak",
+            "morning_evening_peaks",
+            "high_load",
+            "low_load",
+            "solar_day",
+            "custom",
+        ]
+        | None
+    ) = None
+    offline_sensor_indexes: list[int] | None = Field(default=None, max_length=32)
+    custom_load_w: Decimal | None = Field(default=None, ge=0, le=250_000)
+    base_load_w: Decimal | None = Field(default=None, ge=0, le=250_000)
+    variation_percent: Decimal | None = Field(default=None, ge=0, le=100)
+    sample_interval_seconds: int | None = Field(default=None, ge=1, le=60)
+    expires_in_minutes: int | None = Field(default=None, ge=5, le=1440)
+    cost_preview_enabled: bool | None = None
+    paused: bool | None = None
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
+class SensorTestModeAction(ApiModel):
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
+class SensorTestModeSensorUpdate(ApiModel):
+    offline: bool | None = None
+    load_override_w: Decimal | None = Field(default=None, ge=0, le=250_000)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
+class SensorTestModeSensor(ApiModel):
+    id: str
+    name: str
+    index: int
+    online: bool
+    current_power_w: Decimal
+    energy_kwh: Decimal
+    load_override_w: Decimal | None = None
+    source_type: Literal["simulated"] = "simulated"
+    environment: Literal["test_mode"] = "test_mode"
+
+
+class SensorTestModePoint(ApiModel):
+    recorded_at: datetime
+    sensor_id: str
+    sensor_name: str
+    online: bool
+    power_w: Decimal
+    interval_energy_kwh: Decimal
+    source_type: Literal["simulated"] = "simulated"
+    environment: Literal["test_mode"] = "test_mode"
+
+
+class SensorTestModeCostPreview(ApiModel):
+    enabled: bool
+    available: bool
+    energy_kwh: Decimal
+    estimated_energy_cost: Decimal | None = None
+    currency: str | None = None
+    rate_plan: str | None = None
+    rate_version: int | None = None
+    disclosure: str
+
+
+class SensorTestModeState(ApiModel):
+    enabled: bool
+    session_id: str | None = None
+    site_id: str | None = None
+    started_at: datetime | None = None
+    expires_at: datetime | None = None
+    remaining_seconds: int = 0
+    sensor_count: int = 0
+    online_sensors: int = 0
+    offline_sensors: int = 0
+    load_profile: str | None = None
+    custom_load_w: Decimal | None = None
+    base_load_w: Decimal = Decimal("1000")
+    variation_percent: Decimal = Decimal("20")
+    sample_interval_seconds: int = 5
+    cost_preview_enabled: bool = False
+    paused: bool = False
+    current_power_w: Decimal = Decimal("0")
+    total_energy_kwh: Decimal = Decimal("0")
+    source_type: Literal["simulated"] = "simulated"
+    environment: Literal["test_mode"] = "test_mode"
+    ended_at: datetime | None = None
+    end_reason: Literal["disabled", "expired"] | None = None
+    isolation: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "real_readings": True,
+            "bills_and_finalized_costs": True,
+            "exports_and_backups": True,
+            "alerts": True,
+            "credentials_and_firmware": True,
+        }
+    )
+    cost_preview: SensorTestModeCostPreview | None = None

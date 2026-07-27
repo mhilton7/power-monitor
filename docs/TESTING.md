@@ -811,6 +811,34 @@ Set `CAPTURE_STATUS_LAYOUT_SCREENSHOTS=1` while running the status-layout E2E
 case to refresh reviewed desktop, tablet, mobile, empty-zone, long-label, and
 published-mobile fixtures under `docs/screenshots/status-indicators/`.
 
+## System Health and Sensor Test Mode gate
+
+Run the focused regression suites before the complete release matrix:
+
+```text
+.venv/Scripts/python.exe -m pytest backend/tests/test_system_health_sensor_test_mode.py
+cd frontend-next
+npm run test -- --run
+npm run build
+npm run e2e
+```
+
+The backend suite proves owner/CSRF enforcement, disabled default, 0/1/5/32
+counts, validation boundaries, stable IDs, all supported load profiles, custom
+load, offline state, pause/resume, reset, auto-expiry, duplicate-job
+prevention, audit actions, and cleanup. Its isolation snapshot compares real
+devices, credentials, readings, bills, saved cost runs/intervals, alerts,
+reports, backups, firmware releases, and firmware deployments before and after
+the session.
+
+The browser suite covers the canonical/direct/legacy System Health routes,
+component states, exact missing-endpoint regression, Retry, permission/server/
+schema/timeout handling, mobile layout, persistent Test Mode labeling, live
+Home data, isolated History, separate Sensors, temporary Billing preview, count
+changes, offline state, and complete exit. Production verification must use the
+container frontend through Caddy so the hashed lazy chunk, `/api` proxy, and SPA
+fallback are exercised together.
+
 ## Hardware boundary
 
 No live mains equipment was connected. Remaining hardware validation is limited to an isolated, electrician-approved ESP32-S3/PZEM-004T V4 installation: CT orientation and rating, split-phase topology, SD removal/full/corruption, Wi-Fi/VLAN behavior, power loss, multi-hour offline backfill, OTA success/rollback, and comparison against an independent reference meter.

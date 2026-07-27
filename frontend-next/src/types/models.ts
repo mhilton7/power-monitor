@@ -576,6 +576,111 @@ export interface AdvancedHealthSummary {
   worker?: string
 }
 
+export type SystemHealthStatus = 'healthy' | 'degraded' | 'unhealthy' | 'unknown'
+
+export interface SystemHealthComponent {
+  key: 'api' | 'database' | 'worker' | 'storage' | 'backups' | 'live_data' | 'rate_engine'
+  label: string
+  status: SystemHealthStatus
+  summary: string
+  checkedAt: string
+  lastSuccessAt?: string
+  latencyMs?: number
+  details: Record<string, unknown>
+  remediation?: {
+    label: string
+    route?: string
+    action?: string
+  }
+  canRetry: boolean
+}
+
+export interface SystemHealth {
+  schemaVersion: 'system-health/1.0'
+  status: SystemHealthStatus
+  checkedAt: string
+  components: SystemHealthComponent[]
+  versions: Record<string, string | undefined>
+  recentEvents: Array<{
+    occurredAt: string
+    component: string
+    status: SystemHealthStatus
+    summary: string
+  }>
+}
+
+export type TestLoadProfile =
+  | 'steady'
+  | 'home_cycle'
+  | 'variable_household'
+  | 'evening_peak'
+  | 'morning_evening_peaks'
+  | 'high_load'
+  | 'low_load'
+  | 'solar_day'
+  | 'custom'
+
+export interface TestModeCostPreview {
+  enabled: boolean
+  available: boolean
+  energyKwh: number
+  estimatedEnergyCost?: number
+  currency?: string
+  ratePlan?: string
+  rateVersion?: number
+  disclosure: string
+}
+
+export interface TestModeState {
+  enabled: boolean
+  sessionId?: string
+  siteId?: string
+  startedAt?: string
+  expiresAt?: string
+  remainingSeconds: number
+  sensorCount: number
+  onlineSensors: number
+  offlineSensors: number
+  loadProfile?: TestLoadProfile
+  customLoadW?: number
+  baseLoadW: number
+  variationPercent: number
+  sampleIntervalSeconds: number
+  costPreviewEnabled: boolean
+  paused: boolean
+  currentPowerW: number
+  totalEnergyKwh: number
+  sourceType: 'simulated'
+  environment: 'test_mode'
+  endedAt?: string
+  endReason?: 'disabled' | 'expired'
+  isolation: Record<string, boolean>
+  costPreview?: TestModeCostPreview
+}
+
+export interface TestModeSensor {
+  id: string
+  name: string
+  index: number
+  online: boolean
+  currentPowerW: number
+  energyKwh: number
+  loadOverrideW?: number
+  sourceType: 'simulated'
+  environment: 'test_mode'
+}
+
+export interface TestModePoint {
+  recordedAt: string
+  sensorId: string
+  sensorName: string
+  online: boolean
+  powerW: number
+  intervalEnergyKwh: number
+  sourceType: 'simulated'
+  environment: 'test_mode'
+}
+
 export interface EnrollmentCode {
   id: string
   code: string

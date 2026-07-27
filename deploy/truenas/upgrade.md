@@ -27,8 +27,12 @@ the registry, use `latest`, or deploy a tag without its content digest.
 
 All application images in the rendered YAML must come from the same release.
 Confirm the API, frontend, worker/migration, backup, and gateway references as a
-set; do not update only the frontend after a bill-import correction. The
-frontend now compares its API/import schema versions with the backend before
+set; do not update only the frontend after a bill-import correction. The System
+Health contract has the same requirement: a new frontend paired with an
+old API reports **System Health service is unavailable** or a version mismatch.
+Sensor Test Mode is ephemeral and must be exited before an upgrade; an API
+container restart discards it automatically and never requires dataset cleanup.
+The frontend compares its API/import schema versions with the backend before
 mounting an authenticated workspace and intentionally blocks a mixed release.
 
 For the Single Home frontend cutover, confirm exactly one site is active before

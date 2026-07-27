@@ -7,6 +7,7 @@ import {
   CircleOff,
   FileClock,
   FileSearch,
+  FlaskConical,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -36,6 +37,7 @@ import { ConfigurationStatusChip } from '../../features/configuration/Configurat
 import { useAuth } from '../../state/AuthContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
+import { useTestMode } from '../../state/TestModeContext'
 import type { BillSummary, ElectricService, RateAssignmentResult } from '../../types/models'
 import { dateRange, dateTime, energy, money, rate, statusLabel } from '../../utils/format'
 import { isOwner } from '../../access/permissions'
@@ -85,6 +87,7 @@ export function BillingPage() {
   const { resolution } = useSingleHome()
   const { services, cycle, configuration, refresh } = useLiveHome()
   const { session } = useAuth()
+  const testMode = useTestMode()
   const [params, setParams] = useSearchParams()
   const importOpen = params.get('action') === 'upload'
   const [planDetail, setPlanDetail] = useState(false)
@@ -148,6 +151,23 @@ export function BillingPage() {
           <Upload size={17} /> Upload electric bill
         </button>}
       />
+      {testMode.state?.enabled && (
+        <Surface className="test-mode-surface active" title="Test Mode cost preview" subtitle="Temporary energy-only estimate · never saved as a bill, finalized cost, adjustment, or export.">
+          <div className="test-mode-inline-heading">
+            <FlaskConical />
+            <span><strong>Sensor Test Mode</strong><small>{energy(testMode.state.totalEnergyKwh)} synthetic energy using isolated in-memory samples</small></span>
+            <span className="pill warning">Test Mode</span>
+          </div>
+          {testMode.state.costPreview?.enabled ? (
+            <div className="test-preview-cost">
+              <strong>{testMode.state.costPreview.available ? money(testMode.state.costPreview.estimatedEnergyCost, testMode.state.costPreview.currency ?? home.currency) : 'Preview unavailable'}</strong>
+              <span>{testMode.state.costPreview.disclosure}</span>
+            </div>
+          ) : (
+            <InlineNotice>Cost preview is off by default. Opt in under Settings → Advanced → Sensor Test Mode.</InlineNotice>
+          )}
+        </Surface>
+      )}
       {assignmentNotice && <InlineNotice tone="success">{assignmentNotice}</InlineNotice>}
 
       <StatGrid className="billing-top-metrics">

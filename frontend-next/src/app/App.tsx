@@ -7,6 +7,7 @@ import { SignInPage } from '../pages/auth/SignInPage'
 import { OnboardingPage } from '../pages/onboarding/OnboardingPage'
 import { LiveHomeProvider } from '../state/LiveHomeContext'
 import { SingleHomeProvider, useSingleHome } from '../state/SingleHomeContext'
+import { TestModeProvider } from '../state/TestModeContext'
 import { useAuth } from '../state/AuthContext'
 
 const HomePage = lazy(() => import('../pages/home/HomePage').then((module) => ({ default: module.HomePage })))
@@ -30,7 +31,10 @@ const LEGACY_REDIRECTS: Record<string, string> = {
   '/alerts': '/home?alerts=1',
   '/administration': '/settings',
   '/users-access': '/settings/family',
-  '/status-indicators': '/settings/advanced',
+  '/status-indicators': '/settings/advanced/layout',
+  '/system-health': '/settings/advanced/system-health',
+  '/health': '/settings/advanced/system-health',
+  '/sensor-test-mode': '/settings/advanced/sensor-test-mode',
 }
 
 export function App() {
@@ -49,7 +53,9 @@ function SingleHomeApp() {
     <AppErrorBoundary>
       <SingleHomeProvider>
         <LiveHomeProvider>
-          <AuthenticatedRoutes />
+          <TestModeProvider>
+            <AuthenticatedRoutes />
+          </TestModeProvider>
         </LiveHomeProvider>
       </SingleHomeProvider>
     </AppErrorBoundary>

@@ -3071,5 +3071,156 @@ ALTER TABLE utility_bill_extracted_fields ADD CONSTRAINT ck_utility_bill_extract
 
 UPDATE alembic_version SET version_num='20260725_0016' WHERE alembic_version.version_num = '20260724_0015';
 
+-- Running upgrade 20260725_0016 -> 20260725_0017
+
+ALTER TABLE rate_versions ADD COLUMN parent_version_id VARCHAR(36);
+
+ALTER TABLE rate_versions ADD CONSTRAINT fk_rate_versions_parent_version FOREIGN KEY(parent_version_id) REFERENCES rate_versions (id) ON DELETE SET NULL;
+
+CREATE INDEX ix_rate_versions_parent_version_id ON rate_versions (parent_version_id);
+
+ALTER TABLE rate_versions ADD COLUMN lifecycle_revision INTEGER DEFAULT '1' NOT NULL;
+
+ALTER TABLE rate_versions ADD COLUMN status_before_removal VARCHAR(24);
+
+ALTER TABLE rate_versions ADD COLUMN removed_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE rate_versions ADD COLUMN removed_by VARCHAR(36);
+
+ALTER TABLE rate_versions ADD CONSTRAINT fk_rate_versions_removed_by FOREIGN KEY(removed_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE rate_versions ADD COLUMN removal_reason VARCHAR(500);
+
+ALTER TABLE rate_versions ADD COLUMN restored_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE rate_versions ADD COLUMN restored_by VARCHAR(36);
+
+ALTER TABLE rate_versions ADD CONSTRAINT fk_rate_versions_restored_by FOREIGN KEY(restored_by) REFERENCES users (id) ON DELETE SET NULL;
+
+CREATE INDEX ix_rate_versions_removed_at ON rate_versions (removed_at);
+
+UPDATE rate_versions SET status = 'published' WHERE status IN ('active', 'approved');
+
+ALTER TABLE rate_assignments ADD COLUMN revision INTEGER DEFAULT '1' NOT NULL;
+
+ALTER TABLE rate_assignments ADD COLUMN cancelled_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE rate_assignments ADD COLUMN cancelled_by VARCHAR(36);
+
+ALTER TABLE rate_assignments ADD CONSTRAINT fk_rate_assignments_cancelled_by FOREIGN KEY(cancelled_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE rate_assignments ADD COLUMN cancellation_reason VARCHAR(500);
+
+ALTER TABLE rate_assignments ADD COLUMN idempotency_key VARCHAR(160);
+
+CREATE UNIQUE INDEX ix_rate_assignments_idempotency_key ON rate_assignments (idempotency_key);
+
+CREATE INDEX ix_rate_assignments_cancelled_at ON rate_assignments (cancelled_at);
+
+ALTER TABLE rate_assignments ADD CONSTRAINT ck_rate_assignments_rate_assignment_revision CHECK (revision > 0);
+
+ALTER TABLE background_jobs ADD COLUMN dedupe_key VARCHAR(160);
+
+ALTER TABLE background_jobs ADD COLUMN idempotency_key VARCHAR(160);
+
+ALTER TABLE background_jobs ADD COLUMN trigger_type VARCHAR(24) DEFAULT 'manual' NOT NULL;
+
+CREATE INDEX ix_background_jobs_dedupe_key ON background_jobs (dedupe_key);
+
+CREATE INDEX ix_background_jobs_idempotency_key ON background_jobs (idempotency_key);
+
+CREATE UNIQUE INDEX uq_background_jobs_active_dedupe ON background_jobs (job_type, dedupe_key) WHERE dedupe_key IS NOT NULL AND status IN ('queued','running');
+
+ALTER TABLE rate_source_checks ADD COLUMN finished_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE rate_source_checks ADD COLUMN candidate_count INTEGER DEFAULT '0' NOT NULL;
+
+ALTER TABLE rate_source_checks ADD COLUMN artifact_count INTEGER DEFAULT '0' NOT NULL;
+
+CREATE INDEX ix_rate_source_checks_finished_at ON rate_source_checks (finished_at);
+
+ALTER TABLE utility_account_adjustments ADD COLUMN reason VARCHAR(500);
+
+ALTER TABLE utility_account_adjustments ADD COLUMN evidence_reference VARCHAR(500);
+
+ALTER TABLE utility_account_adjustments ADD COLUMN status VARCHAR(24) DEFAULT 'active' NOT NULL;
+
+ALTER TABLE utility_account_adjustments ADD COLUMN revision INTEGER DEFAULT '1' NOT NULL;
+
+ALTER TABLE utility_account_adjustments ADD COLUMN updated_by VARCHAR(36);
+
+ALTER TABLE utility_account_adjustments ADD CONSTRAINT fk_utility_account_adjustments_updated_by FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE utility_account_adjustments ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE;
+
+CREATE INDEX ix_utility_account_adjustments_status ON utility_account_adjustments (status);
+
+ALTER TABLE utility_account_adjustments ADD CONSTRAINT ck_utility_account_adjustments_utility_adjustment_status CHECK (status IN ('active','removed'));
+
+ALTER TABLE utility_account_adjustments ADD CONSTRAINT ck_utility_account_adjustments_utility_adjustment_revision CHECK (revision > 0);
+
+INSERT INTO permissions
+                (code, group_name, label, description, high_risk)
+            VALUES
+                (
+                    'adjustments.manage',
+                    'Rates',
+                    'Manage account adjustments',
+                    'Create, revise, and remove effective-dated utility-account adjustments.',
+                    true
+                )
+            ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO role_permissions (role_name, permission_code)
+            SELECT roles.name, 'adjustments.manage'
+            FROM roles
+            WHERE roles.name IN ('admin', 'rate-manager')
+            ON CONFLICT DO NOTHING;
+
+CREATE OR REPLACE FUNCTION prevent_rate_assignment_overlap()
+            RETURNS trigger AS $$
+            BEGIN
+              -- Existing installations can contain overlaps. Permit a repair
+              -- update that cancels or narrows one of those legacy rows; all
+              -- inserts and range-expanding updates remain guarded below.
+              IF TG_OP = 'UPDATE' AND OLD.cancelled_at IS NULL
+                 AND NEW.cancelled_at IS NOT NULL THEN
+                RETURN NEW;
+              END IF;
+              IF TG_OP = 'UPDATE'
+                 AND OLD.cancelled_at IS NULL
+                 AND NEW.cancelled_at IS NULL
+                 AND NEW.effective_from >= OLD.effective_from
+                 AND COALESCE(NEW.effective_to, 'infinity'::timestamptz)
+                     <= COALESCE(OLD.effective_to, 'infinity'::timestamptz) THEN
+                RETURN NEW;
+              END IF;
+              IF NEW.cancelled_at IS NULL AND EXISTS (
+                SELECT 1
+                FROM rate_assignments existing
+                WHERE existing.utility_account_id = NEW.utility_account_id
+                  AND existing.id <> NEW.id
+                  AND existing.cancelled_at IS NULL
+                  AND tstzrange(
+                    existing.effective_from,
+                    existing.effective_to,
+                    '[)'
+                  ) && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
+              ) THEN
+                RAISE EXCEPTION 'rate_assignment_overlap'
+                  USING ERRCODE = '23P01';
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_rate_assignment_no_overlap
+            BEFORE INSERT OR UPDATE OF utility_account_id, effective_from,
+              effective_to, cancelled_at
+            ON rate_assignments
+            FOR EACH ROW EXECUTE FUNCTION prevent_rate_assignment_overlap();
+
+UPDATE alembic_version SET version_num='20260725_0017' WHERE alembic_version.version_num = '20260725_0016';
+
 COMMIT;
 
