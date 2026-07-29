@@ -7,6 +7,17 @@
 	tls internal
 	encode zstd gzip
 
+	# This is Caddy's public LAN trust certificate, never its private root.key.
+	# It is offered at a stable name so sensor administrators do not have to
+	# search Caddy's internal directory layout.
+	handle /power-monitor-ca.crt {
+		rewrite * /root.crt
+		root * /data/caddy/pki/authorities/local
+		header Content-Type application/x-x509-ca-cert
+		header Content-Disposition "attachment; filename=power-monitor-ca.crt"
+		file_server
+	}
+
 	@backend path /api/* /health/* /metrics
 	handle @backend {
 		reverse_proxy api:8000

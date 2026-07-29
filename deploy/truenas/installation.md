@@ -96,8 +96,21 @@ Caddy writes the LAN root certificate to:
 
 `/mnt/Apps/Power/power-monitor/caddy-data/caddy/pki/authorities/local/root.crt`
 
-Export that public certificate through an administrator-only share. Do not export
-`root.key` or any other private key.
+This is the public CA certificate that browsers and ESP32 sensors need. It is not
+a secret or a "CA key." Caddy's `root.key` is the private CA key and must never
+leave the TrueNAS Caddy dataset.
+
+The internal-CA Caddy configuration also gives the public certificate a stable
+download name:
+
+`https://power-monitor.local:8443/power-monitor-ca.crt`
+
+Use that URL only from a client that already trusts the connection, or compare
+the downloaded certificate's SHA-256 fingerprint with the `root.crt` file through
+an independent trusted administrator channel. An unauthenticated download cannot
+establish initial trust. For first-time provisioning, export `root.crt` through
+an administrator-only share, verify its fingerprint, and then remove the share.
+Do not export `root.key` or any other private key.
 
 - Windows: import `root.crt` into **Local Computer > Trusted Root Certification
   Authorities** using Certificate Manager or your managed-device policy.
@@ -108,9 +121,15 @@ Export that public certificate through an administrator-only share. Do not expor
 - Android/ChromeOS: install it as a trusted CA through the managed device policy
   appropriate for the fleet.
 
-For ESP32 firmware, embed the same `root.crt` in the protected firmware image or
-provisioning partition and configure the TLS client CA store (for Arduino,
-`WiFiClientSecure::setCACert`; for ESP-IDF, the PEM certificate bundle field).
+For the Power Monitor sensor firmware, paste the complete public `root.crt` PEM
+into the **Server CA certificate (public PEM)** field during first-run
+provisioning. The firmware stores it in protected device preferences and passes
+it to `WiFiClientSecure::setCACert`.
+
+For other ESP32 firmware, embed the same `root.crt` in the protected firmware
+image or provisioning partition and configure the TLS client CA store (for
+Arduino, `WiFiClientSecure::setCACert`; for ESP-IDF, the PEM certificate bundle
+field).
 Verify both hostname/SAN and chain on every heartbeat, enrollment, configuration,
 and firmware request. Never call `setInsecure`, use an empty CA store, suppress a
 hostname mismatch, or disable TLS verification as a workaround.
