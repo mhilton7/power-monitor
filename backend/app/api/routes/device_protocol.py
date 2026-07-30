@@ -615,6 +615,14 @@ async def reading_batch(
         maximum_clock_skew_seconds=settings.max_device_clock_skew_seconds,
     )
     await session.commit()
+    logger.info(
+        "history.normalization_completed",
+        device_id=verified.device.id,
+        accepted_count=len(result.accepted),
+        duplicate_count=len(result.duplicates),
+        rejected_count=len(result.rejected),
+        highest_contiguous_sequence=result.highest_contiguous_accepted_sequence,
+    )
     return result
 
 

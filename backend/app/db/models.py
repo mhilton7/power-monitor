@@ -1214,11 +1214,13 @@ class BackgroundJob(Base):
             unique=True,
             postgresql_where=text(
                 "idempotency_key IS NOT NULL AND job_type IN "
-                "('backup_create','backup_verify','backup_restore_preflight','backup_delete')"
+                "('backup_create','backup_verify','backup_restore_preflight',"
+                "'backup_delete','backup_replace_all')"
             ),
             sqlite_where=text(
                 "idempotency_key IS NOT NULL AND job_type IN "
-                "('backup_create','backup_verify','backup_restore_preflight','backup_delete')"
+                "('backup_create','backup_verify','backup_restore_preflight',"
+                "'backup_delete','backup_replace_all')"
             ),
         ),
     )
@@ -2076,6 +2078,10 @@ class BackupRun(Base):
     deletion_reason: Mapped[str | None] = mapped_column(String(500))
     original_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
     artifact_removal_result: Mapped[str | None] = mapped_column(String(80))
+    pre_deletion_status: Mapped[str | None] = mapped_column(String(24))
+    replaced_by_backup_id: Mapped[str | None] = mapped_column(
+        ForeignKey("backup_runs.id", ondelete="SET NULL"), index=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

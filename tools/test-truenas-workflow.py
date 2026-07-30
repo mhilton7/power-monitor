@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -279,9 +280,191 @@ def _require_success(response: httpx.Response, operation: str) -> httpx.Response
     return response
 
 
+async def _wait_for_verified_backup(
+    client: httpx.AsyncClient,
+    backup_id: str,
+    *,
+    timeout_seconds: int = 240,
+) -> None:
+    failure_states = {
+        "backup_failed",
+        "verification_failed",
+        "restore_failed",
+        "deletion_failed",
+    }
+    for _ in range(timeout_seconds):
+        backups = _require_success(
+            await client.get("/api/v1/backups"),
+            "observe backup verification",
+        ).json()
+        backup = next((item for item in backups if item.get("id") == backup_id), None)
+        if backup is None:
+            raise WorkflowFailure(
+                "queued backup disappeared from the visible inventory"
+            )
+        if backup.get("status") == "verified" and backup.get("verified_at"):
+            return
+        if backup.get("status") in failure_states:
+            raise WorkflowFailure(
+                f"backup {backup_id[:8]} failed in state {backup.get('status')}"
+            )
+        await asyncio.sleep(1)
+    raise WorkflowFailure(f"backup {backup_id[:8]} did not verify before timeout")
+
+
+async def _wait_for_backup_idle(
+    client: httpx.AsyncClient,
+    *,
+    timeout_seconds: int = 300,
+) -> list[dict[str, Any]]:
+    incomplete_backup_statuses = {
+        "queued",
+        "creating",
+        "verification_queued",
+        "verifying",
+        "restore_preflight",
+        "restoring",
+        "deleting",
+    }
+    for _ in range(timeout_seconds):
+        jobs = _require_success(
+            await client.get("/api/v1/backup-requests"),
+            "observe backup job queue",
+        ).json()
+        backups = _require_success(
+            await client.get("/api/v1/backups"),
+            "observe backup inventory",
+        ).json()
+        if not any(
+            item.get("status") in {"queued", "running"} for item in jobs
+        ) and not any(
+            item.get("status") in incomplete_backup_statuses for item in backups
+        ):
+            return backups
+        await asyncio.sleep(1)
+    raise WorkflowFailure("backup service did not become idle before timeout")
+
+
+async def replace_all_backups(
+    client: httpx.AsyncClient,
+    csrf_header: dict[str, str],
+) -> str:
+    inventory = await _wait_for_backup_idle(client)
+    old_ids = [str(item.get("id", "")) for item in inventory]
+    verified = [
+        item
+        for item in inventory
+        if item.get("status") == "verified" and item.get("verified_at")
+    ]
+    for index in range(max(0, 2 - len(verified))):
+        created = _require_success(
+            await client.post(
+                "/api/v1/backup-requests",
+                headers=csrf_header,
+                json={
+                    "operation": "create",
+                    "idempotency_key": f"truenas-replace-all-prerequisite-{index + 1}",
+                },
+            ),
+            f"create prerequisite backup {index + 1}",
+        ).json()
+        backup_id = str(created.get("backup_id", ""))
+        try:
+            UUID(backup_id)
+        except ValueError as exc:
+            raise WorkflowFailure("backup request returned an invalid UUID") from exc
+        await _wait_for_verified_backup(client, backup_id)
+        await _wait_for_backup_idle(client)
+        old_ids.append(backup_id)
+
+    preview = _require_success(
+        await client.get("/api/v1/backups/replace-all-preview"),
+        "inventory backups before replacement",
+    ).json()
+    if preview.get("existing_backup_count", 0) < 2:
+        raise WorkflowFailure(
+            "replace-all preview did not inventory at least two backups"
+        )
+    if preview.get("verified_backup_count") != preview.get("existing_backup_count"):
+        raise WorkflowFailure("replace-all preview included a non-verified backup")
+
+    requested = _require_success(
+        await client.post(
+            "/api/v1/backups/replace-all",
+            headers=csrf_header,
+            json={
+                "confirmation": "REPLACE ALL BACKUPS",
+                "idempotency_key": "truenas-replace-all-final",
+            },
+        ),
+        "replace all backups",
+    ).json()
+    job_id = str(requested.get("id", ""))
+    replacement_id = str(requested.get("backup_id", ""))
+    try:
+        UUID(job_id)
+        UUID(replacement_id)
+    except ValueError as exc:
+        raise WorkflowFailure("replace-all request returned an invalid UUID") from exc
+
+    for _ in range(300):
+        jobs = _require_success(
+            await client.get("/api/v1/backup-requests"),
+            "observe backup replacement",
+        ).json()
+        job = next((item for item in jobs if item.get("id") == job_id), None)
+        if job is None:
+            raise WorkflowFailure(
+                "replace-all job disappeared from the request history"
+            )
+        if job.get("status") == "failed":
+            raise WorkflowFailure(
+                f"replace-all failed: {job.get('error_code') or 'unknown error'}"
+            )
+        if job.get("status") == "completed":
+            result = job.get("result") or {}
+            if not result.get("verified") or not result.get("cleanup_complete"):
+                raise WorkflowFailure(
+                    "replace-all completed without passing final checks"
+                )
+            break
+        await asyncio.sleep(1)
+    else:
+        raise WorkflowFailure("replace-all did not complete before timeout")
+
+    backups = _require_success(
+        await client.get("/api/v1/backups"),
+        "verify final backup inventory",
+    ).json()
+    if len(backups) != 1:
+        raise WorkflowFailure("replace-all did not leave exactly one visible backup")
+    final = backups[0]
+    if (
+        final.get("id") != replacement_id
+        or final.get("status") != "verified"
+        or not final.get("verified_at")
+    ):
+        raise WorkflowFailure("replace-all did not preserve its verified replacement")
+    if replacement_id in old_ids:
+        raise WorkflowFailure(
+            "replace-all reused an old backup instead of creating a replacement"
+        )
+    print(
+        "Backup replacement evidence: "
+        f"existing_count={preview.get('existing_backup_count')} "
+        f"existing_bytes={preview.get('existing_storage_bytes')} "
+        f"replacement_id={replacement_id} "
+        f"deleted_count={result.get('deleted_backup_count')} "
+        f"reclaimed_bytes={result.get('reclaimed_bytes')} "
+        f"remaining_count={result.get('remaining_backup_count')} "
+        "checksums=verified temporary_restore=verified"
+    )
+    return replacement_id
+
+
 async def exercise_application(
     *, base_url: str, ca_certificate: Path, setup_token_file: Path, device_count: int
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, str]:
     setup_token = setup_token_file.read_text(encoding="utf-8").strip()
     if not setup_token:
         raise WorkflowFailure("administrator setup token is empty")
@@ -626,6 +809,31 @@ async def exercise_application(
             raise WorkflowFailure(
                 "signed heartbeats did not update current device state"
             )
+        history = _require_success(
+            await client.post(
+                "/api/v1/history/query",
+                headers=csrf_header,
+                json={
+                    "scope": {"type": "device", "device_id": devices[0]["id"]},
+                    "display_mode": "combined",
+                    "metrics": ["power_w", "energy_kwh"],
+                    "start_utc": (datetime.now(UTC) - timedelta(hours=8)).isoformat(),
+                    "end_utc": (datetime.now(UTC) + timedelta(minutes=1)).isoformat(),
+                    "bucket": "1h",
+                    "timezone": site["timezone"],
+                },
+            ),
+            "query durable device History",
+        ).json()
+        history_energy = history.get("summary", {}).get("energy_kwh")
+        if (
+            not history.get("combined")
+            or history_energy is None
+            or Decimal(str(history_energy)) <= 0
+        ):
+            raise WorkflowFailure(
+                "durable simulated readings did not appear in History"
+            )
 
         rate = _require_success(
             await client.post(
@@ -644,7 +852,14 @@ async def exercise_application(
         ).json()
         if rate.get("plan_code") != "TOU-D-4-9PM" or float(rate["display_total"]) <= 0:
             raise WorkflowFailure("SCE rate calculation returned an invalid result")
-        return device_count, expected_readings, len(utility_accounts), 1
+        replacement_backup_id = await replace_all_backups(client, csrf_header)
+        return (
+            device_count,
+            expected_readings,
+            len(utility_accounts),
+            1,
+            replacement_backup_id,
+        )
 
 
 def backup_and_restore(
@@ -653,30 +868,12 @@ def backup_and_restore(
     expected_readings: int,
     expected_accounts: int,
     expected_cidrs: int,
+    backup_run_id: str,
 ) -> None:
-    backup_output = run_compose(
-        compose,
-        "run",
-        "--rm",
-        "backup",
-        "/srv/scripts/backup-container.sh",
-        capture=True,
-    )
-    backup_run_id = backup_output.splitlines()[-1].strip()
     try:
         UUID(backup_run_id)
     except ValueError as exc:
-        raise WorkflowFailure(
-            "backup service did not return a backup run UUID"
-        ) from exc
-    run_compose(
-        compose,
-        "run",
-        "--rm",
-        "backup",
-        "/srv/scripts/verify-backup-container.sh",
-        backup_run_id,
-    )
+        raise WorkflowFailure("replacement backup has an invalid UUID") from exc
     restore_database = "power_monitor_integration_restore"
     run_compose(
         compose,
@@ -692,6 +889,7 @@ def backup_and_restore(
         "SELECT (SELECT count(*) FROM devices),"
         "(SELECT count(*) FROM device_heartbeats),"
         "(SELECT count(*) FROM raw_readings),"
+        "(SELECT count(*) FROM normalized_intervals),"
         "(SELECT count(*) FROM alembic_version),"
         "(SELECT count(*) FROM utility_accounts),"
         "(SELECT count(*) FROM sensor_network_cidrs);"
@@ -711,16 +909,20 @@ def backup_and_restore(
         query,
         capture=True,
     ).splitlines()[-1]
-    devices, heartbeats, readings, revisions, accounts, cidrs = (
+    devices, heartbeats, readings, normalized, revisions, accounts, cidrs = (
         int(value) for value in restored.split("|")
     )
     if devices != expected_devices or heartbeats < expected_devices:
         raise WorkflowFailure(
             "restored database is missing enrolled devices or heartbeats"
         )
-    if readings != expected_readings or revisions != 1:
+    if (
+        readings != expected_readings
+        or normalized != expected_readings
+        or revisions != 1
+    ):
         raise WorkflowFailure(
-            "restored database is missing historical readings or migration state"
+            "restored database is missing raw/normalized History or migration state"
         )
     if accounts != expected_accounts or cidrs != expected_cidrs:
         raise WorkflowFailure(
@@ -788,7 +990,7 @@ def main() -> int:
         run_compose(compose, "up", "-d", "--wait", "--wait-timeout", "300")
         assert_container_state(compose, args.gateway_port)
         export_internal_ca(compose, args.ca_certificate.resolve())
-        devices, readings, accounts, cidrs = asyncio.run(
+        devices, readings, accounts, cidrs, backup_run_id = asyncio.run(
             exercise_application(
                 base_url=args.base_url,
                 ca_certificate=args.ca_certificate.resolve(),
@@ -796,12 +998,19 @@ def main() -> int:
                 device_count=args.device_count,
             )
         )
-        backup_and_restore(compose, devices, readings, accounts, cidrs)
+        backup_and_restore(
+            compose,
+            devices,
+            readings,
+            accounts,
+            cidrs,
+            backup_run_id,
+        )
         succeeded = True
         print(
             f"TrueNAS workflow passed: services=7 devices={devices} readings={readings} "
             f"utility_accounts={accounts} network_cidrs={cidrs} "
-            "backup=verified restore=verified ports=verified"
+            "backup=replace-all-verified restore=verified ports=verified"
         )
         return 0
     except (OSError, ValueError, WorkflowFailure, httpx.HTTPError) as exc:

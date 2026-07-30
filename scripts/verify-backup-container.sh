@@ -9,6 +9,18 @@ prepare_backup_key
 maintain_application_logs
 write_application_log backup.verify_started info
 
+replace_all_progress() {
+  local stage=$1 message=$2
+  [[ -n "${BACKUP_JOB_ID:-}" && "$BACKUP_JOB_ID" =~ ^[0-9a-f-]{36}$ ]] || return 0
+  psql --quiet -v ON_ERROR_STOP=1 \
+    -v job_id="$BACKUP_JOB_ID" -v stage="$stage" -v message="$message" <<'SQL'
+UPDATE background_jobs
+SET progress=COALESCE(progress, '{}'::json)::jsonb
+      || jsonb_build_object('stage', :'stage', 'message', :'message')
+WHERE id=:'job_id' AND status='running' AND job_type='backup_replace_all';
+SQL
+}
+
 if [[ $# -ne 1 || ! "$1" =~ ^[0-9a-f-]{36}$ ]]; then
   echo "usage: verify-backup-container.sh backup-run-uuid" >&2
   exit 64
@@ -85,6 +97,7 @@ resolved=$(resolve_backup_directory "$backup_value")
 failure_stage=manifest
 failure_code=MANIFEST_MISSING
 safe_summary="The backup manifest is missing"
+replace_all_progress checking_files "Checking files"
 [[ -f "$resolved/manifest.json" ]]
 failure_code=MANIFEST_INVALID
 safe_summary="The backup manifest is not a supported Power Monitor manifest"
@@ -94,6 +107,7 @@ grep -Eq '"format"[[:space:]]*:[[:space:]]*"power-monitor-backup/v2"' \
 failure_stage=checksums
 failure_code=CHECKSUM_FILE_MISSING
 safe_summary="The backup checksum inventory is missing"
+replace_all_progress verifying_checksums "Verifying checksums"
 [[ -f "$resolved/checksums.sha256" ]]
 failure_code=CHECKSUM_MISMATCH
 safe_summary="One or more backup artifact checksums did not match"
@@ -131,6 +145,7 @@ can_create_database=$(psql --quiet --tuples-only --no-align \
 failure_stage=temp_database_create
 failure_code=TEMP_DATABASE_CREATE_FAILED
 safe_summary="The isolated verification database could not be created"
+replace_all_progress testing_database_restore "Testing database restore"
 createdb "$test_db"
 
 failure_stage=restore

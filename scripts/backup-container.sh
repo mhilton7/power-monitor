@@ -9,6 +9,18 @@ prepare_backup_key
 maintain_application_logs
 write_application_log backup.started info
 
+replace_all_progress() {
+  local stage=$1 message=$2
+  [[ -n "${BACKUP_JOB_ID:-}" && "$BACKUP_JOB_ID" =~ ^[0-9a-f-]{36}$ ]] || return 0
+  psql --quiet -v ON_ERROR_STOP=1 \
+    -v job_id="$BACKUP_JOB_ID" -v stage="$stage" -v message="$message" <<'SQL'
+UPDATE background_jobs
+SET progress=COALESCE(progress, '{}'::json)::jsonb
+      || jsonb_build_object('stage', :'stage', 'message', :'message')
+WHERE id=:'job_id' AND status='running' AND job_type='backup_replace_all';
+SQL
+}
+
 backup_root=$(backup_root_path)
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 if [[ $# -gt 1 ]] || { [[ $# -eq 1 ]] && [[ ! "$1" =~ ^[0-9a-f-]{36}$ ]]; }; then
@@ -71,15 +83,18 @@ if [[ "$transitioned" != "$run_id" ]]; then
 fi
 failure_stage=database_dump
 failure_code=DATABASE_DUMP_FAILED
+replace_all_progress writing_database_dump "Writing database dump"
 pg_dump --format=custom --compress=zstd:6 --no-owner --no-privileges --file="$partial/database.dump"
 failure_stage=application_artifacts
 failure_code=BACKUP_ARTIFACT_FAILED
+replace_all_progress writing_supporting_artifacts "Writing supporting artifacts"
 tar -C /data -czf "$partial/firmware.tar.gz" firmware
 tar -C /data -czf "$partial/config.tar.gz" config
 tar -C /data -czf "$partial/reports.tar.gz" reports
 tar -C /app/data -czf "$partial/rate-source-artifacts.tar.gz" rate-source-artifacts
 failure_stage=database_inventory
 failure_code=DATABASE_DUMP_INVALID
+replace_all_progress checking_files "Checking files"
 pg_restore --list "$partial/database.dump" >/dev/null
 
 artifacts=(database.dump firmware.tar.gz config.tar.gz reports.tar.gz rate-source-artifacts.tar.gz)
@@ -96,6 +111,7 @@ fi
 
 failure_stage=checksums
 failure_code=CHECKSUM_WRITE_FAILED
+replace_all_progress writing_checksums "Writing artifact checksums"
 (
   cd "$partial"
   sha256sum "${artifacts[@]}" > checksums.sha256

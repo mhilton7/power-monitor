@@ -57,7 +57,26 @@ def normalize_energy(
         delta = reading.pzem_energy_end_wh - reading.pzem_energy_start_wh
         if delta >= 0:
             counter_energy = delta
-    server_energy = counter_energy if counter_energy is not None else power_energy
+    # PZEM cumulative energy is exposed at whole-Wh resolution. A stable
+    # counter therefore does not mean a low-power interval consumed zero
+    # energy. Firmware keeps using its monotonic-time power integral while it
+    # reconciles a later coarse counter step; using that whole-Wh step again
+    # here would double-count the preceding sub-Wh intervals.
+    use_power_integration = (
+        power_energy is not None
+        and power_energy >= Decimal("0")
+        and (
+            reading.energy_method == "power_integration"
+            or (counter_energy == Decimal("0") and power_energy > Decimal("0"))
+        )
+    )
+    server_energy = (
+        power_energy
+        if use_power_integration
+        else counter_energy
+        if counter_energy is not None
+        else power_energy
+    )
     device_energy = reading.interval_energy_wh
     if device_energy is None and server_energy is None:
         return EnergySelection(None, None, None, "unknown", "unavailable", "No energy source")
@@ -304,6 +323,14 @@ async def ingest_readings(
     duplicates: list[int] = []
     rejected: list[RejectedReading] = []
     accepted_windows: list[tuple[datetime, datetime]] = []
+    logger.info(
+        "sensor.reading_batch_started",
+        device_id=device_id,
+        source=source,
+        record_count=len(readings),
+        first_sequence=min((item.sequence for item in readings), default=None),
+        last_sequence=max((item.sequence for item in readings), default=None),
+    )
     cursor = await session.get(SyncCursor, device_id, with_for_update=True)
     if cursor is None:
         cursor = SyncCursor(
@@ -377,6 +404,13 @@ async def ingest_readings(
                 measured_at=reading.interval_end,
                 reason="measurement_timestamp_in_future",
             )
+            logger.warning(
+                "server.reading_rejected",
+                device_id=device_id,
+                sequence=reading.sequence,
+                measured_at=reading.interval_end,
+                rejection_code="measurement_timestamp_in_future",
+            )
             continue
         incoming_hash = reading.record_hash or reading_content_hash(reading)
         existing = await session.scalar(
@@ -389,6 +423,12 @@ async def ingest_readings(
                 duplicates.append(reading.sequence)
                 logger.info(
                     "READING_BATCH_DUPLICATE",
+                    device_id=device_id,
+                    sequence=reading.sequence,
+                    measured_at=reading.interval_end,
+                )
+                logger.info(
+                    "server.reading_duplicate",
                     device_id=device_id,
                     sequence=reading.sequence,
                     measured_at=reading.interval_end,
@@ -422,6 +462,13 @@ async def ingest_readings(
                     sequence=reading.sequence,
                     measured_at=reading.interval_end,
                     reason="conflicting_duplicate",
+                )
+                logger.warning(
+                    "server.reading_rejected",
+                    device_id=device_id,
+                    sequence=reading.sequence,
+                    measured_at=reading.interval_end,
+                    rejection_code="conflicting_duplicate",
                 )
             continue
         raw = _to_raw(device_id, device.site_id, reading, source, now)
@@ -460,6 +507,16 @@ async def ingest_readings(
             measured_at=reading.interval_end,
             source="committed_reading",
         )
+        logger.info(
+            "server.reading_committed",
+            device_id=device_id,
+            site_id=device.site_id,
+            sequence=reading.sequence,
+            measured_at=reading.interval_end,
+            power_watts=reading.power_avg,
+            interval_energy_wh=selected.selected_energy_wh,
+            energy_source=selected.selected_method,
+        )
     if accepted_windows and device.utility_account_id:
         earliest = min(value[0] for value in accepted_windows)
         latest = max(value[1] for value in accepted_windows)
@@ -487,6 +544,22 @@ async def ingest_readings(
             .order_by(SequenceGap.start_sequence)
         )
     )
+    logger.info(
+        "sensor.reading_batch_accepted",
+        device_id=device_id,
+        source=source,
+        committed_count=len(accepted),
+        duplicate_count=len(duplicates),
+        rejected_count=len(rejected),
+        acknowledged_sequence=cursor.highest_contiguous_sequence,
+        gap_count=len(gaps),
+    )
+    if gaps:
+        logger.warning(
+            "server.sequence_gap_detected",
+            device_id=device_id,
+            gap_ranges=[(gap.start_sequence, gap.end_sequence) for gap in gaps],
+        )
     return ReadingBatchResponse(
         accepted=accepted,
         duplicates=duplicates,

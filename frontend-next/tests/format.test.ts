@@ -20,6 +20,9 @@ describe('centralized display formatting', () => {
     expect(money('4.005', 'USD')).toBe('$4.01')
     expect(rate('0.34421', 'USD')).toBe('$0.34421/kWh')
     expect(energy('12.3456')).toBe('12.3 kWh')
+    expect(energy('0.0000013889')).toBe('0.0014 Wh')
+    expect(energy('0.000025')).toBe('0.025 Wh')
+    expect(energy('0')).toBe('0 Wh')
   })
 
   it('uses readable status and file-size labels', () => {

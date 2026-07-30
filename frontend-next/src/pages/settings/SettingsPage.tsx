@@ -572,10 +572,32 @@ function DataSettings() {
   const homeId = resolution?.state === 'ready' ? resolution.home.id : undefined
   const createKey = useRef<string | null>(null)
   const [selectedBackup, setSelectedBackup] = useState<BackupSummary>()
+  const [replaceDialogOpen, setReplaceDialogOpen] = useState(false)
+  const [replaceConfirmation, setReplaceConfirmation] = useState('')
   const backups = useQuery({ queryKey: ['backups'], queryFn: () => request('/api/v1/backups', {}, adaptBackups) })
+  const replacePreview = useQuery({
+    queryKey: ['backups', 'replace-all-preview'],
+    queryFn: () => request<{
+      existing_backup_count: number
+      existing_storage_bytes: number
+      incomplete_backup_count: number
+      unverified_backup_count: number
+      verified_backup_count: number
+      estimated_reclaim_bytes: number
+    }>('/api/v1/backups/replace-all-preview'),
+    enabled: replaceDialogOpen,
+  })
   const requests = useQuery({
     queryKey: ['backup-requests'],
-    queryFn: () => request<Array<{ id: string; operation: string; status: string; backup_id?: string; maintenance_required: boolean }>>('/api/v1/backup-requests'),
+    queryFn: () => request<Array<{
+      id: string
+      operation: string
+      status: string
+      backup_id?: string
+      maintenance_required: boolean
+      progress?: Record<string, unknown>
+      result?: Record<string, unknown>
+    }>>('/api/v1/backup-requests'),
     refetchInterval: 10_000,
   })
   const exports = useQuery({ queryKey: ['exports'], queryFn: () => request<Record<string, unknown>[]>('/api/v1/exports') })
@@ -628,8 +650,20 @@ function DataSettings() {
       await client.invalidateQueries({ queryKey: ['backups'] })
     },
   })
+  const replaceAll = useMutation({
+    mutationFn: () => request('/api/v1/backups/replace-all', json('POST', {
+      confirmation: replaceConfirmation,
+      idempotency_key: crypto.randomUUID(),
+    })),
+    onSuccess: async () => {
+      setReplaceDialogOpen(false)
+      setReplaceConfirmation('')
+      await client.invalidateQueries({ queryKey: ['backup-requests'] })
+      await client.invalidateQueries({ queryKey: ['backups'] })
+    },
+  })
   const activeRequests = requests.data?.filter((item) => ['queued', 'running'].includes(item.status)) ?? []
-  const operationPending = submit.isPending || verify.isPending || remove.isPending || activeRequests.length > 0
+  const operationPending = submit.isPending || verify.isPending || remove.isPending || replaceAll.isPending || activeRequests.length > 0
   const verifiedCount = backups.data?.filter((backup) => backup.verifiedAt && !backup.deletedAt).length ?? 0
   const requestDelete = (backup: BackupSummary) => {
     if (backup.verifiedAt && verifiedCount <= 1) return
@@ -654,8 +688,8 @@ function DataSettings() {
       <Surface title="Data & Backups" subtitle="Local PostgreSQL backups with isolated restore verification and protected retention." action={<button className="button primary" type="button" disabled={operationPending} onClick={createBackup}><DatabaseBackup /> Back up now</button>}>
         <InlineNotice>Nightly backups are created by the isolated backup service. Restore always begins with an automated verification preflight.</InlineNotice>
         {submit.isSuccess && <InlineNotice tone="success">Request queued for the isolated backup service.</InlineNotice>}
-        {(submit.error || verify.error || remove.error) && <InlineNotice tone="danger">{submit.error?.message ?? verify.error?.message ?? remove.error?.message}</InlineNotice>}
-        {activeRequests.map((item) => <div className="list-row" key={item.id}><RefreshCw className="spin" /><span><strong>{backupOperationLabel(item.operation)}</strong><small>The isolated backup service is processing one global backup operation.</small></span><span className="pill">{item.status === 'queued' ? 'Queued' : 'Running'}</span></div>)}
+        {(submit.error || verify.error || remove.error || replaceAll.error) && <InlineNotice tone="danger">{submit.error?.message ?? verify.error?.message ?? remove.error?.message ?? replaceAll.error?.message}</InlineNotice>}
+        {activeRequests.map((item) => <div className="list-row" key={item.id}><RefreshCw className="spin" /><span><strong>{backupOperationLabel(item.operation)}</strong><small>{typeof item.progress?.message === 'string' ? item.progress.message : 'The isolated backup service is processing one global backup operation.'}</small></span><span className="pill">{item.status === 'queued' ? 'Queued' : 'Running'}</span></div>)}
         {backups.isLoading ? <LoadingState /> : backups.data?.length ? backups.data.map((backup) => {
           const canDelete = backupDeleteEligible(backup.status) && !(backup.verifiedAt && verifiedCount <= 1)
           return (
@@ -686,7 +720,36 @@ function DataSettings() {
           )
         }) : <EmptyState title="No backup record yet" message="The scheduled backup service records its first verified run after deployment." />}
       </Surface>
+      <Surface title="Advanced backup actions" subtitle="Protected owner-only operations that affect every local recovery point.">
+        <div className="list-row">
+          <DatabaseBackup />
+          <span><strong>Replace all backups with one new backup</strong><small>Create and fully restore-test the replacement before older artifacts are removed.</small></span>
+          <button className="button danger" type="button" disabled={operationPending} onClick={() => { setReplaceDialogOpen(true); }}>Replace all backups</button>
+        </div>
+      </Surface>
       {selectedBackup && <BackupDetails backup={selectedBackup} onClose={() => { setSelectedBackup(undefined); }} />}
+      {replaceDialogOpen && (
+        <ModalLayer onRequestClose={() => { if (!replaceAll.isPending) setReplaceDialogOpen(false) }}>
+          <section className="modal-card backup-replace-dialog" role="dialog" aria-modal="true" aria-labelledby="replace-backups-title">
+            <header><div><small>Owner-only destructive action</small><h2 id="replace-backups-title">Replace all backups</h2></div><button className="icon-button" type="button" aria-label="Close replace backups dialog" disabled={replaceAll.isPending} onClick={() => { setReplaceDialogOpen(false); }}>×</button></header>
+            <p>This will create and verify one new backup.</p>
+            <p>Only after the new backup passes a complete temporary PostgreSQL restore will all older backup artifacts be removed.</p>
+            <InlineNotice>If creation or verification fails, no existing backup will be deleted.</InlineNotice>
+            {replacePreview.isLoading ? <LoadingState label="Inventorying current backups…" /> : replacePreview.error ? <ErrorState error={replacePreview.error} retry={() => void replacePreview.refetch()} /> : replacePreview.data && (
+              <dl className="detail-list">
+                <dt>Existing backup count</dt><dd>{replacePreview.data.existing_backup_count}</dd>
+                <dt>Existing backup storage usage</dt><dd>{fileSize(replacePreview.data.existing_storage_bytes)}</dd>
+                <dt>Incomplete backup count</dt><dd>{replacePreview.data.incomplete_backup_count}</dd>
+                <dt>Unverified backup count</dt><dd>{replacePreview.data.unverified_backup_count}</dd>
+                <dt>Verified backup count</dt><dd>{replacePreview.data.verified_backup_count}</dd>
+                <dt>Estimated storage to reclaim</dt><dd>{fileSize(replacePreview.data.estimated_reclaim_bytes)}</dd>
+              </dl>
+            )}
+            <label>Type <strong>REPLACE ALL BACKUPS</strong> to continue<input autoComplete="off" value={replaceConfirmation} onChange={(event) => { setReplaceConfirmation(event.target.value); }} /></label>
+            <footer><button className="button secondary" type="button" disabled={replaceAll.isPending} onClick={() => { setReplaceDialogOpen(false); }}>Cancel</button><button className="button danger" type="button" disabled={replaceAll.isPending || replaceConfirmation !== 'REPLACE ALL BACKUPS' || !replacePreview.data || replacePreview.data.incomplete_backup_count > 0} onClick={() => { replaceAll.mutate(); }}>{replaceAll.isPending ? 'Starting…' : 'Replace all backups'}</button></footer>
+          </section>
+        </ModalLayer>
+      )}
       <Surface title="Exports" subtitle="Download server-generated history and audit files.">
         <div className="list-row"><Gauge /><span><strong>{exports.data?.length ?? 0} export jobs</strong><small>Generated files remain local to this server.</small></span></div>
         <div className="inline-actions"><button className="button secondary" type="button" disabled={createExport.isPending || !homeId} onClick={() => { createExport.mutate(); }}>Export usage</button><button className="button secondary" type="button" disabled={createLogs.isPending} onClick={() => { createLogs.mutate(); }}>Download logs</button></div>
@@ -738,11 +801,12 @@ function backupOperationLabel(operation: string) {
     verify: 'Verifying backup',
     restore_preflight: 'Checking restore readiness',
     delete: 'Deleting backup',
+    replace_all: 'Replacing all backups',
   }[operation] ?? 'Processing backup'
 }
 
 function backupDeleteEligible(status: string) {
-  return ['verified', 'completed_unverified', 'verification_failed', 'backup_failed', 'deletion_failed'].includes(status)
+  return ['verified', 'completed_unverified', 'verification_failed', 'backup_failed', 'artifact_missing', 'deletion_failed'].includes(status)
 }
 
 function BackupDetails({ backup, onClose }: { backup: BackupSummary; onClose: () => void }) {

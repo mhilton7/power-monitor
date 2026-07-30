@@ -1359,6 +1359,11 @@ class BackupDeleteRequest(ApiModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
+class BackupReplaceAllRequest(ApiModel):
+    confirmation: Literal["REPLACE ALL BACKUPS"]
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
 class BackupView(ApiModel):
     id: str
     started_at: datetime
@@ -1379,6 +1384,8 @@ class BackupView(ApiModel):
     deleted_at: datetime | None
     deletion_reason: str | None
     artifact_removal_result: str | None
+    pre_deletion_status: str | None
+    replaced_by_backup_id: str | None
 
 
 class LogExportCreate(ApiModel):

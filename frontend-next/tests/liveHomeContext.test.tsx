@@ -118,10 +118,13 @@ function Result() {
   )
 }
 
-function Providers({ children }: { children: ReactNode }) {
-  const client = new QueryClient({
+function createTestClient() {
+  return new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   })
+}
+
+function Providers({ children, client }: { children: ReactNode; client: QueryClient }) {
   return (
     <QueryClientProvider client={client}>
       <LiveHomeProvider>{children}</LiveHomeProvider>
@@ -149,7 +152,8 @@ describe('Live Home SSE refresh', () => {
   })
 
   it('uses one site-scoped stream and refreshes both live queries on reading events', async () => {
-    const view = render(<Providers><Result /></Providers>)
+    const testClient = createTestClient()
+    const view = render(<Providers client={testClient}><Result /></Providers>)
     await screen.findByText('Connected · 1.0 · 120.4')
     expect(FakeEventSource.instances).toHaveLength(1)
     const source = FakeEventSource.instances[0] as FakeEventSource
@@ -161,6 +165,7 @@ describe('Live Home SSE refresh', () => {
     const initialFleetRequests = requestMock.mock.calls.filter(
       ([path]) => String(path).startsWith('/api/v1/fleet/summary?'),
     ).length
+    const invalidationSpy = vi.spyOn(testClient, 'invalidateQueries')
     act(() => {
       source.emit('reading')
     })
@@ -171,6 +176,7 @@ describe('Live Home SSE refresh', () => {
       expect(requestMock.mock.calls.filter(
         ([path]) => String(path).startsWith('/api/v1/fleet/summary?'),
       ).length).toBeGreaterThan(initialFleetRequests)
+      expect(invalidationSpy).toHaveBeenCalledWith({ queryKey: ['history'] })
     })
 
     act(() => {

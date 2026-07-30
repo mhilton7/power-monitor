@@ -11,6 +11,7 @@ from itertools import pairwise
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +51,7 @@ MAX_HISTORY_BUCKETS = 2000
 MAX_SOURCE_ROWS = 250_000
 ZERO = Decimal("0")
 ONE_HUNDRED = Decimal("100")
+logger = structlog.get_logger(__name__)
 
 
 def _aware_utc(value: datetime) -> datetime:
@@ -1439,7 +1441,7 @@ async def query_history(
     mixed_rates = len(
         {(item.rate_plan_id, item.rate_version_id) for item in all_contributions}
     ) > 1 or any(point.mixed_rates for point in combined_all)
-    return HistoryQueryResponse(
+    response = HistoryQueryResponse(
         scope=HistoryResolvedScope(
             type=request.scope.type,
             display_name=resolved.display_name,
@@ -1465,6 +1467,18 @@ async def query_history(
         page_size=request.page_size,
         next_page=request.page + 1 if page_end < total_buckets else None,
     )
+    logger.info(
+        "history.query_completed" if rows else "history.query_empty",
+        site_id=resolved.site.id,
+        scope_type=request.scope.type,
+        device_ids=device_ids,
+        source_reading_count=len(rows),
+        returned_bucket_count=len(combined) + sum(len(series.points) for series in individual),
+        start_utc=start,
+        end_utc=end,
+        bucket=bucket,
+    )
+    return response
 
 
 def history_csv(response: HistoryQueryResponse) -> str:

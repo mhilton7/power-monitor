@@ -1,5 +1,33 @@
 # Testing and release gates
 
+## Replace-all backup and durable History gate (2026-07-30)
+
+The focused portable regression set covers exact typed confirmation,
+owner/permission enforcement, request idempotency and single flight, blocking
+incomplete restore states, replacement exclusion from the deletion snapshot,
+create-before-verify-before-delete ordering, failure preservation, partial
+cleanup visibility, low-power `1 W`/five-second energy integration, duplicate
+sequence handling, and reconciliation of valid raw rows after a malformed row.
+
+Before release, run the normal repository matrices plus the following deployed
+acceptance:
+
+1. Begin with at least two completed backups.
+2. Start **Replace all backups**, refresh during progress, and confirm the job
+   continues.
+3. Confirm the replacement passes checksums and a clean temporary PostgreSQL
+   restore before any older artifact is removed.
+4. Confirm the normal list and confined backup dataset contain exactly the one
+   new verified generation, with no incomplete or trash entries.
+5. With the physical PZEM attached at approximately `0.8-1 W`, observe durable
+   microSD sequences, a successful reading batch acknowledgement, immutable raw
+   rows, normalized sub-Wh energy, and the same nonzero interval in History.
+6. Disconnect and reconnect networking without re-enrollment; backlog must grow
+   locally and then drain without sequence loss or duplicate energy.
+
+Mocked heartbeat data or Sensor Test Mode does not satisfy the physical History
+gate. A live Home wattage alone also does not satisfy it.
+
 ## Backup lifecycle and presentation gate (2026-07-30)
 
 The portable backend/simulator suite passes 211 tests with three separately

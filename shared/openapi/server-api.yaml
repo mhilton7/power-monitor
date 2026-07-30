@@ -6914,6 +6914,82 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/backups/replace-all-preview:
+    get:
+      tags:
+      - management
+      summary: Replace All Backups Preview
+      operationId: replace_all_backups_preview_api_v1_backups_replace_all_preview_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: integer
+                title: Response Replace All Backups Preview Api V1 Backups Replace
+                  All Preview Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/backups/replace-all:
+    post:
+      tags:
+      - management
+      summary: Replace All Backups
+      operationId: replace_all_backups_api_v1_backups_replace_all_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackupReplaceAllRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Replace All Backups Api V1 Backups Replace All Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/backups/{backup_id}/verify:
     post:
       tags:
@@ -12329,6 +12405,23 @@ components:
       - backup_id_confirmation
       - reason
       title: BackupDeleteRequest
+    BackupReplaceAllRequest:
+      properties:
+        confirmation:
+          type: string
+          const: REPLACE ALL BACKUPS
+          title: Confirmation
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - confirmation
+      - idempotency_key
+      title: BackupReplaceAllRequest
     BackupRequestCreate:
       properties:
         operation:
@@ -12465,6 +12558,16 @@ components:
           - type: string
           - type: 'null'
           title: Artifact Removal Result
+        pre_deletion_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pre Deletion Status
+        replaced_by_backup_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Replaced By Backup Id
       additionalProperties: false
       type: object
       required:
@@ -12487,6 +12590,8 @@ components:
       - deleted_at
       - deletion_reason
       - artifact_removal_result
+      - pre_deletion_status
+      - replaced_by_backup_id
       title: BackupView
     BillAccountContextWrite:
       properties:

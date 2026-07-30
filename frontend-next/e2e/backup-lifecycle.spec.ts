@@ -73,6 +73,19 @@ async function mockSettings(page: Page, writes: Array<{ method: string; path: st
           },
         })
       }
+      if (pathname === '/api/v1/backups/replace-all') {
+        return route.fulfill({
+          status: 202,
+          json: {
+            id: 'replace-job-1',
+            operation: 'replace_all',
+            status: 'queued',
+            backup_id: '44444444-4444-4444-8444-444444444444',
+            maintenance_required: false,
+            progress: { stage: 'preparing', message: 'Preparing replacement backup' },
+          },
+        })
+      }
       if (pathname.endsWith('/verify')) {
         return route.fulfill({ status: 202, json: backupRows[0] })
       }
@@ -150,6 +163,14 @@ async function mockSettings(page: Page, writes: Array<{ method: string; path: st
         },
       },
       '/api/v1/backups': backupRows,
+      '/api/v1/backups/replace-all-preview': {
+        existing_backup_count: 3,
+        existing_storage_bytes: 1_057_736,
+        incomplete_backup_count: 0,
+        unverified_backup_count: 1,
+        verified_backup_count: 2,
+        estimated_reclaim_bytes: 1_057_736,
+      },
       '/api/v1/backup-requests': [],
       '/api/v1/exports': [],
     }
@@ -211,5 +232,31 @@ test('backup create is guarded from duplicate clicks and verify/delete require e
     confirmation: 'DELETE',
     backup_id_confirmation: '11111111',
     reason: 'Remove failed test artifact',
+  })
+})
+
+test('replace-all shows inventory and requires the exact destructive confirmation', async ({ page }) => {
+  const writes: Array<{ method: string; path: string; body: unknown }> = []
+  await mockSettings(page, writes)
+  await page.goto('/settings/data')
+
+  await page.getByRole('button', { name: 'Replace all backups', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Replace all backups' })
+  await expect(dialog).toContainText('Existing backup count')
+  await expect(dialog).toContainText('3')
+  await expect(dialog).toContainText('1 MB')
+  const execute = dialog.getByRole('button', { name: 'Replace all backups', exact: true })
+  await expect(execute).toBeDisabled()
+  await dialog.getByLabel(/Type REPLACE ALL BACKUPS/).fill('replace all backups')
+  await expect(execute).toBeDisabled()
+  await dialog.getByLabel(/Type REPLACE ALL BACKUPS/).fill('REPLACE ALL BACKUPS')
+  await expect(execute).toBeEnabled()
+  await execute.click()
+
+  await expect
+    .poll(() => writes.filter((item) => item.path === '/api/v1/backups/replace-all').length)
+    .toBe(1)
+  expect(writes.find((item) => item.path === '/api/v1/backups/replace-all')?.body).toMatchObject({
+    confirmation: 'REPLACE ALL BACKUPS',
   })
 })

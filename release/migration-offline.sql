@@ -3305,5 +3305,21 @@ CREATE UNIQUE INDEX uq_background_jobs_backup_idempotency ON background_jobs (id
 
 UPDATE alembic_version SET version_num='20260730_0019' WHERE alembic_version.version_num = '20260729_0018';
 
+-- Running upgrade 20260730_0019 -> 20260730_0020
+
+ALTER TABLE backup_runs ADD COLUMN pre_deletion_status VARCHAR(24);
+
+ALTER TABLE backup_runs ADD COLUMN replaced_by_backup_id VARCHAR(36);
+
+ALTER TABLE backup_runs ADD CONSTRAINT fk_backup_runs_replaced_by_backup_id FOREIGN KEY(replaced_by_backup_id) REFERENCES backup_runs (id) ON DELETE SET NULL;
+
+CREATE INDEX ix_backup_runs_replaced_by_backup_id ON backup_runs (replaced_by_backup_id);
+
+DROP INDEX uq_background_jobs_backup_idempotency;
+
+CREATE UNIQUE INDEX uq_background_jobs_backup_idempotency ON background_jobs (idempotency_key) WHERE idempotency_key IS NOT NULL AND job_type IN ('backup_create','backup_verify','backup_restore_preflight','backup_delete','backup_replace_all');
+
+UPDATE alembic_version SET version_num='20260730_0020' WHERE alembic_version.version_num = '20260730_0019';
+
 COMMIT;
 

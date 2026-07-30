@@ -63,6 +63,35 @@ can be cleaned up through the same action without granting the browser direct
 filesystem access. Manage the production App lifecycle through the TrueNAS Apps
 web interface; do not use direct Docker commands in the TrueNAS host shell.
 
+## Replace every backup safely
+
+The owner-only **Advanced backup actions > Replace all backups** workflow is
+the supported way to consolidate the backup dataset. It is intentionally not
+implemented as a bulk-delete button:
+
+1. The server inventories the currently visible database records and storage
+   usage and requires the exact confirmation `REPLACE ALL BACKUPS`.
+2. The backup service creates a separate encrypted replacement generation,
+   publishes it atomically, verifies every checksum, and restores the
+   PostgreSQL dump into a temporary database.
+3. Only after that restore succeeds does the service tombstone and remove the
+   exact older backup IDs captured at the start. The replacement ID is never
+   part of the deletion set.
+4. Final checks require one non-deleted, verified database record, one
+   completed backup directory, and no incomplete or trash entries.
+
+Creation or verification failure preserves every old recovery point. If one
+old artifact cannot be removed, the verified replacement remains available,
+the failed row remains visible as **Cleanup failed**, and **Retry cleanup**
+retries only that confined artifact. Refreshing or closing the browser does
+not cancel the server-side operation. Its progress and audit result remain in
+PostgreSQL.
+
+Do not delete dataset contents in the TrueNAS shell to imitate this operation.
+Manual deletion bypasses path confinement, audit tombstones, final-backup
+protection, and restore verification. Take a ZFS snapshot before using the
+workflow when an additional pool-level rollback point is desired.
+
 ## Production recovery
 
 1. Stop gateway, API, and worker by stopping the App in the TrueNAS UI. Preserve

@@ -35,6 +35,23 @@ disable TLS verification or store the password in Power Monitor settings.
   Enter the narrow sensor VLAN manually; do not substitute a Docker proxy range.
 - **Signature or time error:** verify exact body bytes, canonical duplicate query sorting, directional HKDF info, UTC Unix time, nonce length/uniqueness, protocol string, and credential state. `/api/v1/time` is a hint, not trusted time.
 - **Missing sequence:** inspect retained bounds. Retry pull/backfill; late records fill gaps. `410 Gone` means permanent device-side loss and must remain disclosed.
+- **Home has live watts but History is empty:** a heartbeat and a durable
+  reading batch are separate paths. Inspect the sensor health fields for
+  `last_batch_success_at`, `last_acknowledged_sequence`, retained sequence
+  bounds, and backlog. Then inspect server logs for
+  `reading_batch_started`, `server.reading_committed`,
+  `normalization.completed`, and `history.query_completed`. Do not copy the
+  heartbeat into History or reset/re-enroll the sensor.
+- **Acknowledgement is ahead of retained microSD sequence:** after a server
+  restore or recovered device state, an authenticated server acknowledgement
+  may be newer than the locally retained journal. Current firmware persists
+  that value as the next sequence floor without inventing records, then resumes
+  durable sampling. Repeated rejection of a valid acknowledgement indicates
+  old firmware or a storage-journal failure.
+- **Low-power samples appear as zero energy:** confirm the sensor and server
+  run the sub-Wh integration release. A stable whole-Wh PZEM counter must not
+  override positive power integration. Check UTC sample spacing, normalized
+  energy, and raw sequence continuity; never round in storage to match the UI.
 - **SD fault:** stop treating history as durable, repair/replace media on the sensor, preserve event evidence, and do not fabricate lost energy.
 - **Incorrect aggregate:** inspect parent/child and split-phase roles. Never sum a parent with its children; a single service leg is not whole-home.
 - **One or more sensors have no circuit assignment:** open **Settings >
@@ -85,6 +102,11 @@ disable TLS verification or store the password in Power Monitor settings.
   verify free temporary space, and inspect the audited failure category. The
   server intentionally refuses ranges outside the retained 90-day window and
   archives above its configured size cap.
+- **Replace-all backup cleanup is incomplete:** keep the verified replacement,
+  open the failed row in **Settings > Data & Backups**, review its safe error
+  category, repair only the backup dataset permission or storage fault, and use
+  **Retry cleanup**. Creation or restore-verification failure deletes no old
+  recovery points. Do not remove `.trash` or backup directories by hand.
 - **Removed sensor still sends data:** confirm it is Archived and all credentials
   show revoked. An old signature must be rejected. Do not restore the credential;
   re-enroll the physical hardware with a new one-time token so it receives a new

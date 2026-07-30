@@ -15,6 +15,7 @@ RUN apt-get update \
     && chown power-monitor-backup:power-monitor-log /data/logs \
     && chmod 2770 /data/logs
 COPY scripts/backup-container.sh scripts/verify-backup-container.sh scripts/delete-backup-container.sh \
+    scripts/replace-all-backups-container.sh \
     scripts/backup-paths.sh scripts/restore-container.sh \
     scripts/backup-scheduler.sh scripts/container-secrets.sh scripts/container-log.sh /srv/scripts/
 RUN sed -i 's/\r$//' /srv/scripts/*.sh \

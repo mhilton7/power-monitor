@@ -72,6 +72,7 @@ from app.schemas import (
     AlertRuleWrite,
     AlertSilence,
     BackupDeleteRequest,
+    BackupReplaceAllRequest,
     BackupRequestCreate,
     BackupVerifyRequest,
     BackupView,
@@ -3121,6 +3122,7 @@ BACKUP_JOB_TYPES = (
     "backup_verify",
     "backup_restore_preflight",
     "backup_delete",
+    "backup_replace_all",
 )
 ACTIVE_BACKUP_JOB_STATUSES = ("queued", "running")
 BACKUP_IDENTIFIER_PATTERN = re.compile(r"^power-monitor-\d{8}T\d{6}Z(?:-[0-9a-f]{8})?$")
@@ -3147,6 +3149,8 @@ def _backup_payload(run: BackupRun) -> BackupView:
         deleted_at=run.deleted_at,
         deletion_reason=run.deletion_reason,
         artifact_removal_result=run.artifact_removal_result,
+        pre_deletion_status=run.pre_deletion_status,
+        replaced_by_backup_id=run.replaced_by_backup_id,
     )
 
 
@@ -3179,7 +3183,12 @@ def _backup_operation_in_progress(job: BackgroundJob) -> ProblemError:
 async def list_backups(principal: Principal, session: DbSession) -> list[BackupView]:
     _permission(principal, "backups.view")
     runs = list(
-        await session.scalars(select(BackupRun).order_by(BackupRun.started_at.desc()).limit(100))
+        await session.scalars(
+            select(BackupRun)
+            .where(BackupRun.deleted_at.is_(None))
+            .order_by(BackupRun.started_at.desc())
+            .limit(100)
+        )
     )
     return [_backup_payload(run) for run in runs]
 
@@ -3194,6 +3203,7 @@ def _backup_request_payload(job: BackgroundJob) -> dict[str, Any]:
             "backup_verify": "verify",
             "backup_restore_preflight": "restore_preflight",
             "backup_delete": "delete",
+            "backup_replace_all": "replace_all",
         }.get(job.job_type, job.job_type),
         "status": job.status,
         "requested_at": job.requested_at,
@@ -3204,6 +3214,8 @@ def _backup_request_payload(job: BackgroundJob) -> dict[str, Any]:
         "maintenance_required": bool(result.get("maintenance_required", False)),
         "error_code": job.error_code,
         "error_detail": job.error_detail,
+        "progress": progress,
+        "result": result,
     }
 
 
@@ -3316,6 +3328,174 @@ async def create_backup_request(
         existing = await session.scalar(
             select(BackgroundJob).where(
                 BackgroundJob.job_type == operation_job_type,
+                BackgroundJob.idempotency_key == payload.idempotency_key,
+            )
+        )
+        if existing is not None:
+            return _backup_request_payload(existing)
+        active = await _active_backup_job(session)
+        if active is not None:
+            raise _backup_operation_in_progress(active) from None
+        raise
+    return _backup_request_payload(job)
+
+
+@router.get("/backups/replace-all-preview")
+async def replace_all_backups_preview(
+    principal: Principal,
+    session: DbSession,
+) -> dict[str, int]:
+    _permission(principal, "backups.view")
+    if "admin" not in principal.roles:
+        raise ProblemError(
+            403,
+            "Owner permission required",
+            "Only the local owner can replace every backup",
+            "backup_replace_all_owner_required",
+        )
+    rows = list(await session.scalars(select(BackupRun).where(BackupRun.deleted_at.is_(None))))
+    verified = sum(1 for row in rows if row.status == "verified" and row.verified_at is not None)
+    incomplete_states = {
+        "queued",
+        "creating",
+        "verification_queued",
+        "verifying",
+        "restore_preflight",
+        "restoring",
+        "deleting",
+    }
+    incomplete = sum(1 for row in rows if row.status in incomplete_states)
+    unverified = len(rows) - incomplete - verified
+    storage_bytes = sum(int(row.size_bytes or row.original_size_bytes or 0) for row in rows)
+    return {
+        "existing_backup_count": len(rows),
+        "existing_storage_bytes": storage_bytes,
+        "incomplete_backup_count": incomplete,
+        "unverified_backup_count": unverified,
+        "verified_backup_count": verified,
+        "estimated_reclaim_bytes": storage_bytes,
+    }
+
+
+@router.post("/backups/replace-all", status_code=202)
+async def replace_all_backups(
+    payload: BackupReplaceAllRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _permission(principal, "backups.create")
+    _permission(principal, "backups.delete")
+    if "admin" not in principal.roles:
+        raise ProblemError(
+            403,
+            "Owner permission required",
+            "Only the local owner can replace every backup",
+            "backup_replace_all_owner_required",
+        )
+    existing = await session.scalar(
+        select(BackgroundJob).where(
+            BackgroundJob.job_type == "backup_replace_all",
+            BackgroundJob.idempotency_key == payload.idempotency_key,
+        )
+    )
+    if existing is not None:
+        return _backup_request_payload(existing)
+    active = await _active_backup_job(session)
+    if active is not None:
+        raise _backup_operation_in_progress(active)
+    now = datetime.now(UTC)
+    inventory = list(
+        await session.scalars(
+            select(BackupRun).where(BackupRun.deleted_at.is_(None)).with_for_update()
+        )
+    )
+    blocked_states = {
+        "queued",
+        "creating",
+        "verification_queued",
+        "verifying",
+        "restore_preflight",
+        "restoring",
+        "deleting",
+    }
+    blocked = [item for item in inventory if item.status in blocked_states]
+    if blocked:
+        raise ProblemError(
+            409,
+            "Backup operation cannot start",
+            "An existing backup or restore operation must finish before replacement",
+            "backup_replace_all_incompatible_state",
+            extra={"backup_ids": [item.id for item in blocked]},
+        )
+    replacement = BackupRun(
+        id=new_uuid(),
+        started_at=now,
+        status="queued",
+        path=None,
+        manifest_hash=None,
+        verified_at=None,
+        verification_details={},
+        requested_by=principal.user.id,
+        trigger_type="replace_all",
+        encrypted=False,
+        verification_attempt_count=0,
+        updated_at=now,
+    )
+    storage_bytes = sum(int(item.size_bytes or item.original_size_bytes or 0) for item in inventory)
+    progress = {
+        "stage": "preparing",
+        "message": "Preparing replacement backup",
+        "backup_run_id": replacement.id,
+        "existing_backup_count": len(inventory),
+        "existing_storage_bytes": storage_bytes,
+        "verified_backup_count": sum(
+            1 for item in inventory if item.status == "verified" and item.verified_at is not None
+        ),
+        "unverified_backup_count": sum(
+            1 for item in inventory if item.status != "verified" or item.verified_at is None
+        ),
+        "incomplete_backup_count": 0,
+        "estimated_reclaim_bytes": storage_bytes,
+        "old_backup_ids": [item.id for item in inventory],
+    }
+    job = BackgroundJob(
+        id=new_uuid(),
+        job_type="backup_replace_all",
+        status="queued",
+        requested_by=principal.user.id,
+        requested_at=now,
+        scheduled_for=now,
+        correlation_id=f"backup-replace-all:{replacement.id}",
+        dedupe_key="backup:global",
+        idempotency_key=payload.idempotency_key,
+        trigger_type="manual",
+        progress=progress,
+        result={},
+    )
+    session.add_all([replacement, job])
+    session.add(
+        audit_event(
+            action="backup.replace_all_requested",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="backup_request",
+            object_id=job.id,
+            details={
+                "replacement_backup_id": replacement.id,
+                "existing_backup_count": len(inventory),
+                "existing_storage_bytes": storage_bytes,
+            },
+        )
+    )
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing = await session.scalar(
+            select(BackgroundJob).where(
+                BackgroundJob.job_type == "backup_replace_all",
                 BackgroundJob.idempotency_key == payload.idempotency_key,
             )
         )

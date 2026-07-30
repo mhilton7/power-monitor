@@ -49,6 +49,7 @@ WITH candidate AS (
   WHERE status='queued'
     AND job_type IN (
       'backup_create', 'backup_verify', 'backup_restore_preflight', 'backup_delete'
+      , 'backup_replace_all'
     )
     AND COALESCE(scheduled_for, requested_at) <= now()
   ORDER BY requested_at
@@ -117,6 +118,16 @@ process_backup_request() {
           fail_job "$job_id"
         fi
       else
+        psql -v ON_ERROR_STOP=1 -v run_id="$run_id" <<'SQL' || true
+UPDATE backup_runs
+SET status='backup_failed',
+    completed_at=now(),
+    failed_stage='replace_all',
+    safe_error_code='BACKUP_REPLACE_ALL_FAILED',
+    safe_error_summary='The replacement backup could not be created',
+    updated_at=now()
+WHERE id=:'run_id' AND status IN ('queued', 'creating');
+SQL
         fail_job "$job_id"
       fi
       ;;
@@ -147,6 +158,29 @@ SQL
       if /srv/scripts/delete-backup-container.sh "$run_id"; then
         complete_job "$job_id" \
           "{\"backup_run_id\":\"${run_id}\",\"deleted\":true}"
+      else
+        fail_job "$job_id"
+      fi
+      ;;
+    backup_replace_all)
+      if /srv/scripts/replace-all-backups-container.sh "$job_id" "$run_id"; then
+        result_json=$(psql --quiet --tuples-only --no-align \
+          -v ON_ERROR_STOP=1 -v job_id="$job_id" -v run_id="$run_id" <<'SQL'
+SELECT (
+  COALESCE(progress, '{}'::json)::jsonb
+  || jsonb_build_object(
+       'backup_run_id', :'run_id',
+       'verified', true,
+       'cleanup_complete', COALESCE((progress->>'final_checks_passed')::boolean, false)
+     )
+)::text
+FROM background_jobs
+WHERE id=:'job_id';
+SQL
+        )
+        complete_job "$job_id" "$result_json"
+        date -u +%Y-%m-%dT%H:%M:%SZ \
+          >/tmp/power-monitor-backup-scheduler.last-success
       else
         fail_job "$job_id"
       fi
@@ -206,7 +240,8 @@ SET status=CASE
 FROM background_jobs AS job
 WHERE job.status='running'
   AND job.job_type IN (
-    'backup_create','backup_verify','backup_restore_preflight','backup_delete'
+    'backup_create','backup_verify','backup_restore_preflight','backup_delete',
+    'backup_replace_all'
   )
   AND run.id=job.progress->>'backup_run_id';
 UPDATE background_jobs
@@ -214,7 +249,8 @@ SET status='failed', completed_at=now(), error_code='backup_worker_restarted',
     error_detail='The isolated backup service restarted before this operation completed'
 WHERE status='running'
   AND job_type IN (
-    'backup_create','backup_verify','backup_restore_preflight','backup_delete'
+    'backup_create','backup_verify','backup_restore_preflight','backup_delete',
+    'backup_replace_all'
   );
 COMMIT;
 SQL
@@ -223,7 +259,7 @@ SQL
 requeue_stuck_verification() {
   local run_id job_id
   if psql --quiet --tuples-only --no-align -v ON_ERROR_STOP=1 -c \
-    "SELECT 1 FROM background_jobs WHERE status IN ('queued','running') AND job_type IN ('backup_create','backup_verify','backup_restore_preflight','backup_delete') LIMIT 1" \
+    "SELECT 1 FROM background_jobs WHERE status IN ('queued','running') AND job_type IN ('backup_create','backup_verify','backup_restore_preflight','backup_delete','backup_replace_all') LIMIT 1" \
     | grep -q 1; then
     return 0
   fi
@@ -261,7 +297,7 @@ SQL
 enqueue_retention_cleanup() {
   local run_id job_id
   if psql --quiet --tuples-only --no-align -v ON_ERROR_STOP=1 -c \
-    "SELECT 1 FROM background_jobs WHERE status IN ('queued','running') AND job_type IN ('backup_create','backup_verify','backup_restore_preflight','backup_delete') LIMIT 1" \
+    "SELECT 1 FROM background_jobs WHERE status IN ('queued','running') AND job_type IN ('backup_create','backup_verify','backup_restore_preflight','backup_delete','backup_replace_all') LIMIT 1" \
     | grep -q 1; then
     return 0
   fi

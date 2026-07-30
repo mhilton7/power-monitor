@@ -627,6 +627,8 @@ export interface BackupSummary {
   deletedAt?: string
   deletionReason?: string
   artifactRemovalResult?: string
+  preDeletionStatus?: string
+  replacedByBackupId?: string
 }
 
 export interface AdvancedHealthSummary {

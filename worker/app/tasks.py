@@ -13,14 +13,16 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import httpx
+import structlog
+from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db.models import (
+    AccountUsageAuthority,
     AggregateMember,
     AggregateSet,
-    AccountUsageAuthority,
     AlertInstance,
     AlertRule,
     BaselineRule,
@@ -51,12 +53,16 @@ from app.db.models import (
     UtilityAccountAdjustment,
     WorkerState,
 )
+from app.ingestion.service import normalize_energy
 from app.polling.ssrf import validate_poll_target
 from app.rates.documents import engine_plan
 from app.rates.engine import RateEngine
 from app.rates.service import version_document
 from app.rates.tiered import calculate_cycle_tier_status, current_billing_cycle
+from app.schemas import Reading
 from app.security.protocol import SecretCipher
+
+logger = structlog.get_logger(__name__)
 
 
 def _csv_safe(value: Any) -> str:
@@ -66,6 +72,102 @@ def _csv_safe(value: Any) -> str:
 
 def _aware(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+
+def _reading_from_raw(raw: RawReading) -> Reading:
+    if raw.original_payload:
+        return Reading.model_validate(raw.original_payload)
+    return Reading(
+        sequence=raw.sequence,
+        boot_id=raw.boot_id,
+        interval_start=_aware(raw.interval_start),
+        interval_end=_aware(raw.interval_end),
+        time_trusted=raw.time_trusted,
+        voltage_avg=raw.voltage_avg,
+        voltage_min=raw.voltage_min,
+        voltage_max=raw.voltage_max,
+        current_avg=raw.current_avg,
+        current_min=raw.current_min,
+        current_max=raw.current_max,
+        power_avg=raw.power_avg,
+        power_min=raw.power_min,
+        power_max=raw.power_max,
+        power_factor=raw.power_factor,
+        frequency_hz=raw.frequency_hz,
+        pzem_energy_start_wh=raw.pzem_energy_start_wh,
+        pzem_energy_end_wh=raw.pzem_energy_end_wh,
+        device_lifetime_energy_wh=raw.device_lifetime_energy_wh,
+        interval_energy_wh=raw.device_interval_energy_wh,
+        energy_method=raw.energy_method,
+        ct_rating_amps=raw.ct_rating_amps,
+        quality_flags=raw.quality_flags or [],
+        firmware_version=raw.firmware_version,
+        record_hash=raw.record_hash,
+    )
+
+
+async def reconcile_missing_normalized_intervals(
+    session: AsyncSession, limit: int = 500
+) -> dict[str, int]:
+    rows = list(
+        await session.scalars(
+            select(RawReading)
+            .where(
+                ~select(NormalizedInterval.id)
+                .where(NormalizedInterval.raw_reading_id == RawReading.id)
+                .exists()
+            )
+            .order_by(RawReading.ingested_at, RawReading.device_id, RawReading.sequence)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+    )
+    if rows:
+        logger.info(
+            "history.normalization_queued",
+            record_count=len(rows),
+            device_count=len({row.device_id for row in rows}),
+            first_sequence=min(row.sequence for row in rows),
+            last_sequence=max(row.sequence for row in rows),
+        )
+    completed = 0
+    failed = 0
+    for raw in rows:
+        try:
+            reading = _reading_from_raw(raw)
+            selected = normalize_energy(reading)
+            session.add(
+                NormalizedInterval(
+                    raw_reading_id=raw.id,
+                    device_id=raw.device_id,
+                    interval_start=raw.interval_start,
+                    interval_end=raw.interval_end,
+                    device_energy_wh=selected.device_energy_wh,
+                    server_energy_wh=selected.server_energy_wh,
+                    selected_energy_wh=selected.selected_energy_wh,
+                    selected_method=selected.selected_method,
+                    validation_result=selected.validation_result,
+                    validation_reason=selected.validation_reason,
+                )
+            )
+            await session.flush()
+            completed += 1
+        except (ValidationError, ValueError, TypeError) as exc:
+            failed += 1
+            logger.warning(
+                "history.normalization_failed",
+                device_id=raw.device_id,
+                sequence=raw.sequence,
+                error_type=type(exc).__name__,
+            )
+    if rows:
+        logger.info(
+            "history.normalization_completed",
+            queued_count=len(rows),
+            normalized_interval_count=completed,
+            failed_count=failed,
+        )
+    return {"queued": len(rows), "completed": completed, "failed": failed}
 
 
 def _window_fraction(
@@ -385,7 +487,11 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
         ] = "energy_only"
         if (
             account.cost_scope_default == "allocated_account_estimate"
-            and aggregate.cost_scope in {"allocated_account", "full_account"}
+            and aggregate.cost_scope
+            in {
+                "allocated_account",
+                "full_account",
+            }
         ):
             effective_scope = "allocated_account_estimate"
         elif (
@@ -1512,4 +1618,10 @@ async def recompute_recent_rollups(session: AsyncSession) -> int:
                 site_rollup.coverage_percent = coverage
             count += 1
     await session.commit()
+    logger.info(
+        "history.rollup_updated",
+        rollup_count=count,
+        device_count=len(devices),
+        aggregate_count=len(aggregates),
+    )
     return count

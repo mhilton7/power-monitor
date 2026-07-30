@@ -245,3 +245,188 @@ def test_backup_scheduler_uses_file_backed_password_and_quiet_queue_claims() -> 
     assert 'find "$backup_root"' not in (
         Path(__file__).resolve().parents[2] / "scripts" / "backup-container.sh"
     ).read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_replace_all_inventory_confirmation_idempotency_and_single_flight(
+    api_client: Any,
+    session: AsyncSession,
+) -> None:
+    await bootstrap(api_client)
+    now = datetime.now(UTC)
+    existing = [
+        BackupRun(
+            id="33333333-3333-3333-3333-333333333333",
+            started_at=now,
+            completed_at=now,
+            status="verified",
+            path="power-monitor-20260730T120200Z-33333333",
+            manifest_hash="c" * 64,
+            verified_at=now,
+            verification_details={"table_count": 100},
+            size_bytes=4000,
+            encrypted=True,
+            verification_attempt_count=1,
+            updated_at=now,
+        ),
+        BackupRun(
+            id="44444444-4444-4444-4444-444444444444",
+            started_at=now,
+            completed_at=now,
+            status="verification_failed",
+            path="power-monitor-20260730T120300Z-44444444",
+            manifest_hash="d" * 64,
+            verified_at=None,
+            verification_details={},
+            size_bytes=2000,
+            encrypted=True,
+            verification_attempt_count=1,
+            updated_at=now,
+        ),
+    ]
+    session.add_all(existing)
+    await session.commit()
+
+    preview = await api_client.get("/api/v1/backups/replace-all-preview")
+    assert preview.status_code == 200, preview.text
+    assert preview.json() == {
+        "existing_backup_count": 2,
+        "existing_storage_bytes": 6000,
+        "incomplete_backup_count": 0,
+        "unverified_backup_count": 1,
+        "verified_backup_count": 1,
+        "estimated_reclaim_bytes": 6000,
+    }
+    invalid = await api_client.post(
+        "/api/v1/backups/replace-all",
+        headers=csrf(api_client),
+        json={
+            "confirmation": "replace all backups",
+            "idempotency_key": "replace-all-invalid-0001",
+        },
+    )
+    assert invalid.status_code == 422
+
+    payload = {
+        "confirmation": "REPLACE ALL BACKUPS",
+        "idempotency_key": "replace-all-valid-0001",
+    }
+    queued = await api_client.post(
+        "/api/v1/backups/replace-all",
+        headers=csrf(api_client),
+        json=payload,
+    )
+    assert queued.status_code == 202, queued.text
+    body = queued.json()
+    assert body["operation"] == "replace_all"
+    assert body["status"] == "queued"
+    replacement_id = body["backup_id"]
+    assert replacement_id not in body["progress"]["old_backup_ids"]
+    assert set(body["progress"]["old_backup_ids"]) == {item.id for item in existing}
+    replacement = await session.get(BackupRun, replacement_id)
+    assert replacement is not None
+    assert replacement.status == "queued"
+    assert replacement.trigger_type == "replace_all"
+
+    repeated = await api_client.post(
+        "/api/v1/backups/replace-all",
+        headers=csrf(api_client),
+        json=payload,
+    )
+    assert repeated.status_code == 202
+    assert repeated.json()["id"] == body["id"]
+    concurrent = await api_client.post(
+        "/api/v1/backups/replace-all",
+        headers=csrf(api_client),
+        json={
+            "confirmation": "REPLACE ALL BACKUPS",
+            "idempotency_key": "replace-all-valid-0002",
+        },
+    )
+    assert concurrent.status_code == 409
+    assert concurrent.json()["code"] == "backup_operation_active"
+
+
+@pytest.mark.asyncio
+async def test_replace_all_rejects_incomplete_backup_state(
+    api_client: Any,
+    session: AsyncSession,
+) -> None:
+    await bootstrap(api_client)
+    now = datetime.now(UTC)
+    session.add(
+        BackupRun(
+            id="55555555-5555-5555-5555-555555555555",
+            started_at=now,
+            completed_at=None,
+            status="restoring",
+            path="power-monitor-20260730T120400Z-55555555",
+            manifest_hash="e" * 64,
+            verified_at=now,
+            verification_details={},
+            size_bytes=3000,
+            encrypted=True,
+            verification_attempt_count=1,
+            updated_at=now,
+        )
+    )
+    await session.commit()
+
+    blocked = await api_client.post(
+        "/api/v1/backups/replace-all",
+        headers=csrf(api_client),
+        json={
+            "confirmation": "REPLACE ALL BACKUPS",
+            "idempotency_key": "replace-all-blocked-0001",
+        },
+    )
+
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "backup_replace_all_incompatible_state"
+    assert (
+        int(
+            await session.scalar(
+                select(func.count())
+                .select_from(BackgroundJob)
+                .where(BackgroundJob.job_type == "backup_replace_all")
+            )
+            or 0
+        )
+        == 0
+    )
+
+
+def test_replace_all_script_verifies_before_deletion_and_excludes_replacement() -> None:
+    root = Path(__file__).resolve().parents[2]
+    workflow = (root / "scripts" / "replace-all-backups-container.sh").read_text(encoding="utf-8")
+    create_at = workflow.index("/srv/scripts/backup-container.sh")
+    verify_at = workflow.index("/srv/scripts/verify-backup-container.sh")
+    inventory_at = workflow.index("mapfile -t old_backup_ids")
+    delete_at = workflow.index("/srv/scripts/delete-backup-container.sh")
+    assert create_at < verify_at < inventory_at < delete_at
+    assert "value <> :'replacement_id'" in workflow
+    assert "status='verified' AND verified_at IS NOT NULL" in workflow
+    assert "COALESCE(original_size_bytes, 0) AS original_size_bytes" in workflow
+    assert "replacement_backup_id" in workflow
+    assert "backup.replace_all_cleanup_incomplete" in workflow
+    assert "final_checks_passed" in workflow
+    for stage in (
+        "preparing",
+        "creating_replacement",
+        "verifying_checksums",
+        "replacement_verified",
+        "removing_old_backups",
+        "final_checks",
+    ):
+        assert stage in workflow
+    backup_script = (root / "scripts" / "backup-container.sh").read_text(encoding="utf-8")
+    verify_script = (root / "scripts" / "verify-backup-container.sh").read_text(encoding="utf-8")
+    scheduler_script = (root / "scripts" / "backup-scheduler.sh").read_text(encoding="utf-8")
+    assert "writing_database_dump" in backup_script
+    assert "writing_supporting_artifacts" in backup_script
+    assert "testing_database_restore" in verify_script
+    for script in (workflow, backup_script, verify_script, scheduler_script):
+        assert "COALESCE(progress, '{}'::jsonb)" not in script
+        assert "COALESCE(progress, '{}'::json)::jsonb" in script
+    assert "status='backup_failed'" in scheduler_script
+    assert "AND status IN ('queued', 'creating')" in scheduler_script

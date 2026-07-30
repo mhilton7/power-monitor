@@ -47,7 +47,15 @@ function fixedNumber(value: number, digits: number): string {
 
 export function energy(value: string | number | undefined): string {
   const parsed = Number(value)
-  return Number.isFinite(parsed) ? `${number(parsed, parsed < 10 ? 2 : 1)} kWh` : 'Unavailable'
+  if (!Number.isFinite(parsed)) return 'Unavailable'
+  const normalized = Object.is(parsed, -0) ? 0 : parsed
+  const absolute = Math.abs(normalized)
+  if (absolute < 0.001) {
+    const wattHours = normalized * 1000
+    const digits = Math.abs(wattHours) < 0.01 ? 4 : Math.abs(wattHours) < 1 ? 3 : 2
+    return `${number(wattHours, digits)} Wh`
+  }
+  return `${number(normalized, absolute < 10 ? 3 : 1)} kWh`
 }
 
 export function money(value: string | number | undefined, currency = 'USD'): string {

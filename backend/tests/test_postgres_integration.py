@@ -8,7 +8,9 @@ from pathlib import Path
 
 import asyncpg
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
+from worker.app.tasks import reconcile_missing_normalized_intervals
 
 
 @pytest.mark.integration
@@ -97,8 +99,19 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 ORDER BY direction
                 """
             )
-            assert revision == "20260730_0019"
+            assert revision == "20260730_0020"
             assert table_count == 98
+            engine = create_async_engine(url)
+            try:
+                factory = async_sessionmaker(engine, expire_on_commit=False)
+                async with factory() as worker_session:
+                    assert await reconcile_missing_normalized_intervals(worker_session) == {
+                        "queued": 0,
+                        "completed": 0,
+                        "failed": 0,
+                    }
+            finally:
+                await engine.dispose()
             assert assignment_overlap_trigger is not None
             assert "BEFORE INSERT OR UPDATE" in assignment_overlap_trigger
             assert "prevent_rate_assignment_overlap" in assignment_overlap_trigger
@@ -142,7 +155,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260730_0019"
+                "20260730_0020"
             )
 
             await connection.execute("DROP SCHEMA public CASCADE")
@@ -202,7 +215,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260730_0019"
+                "20260730_0020"
             )
             assert (
                 await connection.fetchval(

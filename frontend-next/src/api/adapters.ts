@@ -886,6 +886,8 @@ export function adaptBackups(value: unknown): BackupSummary[] {
       deletedAt: optionalString(backup.deleted_at),
       deletionReason: optionalString(backup.deletion_reason),
       artifactRemovalResult: optionalString(backup.artifact_removal_result),
+      preDeletionStatus: optionalString(backup.pre_deletion_status),
+      replacedByBackupId: optionalString(backup.replaced_by_backup_id),
     }
   })
 }

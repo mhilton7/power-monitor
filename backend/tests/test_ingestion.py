@@ -4,10 +4,18 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from worker.app.tasks import reconcile_missing_normalized_intervals
 
-from app.db.models import Device, DeviceEvent, SequenceGap, Site
+from app.db.models import (
+    Device,
+    DeviceEvent,
+    NormalizedInterval,
+    RawReading,
+    SequenceGap,
+    Site,
+)
 from app.ingestion.service import ingest_readings, normalize_energy
 from app.schemas import Reading, ReadingBatch, UnavailableSequenceRange
 
@@ -42,6 +50,109 @@ def test_normalization_prefers_valid_device_energy() -> None:
     mismatch = normalize_energy(reading(2, "40"))
     assert mismatch.selected_energy_wh == Decimal("10")
     assert mismatch.validation_result == "corrected"
+
+
+def test_low_power_interval_uses_decimal_power_when_meter_counter_is_stable() -> None:
+    end = datetime(2026, 7, 20, 12, 0, 5, tzinfo=UTC)
+    low_power = Reading(
+        sequence=1,
+        boot_id="123e4567-e89b-12d3-a456-426614174000",
+        interval_start=end - timedelta(seconds=5),
+        interval_end=end,
+        time_trusted=True,
+        voltage_avg=Decimal("120.4"),
+        current_avg=Decimal("0.01"),
+        power_avg=Decimal("1"),
+        power_factor=Decimal("0.83"),
+        frequency_hz=Decimal("60"),
+        pzem_energy_start_wh=Decimal("100"),
+        pzem_energy_end_wh=Decimal("100"),
+        interval_energy_wh=None,
+        energy_method="counter",
+        ct_rating_amps=Decimal("100"),
+        quality_flags=[],
+        firmware_version="1.0.0",
+    )
+
+    result = normalize_energy(low_power)
+
+    assert result.selected_method == "server-derived"
+    assert result.validation_result == "accepted"
+    assert result.selected_energy_wh is not None
+    assert abs(result.selected_energy_wh - Decimal("0.001388888888888888888888888889")) < Decimal(
+        "0.000000000000000000000000001"
+    )
+
+    # The subsequent whole-Wh register step represents energy already
+    # retained by earlier sub-Wh intervals. Firmware marks the reconciled
+    # interval as power integration so the server must not count that step
+    # again.
+    reconciled_counter_step = low_power.model_copy(
+        update={
+            "sequence": 2,
+            "pzem_energy_end_wh": Decimal("101"),
+            "interval_energy_wh": Decimal("0.001388888888888888888888888889"),
+            "energy_method": "power_integration",
+        }
+    )
+    reconciled = normalize_energy(reconciled_counter_step)
+    assert reconciled.selected_method == "device-reported"
+    assert reconciled.validation_result == "accepted"
+    assert reconciled.selected_energy_wh == Decimal("0.001388888888888888888888888889")
+    assert result.selected_energy_wh + reconciled.selected_energy_wh < Decimal("0.003")
+
+
+@pytest.mark.asyncio
+async def test_worker_reconciles_orphan_raw_readings_without_bad_row_blocking(
+    session: AsyncSession,
+) -> None:
+    site = Site(name="Normalization repair", timezone="America/Los_Angeles")
+    session.add(site)
+    await session.flush()
+    device = Device(site_id=site.id, hardware_id="hw-normalization-repair", name="Repair")
+    session.add(device)
+    await session.commit()
+    await ingest_readings(
+        session,
+        device_id=device.id,
+        readings=[reading(1), reading(2)],
+        source="push",
+    )
+    await session.commit()
+    raws = list(
+        await session.scalars(
+            select(RawReading)
+            .where(RawReading.device_id == device.id)
+            .order_by(RawReading.sequence)
+        )
+    )
+    await session.execute(
+        delete(NormalizedInterval).where(
+            NormalizedInterval.raw_reading_id.in_([item.id for item in raws])
+        )
+    )
+    raws[0].original_payload = {"sequence": "invalid"}
+    await session.commit()
+
+    result = await reconcile_missing_normalized_intervals(session)
+    await session.commit()
+
+    assert result == {"queued": 2, "completed": 1, "failed": 1}
+    assert (
+        int(
+            await session.scalar(
+                select(func.count())
+                .select_from(NormalizedInterval)
+                .where(NormalizedInterval.device_id == device.id)
+            )
+            or 0
+        )
+        == 1
+    )
+    recovered = await session.scalar(
+        select(NormalizedInterval).where(NormalizedInterval.raw_reading_id == raws[1].id)
+    )
+    assert recovered is not None
 
 
 @pytest.mark.asyncio

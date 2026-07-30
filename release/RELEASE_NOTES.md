@@ -1,5 +1,23 @@
 # Power Monitor Server 1.0.0
 
+## Safe backup consolidation and durable low-power History
+
+- Adds an owner-only **Replace all backups** operation that inventories current
+  recovery points, creates an encrypted replacement, verifies checksums,
+  restores it into a temporary PostgreSQL database, and only then removes the
+  captured older generations.
+- Persists operation progress across browser refresh, excludes the replacement
+  from deletion, preserves all old backups when creation or verification fails,
+  and retains audit tombstones plus targeted retry when cleanup is partial.
+- Separates live heartbeat display from durable sequenced History and repairs
+  sensor/server acknowledgement recovery without fabricating microSD records.
+- Preserves sub-Wh energy at `0.8-1 W` when the PZEM cumulative register has
+  not advanced, reconciles later counter changes without double counting, and
+  retries normalization for committed raw readings stranded by an earlier bad
+  row.
+- Adds append-only Alembic revision `20260730_0020`, regenerated API contracts,
+  secret-free ingest diagnostics, and backup/History regression coverage.
+
 ## Verified backups and precise live-data presentation
 
 - Replaces restart-sensitive, in-memory backup scheduling with database-backed,

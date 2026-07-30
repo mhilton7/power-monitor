@@ -9,8 +9,8 @@ from typing import Any
 import structlog
 from sqlalchemy import text
 
-from app.config import get_settings
 from app.bills.service import due_retention_deletions
+from app.config import get_settings
 from app.db.models import WorkerState
 from app.db.session import session_factory
 from app.logging import configure_logging
@@ -28,6 +28,7 @@ from worker.app.tasks import (
     process_report_jobs,
     process_tier_recalculations,
     recompute_recent_rollups,
+    reconcile_missing_normalized_intervals,
 )
 
 LOCK_ID = 73473281
@@ -47,6 +48,7 @@ async def _unlock(session: Any) -> None:
 
 
 async def _process_work(session: Any, factory: Any, settings: Any) -> dict[str, Any]:
+    history_normalization = await reconcile_missing_normalized_intervals(session)
     alerts = await evaluate_alerts(session, settings)
     notifications = await process_notification_jobs(session, settings)
     exports = await process_export_jobs(session, settings)
@@ -79,6 +81,7 @@ async def _process_work(session: Any, factory: Any, settings: Any) -> dict[str, 
         "notifications": notifications,
         "exports_completed": exports,
         "reports_completed": reports,
+        "history_normalization": history_normalization,
         "cost_runs_completed": costs,
         "tier_recalculations_completed": tier_recalculations,
         "rollups": rollups,
