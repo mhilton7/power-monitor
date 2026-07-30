@@ -21,6 +21,7 @@
     "pzem": {"$ref": "#/$defs/health"},
     "sd": {"$ref": "#/$defs/health"},
     "oldest_stored_sequence": {"type": "integer", "minimum": 0},
+    "oldest_syncable_sequence": {"type": ["integer", "null"], "minimum": 0},
     "newest_stored_sequence": {"type": "integer", "minimum": 0},
     "server_ack_sequence": {"type": "integer", "minimum": 0},
     "backlog_estimate": {"type": "integer", "minimum": 0},
@@ -34,4 +35,3 @@
   },
   "additionalProperties": true
 }
-

@@ -23,6 +23,10 @@
 
 @media (max-width: 900px) {
   :root { --top-height: 68px; }
+  html {
+    scroll-padding-top: calc(var(--top-height) + .75rem);
+    scroll-padding-bottom: calc(68px + .75rem);
+  }
   .auth-page {
     grid-template-columns: 1fr;
     overflow: visible;
@@ -62,7 +66,14 @@
   .live-facts > div > svg { width: 16px; }
   .user-button > svg:first-child { width: 30px; }
   .page-content { min-width: 0; }
-  .test-mode-banner { top: var(--top-height); width: calc(100% - 1.25rem); }
+  .page-content :is(button, a, input, select, textarea, [tabindex]) {
+    scroll-margin-top: calc(var(--top-height) + .75rem);
+    scroll-margin-bottom: calc(68px + .75rem);
+  }
+  .test-mode-banner {
+    position: static;
+    width: calc(100% - 1.25rem);
+  }
   .workspace-page { width: min(100% - 1.25rem, var(--content-max)); padding: 1.5rem 0 2.5rem; }
   .page-stack { gap: var(--space-4); }
   .billing-top-metrics,

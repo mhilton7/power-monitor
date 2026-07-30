@@ -581,6 +581,72 @@ async def test_live_measurement_is_consistent_between_devices_and_fleet(
 
 
 @pytest.mark.asyncio
+async def test_signed_unavailable_sequence_ranges_advance_device_cursor(
+    api_client: Any,
+) -> None:
+    client: httpx.AsyncClient = api_client
+    await bootstrap(client, "sync-range-admin@example.com")
+    device_id, secret = await _enroll_sensor(client, "esp32-sync-ranges")
+    interval_end = datetime.now(UTC)
+
+    def reading_payload(sequence: int) -> dict[str, Any]:
+        reading_end = interval_end + timedelta(seconds=sequence)
+        return {
+            "sequence": sequence,
+            "boot_id": "123e4567-e89b-12d3-a456-426614174000",
+            "interval_start": (reading_end - timedelta(seconds=15)).isoformat(),
+            "interval_end": reading_end.isoformat(),
+            "time_trusted": True,
+            "voltage_avg": "120.4",
+            "current_avg": "0.01",
+            "power_avg": "1.0",
+            "power_factor": "0.83",
+            "frequency_hz": "60.0",
+            "interval_energy_wh": "0.0041667",
+            "energy_method": "power_integration",
+            "ct_rating_amps": "100",
+            "quality_flags": [],
+            "firmware_version": "1.0.0",
+        }
+
+    payload = {
+        "protocol_version": PROTOCOL,
+        "schema_version": "reading-batch/1.0.0",
+        "device_id": device_id,
+        "readings": [reading_payload(9), reading_payload(11)],
+        "unavailable_sequence_ranges": [
+            {"start_sequence": 1, "end_sequence": 8},
+            {"start_sequence": 10, "end_sequence": 10},
+        ],
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    response = await client.post(
+        "/api/v1/device-readings/batch",
+        content=body,
+        headers={
+            **sign_headers(
+                secret=secret,
+                device_id=device_id,
+                direction="device-to-server",
+                method="POST",
+                target="/api/v1/device-readings/batch",
+                body=body,
+            ),
+            "Content-Type": "application/json",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "accepted": [9, 11],
+        "duplicates": [],
+        "rejected": [],
+        "highest_contiguous_accepted_sequence": 11,
+        "missing_ranges": [],
+    }
+
+
+@pytest.mark.asyncio
 async def test_sensor_unclaim_retains_history_revokes_and_reenrolls_with_new_secret(
     api_client: Any,
     session_factory_fixture: async_sessionmaker[AsyncSession],

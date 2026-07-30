@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Device, DeviceEvent, SequenceGap, Site
 from app.ingestion.service import ingest_readings, normalize_energy
-from app.schemas import Reading
+from app.schemas import Reading, ReadingBatch, UnavailableSequenceRange
 
 
 def reading(sequence: int, energy: str = "10") -> Reading:
@@ -114,6 +114,84 @@ async def test_first_retained_sequence_bootstraps_new_server_cursor(
 
 
 @pytest.mark.asyncio
+async def test_retained_sequence_bootstrap_repairs_preupgrade_stalled_cursor(
+    session: AsyncSession,
+) -> None:
+    site = Site(name="Pre-upgrade retained history", timezone="America/Los_Angeles")
+    session.add(site)
+    await session.flush()
+    device = Device(site_id=site.id, hardware_id="hw-retained-upgrade", name="Retained upgrade")
+    session.add(device)
+    await session.commit()
+
+    before_upgrade = await ingest_readings(
+        session,
+        device_id=device.id,
+        readings=[reading(46), reading(47)],
+        source="push",
+    )
+    await session.commit()
+    assert before_upgrade.accepted == [46, 47]
+    assert before_upgrade.highest_contiguous_accepted_sequence == 0
+    assert before_upgrade.missing_ranges == [(1, 45)]
+
+    repaired = await ingest_readings(
+        session,
+        device_id=device.id,
+        readings=[reading(46), reading(47)],
+        source="push",
+        first_available_sequence=46,
+    )
+    await session.commit()
+
+    assert repaired.duplicates == [46, 47]
+    assert repaired.highest_contiguous_accepted_sequence == 47
+    assert repaired.missing_ranges == []
+    permanent = await session.scalar(
+        select(SequenceGap).where(
+            SequenceGap.device_id == device.id,
+            SequenceGap.permanent_loss.is_(True),
+        )
+    )
+    assert permanent is not None
+    assert (permanent.start_sequence, permanent.end_sequence) == (1, 45)
+    assert permanent.resolved_at is not None
+
+
+@pytest.mark.asyncio
+async def test_unsyncable_retained_prefix_bootstraps_from_first_syncable_sequence(
+    session: AsyncSession,
+) -> None:
+    site = Site(name="Unsyncable retained prefix", timezone="America/Los_Angeles")
+    session.add(site)
+    await session.flush()
+    device = Device(site_id=site.id, hardware_id="hw-unsyncable-prefix", name="Prefix")
+    session.add(device)
+    await session.commit()
+
+    result = await ingest_readings(
+        session,
+        device_id=device.id,
+        readings=[reading(46), reading(47)],
+        source="push",
+        first_available_sequence=46,
+    )
+    await session.commit()
+
+    assert result.accepted == [46, 47]
+    assert result.highest_contiguous_accepted_sequence == 47
+    assert result.missing_ranges == []
+    permanent = await session.scalar(
+        select(SequenceGap).where(
+            SequenceGap.device_id == device.id,
+            SequenceGap.permanent_loss.is_(True),
+        )
+    )
+    assert permanent is not None
+    assert (permanent.start_sequence, permanent.end_sequence) == (1, 45)
+
+
+@pytest.mark.asyncio
 async def test_cursor_does_not_skip_unverified_missing_sequences(
     session: AsyncSession,
 ) -> None:
@@ -135,3 +213,102 @@ async def test_cursor_does_not_skip_unverified_missing_sequences(
 
     assert result.highest_contiguous_accepted_sequence == 0
     assert result.missing_ranges == [(1, 45)]
+
+
+@pytest.mark.asyncio
+async def test_signed_unavailable_ranges_advance_across_unsyncable_retained_records(
+    session: AsyncSession,
+) -> None:
+    site = Site(name="Interspersed unsyncable history", timezone="America/Los_Angeles")
+    session.add(site)
+    await session.flush()
+    device = Device(site_id=site.id, hardware_id="hw-interspersed", name="Interspersed")
+    session.add(device)
+    await session.commit()
+
+    result = await ingest_readings(
+        session,
+        device_id=device.id,
+        readings=[reading(9), reading(12), reading(13), reading(16)],
+        source="push",
+        unavailable_sequence_ranges=[
+            UnavailableSequenceRange(start_sequence=1, end_sequence=8),
+            UnavailableSequenceRange(start_sequence=10, end_sequence=11),
+            UnavailableSequenceRange(start_sequence=14, end_sequence=15),
+        ],
+    )
+    await session.commit()
+
+    assert result.accepted == [9, 12, 13, 16]
+    assert result.highest_contiguous_accepted_sequence == 16
+    assert result.missing_ranges == []
+    permanent = list(
+        await session.scalars(
+            select(SequenceGap)
+            .where(
+                SequenceGap.device_id == device.id,
+                SequenceGap.permanent_loss.is_(True),
+            )
+            .order_by(SequenceGap.start_sequence)
+        )
+    )
+    assert [(gap.start_sequence, gap.end_sequence) for gap in permanent] == [
+        (1, 8),
+        (10, 11),
+        (14, 15),
+    ]
+
+
+def test_reading_batch_rejects_untrusted_or_ambiguous_sequence_coverage() -> None:
+    with pytest.raises(ValueError, match="ordered and non-overlapping"):
+        ReadingBatch(
+            protocol_version="pm-protocol/1.0.0",
+            device_id="sensor",
+            readings=[reading(9)],
+            unavailable_sequence_ranges=[
+                {"start_sequence": 2, "end_sequence": 4},
+                {"start_sequence": 4, "end_sequence": 5},
+            ],
+        )
+    with pytest.raises(ValueError, match="cannot also be declared unavailable"):
+        ReadingBatch(
+            protocol_version="pm-protocol/1.0.0",
+            device_id="sensor",
+            readings=[reading(9)],
+            unavailable_sequence_ranges=[
+                {"start_sequence": 1, "end_sequence": 9},
+            ],
+        )
+    with pytest.raises(ValueError, match="must contain readings or unavailable"):
+        ReadingBatch(
+            protocol_version="pm-protocol/1.0.0",
+            device_id="sensor",
+            readings=[],
+        )
+
+
+@pytest.mark.asyncio
+async def test_unavailable_only_batch_advances_without_fabricating_readings(
+    session: AsyncSession,
+) -> None:
+    site = Site(name="Unavailable-only history", timezone="America/Los_Angeles")
+    session.add(site)
+    await session.flush()
+    device = Device(site_id=site.id, hardware_id="hw-unavailable-only", name="Unavailable only")
+    session.add(device)
+    await session.commit()
+
+    result = await ingest_readings(
+        session,
+        device_id=device.id,
+        readings=[],
+        source="push",
+        unavailable_sequence_ranges=[
+            UnavailableSequenceRange(start_sequence=1, end_sequence=24),
+        ],
+    )
+    await session.commit()
+
+    assert result.accepted == []
+    assert result.highest_contiguous_accepted_sequence == 24
+    assert result.missing_ranges == []

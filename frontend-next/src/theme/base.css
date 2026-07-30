@@ -5,7 +5,7 @@
 }
 
 * { box-sizing: border-box; }
-html { background: var(--bg); scroll-behavior: smooth; }
+html { background: var(--bg); scroll-behavior: auto; }
 body { margin: 0; min-width: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 15px/1.5 "Power Sans", system-ui, sans-serif; }
 button, input, select, textarea { color: inherit; font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }

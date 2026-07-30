@@ -903,6 +903,7 @@ class Heartbeat(DeviceProtocolModel):
     pzem: SubsystemHealth
     sd: SubsystemHealth
     oldest_stored_sequence: int = Field(ge=0)
+    oldest_syncable_sequence: int | None = Field(default=None, ge=0)
     newest_stored_sequence: int = Field(ge=0)
     server_ack_sequence: int = Field(ge=0)
     backlog_estimate: int = Field(ge=0)
@@ -918,6 +919,11 @@ class Heartbeat(DeviceProtocolModel):
             and self.oldest_stored_sequence > self.newest_stored_sequence
         ):
             raise ValueError("oldest_stored_sequence exceeds newest_stored_sequence")
+        if (
+            self.oldest_syncable_sequence
+            and self.oldest_syncable_sequence > self.newest_stored_sequence
+        ):
+            raise ValueError("oldest_syncable_sequence exceeds newest_stored_sequence")
         return self
 
 
@@ -970,11 +976,47 @@ class Reading(DeviceProtocolModel):
         return self
 
 
+class UnavailableSequenceRange(DeviceProtocolModel):
+    start_sequence: int = Field(gt=0)
+    end_sequence: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def valid_bounds(self) -> UnavailableSequenceRange:
+        if self.end_sequence < self.start_sequence:
+            raise ValueError("end_sequence must be greater than or equal to start_sequence")
+        return self
+
+
 class ReadingBatch(DeviceProtocolModel):
     protocol_version: str
     schema_version: str = "reading-batch/1.0.0"
     device_id: str
-    readings: list[Reading] = Field(min_length=1, max_length=500)
+    readings: list[Reading] = Field(default_factory=list, max_length=500)
+    unavailable_sequence_ranges: list[UnavailableSequenceRange] = Field(
+        default_factory=list,
+        max_length=500,
+    )
+
+    @model_validator(mode="after")
+    def valid_sequence_coverage(self) -> ReadingBatch:
+        reading_sequences = {reading.sequence for reading in self.readings}
+        if not reading_sequences and not self.unavailable_sequence_ranges:
+            raise ValueError("a reading batch must contain readings or unavailable sequence ranges")
+        previous_end = 0
+        unavailable_count = 0
+        for unavailable in self.unavailable_sequence_ranges:
+            if unavailable.start_sequence <= previous_end:
+                raise ValueError("unavailable_sequence_ranges must be ordered and non-overlapping")
+            if any(
+                unavailable.start_sequence <= sequence <= unavailable.end_sequence
+                for sequence in reading_sequences
+            ):
+                raise ValueError("a reading sequence cannot also be declared unavailable")
+            unavailable_count += unavailable.end_sequence - unavailable.start_sequence + 1
+            if unavailable_count > 500:
+                raise ValueError("unavailable_sequence_ranges cannot cover more than 500 sequences")
+            previous_end = unavailable.end_sequence
+        return self
 
 
 class RejectedReading(ApiModel):

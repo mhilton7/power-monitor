@@ -15,6 +15,7 @@
     "pzem": {"ok": true, "status": "connected", "error_count": 0},
     "sd": {"ok": true, "status": "mounted", "free_bytes": 8000000000},
     "oldest_stored_sequence": 1,
+    "oldest_syncable_sequence": 1,
     "newest_stored_sequence": 60,
     "server_ack_sequence": 59,
     "backlog_estimate": 1,
@@ -27,6 +28,7 @@
     "protocol_version": "pm-protocol/1.0.0",
     "schema_version": "reading-batch/1.0.0",
     "device_id": "c5db1c32-67ab-4bdd-9a18-7f0012f8bcc1",
+    "unavailable_sequence_ranges": [],
     "readings": [{
       "sequence": 60,
       "boot_id": "264c9c49-3fd0-4eeb-ab24-3a61cc155759",

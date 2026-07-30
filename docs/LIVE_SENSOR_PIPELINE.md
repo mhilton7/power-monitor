@@ -70,11 +70,28 @@ blindly summed.
 ## Sequence recovery
 
 Raw readings remain immutable and deduplicated by `(device_id, sequence)`.
-If an enrolled server has no readings but a sensor's retained microSD range
-begins above sequence 1, the server may advance to `oldest_stored_sequence -
-1` only when the signed heartbeat proves that the first batch starts at that
-same retained sequence. The unavailable prefix is recorded as permanent
-loss. An unverified gap is never skipped.
+`oldest_stored_sequence` identifies all local SD evidence.
+`oldest_syncable_sequence` separately identifies the first retained interval
+with trustworthy UTC bounds. Startup intervals without trustworthy time stay
+on the card but are never fabricated as server history.
+
+If the first syncable sequence begins above sequence 1, the server may advance
+to `oldest_syncable_sequence - 1` only when the signed heartbeat and first
+batch agree. The same repair is allowed when a pre-upgrade server already
+stored that exact first sequence but left its cursor at zero. The unavailable
+prefix is recorded as permanent loss, existing raw rows remain unchanged, and
+an unverified gap is never skipped.
+
+Startup-time records can also be interspersed with trusted intervals when the
+clock becomes trusted, restarts, and is restored again. A reading batch may
+therefore include optional HMAC-signed `unavailable_sequence_ranges`. Each
+range identifies immutable on-card evidence whose UTC interval was never
+trustworthy. The server records those exact sequences as permanent loss and
+advances the contiguous cursor only across the union of committed readings and
+signed permanent-loss ranges. The field is bounded, ordered, non-overlapping,
+and cannot overlap a reading in the same batch. A batch may contain only an
+unavailable range when an entire bounded synchronization window has no
+timestamp-safe records. No timestamp or historical reading is fabricated.
 
 ## Safe diagnostics
 

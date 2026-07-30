@@ -600,7 +600,9 @@ async def reading_batch(
     )
     first_available = None
     if heartbeat_row is not None and isinstance(heartbeat_row.payload, dict):
-        raw_first = heartbeat_row.payload.get("oldest_stored_sequence")
+        raw_first = heartbeat_row.payload.get("oldest_syncable_sequence")
+        if not isinstance(raw_first, int) or raw_first <= 0:
+            raw_first = heartbeat_row.payload.get("oldest_stored_sequence")
         if isinstance(raw_first, int) and raw_first > 0:
             first_available = raw_first
     result = await ingest_readings(
@@ -609,6 +611,7 @@ async def reading_batch(
         readings=payload.readings,
         source="push",
         first_available_sequence=first_available,
+        unavailable_sequence_ranges=payload.unavailable_sequence_ranges,
         maximum_clock_skew_seconds=settings.max_device_clock_skew_seconds,
     )
     await session.commit()

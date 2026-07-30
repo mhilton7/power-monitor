@@ -19,7 +19,12 @@ from app.db.models import (
     SequenceGap,
     SyncCursor,
 )
-from app.schemas import Reading, ReadingBatchResponse, RejectedReading
+from app.schemas import (
+    Reading,
+    ReadingBatchResponse,
+    RejectedReading,
+    UnavailableSequenceRange,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -153,20 +158,37 @@ async def _recalculate_cursor(session: AsyncSession, device_id: str, now: dateti
         )
         session.add(cursor)
         await session.flush()
-    sequences = list(
-        await session.scalars(
+    sequences = [
+        int(value)
+        for value in await session.scalars(
             select(RawReading.sequence)
             .where(RawReading.device_id == device_id)
             .where(RawReading.sequence > cursor.highest_contiguous_sequence)
             .order_by(RawReading.sequence)
         )
+    ]
+    permanent_ranges = list(
+        await session.scalars(
+            select(SequenceGap)
+            .where(
+                SequenceGap.device_id == device_id,
+                SequenceGap.permanent_loss.is_(True),
+                SequenceGap.resolved_at.is_not(None),
+                SequenceGap.end_sequence > cursor.highest_contiguous_sequence,
+            )
+            .order_by(SequenceGap.start_sequence)
+        )
     )
+    coverage = [(sequence, sequence) for sequence in sequences]
+    coverage.extend((gap.start_sequence, gap.end_sequence) for gap in permanent_ranges)
+    coverage.sort()
     expected = cursor.highest_contiguous_sequence + 1
-    for sequence in sequences:
-        if sequence == expected:
-            expected += 1
-        elif sequence > expected:
+    for start_sequence, end_sequence in coverage:
+        if end_sequence < expected:
+            continue
+        if start_sequence > expected:
             break
+        expected = max(expected, end_sequence + 1)
     cursor.highest_contiguous_sequence = expected - 1
     maximum = await session.scalar(
         select(func.max(RawReading.sequence)).where(RawReading.device_id == device_id)
@@ -179,20 +201,87 @@ async def _recalculate_cursor(session: AsyncSession, device_id: str, now: dateti
             SequenceGap.device_id == device_id, SequenceGap.resolved_at.is_(None)
         )
     )
-    tail = [value for value in sequences if value > cursor.highest_contiguous_sequence]
+    maximum_seen = cursor.maximum_seen_sequence
     expected = cursor.highest_contiguous_sequence + 1
-    for sequence in tail:
-        if sequence > expected:
+    for start_sequence, end_sequence in coverage:
+        if expected > maximum_seen:
+            break
+        if end_sequence < expected:
+            continue
+        if start_sequence > expected:
             session.add(
                 SequenceGap(
                     device_id=device_id,
                     start_sequence=expected,
-                    end_sequence=sequence - 1,
+                    end_sequence=min(start_sequence - 1, maximum_seen),
                     detected_at=now,
                 )
             )
-        expected = sequence + 1
+        expected = max(expected, end_sequence + 1)
     return cursor
+
+
+async def _record_permanent_loss_ranges(
+    session: AsyncSession,
+    *,
+    device_id: str,
+    ranges: list[UnavailableSequenceRange],
+    now: datetime,
+) -> None:
+    if not ranges:
+        return
+    declared_sequences = {
+        sequence
+        for unavailable in ranges
+        for sequence in range(
+            unavailable.start_sequence,
+            unavailable.end_sequence + 1,
+        )
+    }
+    existing_readings = {
+        int(value)
+        for value in await session.scalars(
+            select(RawReading.sequence).where(
+                RawReading.device_id == device_id,
+                RawReading.sequence.in_(declared_sequences),
+            )
+        )
+    }
+    unavailable_sequences = sorted(declared_sequences - existing_readings)
+    if not unavailable_sequences:
+        return
+    existing_gaps = list(
+        await session.scalars(select(SequenceGap).where(SequenceGap.device_id == device_id))
+    )
+    gaps_by_bounds = {(gap.start_sequence, gap.end_sequence): gap for gap in existing_gaps}
+    segments: list[tuple[int, int]] = []
+    start = previous = unavailable_sequences[0]
+    for sequence in unavailable_sequences[1:]:
+        if sequence == previous + 1:
+            previous = sequence
+            continue
+        segments.append((start, previous))
+        start = previous = sequence
+    segments.append((start, previous))
+    for start_sequence, end_sequence in segments:
+        gap = gaps_by_bounds.get((start_sequence, end_sequence))
+        if gap is None:
+            gap = SequenceGap(
+                device_id=device_id,
+                start_sequence=start_sequence,
+                end_sequence=end_sequence,
+                detected_at=now,
+            )
+            session.add(gap)
+        gap.resolved_at = now
+        gap.permanent_loss = True
+        logger.warning(
+            "READING_RANGE_PERMANENTLY_UNAVAILABLE",
+            device_id=device_id,
+            start_sequence=start_sequence,
+            end_sequence=end_sequence,
+            retained_without_trusted_time=True,
+        )
 
 
 async def ingest_readings(
@@ -202,6 +291,7 @@ async def ingest_readings(
     readings: list[Reading],
     source: str,
     first_available_sequence: int | None = None,
+    unavailable_sequence_ranges: list[UnavailableSequenceRange] | None = None,
     maximum_clock_skew_seconds: int = 300,
 ) -> ReadingBatchResponse:
     if source not in {"pull", "push"}:
@@ -224,40 +314,53 @@ async def ingest_readings(
         )
         session.add(cursor)
         await session.flush()
-    existing_count = int(
-        await session.scalar(
-            select(func.count(RawReading.id)).where(RawReading.device_id == device_id)
-        )
-        or 0
+    minimum_existing_sequence = await session.scalar(
+        select(func.min(RawReading.sequence)).where(RawReading.device_id == device_id)
     )
     first_incoming = min((reading.sequence for reading in readings), default=None)
     if (
-        existing_count == 0
-        and cursor.highest_contiguous_sequence == 0
+        cursor.highest_contiguous_sequence == 0
         and first_incoming is not None
         and first_incoming > 1
         and first_available_sequence == first_incoming
+        and (minimum_existing_sequence is None or int(minimum_existing_sequence) == first_incoming)
     ):
         cursor.highest_contiguous_sequence = first_incoming - 1
         cursor.maximum_seen_sequence = first_incoming - 1
         cursor.updated_at = now
-        session.add(
-            SequenceGap(
+        unavailable_gap = await session.scalar(
+            select(SequenceGap).where(
+                SequenceGap.device_id == device_id,
+                SequenceGap.start_sequence == 1,
+                SequenceGap.end_sequence == first_incoming - 1,
+            )
+        )
+        if unavailable_gap is None:
+            unavailable_gap = SequenceGap(
                 device_id=device_id,
                 start_sequence=1,
                 end_sequence=first_incoming - 1,
                 detected_at=now,
-                resolved_at=now,
-                permanent_loss=True,
             )
-        )
+            session.add(unavailable_gap)
+        unavailable_gap.resolved_at = now
+        unavailable_gap.permanent_loss = True
         logger.warning(
             "READING_CURSOR_BOOTSTRAPPED",
             device_id=device_id,
             first_available_sequence=first_incoming,
+            recovery_mode=(
+                "existing_rows" if minimum_existing_sequence is not None else "first_ingestion"
+            ),
             unavailable_start_sequence=1,
             unavailable_end_sequence=first_incoming - 1,
         )
+    await _record_permanent_loss_ranges(
+        session,
+        device_id=device_id,
+        ranges=unavailable_sequence_ranges or [],
+        now=now,
+    )
     for reading in readings:
         if reading.interval_end > now + timedelta(seconds=maximum_clock_skew_seconds):
             rejected.append(

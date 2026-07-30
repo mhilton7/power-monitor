@@ -13844,6 +13844,12 @@ components:
           type: integer
           minimum: 0.0
           title: Oldest Stored Sequence
+        oldest_syncable_sequence:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Oldest Syncable Sequence
         newest_stored_sequence:
           type: integer
           minimum: 0.0
@@ -16091,13 +16097,17 @@ components:
             $ref: '#/components/schemas/Reading'
           type: array
           maxItems: 500
-          minItems: 1
           title: Readings
+        unavailable_sequence_ranges:
+          items:
+            $ref: '#/components/schemas/UnavailableSequenceRange'
+          type: array
+          maxItems: 500
+          title: Unavailable Sequence Ranges
       type: object
       required:
       - protocol_version
       - device_id
-      - readings
       title: ReadingBatch
     ReadingBatchResponse:
       properties:
@@ -17743,6 +17753,21 @@ components:
       - trusted
       - source
       title: TimeHealth
+    UnavailableSequenceRange:
+      properties:
+        start_sequence:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Start Sequence
+        end_sequence:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: End Sequence
+      type: object
+      required:
+      - start_sequence
+      - end_sequence
+      title: UnavailableSequenceRange
     UserAccessUpdate:
       properties:
         role_ids:
