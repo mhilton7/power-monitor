@@ -28,6 +28,7 @@ import { useLocation, useNavigate } from '../../app/router'
 import { hasPermission, isOwner } from '../../access/permissions'
 import {
   adaptBackups,
+  adaptCircuits,
   adaptFamily,
   adaptFamilyRoles,
   adaptPermissions,
@@ -41,6 +42,7 @@ import { Surface } from '../../components/data-display/Surface'
 import { DropdownMenu, DropdownMenuItem } from '../../components/overlays/DropdownMenu'
 import { ModalLayer } from '../../components/overlays/ModalLayer'
 import { SensorSetupFlow } from '../../features/sensors/SensorSetupFlow'
+import { MeasurementAssignmentDialog } from '../../features/sensors/MeasurementAssignmentDialog'
 import { useAppearance } from '../../state/AppearanceContext'
 import { useAuth } from '../../state/AuthContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
@@ -51,6 +53,7 @@ import type {
   FamilyRoleOption,
   PermissionOption,
   BackupSummary,
+  SensorSummary,
   SystemHealthStatus,
   TestLoadProfile,
 } from '../../types/models'
@@ -150,9 +153,11 @@ function SensorSettings() {
   const location = useLocation()
   const navigate = useNavigate()
   const client = useQueryClient()
-  const { sensors, refresh } = useLiveHome()
+  const { sensors, services, refresh } = useLiveHome()
+  const { session } = useAuth()
   const { resolution } = useSingleHome()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
+  const canManageTopology = Boolean(session && hasPermission(session, 'topology.manage'))
   const testMode = useTestMode()
   const testSensors = useQuery({
     queryKey: ['sensor-test-mode-sensors'],
@@ -171,6 +176,12 @@ function SensorSettings() {
     },
   })
   const [adding, setAdding] = useState(new URLSearchParams(location.search).get('action') === 'add')
+  const [assignmentSensor, setAssignmentSensor] = useState<SensorSummary>()
+  const assignmentRequested = new URLSearchParams(location.search).get('configuration') === 'measurement-assignment'
+  const requestedSensor = assignmentRequested && !assignmentSensor
+    ? sensors.find((sensor) => !sensor.circuitId || !sensor.utilityAccountId)
+    : undefined
+  const activeAssignmentSensor = assignmentSensor ?? requestedSensor
   const firmware = useQuery({ queryKey: ['firmware-releases'], queryFn: () => request<Array<{ id: string; version: string; channel: string; active: boolean }>>('/api/v1/firmware-releases') })
   const maintenance = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => enabled
@@ -213,6 +224,7 @@ function SensorSettings() {
             <span><strong>{sensor.name}</strong><small>{sensor.monitoredCircuit} · {sensor.firmware ?? 'Firmware unknown'} · last seen {relativeTime(sensor.lastSeenAt)}</small></span>
             <span className={`pill ${sensor.online ? 'success' : 'warning'}`}>{sensor.online ? 'Online' : 'Needs attention'}</span>
             <DropdownMenu label={`Manage ${sensor.name}`} triggerClassName="icon-button" menuClassName="row-menu" trigger={<MoreHorizontal />}>
+              {canManageTopology && <DropdownMenuItem onSelect={() => { setAssignmentSensor(sensor) }}><Rows3 /> Assign circuit and electric service</DropdownMenuItem>}
               <DropdownMenuItem onSelect={() => { configure.mutate({ id: sensor.id, currentName: sensor.name, currentCt: sensor.ctRatingAmps }); }}><Gauge /> Edit name and CT rating</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => { maintenance.mutate({ id: sensor.id, enabled: true }); }}><Wrench /> Start maintenance test</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => { void request(`/api/v1/devices/${sensor.id}/credential-rotation`, json('POST', { overlap_seconds: 3600 })); }}><KeyRound /> Rotate credentials</DropdownMenuItem>
@@ -253,8 +265,27 @@ function SensorSettings() {
         </Surface>
       )}
       {home && adding && <SensorSetupFlow home={home} onClose={() => { setAdding(false); }} />}
+      {home && activeAssignmentSensor && (
+        <ModalLayer onRequestClose={closeAssignment}>
+          <MeasurementAssignmentDialog
+            home={home}
+            sensor={activeAssignmentSensor}
+            services={services}
+            onClose={closeAssignment}
+            onDone={() => {
+              closeAssignment()
+              void refresh()
+            }}
+          />
+        </ModalLayer>
+      )}
     </>
   )
+
+  function closeAssignment() {
+    setAssignmentSensor(undefined)
+    if (assignmentRequested) navigate('/settings/sensors', { replace: true })
+  }
 
   function navigateToTestMode() {
     navigate('/settings/advanced/sensor-test-mode')
@@ -1070,9 +1101,12 @@ function NetworkDetail() {
 }
 
 function TopologyDetail({ homeId }: { homeId: string }) {
-  const circuits = useQuery({ queryKey: ['circuits', homeId], queryFn: () => request<Record<string, unknown>[]>(`/api/v1/circuits?site_id=${encodeURIComponent(homeId)}`) })
+  const navigate = useNavigate()
+  const { sensors } = useLiveHome()
+  const circuits = useQuery({ queryKey: ['circuits', homeId], queryFn: () => request(`/api/v1/circuits?site_id=${encodeURIComponent(homeId)}`, {}, adaptCircuits) })
   const aggregates = useQuery({ queryKey: ['aggregates', homeId], queryFn: () => request<Record<string, unknown>[]>(`/api/v1/aggregate-sets?site_id=${encodeURIComponent(homeId)}`) })
-  return <Surface title="Monitoring topology" subtitle="Whole-home totals and partial circuits remain server-authoritative and double-count protected.">{circuits.isLoading ? <LoadingState /> : <><div className="list-row"><Radio /><span><strong>{circuits.data?.length ?? 0} monitored circuits</strong><small>{aggregates.data?.length ?? 0} aggregate sets · cost scope applies fixed charges only once</small></span></div>{[...(circuits.data ?? []), ...(aggregates.data ?? [])].map((item, index) => <div className="list-row" key={typeof item.id === 'string' ? item.id : String(index)}><span><strong>{typeof item.name === 'string' ? item.name : 'Monitoring group'}</strong><small>{typeof item.measurement_role === 'string' ? item.measurement_role : typeof item.cost_scope === 'string' ? item.cost_scope : 'server managed'}</small></span></div>)}</>}</Surface>
+  const incomplete = sensors.filter((sensor) => !sensor.circuitId || !sensor.utilityAccountId)
+  return <Surface title="Monitoring topology" subtitle="Whole-home totals and partial circuits remain server-authoritative and double-count protected." action={<button type="button" className="button secondary compact" onClick={() => { navigate('/settings/sensors?configuration=measurement-assignment') }}>Manage assignments</button>}>{circuits.isLoading ? <LoadingState /> : <><div className="list-row"><Radio /><span><strong>{circuits.data?.length ?? 0} monitored circuits</strong><small>{aggregates.data?.length ?? 0} aggregate sets · {incomplete.length} sensors need assignment</small></span></div>{circuits.data?.map((item) => <div className="list-row" key={item.id}><span><strong>{item.name}</strong><small>{item.measurementRole.replaceAll('-', ' ')}</small></span></div>)}{aggregates.data?.map((item, index) => <div className="list-row" key={typeof item.id === 'string' ? item.id : String(index)}><span><strong>{typeof item.name === 'string' ? item.name : 'Monitoring group'}</strong><small>{typeof item.cost_scope === 'string' ? item.cost_scope : 'server managed'}</small></span></div>)}</>}</Surface>
 }
 
 function FirmwareDetail() {

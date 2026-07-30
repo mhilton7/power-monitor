@@ -80,6 +80,8 @@ from app.schemas import (
     CredentialRotationRequest,
     DeviceConfigCreate,
     DeviceListItem,
+    DeviceMeasurementAssignmentView,
+    DeviceMeasurementAssignmentWrite,
     DeviceUnclaimRequest,
     EnrollmentTokenCreate,
     EnrollmentTokenView,
@@ -1002,6 +1004,7 @@ async def list_devices(
                 "name": device.name,
                 "site_id": device.site_id,
                 "site_name": site.name if site else None,
+                "utility_account_id": device.utility_account_id,
                 "circuit_id": device.circuit_id,
                 "circuit_name": circuit.name if circuit else None,
                 "connection_mode": device.connection_mode,
@@ -1051,6 +1054,158 @@ async def list_devices(
             }
         )
     return output
+
+
+@router.put(
+    "/admin/devices/{device_id}/measurement-assignment",
+    response_model=DeviceMeasurementAssignmentView,
+)
+async def update_device_measurement_assignment(
+    device_id: str,
+    payload: DeviceMeasurementAssignmentWrite,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    """Assign an existing sensor to its audited circuit and utility-account context."""
+
+    _permission(principal, "topology.manage")
+    device = await session.get(Device, device_id)
+    if device is None or device.lifecycle_status != "active":
+        raise ProblemError(
+            404,
+            "Sensor not found",
+            "The active sensor does not exist",
+            "device_missing",
+        )
+    _site_allowed(principal, device.site_id)
+
+    circuit: Circuit | None = None
+    if payload.circuit_id is not None:
+        circuit = await session.get(Circuit, payload.circuit_id)
+        if circuit is None or circuit.site_id != device.site_id:
+            raise ProblemError(
+                422,
+                "Circuit is not eligible",
+                "Choose a circuit from the sensor's home",
+                "device_circuit_site_mismatch",
+            )
+
+    account: UtilityAccount | None = None
+    if payload.utility_account_id is not None:
+        account = await session.get(UtilityAccount, payload.utility_account_id)
+        if account is None or account.site_id != device.site_id or account.status != "active":
+            raise ProblemError(
+                422,
+                "Electric service is not eligible",
+                "Choose an active electric service from the sensor's home",
+                "device_account_site_mismatch",
+            )
+
+    if payload.include_in_default_site_total and circuit is None:
+        raise ProblemError(
+            422,
+            "Circuit assignment required",
+            "Assign a circuit before including the sensor in the Home total",
+            "device_default_total_requires_circuit",
+        )
+    if payload.include_in_default_site_total and circuit is not None:
+        site_circuits = {
+            item.id: item
+            for item in await session.scalars(
+                select(Circuit).where(Circuit.site_id == device.site_id)
+            )
+        }
+        existing_included = list(
+            await session.scalars(
+                select(Device).where(
+                    Device.site_id == device.site_id,
+                    Device.lifecycle_status == "active",
+                    Device.include_in_default_site_total.is_(True),
+                    Device.circuit_id.is_not(None),
+                    Device.id != device.id,
+                )
+            )
+        )
+        existing_circuit_ids = {
+            item.circuit_id for item in existing_included if item.circuit_id is not None
+        }
+        topology_warnings: list[str] = []
+        if circuit.id in existing_circuit_ids:
+            topology_warnings.append(
+                "Another sensor on this circuit is already included in the Home total."
+            )
+        items = [
+            AggregateItem(
+                circuit_id=item.id,
+                role=item.measurement_role,
+                split_phase_group=item.split_phase_group,
+            )
+            for item in site_circuits.values()
+            if item.id in existing_circuit_ids or item.id == circuit.id
+        ]
+        topology_warnings.extend(
+            warning
+            for warning in overlap_warnings(
+                items,
+                {item.id: item.parent_id for item in site_circuits.values()},
+            )
+            if warning.startswith("Circuit ")
+        )
+        if topology_warnings:
+            raise ProblemError(
+                409,
+                "Home total would overlap",
+                "Exclude an overlapping parent, child, or duplicate sensor before "
+                "including this measurement",
+                "device_default_total_overlap",
+                {"warnings": sorted(set(topology_warnings))},
+            )
+
+    previous = {
+        "circuit_id": device.circuit_id,
+        "utility_account_id": device.utility_account_id,
+        "measurement_role": device.measurement_role,
+        "included_in_default_site_total": device.include_in_default_site_total,
+    }
+    device.circuit_id = circuit.id if circuit else None
+    device.utility_account_id = account.id if account else None
+    if circuit is not None:
+        device.measurement_role = circuit.measurement_role
+    device.include_in_default_site_total = payload.include_in_default_site_total
+    session.add(
+        audit_event(
+            action="device.measurement_assignment_changed",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="device",
+            object_id=device.id,
+            details={
+                "reason": payload.reason,
+                "previous": previous,
+                "current": {
+                    "circuit_id": device.circuit_id,
+                    "utility_account_id": device.utility_account_id,
+                    "measurement_role": device.measurement_role,
+                    "included_in_default_site_total": (device.include_in_default_site_total),
+                },
+                "historical_readings_preserved": True,
+            },
+        )
+    )
+    await session.commit()
+    return {
+        "device_id": device.id,
+        "site_id": device.site_id,
+        "circuit_id": device.circuit_id,
+        "circuit_name": circuit.name if circuit else None,
+        "utility_account_id": device.utility_account_id,
+        "utility_account_name": account.name if account else None,
+        "measurement_role": device.measurement_role,
+        "cost_scope": device.cost_scope,
+        "included_in_default_site_total": device.include_in_default_site_total,
+    }
 
 
 @router.get("/devices/{device_id}")

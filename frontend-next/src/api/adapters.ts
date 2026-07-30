@@ -5,6 +5,7 @@ import type {
   BillImportDetail,
   BillSummary,
   BillingCycleSummary,
+  CircuitSummary,
   ConfigurationStatus,
   CurrentRateAssignment,
   ElectricService,
@@ -24,6 +25,7 @@ import type {
   TestModePoint,
   TestModeSensor,
   TestModeState,
+  UsageAuthority,
   RateEvidence,
   RatePlanDependencySummary,
   RatePlanAssignment,
@@ -289,6 +291,9 @@ export function adaptSensors(value: unknown): SensorSummary[] {
     return {
       id: stringValue(source.id),
       name: stringValue(source.name, 'Unnamed sensor'),
+      homeId: stringValue(source.site_id),
+      circuitId: optionalString(source.circuit_id),
+      utilityAccountId: optionalString(source.utility_account_id),
       state: measurementFreshness,
       deviceStatus,
       online: onlineStates.has(deviceStatus),
@@ -310,12 +315,45 @@ export function adaptSensors(value: unknown): SensorSummary[] {
       storageHealthy: typeof source.sd_ok === 'boolean' ? source.sd_ok : undefined,
       wifiDbm: typeof source.rssi_dbm === 'number' ? source.rssi_dbm : undefined,
       firmware: optionalString(source.firmware_version),
-      monitoredCircuit: stringValue(source.circuit_name, 'Whole home'),
+      monitoredCircuit: stringValue(source.circuit_name, 'Unassigned'),
+      includedInDefault: booleanValue(source.included_in_default),
       backlog: numberValue(source.backlog),
       ctRatingAmps: stringValue(source.ct_rating_amps, '100'),
       measurementRole: stringValue(source.measurement_role, 'submeter'),
     }
   })
+}
+
+export function adaptCircuits(value: unknown): CircuitSummary[] {
+  return records(value, 'circuits').map((source) => {
+    const role = stringValue(source.measurement_role, 'branch')
+    if (!['main', 'service-leg', 'branch', 'submeter', 'informational'].includes(role)) {
+      throw new Error('Circuit returned an unsupported measurement role')
+    }
+    return {
+      id: stringValue(source.id),
+      homeId: stringValue(source.site_id),
+      parentId: optionalString(source.parent_id),
+      name: stringValue(source.name, 'Unnamed circuit'),
+      measurementRole: role as CircuitSummary['measurementRole'],
+      splitPhaseGroup: optionalString(source.split_phase_group),
+    }
+  })
+}
+
+export function adaptUsageAuthority(value: unknown): UsageAuthority {
+  const source = record(value, 'usage authority')
+  return {
+    configured: booleanValue(source.configured),
+    authorityType: optionalString(source.authority_type),
+    completeAccount: booleanValue(source.complete_account),
+    confidence: stringValue(source.confidence, 'unknown'),
+    sourceReference: optionalString(source.source_reference),
+    aggregateSetId: optionalString(source.aggregate_set_id),
+    deviceIds: stringList(source.device_ids),
+    revision: numberValue(source.revision),
+    updatedAt: optionalString(source.updated_at),
+  }
 }
 
 export function adaptAlerts(value: unknown): AlertSummary[] {
@@ -476,8 +514,11 @@ export function adaptBillingCycle(value: unknown): BillingCycleSummary {
   const currentTier = source.current_tier ? record(source.current_tier, 'current tier') : {}
   return {
     available: booleanValue(source.available),
+    id: optionalString(cycle.id),
     startsAt: optionalString(cycle.starts_at),
     endsAt: optionalString(cycle.ends_at),
+    status: optionalString(cycle.status),
+    finalizedAt: optionalString(cycle.finalized_at),
     daysRemaining: typeof cycle.days_remaining === 'number' ? cycle.days_remaining : undefined,
     currentTier: optionalString(currentTier.name),
     currentPeriod: optionalString(source.current_rate_period),
@@ -491,6 +532,7 @@ export function adaptBillingCycle(value: unknown): BillingCycleSummary {
     projectedBill: optionalString(source.projected_total_bill),
     confidence: optionalString(source.projection_confidence),
     coveragePercent: optionalString(source.coverage_percent),
+    recalculationVersion: numberValue(source.recalculation_version),
     pricingModel: optionalString(source.pricing_model) as BillingCycleSummary['pricingModel'],
     tiers: objectList(source.tiers).map((tier) => ({
       id: stringValue(tier.tier_id),

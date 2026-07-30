@@ -74,9 +74,12 @@ export interface HomeSummary {
 }
 
 export interface SensorSummary {
-  id: string
-  name: string
-  state: string
+    id: string
+    name: string
+    homeId: string
+    circuitId?: string
+    utilityAccountId?: string
+    state: string
   deviceStatus: string
   online: boolean
   currentPowerW?: string
@@ -100,11 +103,33 @@ export interface SensorSummary {
   lastSeenAt?: string
   storageHealthy?: boolean
   wifiDbm?: number
-  firmware?: string
-  monitoredCircuit: string
-  backlog: number
+    firmware?: string
+    monitoredCircuit: string
+    includedInDefault: boolean
+    backlog: number
   ctRatingAmps: string
-  measurementRole: string
+    measurementRole: string
+}
+
+export interface CircuitSummary {
+  id: string
+  homeId: string
+  parentId?: string
+  name: string
+  measurementRole: 'main' | 'service-leg' | 'branch' | 'submeter' | 'informational'
+  splitPhaseGroup?: string
+}
+
+export interface UsageAuthority {
+  configured: boolean
+  authorityType?: string
+  completeAccount: boolean
+  confidence: string
+  sourceReference?: string
+  aggregateSetId?: string
+  deviceIds: string[]
+  revision: number
+  updatedAt?: string
 }
 
 export interface AlertSummary {
@@ -230,8 +255,11 @@ export interface TierLine {
 
 export interface BillingCycleSummary {
   available: boolean
+  id?: string
   startsAt?: string
   endsAt?: string
+  status?: string
+  finalizedAt?: string
   daysRemaining?: number
   currentTier?: string
   currentPeriod?: string
@@ -245,6 +273,7 @@ export interface BillingCycleSummary {
   projectedBill?: string
   confidence?: string
   coveragePercent?: string
+  recalculationVersion: number
   pricingModel?: HomeSummary['pricingModel']
   tiers: TierLine[]
   warnings: string[]

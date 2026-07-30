@@ -37,6 +37,13 @@ disable TLS verification or store the password in Power Monitor settings.
 - **Missing sequence:** inspect retained bounds. Retry pull/backfill; late records fill gaps. `410 Gone` means permanent device-side loss and must remain disclosed.
 - **SD fault:** stop treating history as durable, repair/replace media on the sensor, preserve event evidence, and do not fabricate lost energy.
 - **Incorrect aggregate:** inspect parent/child and split-phase roles. Never sum a parent with its children; a single service leg is not whole-home.
+- **One or more sensors have no circuit assignment:** open **Settings >
+  Sensors**, use the sensor's **Manage** menu, and select **Assign circuit and
+  electric service**. Create or choose the physical circuit and matching
+  service. Enable inclusion in the Home total only after confirming that it
+  does not overlap a parent, child, whole-home, or paired service-leg meter.
+  The warning clears after every selected sensor has an explicit relationship;
+  old readings remain intact.
 - **Unexpected cost:** confirm timezone, interval coverage, effective plan/version, cost scope, billing dates, baseline, fixed-charge count, CCA/DA, taxes, credits, and source date.
 - **Current rate says unavailable:** open **Billing > Utility Accounts**.
   Confirm the account is active, a published version covers the current instant,
@@ -49,6 +56,13 @@ disable TLS verification or store the password in Power Monitor settings.
 - **History cost is unavailable:** confirm every selected sensor is assigned to
   a utility account with a rate assignment covering the historical interval.
   Electrical data remains valid; do not interpret unavailable cost as zero.
+- **Cost is unavailable until chronological billing-cycle tier allocation is
+  recalculated:** open **Billing > Tiered cost calculation**, select the
+  account-usage authority, then choose **Save and recalculate**. For a branch CT,
+  use reviewed utility-bill/manual whole-account context; do not declare the
+  branch a whole-account meter. The operation applies only to the current
+  unfinalized cycle and will explain any remaining missing rate, cycle, or usage
+  evidence instead of assuming zero.
 - **History combined selection is rejected:** inspect the named sensors and
   circuit tree for a parent/child or duplicate-circuit overlap. Correct topology,
   choose only non-overlapping meters, or use Individual sensors for comparison.

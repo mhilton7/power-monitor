@@ -12,6 +12,7 @@ function summary(
   return {
     id: 'sensor-1',
     name: 'Indoor-AC',
+    homeId: 'home-1',
     state: 'live',
     deviceStatus: 'online_synchronized',
     online: true,
@@ -25,6 +26,7 @@ function summary(
     measurementFreshness: 'live',
     invalidMetrics: [],
     monitoredCircuit: 'Whole Home',
+    includedInDefault: true,
     backlog: 0,
     ctRatingAmps: '100',
     measurementRole: 'energy_only',

@@ -787,6 +787,7 @@ class DeviceListItem(ApiModel):
     name: str
     site_id: str
     site_name: str | None
+    utility_account_id: str | None
     circuit_id: str | None
     circuit_name: str | None
     connection_mode: str
@@ -831,6 +832,25 @@ class DeviceListItem(ApiModel):
     sd_ok: bool | None
     time_trusted: bool | None
     backlog: int
+
+
+class DeviceMeasurementAssignmentWrite(ApiModel):
+    circuit_id: str | None = None
+    utility_account_id: str | None = None
+    include_in_default_site_total: bool = False
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class DeviceMeasurementAssignmentView(ApiModel):
+    device_id: str
+    site_id: str
+    circuit_id: str | None
+    circuit_name: str | None
+    utility_account_id: str | None
+    utility_account_name: str | None
+    measurement_role: str
+    cost_scope: str
+    included_in_default_site_total: bool
 
 
 class DeviceCapabilities(DeviceProtocolModel):

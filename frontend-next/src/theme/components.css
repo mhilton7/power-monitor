@@ -440,6 +440,11 @@
   margin-top: 0;
 }
 .billing-side-column { position: sticky; top: calc(var(--top-height) + var(--space-4)); }
+.cost-setup-content { display: grid; gap: var(--space-4); }
+.cost-setup-content .choice-grid { min-width: 0; margin: 0; }
+.cost-setup-content .choice-card { min-width: 0; }
+.cost-setup-content .choice-card span { min-width: 0; }
+.measurement-assignment-dialog { min-height: 0; }
 .service-card-heading,
 .section-heading {
   display: flex;

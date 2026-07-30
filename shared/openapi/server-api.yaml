@@ -4152,6 +4152,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-accounts/{account_id}/billing-cycles/current/recalculate:
+    post:
+      tags:
+      - tiered rates and billing cycles
+      summary: Recalculate Current Cycle
+      description: Create, lock, and recalculate the account's current mutable billing
+        cycle.
+      operationId: recalculate_current_cycle_api_v1_admin_utility_accounts__account_id__billing_cycles_current_recalculate_post
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Recalculate Current Cycle Api V1 Admin Utility Accounts  Account
+                  Id  Billing Cycles Current Recalculate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/admin/utility-accounts/{account_id}/billing-cycles/{cycle_id}/recalculate:
     post:
       tags:
@@ -5399,6 +5446,56 @@ paths:
                 items:
                   $ref: '#/components/schemas/DeviceListItem'
                 title: Response List Devices Api V1 Devices Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/devices/{device_id}/measurement-assignment:
+    put:
+      tags:
+      - management
+      summary: Update Device Measurement Assignment
+      description: Assign an existing sensor to its audited circuit and utility-account
+        context.
+      operationId: update_device_measurement_assignment_api_v1_admin_devices__device_id__measurement_assignment_put
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceMeasurementAssignmentWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceMeasurementAssignmentView'
         '422':
           description: Validation Error
           content:
@@ -13362,6 +13459,11 @@ components:
           - type: string
           - type: 'null'
           title: Site Name
+        utility_account_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Utility Account Id
         circuit_id:
           anyOf:
           - type: string
@@ -13542,6 +13644,7 @@ components:
       - name
       - site_id
       - site_name
+      - utility_account_id
       - circuit_id
       - circuit_name
       - connection_mode
@@ -13578,6 +13681,82 @@ components:
       - time_trusted
       - backlog
       title: DeviceListItem
+    DeviceMeasurementAssignmentView:
+      properties:
+        device_id:
+          type: string
+          title: Device Id
+        site_id:
+          type: string
+          title: Site Id
+        circuit_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Circuit Id
+        circuit_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Circuit Name
+        utility_account_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Utility Account Id
+        utility_account_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Utility Account Name
+        measurement_role:
+          type: string
+          title: Measurement Role
+        cost_scope:
+          type: string
+          title: Cost Scope
+        included_in_default_site_total:
+          type: boolean
+          title: Included In Default Site Total
+      additionalProperties: false
+      type: object
+      required:
+      - device_id
+      - site_id
+      - circuit_id
+      - circuit_name
+      - utility_account_id
+      - utility_account_name
+      - measurement_role
+      - cost_scope
+      - included_in_default_site_total
+      title: DeviceMeasurementAssignmentView
+    DeviceMeasurementAssignmentWrite:
+      properties:
+        circuit_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Circuit Id
+        utility_account_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Utility Account Id
+        include_in_default_site_total:
+          type: boolean
+          title: Include In Default Site Total
+          default: false
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - reason
+      title: DeviceMeasurementAssignmentWrite
     DeviceUnclaimRequest:
       properties:
         confirmation:

@@ -32,6 +32,7 @@ import { MetadataItem, MetadataList, Page, PageHeader, StatGrid } from '../../co
 import { ModalLayer } from '../../components/overlays/ModalLayer'
 import { DropdownMenu, DropdownMenuItem } from '../../components/overlays/DropdownMenu'
 import { BillImportFlow } from '../../features/bill-import/BillImportFlow'
+import { CostCalculationSetup } from '../../features/billing/CostCalculationSetup'
 import { AdvancedRateSettings } from '../../features/rates/AdvancedRateSettings'
 import { ConfigurationStatusChip } from '../../features/configuration/ConfigurationStatusSurface'
 import { useAuth } from '../../state/AuthContext'
@@ -85,7 +86,7 @@ function libraryPlans(value: unknown): LibraryPlan[] {
 
 export function BillingPage() {
   const { resolution } = useSingleHome()
-  const { services, cycle, configuration, refresh } = useLiveHome()
+  const { services, sensors, cycle, configuration, refresh } = useLiveHome()
   const { session } = useAuth()
   const testMode = useTestMode()
   const [params, setParams] = useSearchParams()
@@ -118,6 +119,11 @@ export function BillingPage() {
     onSuccess: () => refresh(),
   })
   const currentLibraryPlan = plans.data?.find((plan) => plan.name === service?.currentPlan || plan.code === service?.planCode)
+  const tieredCostSetupRequired = currentLibraryPlan?.pricingModel === 'tiered'
+    || currentLibraryPlan?.pricingModel === 'time_of_use_tiered'
+  const latestReviewedBill = bills.data?.find((bill) => (
+    ['published', 'imported'].includes(bill.status)
+  ))
   const openImporter = useCallback(() => {
     const next = new URLSearchParams(params)
     next.set('action', 'upload')
@@ -220,6 +226,16 @@ export function BillingPage() {
                 void refresh()
               }} />}
             </Surface>
+
+            {tieredCostSetupRequired && isOwner(session ?? { authenticated: false, bootstrapRequired: false }) && (
+              <CostCalculationSetup
+                service={service}
+                sensors={sensors}
+                cycle={cycle}
+                latestBillId={latestReviewedBill?.id}
+                onRefresh={refresh}
+              />
+            )}
 
             <Surface title="Billing-cycle details" subtitle={dateRange(cycle?.startsAt, cycle?.endsAt)}>
               {!cycle?.available ? <EmptyState compact title="Billing cycle not ready" message="Upload a bill or add exact cycle dates to calculate tier progress and projections." action={<button type="button" className="button secondary compact" onClick={openImporter}><Upload size={16} /> Upload bill</button>} /> : (

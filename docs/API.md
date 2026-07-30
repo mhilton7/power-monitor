@@ -147,7 +147,10 @@ Tiered account status is
 `GET /api/v1/utility-accounts/{account_id}/tier-status`. Account administration
 uses `/api/v1/admin/utility-accounts/{account_id}/usage-authority`,
 `/manual-usage`, `/usage-imports`, and `/billing-cycles`. Cycle subresources
-support reconciliation adjustments, recalculation, and finalization. Import
+support reconciliation adjustments, recalculation, and finalization.
+`POST /api/v1/admin/utility-accounts/{account_id}/billing-cycles/current/recalculate`
+creates or locks the current mutable cycle before running the same chronological
+allocator, so the browser does not need to discover a cycle ID first. Import
 mutations require `usage_imports.manage`; recalculation/finalization require
 `costs.recalculate`; all are site-scoped and CSRF protected. See
 [Tiered and hybrid rates](TIERED_AND_HYBRID_RATES.md), [Billing
@@ -214,5 +217,13 @@ the retained 90-day window and known service identifiers, and return a streamed
 ZIP with a per-file SHA-256 manifest. The server never exposes its log directory
 or temporary path. `GET /api/v1/devices` defaults to active sensors; use
 `?lifecycle=decommissioned` for the administrator archived view.
+
+Existing sensor topology is updated with
+`PUT /api/v1/admin/devices/{device_id}/measurement-assignment`. The CSRF- and
+`topology.manage`-protected body contains `circuit_id`, `utility_account_id`,
+`include_in_default_site_total`, and an audit reason. Both referenced resources
+must be active members of the sensor's site. `GET /api/v1/devices` exposes the
+optional `utility_account_id` alongside its existing circuit fields so browser
+adapters can identify incomplete relationships without an N+1 lookup.
 
 Do not hand-edit generated server OpenAPI. Add schema and authorization in the route, regenerate, validate, and run API/RBAC tests.

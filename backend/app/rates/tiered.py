@@ -1003,6 +1003,7 @@ def _unavailable_status(
         "energy_charge": None,
         "estimated_total_bill": None,
         "projected_total_bill": None,
+        "recalculation_version": cycle.recalculation_version,
         "warnings": [reason],
         "configuration_action": "/billing/accounts",
         "disclosure": "Tier status is unavailable; the server does not guess account usage.",

@@ -832,6 +832,52 @@ def _reconciliation_response(
     }
 
 
+@router.post("/admin/utility-accounts/{account_id}/billing-cycles/current/recalculate")
+async def recalculate_current_cycle(
+    account_id: str,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    """Create, lock, and recalculate the account's current mutable billing cycle."""
+
+    _permission(principal, "costs.recalculate")
+    account = await _account(session, principal, account_id)
+    current = await current_billing_cycle(
+        session,
+        account,
+        datetime.now(UTC),
+        create=True,
+        actor_id=principal.user.id,
+    )
+    cycle = await _cycle(session, account, current.id, lock=True)
+    status = await calculate_cycle_tier_status(
+        session,
+        account,
+        cycle,
+        persist=True,
+        actor_id=principal.user.id,
+    )
+    session.add(
+        audit_event(
+            action="billing_cycle.recalculated",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="billing_cycle",
+            object_id=cycle.id,
+            details={
+                "utility_account_id": account.id,
+                "recalculation_version": cycle.recalculation_version,
+                "current_cycle": True,
+                "finalized_cycle_protected": False,
+            },
+        )
+    )
+    await session.commit()
+    return status
+
+
 @router.post("/admin/utility-accounts/{account_id}/billing-cycles/{cycle_id}/recalculate")
 async def recalculate_cycle(
     account_id: str,

@@ -6,7 +6,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
+    AccountUsageAuthority,
     BackupRun,
+    BillingCycle,
     Device,
     DeviceHeartbeat,
     NotificationChannel,
@@ -65,6 +67,7 @@ async def build_configuration_status(
     now = datetime.now(UTC)
     issues: list[ConfigurationIssue] = []
     rate_ready = False
+    tiered_rate_active = False
     account = await session.scalar(
         select(UtilityAccount)
         .where(UtilityAccount.site_id == site.id, UtilityAccount.status == "active")
@@ -211,6 +214,10 @@ async def build_configuration_status(
                 )
             else:
                 rate_ready = True
+                tiered_rate_active = version is not None and version.pricing_model in {
+                    "tiered",
+                    "time_of_use_tiered",
+                }
 
         if not account.generation_provider or len(account.currency) != 3 or not account.timezone:
             issues.append(
@@ -254,6 +261,112 @@ async def build_configuration_status(
             select(Device).where(Device.site_id == site.id, Device.lifecycle_status == "active")
         )
     )
+    incomplete_assignments = [
+        device
+        for device in devices
+        if device.circuit_id is None or (account is not None and device.utility_account_id is None)
+    ]
+    if incomplete_assignments:
+        issues.append(
+            _issue(
+                issue_id="sensor.measurement-assignment-incomplete",
+                category="sensor",
+                state="partially_configured",
+                title="Sensor measurement assignment is incomplete",
+                what=(
+                    f"{len(incomplete_assignments)} active sensor(s) need a circuit "
+                    "or electric-service assignment."
+                ),
+                why=(
+                    "The server cannot fully verify overlap or apply the historically "
+                    "effective rate without that relationship."
+                ),
+                fix=(
+                    "Assign each sensor to the circuit it measures and the matching "
+                    "electric service."
+                ),
+                blocking=False,
+                action=_action(
+                    "sensor.measurement_assignment",
+                    "Assign sensor",
+                    "/settings/sensors?configuration=measurement-assignment",
+                ),
+            )
+        )
+
+    if account is not None and tiered_rate_active:
+        authority = await session.scalar(
+            select(AccountUsageAuthority).where(
+                AccountUsageAuthority.utility_account_id == account.id
+            )
+        )
+        if authority is None:
+            issues.append(
+                _issue(
+                    issue_id="billing.usage-authority-missing",
+                    category="billing_cycle",
+                    state="setup_needed",
+                    title="Tier usage authority needs setup",
+                    what=(
+                        "The current tiered plan has no reviewed source for "
+                        "whole-account cumulative usage."
+                    ),
+                    why=(
+                        "A branch circuit cannot determine which billing-cycle "
+                        "tier applies by itself."
+                    ),
+                    fix=(
+                        "Use a reviewed utility bill, a whole-home meter, or an "
+                        "explicit partial-circuit authority with account usage context."
+                    ),
+                    blocking=True,
+                    action=_action(
+                        "billing.usage_authority",
+                        "Configure cost calculation",
+                        "/billing?configuration=cost-setup",
+                    ),
+                )
+            )
+        else:
+            cycle = await session.scalar(
+                select(BillingCycle)
+                .where(
+                    BillingCycle.utility_account_id == account.id,
+                    BillingCycle.starts_at <= now,
+                    BillingCycle.ends_at > now,
+                )
+                .order_by(
+                    BillingCycle.explicit_meter_dates.desc(),
+                    BillingCycle.override_revision.desc(),
+                )
+            )
+            if cycle is None or cycle.recalculation_version == 0:
+                issues.append(
+                    _issue(
+                        issue_id="billing.tier-allocation-not-calculated",
+                        category="billing_cycle",
+                        state="partially_configured",
+                        title="Tier allocation needs recalculation",
+                        what=(
+                            "The current mutable billing cycle has no persisted "
+                            "chronological tier allocation."
+                        ),
+                        why=(
+                            "History costs stay unavailable until intervals are "
+                            "allocated against one authoritative cycle cursor."
+                        ),
+                        fix=(
+                            "Review the usage authority, then recalculate the "
+                            "current billing cycle."
+                        ),
+                        blocking=True,
+                        action=_action(
+                            "billing_cycle.recalculate",
+                            "Recalculate tier allocation",
+                            "/billing?configuration=cost-setup",
+                        ),
+                    )
+                )
     latest_heartbeat = await session.scalar(
         select(DeviceHeartbeat.received_at)
         .join(Device, Device.id == DeviceHeartbeat.device_id)

@@ -23,6 +23,13 @@ account**. The seven reviewable steps collect:
 
 Multiple accounts can belong to one site. Assign each device/circuit/aggregate to the applicable
 account in topology; site membership alone does not decide which meter a sensor represents.
+For an already enrolled sensor, open **Settings > Sensors**, choose the sensor's **Manage**
+menu, and select **Assign circuit and electric service**. Choose an existing physical circuit or
+create one, select the matching electric service, and decide whether the measurement belongs in
+the default Home total. Include it only when it does not overlap an included parent, child,
+whole-home, or service-leg measurement. The server synchronizes the sensor's measurement role
+with the circuit and records the old and new relationship in the audit log; historical readings
+are not rewritten.
 
 The physical-site card reports both effective network directions and links to **Administration > Sites & Network > Network Policy**.
 It is a location/timezone boundary, not a utility account. The rate library is likewise not an
@@ -88,6 +95,14 @@ usage imports use preview, normalization, content hashing, conflict review,
 commit, and audited reversal. See [Account usage
 authority](ACCOUNT_USAGE_AUTHORITY.md), [Billing cycles](BILLING_CYCLES.md), and
 [Usage imports](USAGE_IMPORTS.md).
+
+For a current tiered or hybrid plan, the owner-facing **Billing > Tiered cost
+calculation** surface selects that authority and runs **Save and recalculate**.
+The server creates or locks the current mutable cycle, chronologically allocates
+usage against effective rate versions, persists a recalculation revision, and
+audits the operation. Reviewed bill/manual usage is the safe default for a
+branch CT. One whole-account sensor may be selected only when it measures the
+entire service. A finalized cycle remains immutable.
 
 ## Readiness
 
