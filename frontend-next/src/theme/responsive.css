@@ -183,6 +183,8 @@
   .home-onboarding-icon { width: 4.5rem; }
   .home-assurance-list { display: grid; }
   .home-side-stack { grid-template-columns: 1fr; }
+  .sensor-electrical-strip { gap: .28rem .65rem; }
+  .sensor-electrical-metric { flex: 0 1 auto; }
   .power-reading { justify-content: flex-start; min-height: 11rem; }
   .rate-editor-heading, .rate-editor-footer { align-items: stretch; flex-direction: column; }
   .rate-editor-shell > .subnav { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-inline: var(--space-2); }

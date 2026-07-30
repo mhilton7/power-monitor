@@ -87,6 +87,36 @@ export function relativeTime(value: string | undefined): string {
   return formatter.format(Math.round(minutes / 60), 'hour')
 }
 
+export function sensorMeasurementTime(
+  value: string | undefined,
+  freshness: string,
+  now = Date.now(),
+): string {
+  if (!value) {
+    return freshness === 'waiting'
+      ? 'Waiting for first reading'
+      : 'Measurement time unavailable'
+  }
+  const measuredAt = new Date(value)
+  const measuredAtMs = measuredAt.getTime()
+  if (!Number.isFinite(measuredAtMs) || measuredAtMs - now > 60_000) {
+    return 'Measurement time unavailable'
+  }
+  const elapsedMs = Math.max(0, now - measuredAtMs)
+  const prefix = freshness === 'live' ? 'Updated' : 'Last reading'
+  if (elapsedMs < 60_000) return `${prefix} just now`
+  const minutes = Math.round(elapsedMs / 60_000)
+  if (minutes < 60) return `${prefix} ${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`
+  const hours = Math.round(elapsedMs / 3_600_000)
+  if (hours < 24) return `${prefix} ${hours} ${hours === 1 ? 'hour' : 'hours'} ago`
+  if (hours < 48) return 'Last reading yesterday'
+  return `Last reading ${new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(measuredAt)}`
+}
+
 export function statusLabel(value: string): string {
   return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }

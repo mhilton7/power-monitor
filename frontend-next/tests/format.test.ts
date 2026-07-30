@@ -8,6 +8,7 @@ import {
   power,
   powerFactor,
   rate,
+  sensorMeasurementTime,
   statusLabel,
   voltage,
 } from '../src/utils/format'
@@ -33,5 +34,21 @@ describe('centralized display formatting', () => {
     expect(powerFactor('0.83')).toBe('0.83')
     expect(powerFactor(undefined)).toBe('—')
     expect(current('-0')).toBe('0.00 A')
+  })
+
+  it('keeps sensor timestamps readable without five-digit hour counts', () => {
+    const now = Date.parse('2026-07-30T12:00:00Z')
+    expect(sensorMeasurementTime('2026-07-30T11:59:45Z', 'live', now))
+      .toBe('Updated just now')
+    expect(sensorMeasurementTime('2026-07-30T11:55:00Z', 'live', now))
+      .toBe('Updated 5 minutes ago')
+    expect(sensorMeasurementTime('2026-07-29T12:00:00Z', 'stale', now))
+      .toBe('Last reading yesterday')
+    expect(sensorMeasurementTime('2023-07-29T12:00:00Z', 'offline', now))
+      .toBe('Last reading Jul 29, 2023')
+    expect(sensorMeasurementTime(undefined, 'waiting', now))
+      .toBe('Waiting for first reading')
+    expect(sensorMeasurementTime('not-a-date', 'invalid', now))
+      .toBe('Measurement time unavailable')
   })
 })
