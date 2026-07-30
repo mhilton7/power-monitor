@@ -6,6 +6,7 @@ import secrets
 from datetime import UTC, datetime
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Request
 from sqlalchemy import select
 
@@ -46,6 +47,7 @@ from app.schemas import (
 from app.security.protocol import PROTOCOL, SecretCipher
 
 router = APIRouter(prefix="/api/v1", tags=["device protocol"])
+logger = structlog.get_logger(__name__)
 
 
 async def _set_address_policy_alert(
@@ -238,6 +240,14 @@ async def claim_enrollment(
             )
         )
     else:
+        existing_site_device = await session.scalar(
+            select(Device.id)
+            .where(
+                Device.site_id == site.id,
+                Device.lifecycle_status == "active",
+            )
+            .limit(1)
+        )
         device = Device(
             site_id=site.id,
             circuit_id=preassignment.get("circuit_id"),
@@ -246,7 +256,10 @@ async def claim_enrollment(
             connection_mode=preassignment.get("connection_mode", "push"),
             measurement_role=preassignment.get("measurement_role", "submeter"),
             cost_scope="energy_only",
-            include_in_default_site_total=False,
+            # The first sensor in Single Home is the only unambiguous live
+            # aggregate. Additional sensors require explicit topology so a
+            # whole-home CT is never blindly summed with a submeter.
+            include_in_default_site_total=existing_site_device is None,
             ct_rating_amps=preassignment.get("ct_rating_amps", "100"),
             protocol_version=PROTOCOL,
         )
@@ -516,6 +529,30 @@ async def heartbeat(
             updated_at=now,
         )
         session.add(cursor)
+    logger.info(
+        "HEARTBEAT_ACCEPTED",
+        device_id=device.id,
+        site_id=device.site_id,
+        received_at=now,
+        newest_sequence=payload.newest_stored_sequence,
+        backlog=payload.backlog_estimate,
+    )
+    if payload.latest is not None:
+        logger.info(
+            "LIVE_MEASUREMENT_ACCEPTED",
+            device_id=device.id,
+            site_id=device.site_id,
+            measured_at=payload.latest.measured_at,
+            power_watts=payload.latest.power_w,
+        )
+        logger.info(
+            "LATEST_MEASUREMENT_UPDATED",
+            device_id=device.id,
+            site_id=device.site_id,
+            sequence=None,
+            measured_at=payload.latest.measured_at,
+            source="heartbeat_live",
+        )
     gaps = list(
         await session.scalars(
             select(SequenceGap)
@@ -548,14 +585,31 @@ async def reading_batch(
     payload: ReadingBatch,
     verified: Verified,
     session: DbSession,
+    settings: AppSettings,
 ) -> ReadingBatchResponse:
     _assert_device_id(payload.device_id, verified.device.id)
     if payload.protocol_version != PROTOCOL:
         raise ProblemError(
             426, "Protocol upgrade required", f"Use {PROTOCOL}", "protocol_incompatible"
         )
+    heartbeat_row = await session.scalar(
+        select(DeviceHeartbeat)
+        .where(DeviceHeartbeat.device_id == verified.device.id)
+        .order_by(DeviceHeartbeat.received_at.desc())
+        .limit(1)
+    )
+    first_available = None
+    if heartbeat_row is not None and isinstance(heartbeat_row.payload, dict):
+        raw_first = heartbeat_row.payload.get("oldest_stored_sequence")
+        if isinstance(raw_first, int) and raw_first > 0:
+            first_available = raw_first
     result = await ingest_readings(
-        session, device_id=verified.device.id, readings=payload.readings, source="push"
+        session,
+        device_id=verified.device.id,
+        readings=payload.readings,
+        source="push",
+        first_available_sequence=first_available,
+        maximum_clock_skew_seconds=settings.max_device_clock_skew_seconds,
     )
     await session.commit()
     return result

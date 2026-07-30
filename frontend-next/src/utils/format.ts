@@ -6,9 +6,40 @@ export function number(value: string | number | undefined, digits = 1): string {
 
 export function power(value: string | number | undefined): string {
   const parsed = Number(value)
-  if (!Number.isFinite(parsed)) return 'Unavailable'
+  if (!Number.isFinite(parsed)) return '—'
   if (Math.abs(parsed) >= 1000) return `${number(parsed / 1000, 2)} kW`
   return `${number(parsed, 0)} W`
+}
+
+export function voltage(value: string | number | undefined): string {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return '—'
+  return `${fixedNumber(Object.is(parsed, -0) ? 0 : parsed, 1)} V`
+}
+
+export function current(value: string | number | undefined): string {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return '—'
+  return `${fixedNumber(Object.is(parsed, -0) ? 0 : parsed, 2)} A`
+}
+
+export function frequency(value: string | number | undefined): string {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return '—'
+  return `${fixedNumber(Object.is(parsed, -0) ? 0 : parsed, 1)} Hz`
+}
+
+export function powerFactor(value: string | number | undefined): string {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return '—'
+  return fixedNumber(Object.is(parsed, -0) ? 0 : parsed, 2)
+}
+
+function fixedNumber(value: number, digits: number): string {
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(value)
 }
 
 export function energy(value: string | number | undefined): string {

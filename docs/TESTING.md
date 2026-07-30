@@ -1,5 +1,34 @@
 # Testing and release gates
 
+## Live sensor pipeline acceptance (2026-07-29)
+
+The portable backend/simulator run passes 203 tests. The separately gated
+PostgreSQL 17 migration test passes populated upgrade, downgrade/re-upgrade,
+prior-schema upgrade, and clean install at Alembic `20260729_0018`. The
+100-device gate accepts and deduplicates 18,000 readings. Ruff lint/format,
+strict mypy, generated OpenAPI, contracts, static Compose, and the TrueNAS
+template and rendered-deployment validators pass.
+
+The greenfield frontend passes lint, strict TypeScript, 35 unit/component
+tests, its production-bundle/CSS gate, and the full 132-case Playwright matrix
+with 110 passes and 22 intentional project-specific skips. The exact
+one-sensor contradiction regression passes in dark desktop, light desktop,
+tablet, and mobile layouts, including power, voltage, current, frequency, and
+power factor.
+
+Fresh API, frontend, and backup images build successfully. The standard stack
+is healthy at migration head `20260729_0018`. The isolated seven-service
+TrueNAS-equivalent deployment passes one-shot migration, signed three-device
+heartbeats, 90 durable historical readings, SCE calculation, internal-CA TLS,
+gateway-only port publication, encrypted/checksummed backup, and clean
+restoration.
+
+Physical-device acceptance remains a separate mandatory gate: flash the
+release firmware, observe at least ten live intervals, verify devices and
+fleet-summary responses against the same Home, restart frontend/API/worker,
+and verify stale/offline/recovery transitions. Sensor Test Mode is never
+accepted as proof of that gate.
+
 ## Current-plan and Configuration Status regression
 
 Run the focused assignment and UI regression before the full suites:

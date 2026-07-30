@@ -188,6 +188,7 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
   let billUploadAttempts = 0
   let sourceRunPolls = 0
   let adjustment: Record<string, unknown> | undefined
+  const liveMeasurementAt = new Date().toISOString()
   const hasBilling = configured || options.billingOnly === true
   const observed: ObservedRequests = {
     assignmentRequestCount: 0,
@@ -535,11 +536,20 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
       '/api/v1/sites': [home],
       '/api/v1/devices': configured ? [{
         id: 'sensor-1',
-        friendly_name: 'Main panel',
-        application_health: 'online_synchronized',
-        current_power_w: '1420',
-        last_seen_at: '2026-07-24T23:36:00Z',
-        monitored_circuit: 'Whole home',
+        name: 'Main panel',
+        status: 'online_synchronized',
+        current_watts: '1420',
+        voltage_volts: '120.4',
+        current_amps: '11.79',
+        frequency_hz: '60.0',
+        power_factor: '1.00',
+        latest_measurement_at: liveMeasurementAt,
+        measurement_received_at: liveMeasurementAt,
+        measurement_sequence: 1204,
+        measurement_source: 'committed_reading',
+        measurement_freshness: 'live',
+        last_seen_at: liveMeasurementAt,
+        circuit_name: 'Whole home',
         measurement_role: 'full_account',
         ct_rating_amps: '200',
       }] : [],
@@ -610,7 +620,7 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
         warnings: [],
       },
       '/api/v1/fleet/summary': {
-        current_load_w: configured ? '1420' : '0',
+        current_load_w: configured ? '1420' : null,
         energy_today_kwh: configured ? '12.450' : '0',
         estimated_cost_today: configured ? '4.28' : '0',
         billing_cycle_energy_kwh: configured ? '481.250' : '0',
@@ -620,8 +630,10 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
         total_devices: configured ? 1 : 0,
         online_devices: configured ? 1 : 0,
         active_alerts: 0,
-        recent_peak_w: configured ? '3850' : '0',
-        latest_data_at: configured ? '2026-07-24T23:36:00Z' : null,
+        recent_peak_w: configured ? '3850' : null,
+        latest_data_at: configured ? liveMeasurementAt : null,
+        latest_measurement_at: configured ? liveMeasurementAt : null,
+        latest_heartbeat_at: configured ? liveMeasurementAt : null,
         has_live_data: configured,
         has_energy_data: configured,
         has_cost_data: configured,

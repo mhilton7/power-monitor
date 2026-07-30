@@ -269,14 +269,43 @@ export function adaptSensors(value: unknown): SensorSummary[] {
     'api_healthy_storage_failed',
     'time_unsynchronized',
   ])
+  const freshnessStates = new Set([
+    'live',
+    'waiting',
+    'stale',
+    'offline',
+    'unavailable',
+    'invalid',
+    'needs_attention',
+  ])
   return records(value, 'sensors').map((source) => {
-    const state = stringValue(source.status, 'unknown')
+    const deviceStatus = stringValue(source.status, 'unknown')
+    const rawFreshness = stringValue(source.measurement_freshness)
+    const measurementFreshness = freshnessStates.has(rawFreshness)
+      ? rawFreshness as SensorSummary['measurementFreshness']
+      : onlineStates.has(deviceStatus)
+        ? 'waiting'
+        : 'offline'
     return {
       id: stringValue(source.id),
       name: stringValue(source.name, 'Unnamed sensor'),
-      state,
-      online: onlineStates.has(state),
+      state: measurementFreshness,
+      deviceStatus,
+      online: onlineStates.has(deviceStatus),
       currentPowerW: optionalString(source.current_watts),
+      voltageVolts: optionalString(source.voltage_volts),
+      currentAmps: optionalString(source.current_amps),
+      frequencyHz: optionalString(source.frequency_hz),
+      powerFactor: optionalString(source.power_factor),
+      latestMeasurementAt: optionalString(source.latest_measurement_at),
+      measurementReceivedAt: optionalString(source.measurement_received_at),
+      measurementSequence: optionalNumber(source.measurement_sequence),
+      measurementSource: source.measurement_source === 'heartbeat_live'
+        || source.measurement_source === 'committed_reading'
+        ? source.measurement_source
+        : undefined,
+      measurementFreshness,
+      invalidMetrics: stringList(source.measurement_invalid_metrics),
       lastSeenAt: optionalString(source.last_seen_at),
       storageHealthy: typeof source.sd_ok === 'boolean' ? source.sd_ok : undefined,
       wifiDbm: typeof source.rssi_dbm === 'number' ? source.rssi_dbm : undefined,
@@ -484,7 +513,7 @@ export function adaptHomeSummary(
 ): HomeSummary {
   const fleet = record(fleetValue, 'home summary')
   return {
-    currentPowerW: stringValue(fleet.current_load_w, '0'),
+    currentPowerW: optionalString(fleet.current_load_w),
     energyTodayKwh: stringValue(fleet.energy_today_kwh, '0'),
     estimatedCostToday: stringValue(fleet.estimated_cost_today, '0'),
     cycleEnergyKwh: stringValue(fleet.billing_cycle_energy_kwh, cycle?.usageKwh ?? '0'),
@@ -497,8 +526,9 @@ export function adaptHomeSummary(
     totalSensors: sensors.length,
     attentionSensors: sensors.filter((sensor) => !sensor.online || sensor.storageHealthy === false).length,
     activeAlerts: numberValue(fleet.active_alerts),
-    recentPeakW: stringValue(fleet.recent_peak_w, '0'),
-    latestDataAt: optionalString(fleet.latest_heartbeat_at),
+    recentPeakW: optionalString(fleet.recent_peak_w),
+    latestDataAt: optionalString(fleet.latest_data_at)
+      ?? optionalString(fleet.latest_measurement_at),
     coveragePercent: optionalString(fleet.coverage_percent),
     hasLiveData: booleanValue(fleet.has_live_data),
     hasEnergyData: booleanValue(fleet.has_energy_data),

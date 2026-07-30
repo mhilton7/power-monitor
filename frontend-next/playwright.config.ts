@@ -5,6 +5,7 @@ const externalBaseUrl = process.env.PW_EXTERNAL_BASE_URL
 export default defineConfig({
   testDir: './e2e',
   timeout: 35_000,
+  workers: process.platform === 'win32' ? 4 : undefined,
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.015 } },
   use: {
     baseURL: externalBaseUrl ?? 'http://127.0.0.1:4197',

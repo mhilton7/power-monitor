@@ -175,6 +175,68 @@ test('normal production routes use only the four-workspace shell', async ({ page
   await expect(page).toHaveScreenshot('home-empty-dark.png', { fullPage: true })
 })
 
+test('a fresh real sensor measurement stays consistent across Home and Sensor Health', async ({ page }) => {
+  await page.route('**/api/v1/devices*', async (route) => {
+    await route.fulfill({ json: [{
+      id: 'sensor-1',
+      name: 'Indoor-AC',
+      status: 'online_synchronized',
+      current_watts: '1.0',
+      voltage_volts: '120.4',
+      current_amps: '0.01',
+      frequency_hz: '60.0',
+      power_factor: '0.83',
+      latest_measurement_at: '2026-07-29T21:55:00Z',
+      last_seen_at: '2026-07-29T21:55:02Z',
+      measurement_source: 'heartbeat_live',
+      measurement_freshness: 'live',
+      measurement_invalid_metrics: [],
+      backlog: 0,
+    }] })
+  })
+  await page.route('**/api/v1/fleet/summary*', async (route) => {
+    await route.fulfill({ json: {
+      current_load_w: '1.0',
+      energy_today_kwh: '0',
+      estimated_cost_today: '0',
+      reporting_devices: 1,
+      active_alerts: 0,
+      recent_peak_w: '1.0',
+      latest_data_at: '2026-07-29T21:55:00Z',
+      latest_measurement_at: '2026-07-29T21:55:00Z',
+      has_live_data: true,
+      has_energy_data: false,
+      has_cost_data: false,
+    } })
+  })
+  await page.route('**/api/v1/history/query', async (route) => {
+    await route.fulfill({ json: {
+      scope: { display_name: 'Whole Home' },
+      summary: {
+        energy_kwh: '0',
+        energy_cost: '0',
+        coverage_percent: '0',
+        contributing_sensor_count: 0,
+      },
+      combined: [],
+      warnings: [],
+    } })
+  })
+
+  await page.goto('/home')
+  await expect(page.getByText('Connected', { exact: true })).toBeVisible()
+  await expect(page.getByText('1 of 1 sensors reporting')).toBeVisible()
+  await expect(page.locator('.live-facts').getByText('1 W', { exact: true })).toBeVisible()
+  await expect(page.locator('.power-reading').getByText('1 W', { exact: true })).toBeVisible()
+  const sensor = page.locator('.sensor-health-row', { hasText: 'Indoor-AC' })
+  await expect(sensor.getByText('1 W', { exact: true })).toBeVisible()
+  await expect(sensor.getByText('120.4 V', { exact: true })).toBeVisible()
+  await expect(sensor.getByText('0.01 A', { exact: true })).toBeVisible()
+  await expect(sensor.getByText('60.0 Hz', { exact: true })).toBeVisible()
+  await expect(sensor.getByText('0.83', { exact: true })).toBeVisible()
+  await expect(page.getByText('Waiting for data')).toHaveCount(0)
+})
+
 test('legacy routes redirect without rendering a legacy page', async ({ page }) => {
   await page.goto('/devices')
   await expect(page).toHaveURL(/\/settings\/sensors/)

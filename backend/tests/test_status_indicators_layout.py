@@ -382,6 +382,8 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
     )
     session.add_all([selected_device, other_device])
     await session.flush()
+    selected_measured_at = datetime.now(UTC)
+    other_measured_at = datetime.now(UTC)
     session.add_all(
         [
             DeviceHeartbeat(
@@ -395,7 +397,13 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
                 time_trusted=True,
                 newest_sequence=1,
                 backlog_estimate=0,
-                payload={},
+                device_time=selected_measured_at,
+                payload={
+                    "latest": {
+                        "measured_at": selected_measured_at.isoformat(),
+                        "power_w": "321",
+                    }
+                },
             ),
             DeviceHeartbeat(
                 device_id=other_device.id,
@@ -408,7 +416,13 @@ async def test_admin_draft_preview_publish_resolution_and_monitoring_integrity(
                 time_trusted=False,
                 newest_sequence=1,
                 backlog_estimate=8,
-                payload={},
+                device_time=other_measured_at,
+                payload={
+                    "latest": {
+                        "measured_at": other_measured_at.isoformat(),
+                        "power_w": "900",
+                    }
+                },
             ),
         ]
     )

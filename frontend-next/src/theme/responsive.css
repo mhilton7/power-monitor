@@ -47,7 +47,19 @@
   .app-shell, .app-shell.rail-collapsed { display: block; padding: var(--top-height) 0 68px; }
   .side-rail { display: none; }
   .top-bar { position: fixed; inset: 0 0 auto; height: var(--top-height); padding: 0 .85rem; }
-  .home-identity .icon-tile, .home-identity small, .live-facts, .user-button span, .user-button > svg:last-child { display: none; }
+  .home-identity .icon-tile, .home-identity small, .user-button span, .user-button > svg:last-child { display: none; }
+  .top-configuration-status { display: none; }
+  .live-facts {
+    display: flex;
+    margin-left: auto;
+    gap: .35rem;
+  }
+  .live-facts .freshness { display: none; }
+  .live-facts > div {
+    min-height: 44px;
+    padding: .32rem .55rem;
+  }
+  .live-facts > div > svg { width: 16px; }
   .user-button > svg:first-child { width: 30px; }
   .page-content { min-width: 0; }
   .test-mode-banner { top: var(--top-height); width: calc(100% - 1.25rem); }
@@ -82,6 +94,14 @@
 
 @media (max-width: 620px) {
   h1 { font-size: 2.25rem; }
+  .home-identity { display: none; }
+  .live-facts > div {
+    gap: .3rem;
+    min-height: 42px;
+    padding: .28rem .42rem;
+  }
+  .live-facts > div > svg { display: none; }
+  .live-facts small { font-size: .58rem; }
   .auth-brand {
     min-height: 23rem;
     padding: 2rem 1.25rem 4rem;

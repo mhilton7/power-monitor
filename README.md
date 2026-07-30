@@ -94,6 +94,7 @@ through [Apps > Install via YAML](deploy/truenas/installation.md), including exa
 dataset ACLs, three TLS modes, nightly encrypted/restore-tested backups, and an
 automated multi-device release gate. Protocol and deployment details are in
 [Architecture](docs/ARCHITECTURE.md), [Device protocol](docs/DEVICE_PROTOCOL.md),
+[Live sensor pipeline](docs/LIVE_SENSOR_PIPELINE.md),
 [Security](docs/SECURITY.md), and [Operations](docs/OPERATIONS.md).
 Rate administration is covered by [SCE synchronization](docs/SCE_RATE_SYNC.md),
 [custom plans](docs/CUSTOM_RATE_PLANS.md), [source security](docs/RATE_SOURCE_SECURITY.md),

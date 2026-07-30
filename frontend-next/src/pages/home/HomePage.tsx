@@ -25,8 +25,20 @@ import { useAppearance } from '../../state/AppearanceContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
 import { useTestMode } from '../../state/TestModeContext'
-import type { HistoryFilters } from '../../types/models'
-import { dateRange, energy, money, power, rate, relativeTime, statusLabel } from '../../utils/format'
+import type { HistoryFilters, SensorSummary } from '../../types/models'
+import {
+  current as amperage,
+  dateRange,
+  energy,
+  frequency,
+  money,
+  power,
+  powerFactor,
+  rate,
+  relativeTime,
+  statusLabel,
+  voltage,
+} from '../../utils/format'
 
 const todayFilters: HistoryFilters = { range: 'today', metric: 'energy', scope: 'home' }
 
@@ -123,7 +135,7 @@ export function HomePage() {
       {testMode.state?.enabled && <TestModeHomePreview currency={home.currency} />}
       <StatGrid className="home-status-grid">
         <Metric label="Live data" value={summary.hasLiveData ? 'Connected' : 'Waiting'} identity="home.live_status" detail={`${summary.reportingSensors} of ${summary.totalSensors} sensors reporting`} />
-        <Metric label="Sensors" value={`${summary.onlineSensors}/${summary.totalSensors}`} identity="home.sensor_status" detail={summary.attentionSensors ? `${summary.attentionSensors} need attention` : 'All enrolled sensors accounted for'} />
+        <Metric label="Sensors" value={`${summary.onlineSensors}/${summary.totalSensors}`} identity="home.sensor_status" detail={summary.attentionSensors ? `${summary.attentionSensors} need attention` : 'All sensors reporting'} />
         <Metric label="Last data" value={relativeTime(summary.latestDataAt)} identity="home.last_data" detail={summary.hasLiveData ? 'Signed reading received' : 'Waiting for a fresh reading'} />
         <Metric label="Current rate" value={rate(summary.currentRate, home.currency)} identity="home.current_rate" detail={summary.currentPeriod ?? summary.currentTier ?? summary.currentPlan ?? 'Plan not configured'} />
         <Metric label="Active alerts" value={summary.activeAlerts} identity="home.active_alerts" detail={summary.activeAlerts ? 'Review recommended' : 'Nothing needs attention'} />
@@ -146,7 +158,26 @@ export function HomePage() {
           {appearance.showSensorsCard && <Surface title="Sensor health" subtitle={`${summary.onlineSensors} online · ${summary.attentionSensors} need attention`} action={<Link className="text-link" to="/settings/sensors">Manage <ArrowRight /></Link>}>
             <div className="sensor-peek">
               {sensors.slice(0, 4).map((sensor) => (
-                <div key={sensor.id}><StatusDot state={sensor.online ? 'live' : 'attention'} label={sensor.name} /><strong>{power(sensor.currentPowerW)}</strong></div>
+                <article className="sensor-health-row" key={sensor.id}>
+                  <header>
+                    <div>
+                      <StatusDot state={sensorDotState(sensor.measurementFreshness)} label={sensor.name} />
+                      <small>{sensor.latestMeasurementAt
+                        ? `Updated ${relativeTime(sensor.latestMeasurementAt)}`
+                        : sensorStateDetail(sensor.measurementFreshness)}</small>
+                    </div>
+                    <span className={`pill ${sensor.measurementFreshness}`}>
+                      {sensorStateLabel(sensor.measurementFreshness)}
+                    </span>
+                  </header>
+                  <dl className="sensor-electrical-grid">
+                    <div><dt>Power</dt><dd>{sensor.measurementFreshness === 'invalid' ? 'Invalid reading' : power(sensor.currentPowerW)}</dd></div>
+                    <div><dt>Voltage</dt><dd>{sensor.invalidMetrics.includes('voltage_volts') ? 'Invalid' : voltage(sensor.voltageVolts)}</dd></div>
+                    <div><dt>Current</dt><dd>{sensor.invalidMetrics.includes('current_amps') ? 'Invalid' : amperage(sensor.currentAmps)}</dd></div>
+                    <div><dt>Frequency</dt><dd>{sensor.invalidMetrics.includes('frequency_hz') ? 'Invalid' : frequency(sensor.frequencyHz)}</dd></div>
+                    <div><dt>Power factor</dt><dd>{sensor.invalidMetrics.includes('power_factor') ? 'Invalid' : powerFactor(sensor.powerFactor)}</dd></div>
+                  </dl>
+                </article>
               ))}
             </div>
           </Surface>}
@@ -243,4 +274,36 @@ function firstName(): string {
   } catch {
     return fallback
   }
+}
+
+function sensorDotState(
+  state: SensorSummary['measurementFreshness'],
+): 'live' | 'waiting' | 'attention' {
+  if (state === 'live') return 'live'
+  if (state === 'waiting' || state === 'stale') return 'waiting'
+  return 'attention'
+}
+
+function sensorStateLabel(state: SensorSummary['measurementFreshness']): string {
+  return {
+    live: 'Online',
+    waiting: 'Waiting',
+    stale: 'Stale',
+    offline: 'Offline',
+    unavailable: 'Unavailable',
+    invalid: 'Invalid',
+    needs_attention: 'Needs attention',
+  }[state]
+}
+
+function sensorStateDetail(state: SensorSummary['measurementFreshness']): string {
+  return {
+    live: 'Live measurement received',
+    waiting: 'Waiting for first reading',
+    stale: 'Last measurement is stale',
+    offline: 'Sensor heartbeat is offline',
+    unavailable: 'Meter data is unavailable',
+    invalid: 'Latest measurement failed validation',
+    needs_attention: 'Sensor is online but needs attention',
+  }[state]
 }

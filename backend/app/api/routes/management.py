@@ -10,10 +10,12 @@ from typing import Any
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
+import structlog
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import FileResponse
 from sqlalchemy import false, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import aliased
 
 from app.access import (
     active_admin_count,
@@ -59,6 +61,7 @@ from app.db.models import (
     UtilityAccountSiteAssignment,
 )
 from app.history import MAX_HISTORY_BUCKETS, history_csv, query_history
+from app.live_measurements import load_latest_measurements, log_measurement_decision
 from app.network_policy import ensure_site_policies, policy_cidrs, policy_for_site, policy_summary
 from app.problem import ProblemError
 from app.schemas import (
@@ -71,6 +74,7 @@ from app.schemas import (
     CircuitView,
     CredentialRotationRequest,
     DeviceConfigCreate,
+    DeviceListItem,
     DeviceUnclaimRequest,
     EnrollmentTokenCreate,
     EnrollmentTokenView,
@@ -883,10 +887,11 @@ async def _latest_heartbeat(session: DbSession, device_id: str) -> DeviceHeartbe
     return heartbeat
 
 
-@router.get("/devices")
+@router.get("/devices", response_model=list[DeviceListItem])
 async def list_devices(
     principal: Viewer,
     session: DbSession,
+    settings: AppSettings,
     site_id: str | None = None,
     status: str | None = None,
     lifecycle: str = "active",
@@ -910,29 +915,82 @@ async def list_devices(
     if status:
         query = query.where(Device.status == status)
     devices = list(await session.scalars(query))
-    output: list[dict[str, Any]] = []
-    for device in devices:
-        heartbeat = await _latest_heartbeat(session, device.id)
-        cursor = await session.get(SyncCursor, device.id)
-        site = await session.get(Site, device.site_id)
-        circuit = await session.get(Circuit, device.circuit_id) if device.circuit_id else None
-        removed_event = await session.scalar(
-            select(DeviceLifecycleEvent)
+    device_ids = [device.id for device in devices]
+    measurements, heartbeats, _readings = await load_latest_measurements(session, devices, settings)
+    site_ids = {device.site_id for device in devices}
+    circuit_ids = {device.circuit_id for device in devices if device.circuit_id}
+    sites = {
+        item.id: item for item in await session.scalars(select(Site).where(Site.id.in_(site_ids)))
+    }
+    circuits = {
+        item.id: item
+        for item in await session.scalars(select(Circuit).where(Circuit.id.in_(circuit_ids)))
+    }
+    cursors = {
+        item.device_id: item
+        for item in await session.scalars(
+            select(SyncCursor).where(SyncCursor.device_id.in_(device_ids))
+        )
+    }
+    removed_events: dict[str, DeviceLifecycleEvent] = {}
+    if device_ids:
+        ranked_events = (
+            select(
+                DeviceLifecycleEvent,
+                func.row_number()
+                .over(
+                    partition_by=DeviceLifecycleEvent.device_id,
+                    order_by=(
+                        DeviceLifecycleEvent.occurred_at.desc(),
+                        DeviceLifecycleEvent.id.desc(),
+                    ),
+                )
+                .label("latest_rank"),
+            )
             .where(
-                DeviceLifecycleEvent.device_id == device.id,
+                DeviceLifecycleEvent.device_id.in_(device_ids),
                 DeviceLifecycleEvent.event_type == "decommissioned",
             )
-            .order_by(DeviceLifecycleEvent.occurred_at.desc())
-            .limit(1)
+            .subquery()
         )
+        lifecycle_event = aliased(DeviceLifecycleEvent, ranked_events)
+        removed_events = {
+            item.device_id: item
+            for item in await session.scalars(
+                select(lifecycle_event).where(ranked_events.c.latest_rank == 1)
+            )
+        }
+    removed_circuit_ids = {item.circuit_id for item in removed_events.values() if item.circuit_id}
+    missing_removed_circuit_ids = removed_circuit_ids.difference(circuits)
+    if missing_removed_circuit_ids:
+        circuits.update(
+            {
+                item.id: item
+                for item in await session.scalars(
+                    select(Circuit).where(Circuit.id.in_(missing_removed_circuit_ids))
+                )
+            }
+        )
+    removed_user_ids = {device.decommissioned_by for device in devices if device.decommissioned_by}
+    removed_users = {
+        item.id: item
+        for item in await session.scalars(select(User).where(User.id.in_(removed_user_ids)))
+    }
+    output: list[dict[str, Any]] = []
+    for device in devices:
+        heartbeat = heartbeats.get(device.id)
+        measurement = measurements[device.id]
+        cursor = cursors.get(device.id)
+        site = sites.get(device.site_id)
+        circuit = circuits.get(device.circuit_id) if device.circuit_id else None
+        removed_event = removed_events.get(device.id)
         removed_circuit = (
-            await session.get(Circuit, removed_event.circuit_id)
+            circuits.get(removed_event.circuit_id or "")
             if removed_event and removed_event.circuit_id
             else None
         )
-        removed_by = (
-            await session.get(User, device.decommissioned_by) if device.decommissioned_by else None
-        )
+        removed_by = removed_users.get(device.decommissioned_by or "")
+        log_measurement_decision(measurement)
         output.append(
             {
                 "id": device.id,
@@ -965,7 +1023,17 @@ async def list_devices(
                 "re_enrollment_allowed": device.lifecycle_status == "decommissioned",
                 "last_seen_at": device.last_seen_at,
                 "firmware_version": device.firmware_version,
-                "current_watts": heartbeat.current_watts if heartbeat else None,
+                "current_watts": measurement.power_watts,
+                "voltage_volts": measurement.voltage_volts,
+                "current_amps": measurement.current_amps,
+                "frequency_hz": measurement.frequency_hz,
+                "power_factor": measurement.power_factor,
+                "latest_measurement_at": measurement.measured_at,
+                "measurement_received_at": measurement.received_at,
+                "measurement_sequence": measurement.sequence,
+                "measurement_source": measurement.source,
+                "measurement_freshness": measurement.freshness_state,
+                "measurement_invalid_metrics": list(measurement.invalid_metrics),
                 "rssi_dbm": heartbeat.rssi_dbm if heartbeat else None,
                 "pzem_ok": heartbeat.pzem_ok if heartbeat else None,
                 "sd_ok": heartbeat.sd_ok if heartbeat else None,
@@ -981,13 +1049,22 @@ async def list_devices(
 
 
 @router.get("/devices/{device_id}")
-async def device_detail(device_id: str, principal: Viewer, session: DbSession) -> dict[str, Any]:
+async def device_detail(
+    device_id: str,
+    principal: Viewer,
+    session: DbSession,
+    settings: AppSettings,
+) -> dict[str, Any]:
     _permission(principal, "devices.view")
     device = await session.get(Device, device_id)
     if device is None:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
     _site_allowed(principal, device.site_id)
     heartbeat = await _latest_heartbeat(session, device.id)
+    measurements, _heartbeats, _readings = await load_latest_measurements(
+        session, [device], settings
+    )
+    measurement = measurements[device.id]
     cursor = await session.get(SyncCursor, device.id)
     addresses = list(
         await session.scalars(
@@ -1067,6 +1144,23 @@ async def device_detail(device_id: str, principal: Viewer, session: DbSession) -
             "effective_config_version": device.effective_config_version,
         },
         "latest_heartbeat": heartbeat.payload if heartbeat else None,
+        "latest_measurement": {
+            "device_id": measurement.device_id,
+            "site_id": measurement.site_id,
+            "circuit_id": measurement.circuit_id,
+            "measurement_role": measurement.measurement_role,
+            "measured_at": measurement.measured_at,
+            "received_at": measurement.received_at,
+            "sequence": measurement.sequence,
+            "power_watts": measurement.power_watts,
+            "voltage_volts": measurement.voltage_volts,
+            "current_amps": measurement.current_amps,
+            "frequency_hz": measurement.frequency_hz,
+            "power_factor": measurement.power_factor,
+            "source": measurement.source,
+            "freshness_state": measurement.freshness_state,
+            "invalid_metrics": measurement.invalid_metrics,
+        },
         "sync": {
             "highest_contiguous_sequence": cursor.highest_contiguous_sequence if cursor else 0,
             "maximum_seen_sequence": cursor.maximum_seen_sequence if cursor else 0,
@@ -1748,7 +1842,10 @@ async def export_history_api(
 
 @router.get("/fleet/summary", response_model=FleetSummary)
 async def fleet_summary(
-    principal: Viewer, session: DbSession, site_id: str | None = None
+    principal: Viewer,
+    session: DbSession,
+    settings: AppSettings,
+    site_id: str | None = None,
 ) -> FleetSummary:
     _permission(principal, "overview.view")
     device_query = select(Device).where(Device.lifecycle_status == "active")
@@ -1758,25 +1855,70 @@ async def fleet_summary(
     elif not principal.all_sites:
         device_query = device_query.where(Device.site_id.in_(principal.site_ids))
     devices = list(await session.scalars(device_query))
-    included_device_ids = [device.id for device in devices if device.include_in_default_site_total]
+    included_devices = [device for device in devices if device.include_in_default_site_total]
+    if not included_devices and len(devices) == 1:
+        # Single Home starts with one energy-only CT. Until an administrator
+        # defines a richer topology, that sole sensor is the unambiguous Home
+        # aggregate. Sites with multiple sensors still require explicit
+        # topology selection to avoid double counting.
+        included_devices = devices
+    included_device_ids = [device.id for device in included_devices]
     now = datetime.now(UTC)
     summary_site = await session.get(Site, site_id) if site_id else None
     summary_zone = ZoneInfo(summary_site.timezone) if summary_site else UTC
     local_start = datetime.combine(
         now.astimezone(summary_zone).date(), datetime.min.time(), summary_zone
     ).astimezone(UTC)
-    current_load = Decimal("0")
-    reporting_devices = 0
-    latest_heartbeat_at: datetime | None = None
-    for device in devices:
-        heartbeat = await _latest_heartbeat(session, device.id)
-        if heartbeat and device.include_in_default_site_total:
-            reporting_devices += 1
-            latest_heartbeat_at = max(
-                (value for value in (latest_heartbeat_at, heartbeat.received_at) if value),
-                default=None,
+    measurements, heartbeats, _readings = await load_latest_measurements(
+        session, devices, settings, now=now
+    )
+    reporting = [item for item in measurements.values() if item.is_reporting]
+    contributing = [
+        measurements[device.id]
+        for device in included_devices
+        if measurements[device.id].is_reporting
+    ]
+    reporting_devices = len(reporting)
+    current_load = (
+        sum(
+            (item.power_watts for item in contributing if item.power_watts is not None),
+            Decimal("0"),
+        )
+        if contributing
+        else None
+    )
+    latest_measurement_at = max(
+        (item.measured_at for item in contributing if item.measured_at is not None),
+        default=None,
+    )
+    latest_heartbeat_at = max(
+        (
+            heartbeat.received_at
+            for heartbeat in heartbeats.values()
+            if heartbeat.received_at is not None
+        ),
+        default=None,
+    )
+    summary_logger = structlog.get_logger(__name__)
+    included_id_set = set(included_device_ids)
+    for measurement in measurements.values():
+        log_measurement_decision(measurement)
+        if not measurement.is_reporting:
+            summary_logger.info(
+                "DEVICE_NOT_COUNTED",
+                device_id=measurement.device_id,
+                site_id=measurement.site_id,
+                freshness_state=measurement.freshness_state,
+                reason=measurement.validation_reason or "not_live",
             )
-            current_load += heartbeat.current_watts or Decimal("0")
+        elif measurement.device_id not in included_id_set:
+            summary_logger.info(
+                "DEVICE_NOT_COUNTED",
+                device_id=measurement.device_id,
+                site_id=measurement.site_id,
+                freshness_state=measurement.freshness_state,
+                reason="topology_excluded",
+            )
     energy_wh = await session.scalar(
         select(func.sum(NormalizedInterval.selected_energy_wh)).where(
             NormalizedInterval.device_id.in_(included_device_ids)
@@ -1874,9 +2016,18 @@ async def fleet_summary(
     has_energy_data = energy_wh is not None
     kwh = Decimal(str(energy_wh or 0)) / Decimal("1000")
     coverage_percent = (
-        (Decimal(reporting_devices) / Decimal(len(included_device_ids)) * Decimal("100"))
-        if included_device_ids
-        else None
+        (Decimal(reporting_devices) / Decimal(len(devices)) * Decimal("100")) if devices else None
+    )
+    has_live_data = bool(contributing)
+    structlog.get_logger(__name__).info(
+        "FLEET_SUMMARY_CALCULATED",
+        site_id=site_id,
+        total_devices=len(devices),
+        reporting_devices=reporting_devices,
+        contributing_devices=len(contributing),
+        current_load_w=current_load,
+        latest_measurement_at=latest_measurement_at,
+        has_live_data=has_live_data,
     )
     return FleetSummary(
         site_id=site_id,
@@ -1897,10 +2048,12 @@ async def fleet_summary(
         ),
         rate_configured=bool(effective_contexts),
         recent_peak_w=current_load,
-        has_live_data=reporting_devices > 0,
+        has_live_data=has_live_data,
         has_energy_data=has_energy_data,
         has_cost_data=has_cost_data,
         reporting_devices=reporting_devices,
+        latest_data_at=latest_measurement_at,
+        latest_measurement_at=latest_measurement_at,
         latest_heartbeat_at=latest_heartbeat_at,
         coverage_percent=coverage_percent,
         disclosure=ESTIMATE_DISCLOSURE,

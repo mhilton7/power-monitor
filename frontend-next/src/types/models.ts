@@ -39,7 +39,7 @@ export type HomeResolution =
   | { state: 'multiple'; homes: Home[] }
 
 export interface HomeSummary {
-  currentPowerW: string
+  currentPowerW?: string
   energyTodayKwh: string
   estimatedCostToday: string
   cycleEnergyKwh: string
@@ -52,7 +52,7 @@ export interface HomeSummary {
   totalSensors: number
   attentionSensors: number
   activeAlerts: number
-  recentPeakW: string
+  recentPeakW?: string
   latestDataAt?: string
   coveragePercent?: string
   hasLiveData: boolean
@@ -75,8 +75,26 @@ export interface SensorSummary {
   id: string
   name: string
   state: string
+  deviceStatus: string
   online: boolean
   currentPowerW?: string
+  voltageVolts?: string
+  currentAmps?: string
+  frequencyHz?: string
+  powerFactor?: string
+  latestMeasurementAt?: string
+  measurementReceivedAt?: string
+  measurementSequence?: number
+  measurementSource?: 'heartbeat_live' | 'committed_reading'
+  measurementFreshness:
+    | 'live'
+    | 'waiting'
+    | 'stale'
+    | 'offline'
+    | 'unavailable'
+    | 'invalid'
+    | 'needs_attention'
+  invalidMetrics: string[]
   lastSeenAt?: string
   storageHealthy?: boolean
   wifiDbm?: number
@@ -460,7 +478,7 @@ export interface RateAdjustment {
 
 export interface HomeLiveStatus {
   connected: boolean
-  currentPowerW: string
+  currentPowerW?: string
   latestDataAt?: string
   reportingSensors: number
   totalSensors: number

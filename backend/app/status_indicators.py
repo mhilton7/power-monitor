@@ -8,9 +8,10 @@ from decimal import Decimal
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
 from app.db.models import (
     AggregateSet,
     AlertInstance,
@@ -19,7 +20,6 @@ from app.db.models import (
     CostCalculationRun,
     CostIntervalResult,
     Device,
-    DeviceHeartbeat,
     EnrollmentToken,
     FirmwareDeployment,
     NormalizedInterval,
@@ -35,6 +35,7 @@ from app.db.models import (
     UtilityAccount,
     WorkerState,
 )
+from app.live_measurements import load_latest_measurements
 from app.problem import ProblemError
 from app.rates.documents import engine_plan
 from app.rates.engine import RateEngine
@@ -1885,6 +1886,7 @@ async def _current_rate_values(
 async def status_values(
     session: AsyncSession,
     *,
+    settings: Settings,
     permissions: set[str] | frozenset[str],
     allowed_site_ids: set[str],
     all_sites: bool,
@@ -1946,30 +1948,9 @@ async def status_values(
     devices = list(await session.scalars(device_query))
     if device_id and not devices:
         raise ProblemError(404, "Device not found", "The device does not exist", "device_not_found")
-    device_ids = [item.id for item in devices]
-    latest: dict[str, DeviceHeartbeat] = {}
-    if device_ids:
-        latest_times = (
-            select(
-                DeviceHeartbeat.device_id,
-                func.max(DeviceHeartbeat.received_at).label("received_at"),
-            )
-            .where(DeviceHeartbeat.device_id.in_(device_ids))
-            .group_by(DeviceHeartbeat.device_id)
-            .subquery()
-        )
-        heartbeat_rows = list(
-            await session.scalars(
-                select(DeviceHeartbeat).join(
-                    latest_times,
-                    and_(
-                        DeviceHeartbeat.device_id == latest_times.c.device_id,
-                        DeviceHeartbeat.received_at == latest_times.c.received_at,
-                    ),
-                )
-            )
-        )
-        latest = {item.device_id: item for item in heartbeat_rows}
+    measurements, latest, _latest_readings = await load_latest_measurements(
+        session, devices, settings, now=now
+    )
     online_states = {
         "online_synchronized",
         "online_with_backlog",
@@ -1982,8 +1963,35 @@ async def status_values(
     synchronized = sum(item.status == "online_synchronized" for item in devices)
     total = len(devices)
     offline = total - online
-    newest = max((item.received_at for item in latest.values()), default=None)
-    watts = sum((item.current_watts or Decimal("0") for item in latest.values()), Decimal("0"))
+    newest_heartbeat = max((item.received_at for item in latest.values()), default=None)
+    reporting = {
+        item.id: measurements[item.id]
+        for item in devices
+        if measurements[item.id].freshness_state == "live"
+        and measurements[item.id].power_watts is not None
+    }
+    included_devices = [item for item in devices if item.include_in_default_site_total]
+    if not included_devices and len(devices) == 1:
+        included_devices = devices
+    contributing = {
+        item.id: reporting[item.id] for item in included_devices if item.id in reporting
+    }
+    reporting_count = len(reporting)
+    newest_measurement = max(
+        (item.measured_at for item in contributing.values() if item.measured_at),
+        default=None,
+    )
+    watts = (
+        sum(
+            (
+                item.power_watts if item.power_watts is not None else Decimal("0")
+                for item in contributing.values()
+            ),
+            Decimal("0"),
+        )
+        if contributing
+        else None
+    )
     pzem_failures = sum(not item.pzem_ok for item in latest.values())
     sd_failures = sum(not item.sd_ok for item in latest.values())
     time_trusted = sum(item.time_trusted for item in latest.values())
@@ -1991,19 +1999,23 @@ async def status_values(
     rssi = [item.rssi_dbm for item in latest.values() if item.rssi_dbm is not None]
     if permitted("data.live_connection"):
         values["data.live_connection"] = _value(
-            "healthy" if online == total and total else "attention" if total else "unavailable",
-            "Live" if online else "Waiting" if total else "No sensors",
-            severity="success" if online == total and total else "warning" if total else "unknown",
-            detail=f"{online} of {total} devices reporting",
-            freshness_at=newest,
+            "healthy" if contributing else "attention" if total else "unavailable",
+            "Live" if contributing else "Waiting" if total else "No sensors",
+            severity="success" if contributing else "warning" if total else "unknown",
+            detail=f"{reporting_count} of {total} devices reporting measurements",
+            freshness_at=newest_measurement,
         )
     if permitted("data.current_power"):
         values["data.current_power"] = _value(
-            "current" if latest else "unavailable",
-            f"{watts.quantize(Decimal('1'))} W" if latest else "Unavailable",
-            severity="info" if latest else "unknown",
-            detail="Latest signed heartbeats" if latest else "Waiting for a valid heartbeat",
-            freshness_at=newest,
+            "current" if watts is not None else "unavailable",
+            f"{watts.quantize(Decimal('1'))} W" if watts is not None else "Unavailable",
+            severity="info" if watts is not None else "unknown",
+            detail=(
+                "Latest valid contributing measurements"
+                if watts is not None
+                else "Waiting for a valid measurement"
+            ),
+            freshness_at=newest_measurement,
         )
     device_value_map = {
         "device.online_count": _value(
@@ -2011,76 +2023,84 @@ async def status_values(
             str(online),
             severity="success" if online == total and total else "warning",
             detail=f"of {total} enrolled sensors",
-            freshness_at=newest,
+            freshness_at=newest_heartbeat,
         ),
         "device.offline_count": _value(
             "healthy" if offline == 0 else "attention",
             str(offline),
             severity="success" if offline == 0 else "warning",
             detail="offline or stale",
-            freshness_at=newest,
+            freshness_at=newest_heartbeat,
         ),
         "device.synchronized_count": _value(
             "healthy" if synchronized == total and total else "attention",
             f"{synchronized}/{total}",
             severity="success" if synchronized == total and total else "warning",
             detail="backlog clear",
-            freshness_at=newest,
+            freshness_at=newest_heartbeat,
         ),
         "device.pzem_health": _value(
             "healthy" if pzem_failures == 0 else "failed",
             "Healthy" if pzem_failures == 0 else f"{pzem_failures} failed",
             severity="success" if pzem_failures == 0 else "critical",
-            freshness_at=newest,
+            freshness_at=newest_heartbeat,
         ),
         "device.sd_health": _value(
             "healthy" if sd_failures == 0 else "failed",
             "Healthy" if sd_failures == 0 else f"{sd_failures} failed",
             severity="success" if sd_failures == 0 else "critical",
-            freshness_at=newest,
+            freshness_at=newest_heartbeat,
         ),
         "device.sync_backlog": _value(
             "healthy" if backlog == 0 else "attention",
             str(backlog),
             severity="success" if backlog == 0 else "warning",
             detail="readings pending",
-            freshness_at=newest,
+            freshness_at=newest_heartbeat,
         ),
         "device.time_sync": _value(
             "healthy" if time_trusted == total and total else "attention",
             f"{time_trusted}/{total}",
             severity="success" if time_trusted == total and total else "warning",
             detail="trusted clocks",
-            freshness_at=newest,
+            freshness_at=newest_heartbeat,
         ),
         "device.wifi_signal": _value(
             "current",
             f"{round(sum(rssi) / len(rssi))} dBm" if rssi else "Unavailable",
             severity="info" if rssi else "unknown",
             detail="average current RSSI",
-            freshness_at=newest,
+            freshness_at=newest_heartbeat,
         ),
         "device.heartbeat_freshness": _value(
-            "current" if newest else "unknown",
-            newest.isoformat() if newest else "Never",
-            severity="info" if newest else "unknown",
-            freshness_at=newest,
+            "current" if newest_heartbeat else "unknown",
+            newest_heartbeat.isoformat() if newest_heartbeat else "Never",
+            severity="info" if newest_heartbeat else "unknown",
+            freshness_at=newest_heartbeat,
         ),
         "data.aggregate_coverage": _value(
-            "healthy" if synchronized == total and total else "partial" if total else "unavailable",
-            f"{round((synchronized / total) * 100)}%" if total else "Unavailable",
+            "healthy"
+            if reporting_count == total and total
+            else "partial"
+            if total
+            else "unavailable",
+            f"{round((reporting_count / total) * 100)}%" if total else "Unavailable",
             severity=(
-                "success" if synchronized == total and total else "warning" if total else "unknown"
+                "success"
+                if reporting_count == total and total
+                else "warning"
+                if total
+                else "unknown"
             ),
-            detail=f"{synchronized} of {total} synchronized",
-            freshness_at=newest,
+            detail=f"{reporting_count} of {total} reporting measurements",
+            freshness_at=newest_measurement,
         ),
     }
     for key, value in device_value_map.items():
         if permitted(key):
             values[key] = value
 
-    included_device_ids = [item.id for item in devices if item.include_in_default_site_total]
+    included_device_ids = [item.id for item in included_devices]
     summary_zone = ZoneInfo(sites[0].timezone) if len(sites) == 1 else UTC
     local_start = datetime.combine(
         now.astimezone(summary_zone).date(), datetime.min.time(), summary_zone
@@ -2101,15 +2121,15 @@ async def status_values(
             else "Unavailable",
             severity="info" if energy_wh is not None else "unknown",
             detail="Since local midnight" if energy_wh is not None else "No readings today",
-            freshness_at=newest,
+            freshness_at=newest_measurement,
         )
     if permitted("data.recent_peak"):
         values["data.recent_peak"] = _value(
-            "current" if latest else "unavailable",
-            f"{watts.quantize(Decimal('1'))} W" if latest else "Unavailable",
-            severity="info" if latest else "unknown",
+            "current" if watts is not None else "unavailable",
+            f"{watts.quantize(Decimal('1'))} W" if watts is not None else "Unavailable",
+            severity="info" if watts is not None else "unknown",
             detail="Most recent aggregate live measurement",
-            freshness_at=newest,
+            freshness_at=newest_measurement,
         )
 
     cost_keys = {"cost.today", "energy.billing_cycle", "cost.billing_cycle_estimate"}

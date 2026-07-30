@@ -98,13 +98,15 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!homeId || typeof EventSource === 'undefined') return
-    const source = new EventSource('/api/v1/events/stream')
+    const source = new EventSource(`/api/v1/events/stream?site_id=${encodeURIComponent(homeId)}`)
     const refreshLive = () => {
       void client.invalidateQueries({ queryKey: ['home-summary', homeId] })
       void client.invalidateQueries({ queryKey: ['sensors', homeId] })
     }
     source.addEventListener('heartbeat', refreshLive)
     source.addEventListener('reading', refreshLive)
+    source.addEventListener('device_status', refreshLive)
+    source.addEventListener('fleet', refreshLive)
     source.addEventListener('alert', () => {
       void client.invalidateQueries({ queryKey: ['alerts'] })
     })
@@ -122,6 +124,21 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
       : undefined,
     [activeService, cycle.data, fleet.data, sensors.data],
   )
+  useEffect(() => {
+    if (import.meta.env.VITE_LIVE_PIPELINE_DEBUG !== 'true' || !homeId || !summary) return
+    console.debug('[power-monitor:live-home]', {
+      homeId,
+      sensorCount: sensors.data?.length ?? 0,
+      reportingCount: summary.reportingSensors,
+      fleetResponseTimestamp: summary.latestDataAt,
+      sensorMeasurementTimestamps: (sensors.data ?? []).map((sensor) => ({
+        sensorId: sensor.id,
+        latestMeasurementAt: sensor.latestMeasurementAt,
+        freshness: sensor.measurementFreshness,
+      })),
+      queryRefreshTime: new Date().toISOString(),
+    })
+  }, [homeId, sensors.data, summary])
   const error = fleet.error ?? sensors.error ?? services.error ?? alerts.error
   const value: LiveHomeValue = {
     summary,

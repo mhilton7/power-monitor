@@ -3,9 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import structlog
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +20,8 @@ from app.db.models import (
     SyncCursor,
 )
 from app.schemas import Reading, ReadingBatchResponse, RejectedReading
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -198,6 +201,8 @@ async def ingest_readings(
     device_id: str,
     readings: list[Reading],
     source: str,
+    first_available_sequence: int | None = None,
+    maximum_clock_skew_seconds: int = 300,
 ) -> ReadingBatchResponse:
     if source not in {"pull", "push"}:
         raise ValueError("source must be pull or push")
@@ -209,7 +214,67 @@ async def ingest_readings(
     duplicates: list[int] = []
     rejected: list[RejectedReading] = []
     accepted_windows: list[tuple[datetime, datetime]] = []
+    cursor = await session.get(SyncCursor, device_id, with_for_update=True)
+    if cursor is None:
+        cursor = SyncCursor(
+            device_id=device_id,
+            highest_contiguous_sequence=0,
+            maximum_seen_sequence=0,
+            updated_at=now,
+        )
+        session.add(cursor)
+        await session.flush()
+    existing_count = int(
+        await session.scalar(
+            select(func.count(RawReading.id)).where(RawReading.device_id == device_id)
+        )
+        or 0
+    )
+    first_incoming = min((reading.sequence for reading in readings), default=None)
+    if (
+        existing_count == 0
+        and cursor.highest_contiguous_sequence == 0
+        and first_incoming is not None
+        and first_incoming > 1
+        and first_available_sequence == first_incoming
+    ):
+        cursor.highest_contiguous_sequence = first_incoming - 1
+        cursor.maximum_seen_sequence = first_incoming - 1
+        cursor.updated_at = now
+        session.add(
+            SequenceGap(
+                device_id=device_id,
+                start_sequence=1,
+                end_sequence=first_incoming - 1,
+                detected_at=now,
+                resolved_at=now,
+                permanent_loss=True,
+            )
+        )
+        logger.warning(
+            "READING_CURSOR_BOOTSTRAPPED",
+            device_id=device_id,
+            first_available_sequence=first_incoming,
+            unavailable_start_sequence=1,
+            unavailable_end_sequence=first_incoming - 1,
+        )
     for reading in readings:
+        if reading.interval_end > now + timedelta(seconds=maximum_clock_skew_seconds):
+            rejected.append(
+                RejectedReading(
+                    sequence=reading.sequence,
+                    code="measurement_timestamp_in_future",
+                    detail="Reading timestamp exceeds the permitted device clock skew",
+                )
+            )
+            logger.warning(
+                "READING_BATCH_REJECTED",
+                device_id=device_id,
+                sequence=reading.sequence,
+                measured_at=reading.interval_end,
+                reason="measurement_timestamp_in_future",
+            )
+            continue
         incoming_hash = reading.record_hash or reading_content_hash(reading)
         existing = await session.scalar(
             select(RawReading).where(
@@ -219,6 +284,12 @@ async def ingest_readings(
         if existing is not None:
             if existing.record_hash == incoming_hash:
                 duplicates.append(reading.sequence)
+                logger.info(
+                    "READING_BATCH_DUPLICATE",
+                    device_id=device_id,
+                    sequence=reading.sequence,
+                    measured_at=reading.interval_end,
+                )
             else:
                 rejected.append(
                     RejectedReading(
@@ -242,6 +313,13 @@ async def ingest_readings(
                         },
                     )
                 )
+                logger.warning(
+                    "READING_BATCH_REJECTED",
+                    device_id=device_id,
+                    sequence=reading.sequence,
+                    measured_at=reading.interval_end,
+                    reason="conflicting_duplicate",
+                )
             continue
         raw = _to_raw(device_id, device.site_id, reading, source, now)
         session.add(raw)
@@ -263,6 +341,22 @@ async def ingest_readings(
         )
         accepted.append(reading.sequence)
         accepted_windows.append((reading.interval_start, reading.interval_end))
+        logger.info(
+            "READING_BATCH_ACCEPTED",
+            device_id=device_id,
+            site_id=device.site_id,
+            sequence=reading.sequence,
+            measured_at=reading.interval_end,
+            source=source,
+        )
+        logger.info(
+            "LATEST_MEASUREMENT_UPDATED",
+            device_id=device_id,
+            site_id=device.site_id,
+            sequence=reading.sequence,
+            measured_at=reading.interval_end,
+            source="committed_reading",
+        )
     if accepted_windows and device.utility_account_id:
         earliest = min(value[0] for value in accepted_windows)
         latest = max(value[1] for value in accepted_windows)

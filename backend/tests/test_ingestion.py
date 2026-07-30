@@ -77,3 +77,61 @@ async def test_idempotency_conflicts_and_gap_fill(session: AsyncSession) -> None
     assert filled.highest_contiguous_accepted_sequence == 3
     assert filled.missing_ranges == []
     assert not list(await session.scalars(select(SequenceGap)))
+
+
+@pytest.mark.asyncio
+async def test_first_retained_sequence_bootstraps_new_server_cursor(
+    session: AsyncSession,
+) -> None:
+    site = Site(name="Retained history", timezone="America/Los_Angeles")
+    session.add(site)
+    await session.flush()
+    device = Device(site_id=site.id, hardware_id="hw-retained", name="Retained")
+    session.add(device)
+    await session.commit()
+
+    result = await ingest_readings(
+        session,
+        device_id=device.id,
+        readings=[reading(46), reading(47)],
+        source="push",
+        first_available_sequence=46,
+    )
+    await session.commit()
+
+    assert result.accepted == [46, 47]
+    assert result.highest_contiguous_accepted_sequence == 47
+    assert result.missing_ranges == []
+    permanent = await session.scalar(
+        select(SequenceGap).where(
+            SequenceGap.device_id == device.id,
+            SequenceGap.permanent_loss.is_(True),
+        )
+    )
+    assert permanent is not None
+    assert (permanent.start_sequence, permanent.end_sequence) == (1, 45)
+    assert permanent.resolved_at is not None
+
+
+@pytest.mark.asyncio
+async def test_cursor_does_not_skip_unverified_missing_sequences(
+    session: AsyncSession,
+) -> None:
+    site = Site(name="Gap protected", timezone="America/Los_Angeles")
+    session.add(site)
+    await session.flush()
+    device = Device(site_id=site.id, hardware_id="hw-gap-protected", name="Protected")
+    session.add(device)
+    await session.commit()
+
+    result = await ingest_readings(
+        session,
+        device_id=device.id,
+        readings=[reading(46)],
+        source="push",
+        first_available_sequence=45,
+    )
+    await session.commit()
+
+    assert result.highest_contiguous_accepted_sequence == 0
+    assert result.missing_ranges == [(1, 45)]

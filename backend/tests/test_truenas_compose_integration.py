@@ -37,6 +37,11 @@ def test_full_truenas_compose_workflow() -> None:
     desktop_root = os.getenv("TRUENAS_DOCKER_DESKTOP_HOST_ROOT")
     if desktop_root:
         command.extend(["--docker-desktop-host-root", desktop_root])
+    desktop_project = os.getenv("TRUENAS_DOCKER_DESKTOP_PROJECT_NAME")
+    if desktop_project:
+        command.extend(["--docker-desktop-project-name", desktop_project])
+    if os.getenv("TRUENAS_DOCKER_DESKTOP_LOCAL_APPLICATION_IMAGES") == "1":
+        command.append("--docker-desktop-local-application-images")
     subprocess.run(  # noqa: S603
         command,
         cwd=root,

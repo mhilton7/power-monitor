@@ -5397,8 +5397,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  additionalProperties: true
+                  $ref: '#/components/schemas/DeviceListItem'
                 title: Response List Devices Api V1 Devices Get
         '422':
           description: Validation Error
@@ -13102,6 +13101,238 @@ components:
       - category
       - severity
       title: DeviceEventInput
+    DeviceListItem:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          type: string
+          title: Name
+        site_id:
+          type: string
+          title: Site Id
+        site_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Name
+        circuit_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Circuit Id
+        circuit_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Circuit Name
+        connection_mode:
+          type: string
+          title: Connection Mode
+        measurement_role:
+          type: string
+          title: Measurement Role
+        cost_scope:
+          type: string
+          title: Cost Scope
+        included_in_default:
+          type: boolean
+          title: Included In Default
+        ct_rating_amps:
+          type: string
+          title: Ct Rating Amps
+        status:
+          type: string
+          title: Status
+        lifecycle_status:
+          type: string
+          title: Lifecycle Status
+        decommissioned_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Decommissioned At
+        decommissioned_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Decommissioned By
+        decommissioned_by_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Decommissioned By Name
+        decommission_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Decommission Reason
+        removed_site_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Removed Site Id
+        removed_circuit_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Removed Circuit Id
+        removed_circuit_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Removed Circuit Name
+        retained_history:
+          type: boolean
+          title: Retained History
+        re_enrollment_allowed:
+          type: boolean
+          title: Re Enrollment Allowed
+        last_seen_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Seen At
+        firmware_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Firmware Version
+        current_watts:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Watts
+        voltage_volts:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Voltage Volts
+        current_amps:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Amps
+        frequency_hz:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Frequency Hz
+        power_factor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Power Factor
+        latest_measurement_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Latest Measurement At
+        measurement_received_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Measurement Received At
+        measurement_sequence:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Measurement Sequence
+        measurement_source:
+          anyOf:
+          - type: string
+            enum:
+            - heartbeat_live
+            - committed_reading
+          - type: 'null'
+          title: Measurement Source
+        measurement_freshness:
+          type: string
+          enum:
+          - live
+          - waiting
+          - stale
+          - offline
+          - unavailable
+          - invalid
+          - needs_attention
+          title: Measurement Freshness
+        measurement_invalid_metrics:
+          items:
+            type: string
+          type: array
+          title: Measurement Invalid Metrics
+        rssi_dbm:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rssi Dbm
+        pzem_ok:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Pzem Ok
+        sd_ok:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Sd Ok
+        time_trusted:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Time Trusted
+        backlog:
+          type: integer
+          title: Backlog
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - name
+      - site_id
+      - site_name
+      - circuit_id
+      - circuit_name
+      - connection_mode
+      - measurement_role
+      - cost_scope
+      - included_in_default
+      - ct_rating_amps
+      - status
+      - lifecycle_status
+      - decommissioned_at
+      - decommissioned_by
+      - decommissioned_by_name
+      - decommission_reason
+      - removed_site_id
+      - removed_circuit_id
+      - removed_circuit_name
+      - retained_history
+      - re_enrollment_allowed
+      - last_seen_at
+      - firmware_version
+      - current_watts
+      - voltage_volts
+      - current_amps
+      - frequency_hz
+      - power_factor
+      - latest_measurement_at
+      - measurement_received_at
+      - measurement_sequence
+      - measurement_source
+      - measurement_freshness
+      - rssi_dbm
+      - pzem_ok
+      - sd_ok
+      - time_trusted
+      - backlog
+      title: DeviceListItem
     DeviceUnclaimRequest:
       properties:
         confirmation:
@@ -13309,7 +13540,9 @@ components:
           - type: 'null'
           title: Site Id
         current_load_w:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Current Load W
         energy_today_kwh:
           type: string
@@ -13360,7 +13593,9 @@ components:
           title: Rate Configured
           default: false
         recent_peak_w:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Recent Peak W
         has_live_data:
           type: boolean
@@ -13374,6 +13609,18 @@ components:
         reporting_devices:
           type: integer
           title: Reporting Devices
+        latest_data_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Latest Data At
+        latest_measurement_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Latest Measurement At
         latest_heartbeat_at:
           anyOf:
           - type: string
@@ -13407,6 +13654,8 @@ components:
       - has_energy_data
       - has_cost_data
       - reporting_devices
+      - latest_data_at
+      - latest_measurement_at
       - latest_heartbeat_at
       - coverage_percent
       - disclosure

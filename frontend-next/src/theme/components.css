@@ -826,8 +826,21 @@ tbody th { font-weight: 700; }
 .home-side-stack { display: grid; grid-template-rows: repeat(2, minmax(0, 1fr)); gap: var(--space-4); min-width: 0; }
 .home-side-stack > .surface { min-height: 0; }
 .sensor-peek { display: grid; gap: var(--space-2); }
-.sensor-peek > div { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line-subtle); }
-.sensor-peek > div:last-child { border-bottom: 0; }
+.sensor-health-row { display: grid; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line-subtle); }
+.sensor-health-row:last-child { border-bottom: 0; }
+.sensor-health-row > header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.sensor-health-row > header > div { display: grid; gap: .35rem; min-width: 0; }
+.sensor-health-row > header small { color: var(--muted); }
+.sensor-health-row .pill.live { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.sensor-health-row .pill.waiting,
+.sensor-health-row .pill.stale { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.sensor-health-row .pill.offline,
+.sensor-health-row .pill.invalid,
+.sensor-health-row .pill.needs_attention { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.sensor-electrical-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin: 0; }
+.sensor-electrical-grid > div { display: grid; gap: .18rem; min-width: 0; padding: .55rem .65rem; border: 1px solid var(--line-subtle); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--bg-elevated) 72%, transparent); }
+.sensor-electrical-grid dt { color: var(--muted); font-size: .68rem; font-weight: 780; letter-spacing: .08em; text-transform: uppercase; }
+.sensor-electrical-grid dd { margin: 0; color: var(--text); font-size: .92rem; font-weight: 780; overflow-wrap: anywhere; }
 .sensor-peek .status-dot { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rate-now { display: flex; align-items: center; gap: var(--space-4); }
 .rate-now > div { display: grid; gap: .2rem; min-width: 0; }

@@ -782,6 +782,57 @@ class EnrollmentTokenView(ApiModel):
     preassignment: dict[str, Any]
 
 
+class DeviceListItem(ApiModel):
+    id: str
+    name: str
+    site_id: str
+    site_name: str | None
+    circuit_id: str | None
+    circuit_name: str | None
+    connection_mode: str
+    measurement_role: str
+    cost_scope: str
+    included_in_default: bool
+    ct_rating_amps: Decimal
+    status: str
+    lifecycle_status: str
+    decommissioned_at: datetime | None
+    decommissioned_by: str | None
+    decommissioned_by_name: str | None
+    decommission_reason: str | None
+    removed_site_id: str | None
+    removed_circuit_id: str | None
+    removed_circuit_name: str | None
+    retained_history: bool
+    re_enrollment_allowed: bool
+    last_seen_at: datetime | None
+    firmware_version: str | None
+    current_watts: Decimal | None
+    voltage_volts: Decimal | None
+    current_amps: Decimal | None
+    frequency_hz: Decimal | None
+    power_factor: Decimal | None
+    latest_measurement_at: datetime | None
+    measurement_received_at: datetime | None
+    measurement_sequence: int | None
+    measurement_source: Literal["heartbeat_live", "committed_reading"] | None
+    measurement_freshness: Literal[
+        "live",
+        "waiting",
+        "stale",
+        "offline",
+        "unavailable",
+        "invalid",
+        "needs_attention",
+    ]
+    measurement_invalid_metrics: list[str] = Field(default_factory=list)
+    rssi_dbm: int | None
+    pzem_ok: bool | None
+    sd_ok: bool | None
+    time_trusted: bool | None
+    backlog: int
+
+
 class DeviceCapabilities(DeviceProtocolModel):
     hardware_target: str = Field(min_length=1, max_length=120)
     pzem_model: str = Field(pattern=r"^PZEM-004T V4")
@@ -1479,7 +1530,7 @@ class HistoryQueryResponse(ApiModel):
 
 class FleetSummary(ApiModel):
     site_id: str | None
-    current_load_w: Decimal
+    current_load_w: Decimal | None
     energy_today_kwh: Decimal
     estimated_cost_today: Decimal
     billing_cycle_energy_kwh: Decimal
@@ -1493,11 +1544,13 @@ class FleetSummary(ApiModel):
     current_rate_version: int | None = None
     current_rate_price_per_kwh: Decimal | None = None
     rate_configured: bool = False
-    recent_peak_w: Decimal
+    recent_peak_w: Decimal | None
     has_live_data: bool
     has_energy_data: bool
     has_cost_data: bool
     reporting_devices: int
+    latest_data_at: datetime | None
+    latest_measurement_at: datetime | None
     latest_heartbeat_at: datetime | None
     coverage_percent: Decimal | None
     disclosure: str

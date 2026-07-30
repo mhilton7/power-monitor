@@ -6,6 +6,7 @@ import io
 import json
 import zipfile
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ import yaml
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api.routes.system import _sse_stream
 from app.config import Settings
 from app.db.models import (
     AuditEvent,
@@ -382,6 +384,200 @@ async def _send_heartbeat(
             "Content-Type": "application/json",
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_live_measurement_is_consistent_between_devices_and_fleet(
+    api_client: Any,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    test_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client: httpx.AsyncClient = api_client
+    await bootstrap(client, "live-consistency@example.com")
+    device_id, secret = await _enroll_sensor(client, "esp32-live-consistency")
+    payload = _heartbeat(device_id)
+    payload["latest"] = {
+        "measured_at": datetime.now(UTC).isoformat(),
+        "voltage_v": "120.4",
+        "current_a": "0.01",
+        "power_w": "1.0",
+        "power_factor": "0.83",
+        "frequency_hz": "60.0",
+        "energy_wh": "10",
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    heartbeat = await client.post(
+        "/api/v1/device-heartbeats",
+        content=body,
+        headers={
+            **sign_headers(
+                secret=secret,
+                device_id=device_id,
+                direction="device-to-server",
+                method="POST",
+                target="/api/v1/device-heartbeats",
+                body=body,
+            ),
+            "Content-Type": "application/json",
+        },
+    )
+    assert heartbeat.status_code == 200, heartbeat.text
+
+    devices_response = await client.get("/api/v1/devices")
+    fleet_response = await client.get("/api/v1/fleet/summary")
+    assert devices_response.status_code == 200, devices_response.text
+    assert fleet_response.status_code == 200, fleet_response.text
+    device = next(item for item in devices_response.json() if item["id"] == device_id)
+    fleet = fleet_response.json()
+    assert Decimal(device["current_watts"]) == Decimal("1.0")
+    assert Decimal(device["voltage_volts"]) == Decimal("120.4")
+    assert Decimal(device["current_amps"]) == Decimal("0.01")
+    assert Decimal(device["frequency_hz"]) == Decimal("60.0")
+    assert Decimal(device["power_factor"]) == Decimal("0.83")
+    assert device["measurement_freshness"] == "live"
+    assert device["latest_measurement_at"] is not None
+    assert Decimal(fleet["current_load_w"]) == Decimal("1.0")
+    assert fleet["reporting_devices"] == 1
+    assert fleet["has_live_data"] is True
+    assert fleet["latest_data_at"] is not None
+    assert fleet["latest_measurement_at"] == fleet["latest_data_at"]
+
+    interval_end = datetime.now(UTC)
+    interval_start = interval_end - timedelta(minutes=1)
+    batch_payload = {
+        "protocol_version": PROTOCOL,
+        "schema_version": "reading-batch/1.0.0",
+        "device_id": device_id,
+        "readings": [
+            {
+                "sequence": 1,
+                "boot_id": "123e4567-e89b-12d3-a456-426614174000",
+                "interval_start": interval_start.isoformat(),
+                "interval_end": interval_end.isoformat(),
+                "time_trusted": True,
+                "voltage_avg": "120.4",
+                "current_avg": "0.01",
+                "power_avg": "1.0",
+                "power_factor": "0.83",
+                "frequency_hz": "60.0",
+                "interval_energy_wh": "0.0166667",
+                "energy_method": "power_integration",
+                "ct_rating_amps": "100",
+                "quality_flags": [],
+                "firmware_version": "1.0.0",
+            }
+        ],
+    }
+    batch_body = json.dumps(batch_payload, separators=(",", ":")).encode()
+    batch = await client.post(
+        "/api/v1/device-readings/batch",
+        content=batch_body,
+        headers={
+            **sign_headers(
+                secret=secret,
+                device_id=device_id,
+                direction="device-to-server",
+                method="POST",
+                target="/api/v1/device-readings/batch",
+                body=batch_body,
+            ),
+            "Content-Type": "application/json",
+        },
+    )
+    assert batch.status_code == 200, batch.text
+    assert batch.json() == {
+        "accepted": [1],
+        "duplicates": [],
+        "rejected": [],
+        "highest_contiguous_accepted_sequence": 1,
+        "missing_ranges": [],
+    }
+    duplicate = await client.post(
+        "/api/v1/device-readings/batch",
+        content=batch_body,
+        headers={
+            **sign_headers(
+                secret=secret,
+                device_id=device_id,
+                direction="device-to-server",
+                method="POST",
+                target="/api/v1/device-readings/batch",
+                body=batch_body,
+            ),
+            "Content-Type": "application/json",
+        },
+    )
+    assert duplicate.status_code == 200, duplicate.text
+    assert duplicate.json()["accepted"] == []
+    assert duplicate.json()["duplicates"] == [1]
+    assert duplicate.json()["highest_contiguous_accepted_sequence"] == 1
+
+    async with session_factory_fixture() as session:
+        stored = await session.scalar(
+            select(RawReading).where(
+                RawReading.device_id == device_id,
+                RawReading.sequence == 1,
+            )
+        )
+        assert stored is not None
+        assert stored.site_id == device["site_id"]
+        stored_interval_end = (
+            stored.interval_end.replace(tzinfo=UTC)
+            if stored.interval_end.tzinfo is None
+            else stored.interval_end.astimezone(UTC)
+        )
+        assert stored_interval_end == interval_end
+        assert stored.power_avg == Decimal("1.0")
+        assert stored.voltage_avg == Decimal("120.4")
+        assert stored.current_avg == Decimal("0.01")
+
+    history = await client.post(
+        "/api/v1/history/query",
+        headers=csrf(client),
+        json={
+            "scope": {"type": "device", "device_id": device_id},
+            "display_mode": "individual",
+            "metrics": [
+                "power_w",
+                "energy_kwh",
+                "voltage_v",
+                "current_a",
+                "power_factor",
+                "frequency_hz",
+            ],
+            "start_utc": (interval_start - timedelta(seconds=1)).isoformat(),
+            "end_utc": (interval_end + timedelta(seconds=1)).isoformat(),
+            "bucket": "raw",
+            "timezone": "America/Los_Angeles",
+        },
+    )
+    assert history.status_code == 200, history.text
+    series = history.json()["individual"]
+    assert len(series) == 1
+    assert series[0]["device_id"] == device_id
+    points = series[0]["points"]
+    assert points
+    assert all(Decimal(point["average_power_w"]) == Decimal("1.0") for point in points)
+    assert all(Decimal(point["voltage_avg_v"]) == Decimal("120.4") for point in points)
+    assert all(Decimal(point["current_a"]) == Decimal("0.01") for point in points)
+
+    monkeypatch.setattr(
+        "app.api.routes.system.session_factory",
+        lambda: session_factory_fixture,
+    )
+    event_stream = _sse_stream(device["site_id"], None, test_settings)
+    try:
+        heartbeat_event = await anext(event_stream)
+        reading_event = await anext(event_stream)
+        status_event = await anext(event_stream)
+    finally:
+        await event_stream.aclose()
+    assert heartbeat_event.startswith("event: heartbeat\n")
+    assert reading_event.startswith("event: reading\n")
+    assert status_event.startswith("event: device_status\n")
+    assert device_id in heartbeat_event
+    assert '"measurement_freshness":"live"' in heartbeat_event
 
 
 @pytest.mark.asyncio

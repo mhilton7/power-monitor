@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Request, Response
 from sqlalchemy import select
 
-from app.api.deps import CsrfPrincipal, DbSession, Principal, audit_event
+from app.api.deps import AppSettings, CsrfPrincipal, DbSession, Principal, audit_event
 from app.db.models import (
     Role,
     RolePermission,
@@ -429,6 +429,7 @@ async def get_resolved_layout(
 async def get_status_values(
     principal: Principal,
     session: DbSession,
+    settings: AppSettings,
     site_id: str | None = None,
     device_id: str | None = None,
     keys: str | None = None,
@@ -436,6 +437,7 @@ async def get_status_values(
     _require(principal, "status_indicators.view")
     return await status_values(
         session,
+        settings=settings,
         permissions=principal.permissions,
         allowed_site_ids=set(principal.site_ids),
         all_sites=principal.all_sites,
@@ -660,6 +662,7 @@ async def preview_layout(
     request: Request,
     principal: CsrfPrincipal,
     session: DbSession,
+    settings: AppSettings,
 ) -> dict[str, Any]:
     _require(principal, "status_indicators.manage")
     roles, role_permissions, _role_payload = await _role_catalog(session)
@@ -687,6 +690,7 @@ async def preview_layout(
     )
     real_values = await status_values(
         session,
+        settings=settings,
         permissions=role_permissions[payload.role],
         allowed_site_ids=set(principal.site_ids),
         all_sites=principal.all_sites,

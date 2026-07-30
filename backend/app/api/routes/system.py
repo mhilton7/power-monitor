@@ -9,13 +9,14 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
+import structlog
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
 from sqlalchemy import func, select, text
 
-from app.api.deps import Admin, DbSession, Viewer
-from app.config import get_settings
+from app.api.deps import Admin, AppSettings, DbSession, Viewer
+from app.config import Settings, get_settings
 from app.db.models import (
     AlertInstance,
     BackupRun,
@@ -30,11 +31,17 @@ from app.db.models import (
     WorkerState,
 )
 from app.db.session import session_factory
+from app.live_measurements import load_latest_measurements
 from app.problem import ProblemError
 from app.schemas import HealthComponent, HealthEvent, SystemHealthResponse
 
 router = APIRouter(tags=["system"])
+logger = structlog.get_logger(__name__)
 _time_requests: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _iso_or_none(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
 
 
 @router.get("/health/live")
@@ -644,8 +651,14 @@ async def metrics(principal: Viewer, session: DbSession) -> PlainTextResponse:
     return PlainTextResponse(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
 
 
-async def _sse_stream(site_id: str | None, allowed_site_ids: frozenset[str] | None) -> Any:
-    last_payload = ""
+async def _sse_stream(
+    site_id: str | None,
+    allowed_site_ids: frozenset[str] | None,
+    settings: Settings,
+) -> Any:
+    last_heartbeat_ids: dict[str, str] = {}
+    last_reading_sequences: dict[str, int] = {}
+    last_statuses: dict[str, str] = {}
     while True:
         async with session_factory()() as session:
             query = select(Device).where(Device.lifecycle_status == "active")
@@ -654,6 +667,9 @@ async def _sse_stream(site_id: str | None, allowed_site_ids: frozenset[str] | No
             elif allowed_site_ids is not None:
                 query = query.where(Device.site_id.in_(allowed_site_ids))
             devices = list(await session.scalars(query))
+            measurements, heartbeats, readings = await load_latest_measurements(
+                session, devices, settings
+            )
             compact = [
                 {
                     "id": device.id,
@@ -662,20 +678,53 @@ async def _sse_stream(site_id: str | None, allowed_site_ids: frozenset[str] | No
                     if device.last_seen_at
                     else None,
                     "firmware_version": device.firmware_version,
+                    "latest_measurement_at": _iso_or_none(measurements[device.id].measured_at),
+                    "measurement_freshness": measurements[device.id].freshness_state,
                 }
                 for device in devices
             ]
-        payload = json.dumps({"type": "fleet", "devices": compact}, separators=(",", ":"))
-        if payload != last_payload:
-            yield f"event: fleet\ndata: {payload}\n\n"
-            last_payload = payload
-        else:
+            heartbeat_ids = {key: item.id for key, item in heartbeats.items()}
+            reading_sequences = {key: item.sequence for key, item in readings.items()}
+            statuses = {device.id: device.status for device in devices}
+        emitted = False
+        if heartbeat_ids != last_heartbeat_ids:
+            payload = json.dumps(
+                {"type": "heartbeat", "site_id": site_id, "devices": compact},
+                separators=(",", ":"),
+            )
+            yield f"event: heartbeat\ndata: {payload}\n\n"
+            last_heartbeat_ids = heartbeat_ids
+            emitted = True
+            logger.info("SSE_EVENT_PUBLISHED", event_name="heartbeat", site_id=site_id)
+        if reading_sequences != last_reading_sequences:
+            payload = json.dumps(
+                {"type": "reading", "site_id": site_id, "devices": compact},
+                separators=(",", ":"),
+            )
+            yield f"event: reading\ndata: {payload}\n\n"
+            last_reading_sequences = reading_sequences
+            emitted = True
+            logger.info("SSE_EVENT_PUBLISHED", event_name="reading", site_id=site_id)
+        if statuses != last_statuses:
+            payload = json.dumps(
+                {"type": "device_status", "site_id": site_id, "devices": compact},
+                separators=(",", ":"),
+            )
+            yield f"event: device_status\ndata: {payload}\n\n"
+            last_statuses = statuses
+            emitted = True
+            logger.info("SSE_EVENT_PUBLISHED", event_name="device_status", site_id=site_id)
+        if not emitted:
             yield ": keepalive\n\n"
         await asyncio.sleep(5)
 
 
 @router.get("/api/v1/events/stream", response_class=StreamingResponse)
-async def live_events(principal: Viewer, site_id: str | None = None) -> StreamingResponse:
+async def live_events(
+    principal: Viewer,
+    settings: AppSettings,
+    site_id: str | None = None,
+) -> StreamingResponse:
     if "devices.view" not in principal.permissions:
         raise ProblemError(
             403, "Permission denied", "Device view permission is required", "forbidden"
@@ -683,7 +732,11 @@ async def live_events(principal: Viewer, site_id: str | None = None) -> Streamin
     if site_id and not principal.can_access_site(site_id):
         raise ProblemError(404, "Resource not found", "Resource does not exist", "resource_missing")
     return StreamingResponse(
-        _sse_stream(site_id, None if principal.all_sites else principal.site_ids),
+        _sse_stream(
+            site_id,
+            None if principal.all_sites else principal.site_ids,
+            settings,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )

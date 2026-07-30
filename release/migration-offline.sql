@@ -3222,5 +3222,21 @@ CREATE TRIGGER trg_rate_assignment_no_overlap
 
 UPDATE alembic_version SET version_num='20260725_0017' WHERE alembic_version.version_num = '20260725_0016';
 
+-- Running upgrade 20260725_0017 -> 20260729_0018
+
+UPDATE devices
+        SET include_in_default_site_total = TRUE
+        WHERE lifecycle_status = 'active'
+          AND include_in_default_site_total = FALSE
+          AND site_id IN (
+              SELECT site_id
+              FROM devices
+              WHERE lifecycle_status = 'active'
+              GROUP BY site_id
+              HAVING COUNT(*) = 1
+          );
+
+UPDATE alembic_version SET version_num='20260729_0018' WHERE alembic_version.version_num = '20260725_0017';
+
 COMMIT;
 

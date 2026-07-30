@@ -7,6 +7,7 @@ import {
   adaptFamily,
   adaptFamilyRoles,
   adaptHistory,
+  adaptHomeSummary,
   adaptPermissions,
   adaptRateAssignments,
   adaptRateAdjustments,
@@ -17,6 +18,7 @@ import {
   adaptRateSourceCheckRuns,
   adaptRateSources,
   adaptRateVersions,
+  adaptSensors,
   adaptSystemHealth,
   adaptTestMode,
   adaptTestModeHistory,
@@ -25,6 +27,60 @@ import {
 } from '../src/api/adapters'
 
 describe('typed homeowner adapters', () => {
+  it('keeps live sensor measurements consistent and distinguishes zero from missing', () => {
+    const sensors = adaptSensors([{
+      id: 'sensor-1',
+      name: 'Indoor-AC',
+      status: 'online_synchronized',
+      current_watts: '1.0',
+      voltage_volts: '120.4',
+      current_amps: '0.01',
+      frequency_hz: '60.0',
+      power_factor: '0.83',
+      latest_measurement_at: '2026-07-29T21:55:00Z',
+      last_seen_at: '2026-07-29T21:55:02Z',
+      measurement_freshness: 'live',
+      measurement_source: 'heartbeat_live',
+      measurement_invalid_metrics: [],
+    }])
+    const live = adaptHomeSummary({
+      current_load_w: '1.0',
+      reporting_devices: 1,
+      has_live_data: true,
+      latest_data_at: '2026-07-29T21:55:00Z',
+    }, sensors)
+
+    expect(sensors[0]).toMatchObject({
+      name: 'Indoor-AC',
+      currentPowerW: '1.0',
+      voltageVolts: '120.4',
+      currentAmps: '0.01',
+      frequencyHz: '60.0',
+      powerFactor: '0.83',
+      measurementFreshness: 'live',
+      measurementSource: 'heartbeat_live',
+    })
+    expect(live).toMatchObject({
+      currentPowerW: '1.0',
+      reportingSensors: 1,
+      hasLiveData: true,
+      latestDataAt: '2026-07-29T21:55:00Z',
+    })
+
+    const missing = adaptHomeSummary({
+      current_load_w: null,
+      reporting_devices: 0,
+      has_live_data: false,
+    }, sensors)
+    const legitimateZero = adaptHomeSummary({
+      current_load_w: '0',
+      reporting_devices: 1,
+      has_live_data: true,
+    }, sensors)
+    expect(missing.currentPowerW).toBeUndefined()
+    expect(legitimateZero.currentPowerW).toBe('0')
+  })
+
   it('validates the authoritative current-assignment context', () => {
     expect(adaptCurrentRateAssignment({
       schema_version: 'current-rate-assignment/1.0',

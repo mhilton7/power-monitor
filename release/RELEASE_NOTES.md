@@ -1,5 +1,25 @@
 # Power Monitor Server 1.0.0
 
+## Authoritative live sensor measurements
+
+- Resolves heartbeat and committed-reading data through one validated,
+  site-scoped latest-measurement service used by devices, fleet summary,
+  status indicators, and SSE.
+- Fixes the Single Home contradiction where Sensor Health showed a real
+  wattage while Home reported zero sensors and `0 W`; missing power is now
+  null, while a legitimate measured zero remains `0 W`.
+- Adds voltage, current, frequency, power factor, source, sequence,
+  measurement time, and shared freshness state to each sensor response and
+  compact Sensor Health entry.
+- Uses explicit topology for multiple sensors and an unambiguous sole-sensor
+  fallback for Single Home Mode, without summing parents with children or
+  whole-home sensors with submeters.
+- Adds signed retained-sequence bootstrap for an otherwise permanent initial
+  microSD gap, structured secret-free ingest/fleet/SSE diagnostics, append-only
+  migration `20260729_0018`, and responsive live-status regressions.
+- Increases the ESP32 server-sync task reserve and fails a TLS attempt safely
+  before stack exhaustion can starve the sensor Web UI.
+
 ## System Health and isolated Sensor Test Mode
 
 - Corrected the greenfield Settings System Health request from the missing
