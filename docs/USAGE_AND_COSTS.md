@@ -8,8 +8,8 @@ are not valid recurring rate rules. Display rounding never changes the stored
 `Decimal`/`NUMERIC` values. See [Utility-bill PDF
 imports](UTILITY_BILL_IMPORTS.md).
 
-The **Usage** and **Costs** routes are account views. They use the selected
-site's utility account and the server's persisted cycle calculation.
+Billing and History use the selected site's utility account and the server's
+persisted cycle calculation. The browser does not calculate cost.
 
 ## Usage
 
@@ -19,12 +19,14 @@ Usage shows:
 - authoritative usage to date and interval coverage;
 - current tier and kWh remaining to the next threshold;
 - chronological usage by tier;
-- projected cycle usage, projected final tier, and confidence;
+- projected cycle usage, projected final tier, source, coverage, and confidence;
 - threshold/baseline provenance; and
 - current TOU/tier energy context and blended cycle rate.
 
 An unavailable state identifies the missing rate assignment, cycle, or
 whole-account authority. It never displays invented zero usage.
+Projection is also unavailable when sensor coverage is below 50% of the
+elapsed cycle; bill-reported usage is never used to fill the gap.
 
 ## Costs
 
@@ -49,4 +51,5 @@ configured.
 - Exports retain cycle, tier, TOU, rate-version, authority, and calculation
   provenance.
 
-All cost labels remain **Estimate, not utility bill**.
+All standard cost labels use **Estimated energy cost**, not predicted utility
+bill. Imported totals are displayed separately as **Reference only**.

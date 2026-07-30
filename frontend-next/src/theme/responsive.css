@@ -175,7 +175,7 @@
   .modal-layer-content { width: 100%; max-height: 100dvh; border-radius: 0; }
   .workflow { min-height: 100dvh; border-radius: 0; }
   .workflow-header, .workflow-body, .workflow-footer, .workflow > .stepper { padding-inline: var(--space-4); }
-  .review-fields, .confirm-card dl { grid-template-columns: 1fr; }
+  .review-fields, .confirm-card dl, .bill-boundary-summary { grid-template-columns: 1fr; }
   .missing-fields li { grid-template-columns: 1fr; }
   .modal-card { width: 100%; max-height: 100vh; height: 100%; border: 0; border-radius: 0; }
   .backup-details-dialog .detail-list { grid-template-columns: 1fr; }

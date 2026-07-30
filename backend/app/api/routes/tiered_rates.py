@@ -5,10 +5,16 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Request
 from sqlalchemy import func, select
 
 from app.api.deps import CsrfPrincipal, DbSession, Principal, Viewer, audit_event
+from app.billing_sources import (
+    ADVANCED_EXTERNAL_CORRECTION,
+    SENSOR_MEASUREMENTS,
+    authority_calculation_role,
+)
 from app.db.models import (
     AccountReconciliationAdjustment,
     AccountUsageAuthority,
@@ -39,6 +45,7 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["tiered rates and billing cycles"])
+logger = structlog.get_logger(__name__)
 
 
 def _permission(principal: Principal, permission: str) -> None:
@@ -171,6 +178,9 @@ async def put_usage_authority(
     else:
         authority.revision += 1
     authority.authority_type = payload.authority_type
+    authority.calculation_role = payload.calculation_role or authority_calculation_role(
+        payload.authority_type
+    )
     authority.aggregate_set_id = payload.aggregate_set_id
     authority.device_ids = sorted(set(payload.device_ids))
     authority.source_reference = payload.source_reference
@@ -189,6 +199,7 @@ async def put_usage_authority(
             details={
                 "utility_account_id": account.id,
                 "authority_type": authority.authority_type,
+                "calculation_role": authority.calculation_role,
                 "complete_account": authority.complete_account,
                 "confidence": authority.confidence,
                 "device_count": len(authority.device_ids),
@@ -198,6 +209,13 @@ async def put_usage_authority(
         )
     )
     await session.commit()
+    logger.info(
+        "billing.usage_source_selected",
+        account_id=account.id,
+        usage_source_type=authority.calculation_role,
+        authority_type=authority.authority_type,
+        sensor_count=len(authority.device_ids),
+    )
     return authority_payload(authority)
 
 
@@ -231,6 +249,7 @@ async def enter_manual_usage(
         billing_cycle_id=cycle.id,
         effective_at=payload.effective_at.astimezone(UTC),
         cumulative_kwh=payload.cumulative_kwh,
+        calculation_role=ADVANCED_EXTERNAL_CORRECTION,
         source_note=payload.source_note,
         evidence_reference=payload.evidence_reference,
         idempotency_key=payload.idempotency_key,
@@ -252,6 +271,8 @@ async def enter_manual_usage(
                 "billing_cycle_id": cycle.id,
                 "effective_at": item.effective_at.isoformat(),
                 "verification_status": item.verification_status,
+                "calculation_role": item.calculation_role,
+                "tier_progression_changed": True,
                 "evidence_attached": bool(item.evidence_reference),
             },
         )
@@ -266,6 +287,7 @@ def _manual_payload(item: ManualAccountUsage) -> dict[str, Any]:
         "billing_cycle_id": item.billing_cycle_id,
         "effective_at": item.effective_at,
         "cumulative_kwh": str(item.cumulative_kwh),
+        "calculation_role": item.calculation_role,
         "source_note": item.source_note,
         "evidence_reference": item.evidence_reference,
         "verification_status": item.verification_status,
@@ -343,6 +365,7 @@ async def import_usage(
     item = UtilityUsageImport(
         utility_account_id=account.id,
         import_kind=payload.import_kind,
+        calculation_role=payload.calculation_role,
         status="committed",
         timezone=payload.timezone,
         source_name=payload.source_name,
@@ -408,6 +431,10 @@ async def import_usage(
             cycle.explicit_meter_dates = True
             cycle.status = "recalculating"
             cycle.boundary_source = "utility_import"
+            cycle.usage_source_type = SENSOR_MEASUREMENTS
+            cycle.projection_source_type = "sensor_trend"
+            cycle.tier_progress_source_type = SENSOR_MEASUREMENTS
+            cycle.recalculation_required = True
             cycle.override_revision += 1
             cycle.updated_by = principal.user.id
             cycle.updated_at = datetime.now(UTC)
@@ -429,6 +456,11 @@ async def import_usage(
             )
             for cycle in cycles:
                 cycle.status = "recalculating"
+                cycle.recalculation_required = True
+                if payload.calculation_role == ADVANCED_EXTERNAL_CORRECTION:
+                    cycle.usage_source_type = ADVANCED_EXTERNAL_CORRECTION
+                    cycle.projection_source_type = ADVANCED_EXTERNAL_CORRECTION
+                    cycle.tier_progress_source_type = ADVANCED_EXTERNAL_CORRECTION
                 cycle.updated_by = principal.user.id
                 cycle.updated_at = datetime.now(UTC)
                 affected_cycles.add(cycle.id)
@@ -443,6 +475,7 @@ async def import_usage(
             details={
                 "utility_account_id": account.id,
                 "kind": item.import_kind,
+                "calculation_role": item.calculation_role,
                 "row_count": item.row_count,
                 "conflict_count": item.conflict_count,
                 "conflict_policy": payload.conflict_policy,
@@ -452,10 +485,19 @@ async def import_usage(
         )
     )
     await session.commit()
+    if item.calculation_role == ADVANCED_EXTERNAL_CORRECTION:
+        logger.info(
+            "billing.usage_source_selected",
+            account_id=account.id,
+            usage_source_type=ADVANCED_EXTERNAL_CORRECTION,
+            import_id=item.id,
+            import_kind=item.import_kind,
+        )
     return {
         **preview,
         "id": item.id,
         "status": item.status,
+        "calculation_role": item.calculation_role,
         "affected_cycle_count": len(affected_cycles),
     }
 

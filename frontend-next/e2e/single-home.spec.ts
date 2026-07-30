@@ -250,7 +250,7 @@ test('legacy routes redirect without rendering a legacy page', async ({ page }) 
 test('Billing and Settings remain usable at narrow widths', async ({ page }) => {
   await page.goto('/billing')
   await expect(page.getByRole('heading', { name: 'Billing' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Upload electric bill' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Import rates from bill' })).toBeVisible()
   await page.goto('/settings')
   await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
   await expect(page).toHaveScreenshot('settings-dark.png', { fullPage: true })

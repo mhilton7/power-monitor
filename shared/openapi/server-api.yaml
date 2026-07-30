@@ -3593,8 +3593,9 @@ paths:
     post:
       tags:
       - utility bill imports
-      summary: Import Utility Bill Cycle
-      operationId: import_utility_bill_cycle_api_v1_admin_utility_bill_imports__bill_id__import_billing_cycle_post
+      summary: Apply Utility Bill Cycle Dates
+      operationId: apply_utility_bill_cycle_dates_api_v1_admin_utility_bill_imports__bill_id__import_billing_cycle_post
+      deprecated: true
       parameters:
       - name: bill_id
         in: path
@@ -3626,8 +3627,53 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-                title: Response Import Utility Bill Cycle Api V1 Admin Utility Bill
-                  Imports  Bill Id  Import Billing Cycle Post
+                title: Response Apply Utility Bill Cycle Dates Api V1 Admin Utility
+                  Bill Imports  Bill Id  Import Billing Cycle Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/utility-bill-imports/{bill_id}/apply-cycle-dates:
+    post:
+      tags:
+      - utility bill imports
+      summary: Apply Utility Bill Cycle Dates
+      operationId: apply_utility_bill_cycle_dates_api_v1_admin_utility_bill_imports__bill_id__apply_cycle_dates_post
+      parameters:
+      - name: bill_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Bill Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Apply Utility Bill Cycle Dates Api V1 Admin Utility
+                  Bill Imports  Bill Id  Apply Cycle Dates Post
         '422':
           description: Validation Error
           content:
@@ -12187,6 +12233,20 @@ components:
           type: boolean
           title: Complete Account
           default: false
+        calculation_role:
+          anyOf:
+          - type: string
+            enum:
+            - sensor_measurements
+            - advanced_external_correction
+          - type: 'null'
+          title: Calculation Role
+        confirmation:
+          anyOf:
+          - type: string
+            const: ALTER TIER PROGRESSION
+          - type: 'null'
+          title: Confirmation
       additionalProperties: false
       type: object
       required:
@@ -15471,6 +15531,14 @@ components:
           maxLength: 128
           minLength: 8
           title: Idempotency Key
+        calculation_role:
+          type: string
+          const: advanced_external_correction
+          title: Calculation Role
+        confirmation:
+          type: string
+          const: ALTER TIER PROGRESSION
+          title: Confirmation
       additionalProperties: false
       type: object
       required:
@@ -15478,6 +15546,8 @@ components:
       - cumulative_kwh
       - source_note
       - idempotency_key
+      - calculation_role
+      - confirmation
       title: ManualAccountUsageWrite
     NetworkAddressTest:
       properties:
@@ -18973,6 +19043,18 @@ components:
           type: boolean
           title: Commit
           default: false
+        calculation_role:
+          type: string
+          enum:
+          - advanced_external_correction
+          - reference_only
+          title: Calculation Role
+        confirmation:
+          anyOf:
+          - type: string
+            const: ALTER TIER PROGRESSION
+          - type: 'null'
+          title: Confirmation
       additionalProperties: false
       type: object
       required:
@@ -18980,6 +19062,7 @@ components:
       - timezone
       - source_name
       - rows
+      - calculation_role
       title: UtilityUsageImportWrite
     ValidationError:
       properties:

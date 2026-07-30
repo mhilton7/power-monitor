@@ -564,9 +564,36 @@ class AccountUsageAuthorityWrite(ApiModel):
     source_reference: str | None = Field(default=None, max_length=500)
     confidence: Literal["unverified", "low", "medium", "high", "utility_verified"] = "unverified"
     complete_account: bool = False
+    calculation_role: Literal["sensor_measurements", "advanced_external_correction"] | None = None
+    confirmation: Literal["ALTER TIER PROGRESSION"] | None = None
 
     @model_validator(mode="after")
     def required_source(self) -> AccountUsageAuthorityWrite:
+        sensor_authorities = {
+            "complete_site_aggregate",
+            "service_leg_pair",
+            "whole_account_meter",
+        }
+        expected_role: Literal["sensor_measurements", "advanced_external_correction"] = (
+            "sensor_measurements"
+            if self.authority_type in sensor_authorities
+            else "advanced_external_correction"
+        )
+        if self.calculation_role is None:
+            self.calculation_role = expected_role
+        if self.calculation_role != expected_role:
+            raise ValueError("calculation role does not match the selected usage authority")
+        if expected_role == "advanced_external_correction":
+            if self.confirmation != "ALTER TIER PROGRESSION":
+                raise ValueError(
+                    "advanced usage authority requires explicit tier-progression confirmation"
+                )
+            if (
+                (self.source_reference or "")
+                .lower()
+                .startswith(("utility-bill:", "urn:power-monitor:utility-bill:"))
+            ):
+                raise ValueError("a standard utility bill cannot become usage authority")
         if self.authority_type == "complete_site_aggregate" and not self.aggregate_set_id:
             raise ValueError("complete site aggregate authority requires an aggregate set")
         if self.authority_type == "service_leg_pair" and len(set(self.device_ids)) != 2:
@@ -585,6 +612,8 @@ class ManualAccountUsageWrite(ApiModel):
     evidence_reference: str | None = Field(default=None, max_length=500)
     verification_status: Literal["unverified", "verified", "reconciled"] = "unverified"
     idempotency_key: str = Field(min_length=8, max_length=128)
+    calculation_role: Literal["advanced_external_correction"]
+    confirmation: Literal["ALTER TIER PROGRESSION"]
 
     _effective_aware = field_validator("effective_at")(require_aware)
 
@@ -599,6 +628,27 @@ class UtilityUsageImportWrite(ApiModel):
         "reject"
     )
     commit: bool = False
+    calculation_role: Literal["advanced_external_correction", "reference_only"]
+    confirmation: Literal["ALTER TIER PROGRESSION"] | None = None
+
+    @model_validator(mode="after")
+    def protected_calculation_role(self) -> UtilityUsageImportWrite:
+        reference_kinds = {"cycle_dates", "bill_total"}
+        expected = (
+            "reference_only"
+            if self.import_kind in reference_kinds
+            else "advanced_external_correction"
+        )
+        if self.calculation_role != expected:
+            raise ValueError(f"{self.import_kind} imports require calculation_role={expected}")
+        if (
+            expected == "advanced_external_correction"
+            and self.confirmation != "ALTER TIER PROGRESSION"
+        ):
+            raise ValueError(
+                "usage imports that affect tier progression require explicit confirmation"
+            )
+        return self
 
 
 class BillingCycleOverrideWrite(ApiModel):

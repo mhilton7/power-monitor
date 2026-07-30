@@ -10,9 +10,20 @@ from itertools import pairwise
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.billing_sources import (
+    ADVANCED_EXTERNAL_CORRECTION,
+    REFERENCE_ONLY,
+    SENSOR_AUTHORITY_TYPES,
+    SENSOR_MEASUREMENTS,
+    UNAVAILABLE,
+    authority_calculation_role,
+    is_bill_reference,
+    rate_source_type,
+)
 from app.db.models import (
     AccountReconciliationAdjustment,
     AccountUsageAuthority,
@@ -38,6 +49,8 @@ from app.rates.engine import RateEngine, project_billing_cycle
 from app.rates.service import version_document
 
 ZERO = Decimal("0")
+MINIMUM_SENSOR_PROJECTION_COVERAGE_PERCENT = Decimal("50")
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -123,6 +136,7 @@ def authority_payload(authority: AccountUsageAuthority | None) -> dict[str, Any]
             "aggregate_set_id": None,
             "device_ids": [],
             "revision": 0,
+            "calculation_role": UNAVAILABLE,
         }
     return {
         "configured": True,
@@ -133,6 +147,7 @@ def authority_payload(authority: AccountUsageAuthority | None) -> dict[str, Any]
         "aggregate_set_id": authority.aggregate_set_id,
         "device_ids": authority.device_ids,
         "revision": authority.revision,
+        "calculation_role": authority.calculation_role,
         "updated_at": authority.updated_at,
     }
 
@@ -204,6 +219,8 @@ async def _monitored_intervals(
 ) -> list[AuthoritativeInterval]:
     if not device_ids:
         return []
+    start = _aware_utc(start)
+    end = _aware_utc(end)
     rows = (
         await session.execute(
             select(NormalizedInterval, RawReading)
@@ -249,7 +266,10 @@ def _parse_imported_intervals(
 ) -> list[AuthoritativeInterval]:
     result: list[AuthoritativeInterval] = []
     for item in imports:
-        if item.import_kind not in {"interval", "daily"}:
+        if (
+            item.import_kind not in {"interval", "daily"}
+            or item.calculation_role != ADVANCED_EXTERNAL_CORRECTION
+        ):
             continue
         for row in item.normalized_rows:
             try:
@@ -288,6 +308,7 @@ async def _manual_start(
             ManualAccountUsage.effective_at >= cycle.starts_at,
             ManualAccountUsage.effective_at < cycle.ends_at,
             ManualAccountUsage.superseded_at.is_(None),
+            ManualAccountUsage.calculation_role == ADVANCED_EXTERNAL_CORRECTION,
         )
         .order_by(ManualAccountUsage.effective_at.desc())
     )
@@ -308,6 +329,8 @@ async def _committed_imports(session: AsyncSession, account_id: str) -> list[Uti
 async def _rate_contexts(
     session: AsyncSession, account: UtilityAccount, cycle: BillingCycle
 ) -> list[tuple[datetime, datetime, RateVersion, RateEngine]]:
+    cycle_start = _aware_utc(cycle.starts_at)
+    cycle_end = _aware_utc(cycle.ends_at)
     assignments = list(
         await session.scalars(
             select(RateAssignment)
@@ -339,10 +362,10 @@ async def _rate_contexts(
         version = await session.get(RateVersion, assignment.rate_version_id)
         if version is None:
             continue
-        start = max(cycle.starts_at, _aware_utc(assignment.effective_from))
+        start = max(cycle_start, _aware_utc(assignment.effective_from))
         end = min(
-            cycle.ends_at,
-            _aware_utc(assignment.effective_to) if assignment.effective_to else cycle.ends_at,
+            cycle_end,
+            _aware_utc(assignment.effective_to) if assignment.effective_to else cycle_end,
         )
         if end <= start:
             continue
@@ -400,6 +423,18 @@ async def calculate_cycle_tier_status(
     persist: bool,
     actor_id: str | None = None,
 ) -> dict[str, Any]:
+    # SQLite-based contract tests do not preserve timezone offsets even though the
+    # production PostgreSQL columns do. Normalize once so every comparison and
+    # tariff evaluation remains UTC in both environments.
+    cycle.starts_at = _aware_utc(cycle.starts_at)
+    cycle.ends_at = _aware_utc(cycle.ends_at)
+    if persist:
+        logger.info(
+            "billing.cycle_recalculation_started",
+            account_id=account.id,
+            cycle_id=cycle.id,
+            previous_calculation_version=cycle.recalculation_version,
+        )
     authority = await usage_authority(session, account.id)
     authority_view = authority_payload(authority)
     if authority is None:
@@ -409,9 +444,45 @@ async def calculate_cycle_tier_status(
             authority_view,
             "Configure an account-usage authority before calculating billing-cycle tiers.",
         )
+    expected_role = authority_calculation_role(authority.authority_type)
+    if (
+        authority.calculation_role == REFERENCE_ONLY
+        or is_bill_reference(authority.source_reference)
+        or authority.calculation_role != expected_role
+    ):
+        logger.warning(
+            "billing.bill_usage_ignored_for_calculation",
+            account_id=account.id,
+            cycle_id=cycle.id,
+            authority_type=authority.authority_type,
+            stored_calculation_role=authority.calculation_role,
+        )
+        return _unavailable_status(
+            account,
+            cycle,
+            authority_view,
+            "The previous bill-derived usage authority is reference only. "
+            "Choose a reviewed full-account sensor or aggregate.",
+        )
+    usage_source = (
+        SENSOR_MEASUREMENTS
+        if authority.authority_type in SENSOR_AUTHORITY_TYPES
+        else ADVANCED_EXTERNAL_CORRECTION
+    )
     device_ids, warnings = await _authority_device_ids(session, account, authority)
-    manual = await _manual_start(session, account.id, cycle)
-    imports = await _committed_imports(session, account.id)
+    # Standard sensor authority is intentionally isolated from every imported or
+    # manually entered cumulative value. Advanced correction data is loaded only
+    # when an administrator explicitly selected an advanced authority.
+    manual = (
+        await _manual_start(session, account.id, cycle)
+        if usage_source == ADVANCED_EXTERNAL_CORRECTION
+        else None
+    )
+    imports = (
+        await _committed_imports(session, account.id)
+        if usage_source == ADVANCED_EXTERNAL_CORRECTION
+        else []
+    )
     initial_usage = ZERO
     monitored_start = cycle.starts_at
     context_import_id: str | None = None
@@ -447,6 +518,7 @@ async def calculate_cycle_tier_status(
             (item, row)
             for item in imports
             if item.import_kind == "cycle_cumulative"
+            and item.calculation_role == ADVANCED_EXTERNAL_CORRECTION
             for row in item.normalized_rows
         ]
         if imports_with_totals:
@@ -458,7 +530,10 @@ async def calculate_cycle_tier_status(
             monitored_start = _aware_utc(datetime.fromisoformat(str(latest["effective_at"])))
             context_import_id = latest_import.id
     has_cumulative_import = any(
-        item.import_kind == "cycle_cumulative" and item.normalized_rows for item in imports
+        item.import_kind == "cycle_cumulative"
+        and item.calculation_role == ADVANCED_EXTERNAL_CORRECTION
+        and item.normalized_rows
+        for item in imports
     )
     if (
         not authority.complete_account
@@ -567,6 +642,17 @@ async def calculate_cycle_tier_status(
                     }
                 )
             cumulative += part.energy_kwh
+    for previous, current in pairwise(segment_rows):
+        if previous["tier_id"] != current["tier_id"]:
+            logger.info(
+                "billing.tier_threshold_crossed",
+                account_id=account.id,
+                cycle_id=cycle.id,
+                from_tier_id=previous["tier_id"],
+                to_tier_id=current["tier_id"],
+                threshold_kwh=str(previous["cumulative_end_kwh"]),
+                rate_version_id=current["rate_version"].id,
+            )
     if not intervals and (manual is not None or has_cumulative_import):
         context_start = max(monitored_start, cycle.starts_at)
         context_interval = AuthoritativeInterval(
@@ -689,6 +775,14 @@ async def calculate_cycle_tier_status(
     )
     if coverage_percent < Decimal("80"):
         warnings.append("Projection confidence is reduced by incomplete cycle coverage.")
+    projection_available = (
+        usage_source != SENSOR_MEASUREMENTS
+        or coverage_percent >= MINIMUM_SENSOR_PROJECTION_COVERAGE_PERCENT
+    )
+    if not projection_available:
+        warnings.append(
+            "Projection is unavailable until sensor coverage reaches 50% of the elapsed cycle."
+        )
     confidence = (
         "low"
         if coverage_percent < Decimal("50")
@@ -706,6 +800,8 @@ async def calculate_cycle_tier_status(
         energy_charge=actual_energy_charge,
         projected_energy_charge=projected_energy_charge,
     )
+    if not projection_available:
+        components["projected_total"] = None
     bill_rows = [
         row
         for item in imports
@@ -761,6 +857,12 @@ async def calculate_cycle_tier_status(
             )
         cycle.recalculation_version = recalculation_version
         cycle.status = "confirmed" if cycle.explicit_meter_dates else "expected"
+        cycle.usage_source_type = usage_source
+        cycle.projection_source_type = (
+            "sensor_trend" if usage_source == SENSOR_MEASUREMENTS else ADVANCED_EXTERNAL_CORRECTION
+        )
+        cycle.tier_progress_source_type = usage_source
+        cycle.recalculation_required = False
         cycle.updated_by = actor_id
         cycle.updated_at = datetime.now(UTC)
         tier_rows = {
@@ -822,19 +924,20 @@ async def calculate_cycle_tier_status(
                     calculated_at=datetime.now(UTC),
                 )
             )
-        session.add(
-            TierProjectionSnapshot(
-                billing_cycle_id=cycle.id,
-                calculated_at=datetime.now(UTC),
-                method=projection.method,
-                projected_usage_kwh=projection.projected_energy_kwh,
-                projected_energy_charge=projected_energy_charge,
-                projected_tier_stable_id=projected_tier["tier_id"] if projected_tier else None,
-                confidence=confidence,
-                coverage_percent=coverage_percent,
+        if projection_available:
+            session.add(
+                TierProjectionSnapshot(
+                    billing_cycle_id=cycle.id,
+                    calculated_at=datetime.now(UTC),
+                    method=projection.method,
+                    projected_usage_kwh=projection.projected_energy_kwh,
+                    projected_energy_charge=projected_energy_charge,
+                    projected_tier_stable_id=projected_tier["tier_id"] if projected_tier else None,
+                    confidence=confidence,
+                    coverage_percent=coverage_percent,
+                )
             )
-        )
-    return {
+    response = {
         "available": True,
         "utility_account_id": account.id,
         "account_name": account.name,
@@ -842,8 +945,16 @@ async def calculate_cycle_tier_status(
         "pricing_model": active_version.pricing_model,
         "rate_version_id": active_version.id,
         "rate_version": active_version.version,
+        "rate_source_type": rate_source_type(active_version.source_kind),
+        "usage_source_type": usage_source,
+        "bill_usage_calculation_role": REFERENCE_ONLY,
+        "projection_source_type": (
+            "sensor_trend" if usage_source == SENSOR_MEASUREMENTS else ADVANCED_EXTERNAL_CORRECTION
+        ),
+        "tier_progress_source_type": usage_source,
         "cycle": _cycle_payload(cycle, account.timezone),
         "authoritative_usage_kwh": str(cumulative),
+        "monitored_usage_kwh": str(cumulative) if usage_source == SENSOR_MEASUREMENTS else None,
         "usage_authority": authority_view,
         "current_tier": _tier_payload(current_tier),
         "current_rate_period": current_price_slice.bucket,
@@ -863,11 +974,13 @@ async def calculate_cycle_tier_status(
             if cumulative > initial_usage
             else None
         ),
-        "projected_usage_kwh": str(projection.projected_energy_kwh),
-        "projected_energy_charge": str(projected_energy_charge),
-        "projected_final_tier": _tier_payload(projected_tier),
-        "projection_method": projection.method,
-        "projection_confidence": confidence,
+        "projected_usage_kwh": (
+            str(projection.projected_energy_kwh) if projection_available else None
+        ),
+        "projected_energy_charge": (str(projected_energy_charge) if projection_available else None),
+        "projected_final_tier": (_tier_payload(projected_tier) if projection_available else None),
+        "projection_method": projection.method if projection_available else None,
+        "projection_confidence": confidence if projection_available else "insufficient_coverage",
         "coverage_percent": str(coverage_percent),
         "bill_components": components,
         "estimated_total_bill": components["estimated_total"],
@@ -880,6 +993,39 @@ async def calculate_cycle_tier_status(
             "The total estimate is not a utility bill."
         ),
     }
+    logger.info(
+        "billing.sensor_usage_calculated"
+        if usage_source == SENSOR_MEASUREMENTS
+        else "billing.advanced_usage_calculated",
+        account_id=account.id,
+        cycle_id=cycle.id,
+        rate_version_id=active_version.id,
+        usage_source_type=usage_source,
+        sensor_count=len(device_ids),
+        coverage_percent=str(coverage_percent),
+        monitored_usage_kwh=(str(cumulative) if usage_source == SENSOR_MEASUREMENTS else None),
+        calculation_version=recalculation_version,
+    )
+    logger.info(
+        "billing.cost_calculated",
+        account_id=account.id,
+        cycle_id=cycle.id,
+        usage_source_type=usage_source,
+        energy_charge=str(actual_energy_charge),
+        calculation_version=recalculation_version,
+    )
+    logger.info(
+        "billing.projection_calculated",
+        account_id=account.id,
+        cycle_id=cycle.id,
+        projection_source_type=response["projection_source_type"],
+        projected_usage_kwh=(
+            str(projection.projected_energy_kwh) if projection_available else None
+        ),
+        coverage_percent=str(coverage_percent),
+        projection_available=projection_available,
+    )
+    return response
 
 
 async def _bill_components(
@@ -976,6 +1122,11 @@ def _cycle_payload(cycle: BillingCycle, timezone: str) -> dict[str, Any]:
         "days_remaining": (remaining_seconds + 86399) // 86400,
         "status": cycle.status,
         "boundary_source": cycle.boundary_source,
+        "usage_source_type": cycle.usage_source_type,
+        "projection_source_type": cycle.projection_source_type,
+        "tier_progress_source_type": cycle.tier_progress_source_type,
+        "recalculation_required": cycle.recalculation_required,
+        "legacy_bill_authority_review_required": cycle.legacy_bill_authority_review_required,
         "exact_dates": cycle.explicit_meter_dates,
         "finalized_at": cycle.finalized_at,
     }
@@ -995,6 +1146,11 @@ def _unavailable_status(
         "account_name": account.name,
         "currency": account.currency,
         "pricing_model": pricing_model,
+        "rate_source_type": None,
+        "usage_source_type": UNAVAILABLE,
+        "bill_usage_calculation_role": REFERENCE_ONLY,
+        "projection_source_type": UNAVAILABLE,
+        "tier_progress_source_type": UNAVAILABLE,
         "cycle": _cycle_payload(cycle, account.timezone),
         "usage_authority": authority,
         "current_tier": None,
@@ -1005,7 +1161,7 @@ def _unavailable_status(
         "projected_total_bill": None,
         "recalculation_version": cycle.recalculation_version,
         "warnings": [reason],
-        "configuration_action": "/billing/accounts",
+        "configuration_action": "/settings/sensors?configuration=measurement-assignment",
         "disclosure": "Tier status is unavailable; the server does not guess account usage.",
     }
 

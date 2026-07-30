@@ -9,9 +9,11 @@ from pathlib import Path
 from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo
 
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.billing_sources import REFERENCE_ONLY, bill_field_calculation_role
 from app.bills.extraction import (
     PARSER_ID,
     PARSER_VERSION,
@@ -22,10 +24,8 @@ from app.bills.extraction import (
 )
 from app.config import Settings
 from app.db.models import (
-    AccountUsageAuthority,
     BackgroundJob,
     BillingCycle,
-    ManualAccountUsage,
     RateAssignment,
     RateExtractionResult,
     RatePlan,
@@ -40,7 +40,6 @@ from app.db.models import (
     UtilityBillExtractionRevision,
     UtilityBillFieldConflict,
     UtilityBillImport,
-    UtilityUsageImport,
 )
 from app.formatting import (
     format_currency,
@@ -58,17 +57,14 @@ from app.rates.documents import (
 from app.rates.engine import RateEngine
 from app.rates.service import activate_version, create_custom_plan, update_draft_version
 
+logger = structlog.get_logger(__name__)
+
 REQUIRED_REVIEW_FIELDS = {
     "utility",
     "plan_code",
     "pricing_model",
-    "starts_at",
-    "ends_at",
-    "total_usage_kwh",
     "threshold_interpretation",
     "rate_plan_code",
-    "billing_period_start",
-    "billing_period_end",
     "baseline_allowance_kwh",
 }
 
@@ -140,6 +136,9 @@ def _normalized_bill_artifact(
                 {
                     "field": item.field_key,
                     "output_kind": item.output_kind,
+                    "calculation_role": bill_field_calculation_role(
+                        item.output_kind, item.field_key
+                    ),
                     "value": None,
                     "state": state,
                     "required": item.field_key in REQUIRED_REVIEW_FIELDS,
@@ -156,6 +155,7 @@ def _normalized_bill_artifact(
             {
                 "field": item.field_key,
                 "output_kind": item.output_kind,
+                "calculation_role": bill_field_calculation_role(item.output_kind, item.field_key),
                 "value": item.normalized_value,
                 "confidence": confidence,
                 "source_page": item.page_number,
@@ -193,6 +193,12 @@ def _normalized_bill_artifact(
         "billing_cycle": extraction.cycle_data,
         "plan_candidate": extraction.rate_data,
         "line_items": list(extraction.cycle_data.get("line_items") or []),
+        "calculation_policy": {
+            "tariff_evidence_role": "tariff_rule",
+            "reference_bill_evidence_role": REFERENCE_ONLY,
+            "reported_usage_used_in_monitored_calculation": False,
+            "bill_total_used_in_monitored_calculation": False,
+        },
         "evidence": evidence,
         "validation": extraction.validation,
         "warnings": extraction.warnings,
@@ -237,6 +243,7 @@ def _field_payload(
 ) -> dict[str, Any]:
     return {
         "output_kind": field.output_kind,
+        "calculation_role": bill_field_calculation_role(field.output_kind, field.field_key),
         "field_key": field.field_key,
         "raw_value": field.raw_value,
         "normalized_value": field.normalized_value,
@@ -321,22 +328,9 @@ def _plan_document(
         f"{pricing_model}; unsupported or incomplete tariff rules remain review blockers. "
         "Bill-specific adjustments are not recurring rate rules."
     )
+    # A single bill cannot prove that a charge is a recurring tariff rule.
+    # Administrators may add such rules separately under Advanced Billing Rules.
     adjustments: list[dict[str, Any]] = []
-    recurring_daily = rate.get("recurring_daily_charge")
-    if isinstance(recurring_daily, dict) and recurring_daily.get("unit_rate") is not None:
-        adjustments.append(
-            {
-                "name": "Base services charge",
-                "component": "daily_fixed_charge",
-                "operation": "add",
-                "value": str(recurring_daily["unit_rate"]),
-                "unit": "per_day",
-                "scope": "full_account_estimate",
-                "effective_from": effective_from,
-                "calculation_order": 10,
-                "description": "Exact recurring daily charge extracted from an SCE bill.",
-            }
-        )
     return RatePlanDocument.model_validate(
         {
             "schema_version": "power-monitor-rate-plan/1.0",
@@ -803,6 +797,7 @@ async def create_bill_import(
         extraction_revision_id=revision.id,
         utility_account_id=account.id if account is not None else None,
         status="draft",
+        calculation_role=REFERENCE_ONLY,
         starts_at=_as_utc_date(cycle_data.get("starts_at"), timezone),
         ends_at=_as_utc_date(cycle_data.get("ends_at"), timezone),
         cycle_days=cycle_data.get("cycle_days"),
@@ -1128,6 +1123,7 @@ async def import_payload(session: AsyncSession, bill: UtilityBillImport) -> dict
             {
                 "id": item.id,
                 "output_kind": item.output_kind,
+                "calculation_role": item.calculation_role,
                 "field_key": item.field_key,
                 "raw_value": item.raw_value,
                 "normalized_value": item.normalized_value,
@@ -1169,6 +1165,7 @@ async def import_payload(session: AsyncSession, bill: UtilityBillImport) -> dict
                 "id": cycle.id,
                 "utility_account_id": cycle.utility_account_id,
                 "status": cycle.status,
+                "calculation_role": cycle.calculation_role,
                 "starts_at": cycle.starts_at,
                 "ends_at": cycle.ends_at,
                 "cycle_days": cycle.cycle_days,
@@ -1264,6 +1261,12 @@ def _refresh_review_artifact(
     artifact["billing_cycle"] = revision.normalized_cycle_data
     artifact["plan_candidate"] = revision.normalized_rate_data
     artifact["line_items"] = list(revision.normalized_cycle_data.get("line_items") or [])
+    artifact["calculation_policy"] = {
+        "tariff_evidence_role": "tariff_rule",
+        "reference_bill_evidence_role": REFERENCE_ONLY,
+        "reported_usage_used_in_monitored_calculation": False,
+        "bill_total_used_in_monitored_calculation": False,
+    }
     evidence: list[dict[str, Any]] = []
     missing: list[dict[str, Any]] = []
     for item in fields:
@@ -1274,6 +1277,7 @@ def _refresh_review_artifact(
                 {
                     "field": item.field_key,
                     "output_kind": item.output_kind,
+                    "calculation_role": item.calculation_role,
                     "value": None,
                     "state": (
                         "not_applicable"
@@ -1294,6 +1298,7 @@ def _refresh_review_artifact(
             {
                 "field": item.field_key,
                 "output_kind": item.output_kind,
+                "calculation_role": item.calculation_role,
                 "value": value,
                 "confidence": confidence,
                 "source_page": item.page_number,
@@ -1658,6 +1663,29 @@ async def publish_and_assign(
     account.active_rate_version_id = version.id
     bill.status = "published"
     bill.updated_at = datetime.now(UTC)
+    logger.info(
+        "billing.rate_rules_imported",
+        account_id=account.id,
+        rate_version_id=version.id,
+        bill_import_id=bill.id,
+        rate_source_type="reviewed_bill",
+        bill_usage_calculation_role=REFERENCE_ONLY,
+    )
+    logger.info(
+        "billing.bill_usage_ignored_for_calculation",
+        account_id=account.id,
+        bill_import_id=bill.id,
+        reported_usage_present=bool(
+            (
+                await session.scalar(
+                    select(UtilityBillCycleDraft.total_usage_kwh).where(
+                        UtilityBillCycleDraft.bill_import_id == bill.id
+                    )
+                )
+            )
+            is not None
+        ),
+    )
     if bill.retention_mode == "delete_after_approval":
         await delete_original_artifact(session, bill=bill)
     return version, assignment, status
@@ -1674,7 +1702,7 @@ async def approve_cycle_draft(
         raise ProblemError(
             409,
             "Bill review is incomplete",
-            "Review all required fields and conflicts before importing billing-cycle data",
+            "Review all required fields and conflicts before applying billing-cycle dates",
             "bill_review_incomplete",
         )
     draft = await session.scalar(
@@ -1689,19 +1717,12 @@ async def approve_cycle_draft(
         )
     if draft.status == "imported":
         return draft
-    if draft.starts_at is None or draft.ends_at is None or draft.total_usage_kwh is None:
+    if draft.starts_at is None or draft.ends_at is None:
         raise ProblemError(
             422,
             "Billing-cycle draft incomplete",
-            "Cycle dates and utility-reported usage are required",
+            "Reviewed cycle start and end dates are required",
             "bill_cycle_draft_incomplete",
-        )
-    if draft.threshold_interpretation == "unknown":
-        raise ProblemError(
-            422,
-            "Threshold interpretation required",
-            "Review the tier threshold before importing the billing cycle",
-            "bill_threshold_unresolved",
         )
     existing = await session.scalar(
         select(BillingCycle).where(
@@ -1727,6 +1748,10 @@ async def approve_cycle_draft(
         boundary_source="utility_import",
         override_revision=0,
         recalculation_version=0,
+        usage_source_type="sensor_measurements",
+        projection_source_type="sensor_trend",
+        tier_progress_source_type="sensor_measurements",
+        recalculation_required=True,
         created_by=user_id,
         updated_by=user_id,
         created_at=now,
@@ -1741,81 +1766,24 @@ async def approve_cycle_draft(
         cycle.override_revision += 1
         cycle.updated_by = user_id
         cycle.updated_at = now
+        cycle.recalculation_required = True
     await session.flush()
-    usage_import = UtilityUsageImport(
-        utility_account_id=account.id,
-        import_kind="cycle_cumulative",
-        status="committed",
-        timezone=account.timezone,
-        source_name=f"Private utility bill import {bill.id}",
-        content_sha256=bill.content_sha256,
-        field_mapping={
-            "source": "utility_bill_pdf",
-            "artifact_id": bill.artifact_id,
-            "bill_import_id": bill.id,
-        },
-        row_count=1,
-        conflict_count=0,
-        normalized_rows=[
-            {
-                "effective_at": draft.ends_at.isoformat(),
-                "cumulative_kwh": str(draft.total_usage_kwh),
-                "billing_cycle_id": cycle.id,
-            }
-        ],
-        created_by=user_id,
-        created_at=now,
-    )
-    session.add(usage_import)
-    await session.flush()
-    session.add(
-        ManualAccountUsage(
-            utility_account_id=account.id,
-            billing_cycle_id=cycle.id,
-            effective_at=draft.ends_at,
-            cumulative_kwh=draft.total_usage_kwh,
-            source_note="Administrator-approved utility-bill usage",
-            evidence_reference=f"utility-bill:{bill.id}:sha256:{bill.content_sha256}",
-            idempotency_key=f"utility-bill-{bill.id}",
-            verification_status="verified",
-            created_by=user_id,
-            created_at=now,
-        )
-    )
-    if bill.source_role == "authoritative_account_specific":
-        authority = await session.scalar(
-            select(AccountUsageAuthority).where(
-                AccountUsageAuthority.utility_account_id == account.id
-            )
-        )
-        if authority is None:
-            authority = AccountUsageAuthority(
-                utility_account_id=account.id,
-                authority_type="manual_cycle_usage",
-                device_ids=[],
-                source_reference=f"utility-bill:{bill.id}",
-                confidence="utility_verified",
-                complete_account=True,
-                revision=1,
-                updated_by=user_id,
-                updated_at=now,
-            )
-            session.add(authority)
-        else:
-            authority.authority_type = "manual_cycle_usage"
-            authority.source_reference = f"utility-bill:{bill.id}"
-            authority.confidence = "utility_verified"
-            authority.complete_account = True
-            authority.revision += 1
-            authority.updated_by = user_id
-            authority.updated_at = now
     draft.status = "imported"
+    draft.calculation_role = REFERENCE_ONLY
     draft.billing_cycle_id = cycle.id
-    draft.utility_usage_import_id = usage_import.id
+    draft.utility_usage_import_id = None
     draft.reviewed_by = user_id
     draft.approved_at = now
     draft.updated_at = now
     draft.revision += 1
+    logger.info(
+        "billing.bill_usage_retained_reference_only",
+        account_id=account.id,
+        cycle_id=cycle.id,
+        bill_import_id=bill.id,
+        bill_usage_present=draft.total_usage_kwh is not None,
+        cycle_dates_applied=True,
+    )
     return draft
 
 

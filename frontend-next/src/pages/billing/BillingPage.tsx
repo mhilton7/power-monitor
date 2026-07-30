@@ -121,9 +121,6 @@ export function BillingPage() {
   const currentLibraryPlan = plans.data?.find((plan) => plan.name === service?.currentPlan || plan.code === service?.planCode)
   const tieredCostSetupRequired = currentLibraryPlan?.pricingModel === 'tiered'
     || currentLibraryPlan?.pricingModel === 'time_of_use_tiered'
-  const latestReviewedBill = bills.data?.find((bill) => (
-    ['published', 'imported'].includes(bill.status)
-  ))
   const openImporter = useCallback(() => {
     const next = new URLSearchParams(params)
     next.set('action', 'upload')
@@ -152,9 +149,9 @@ export function BillingPage() {
     <Page className="billing-page">
       <PageHeader
         title="Billing"
-        description="Your electric service, rate plan, billing cycle, and imported statements."
+        description="Rates from your plan, usage from your Power Monitor sensors."
         action={<button type="button" className="button primary" data-canonical-action="bill.upload" onClick={openImporter}>
-          <Upload size={17} /> Upload electric bill
+          <Upload size={17} /> Import rates from bill
         </button>}
       />
       {testMode.state?.enabled && (
@@ -177,10 +174,14 @@ export function BillingPage() {
       {assignmentNotice && <InlineNotice tone="success">{assignmentNotice}</InlineNotice>}
 
       <StatGrid className="billing-top-metrics">
-        <Metric label="Electric service" value={service ? '1' : '0'} identity="billing.service_count" detail={service ? service.name : 'Setup needed'} />
-        <Metric label="Current plan" value={service?.currentPlan ?? 'Not configured'} identity="billing.current_plan" detail={service?.currentVersion ? `Version ${service.currentVersion}` : 'Upload a bill to begin'} />
-        <Metric label="Current energy price" value={rate(service?.currentRate ?? cycle?.currentRate, home.currency)} identity="billing.current_price" detail={service?.nextRate ? `Next: ${rate(service.nextRate, home.currency)}` : undefined} />
+        <Metric label="Current rate plan" value={service?.currentPlan ?? 'Not configured'} identity="billing.current_plan" detail={service?.currentVersion ? `Version ${service.currentVersion}` : 'Import rates from a bill or choose a plan'} />
+        <Metric label="Usage source" value={cycle?.usageSourceType === 'sensor_measurements' ? 'Power Monitor sensors' : cycle?.usageSourceType === 'advanced_external_correction' ? 'Advanced external correction' : 'Needs setup'} identity="billing.usage_source" detail="Bill-reported kWh is reference only" />
+        <Metric label="Billing cycle" value={dateRange(service?.billingStartsAt ?? cycle?.startsAt, service?.billingEndsAt ?? cycle?.endsAt)} identity="billing.cycle" detail={cycle?.daysRemaining != null ? `${cycle.daysRemaining} days remaining` : undefined} />
       </StatGrid>
+      <InlineNotice tone="info">
+        Your uploaded bill supplies rate prices and tier rules. Your Power Monitor sensors
+        supply monitored usage, tier progress, and projections.
+      </InlineNotice>
 
       {!service ? (
         <Surface>
@@ -197,10 +198,10 @@ export function BillingPage() {
               </div>
               <div className="service-facts">
                 <MetadataList>
-                  <MetadataItem icon={<CalendarDays />} label="Billing day" value={ordinal(service.billingDay)} />
-                  <MetadataItem icon={<FileClock />} label="Current period" value={dateRange(service.billingStartsAt ?? cycle?.startsAt, service.billingEndsAt ?? cycle?.endsAt)} />
-                  <MetadataItem icon={<ShieldCheck />} label="Cost scope" value={statusLabel(service.costScope)} />
-                  <MetadataItem icon={<ReceiptText />} label="Projected bill" value={money(cycle?.projectedBill, home.currency)} />
+                  <MetadataItem icon={<CalendarDays />} label="Current monitored usage" value={energy(cycle?.usageKwh)} />
+                  <MetadataItem icon={<FileClock />} label="Current tier" value={cycle?.currentTier ?? 'Unavailable'} />
+                  <MetadataItem icon={<ShieldCheck />} label="Remaining before next tier" value={energy(cycle?.remainingKwh)} />
+                  <MetadataItem icon={<ReceiptText />} label="Estimated energy cost" value={money(cycle?.energyCharge, home.currency)} />
                 </MetadataList>
               </div>
               <div className="card-actions">
@@ -232,19 +233,18 @@ export function BillingPage() {
                 service={service}
                 sensors={sensors}
                 cycle={cycle}
-                latestBillId={latestReviewedBill?.id}
                 onRefresh={refresh}
               />
             )}
 
             <Surface title="Billing-cycle details" subtitle={dateRange(cycle?.startsAt, cycle?.endsAt)}>
-              {!cycle?.available ? <EmptyState compact title="Billing cycle not ready" message="Upload a bill or add exact cycle dates to calculate tier progress and projections." action={<button type="button" className="button secondary compact" onClick={openImporter}><Upload size={16} /> Upload bill</button>} /> : (
+              {!cycle?.available ? <EmptyState compact title="Sensor-based estimate unavailable" message="Choose a complete-service sensor source and add billing-cycle dates. Bill-reported usage is never used as a fallback." action={<button type="button" className="button secondary compact" onClick={() => { document.querySelector('.cost-calculation-setup')?.scrollIntoView({ behavior: 'smooth' }) }}><ShieldCheck size={16} /> Configure sensor usage</button>} /> : (
                 <>
                   <StatGrid className="cycle-metrics">
-                    <Metric label="Usage" value={energy(cycle.usageKwh)} identity="billing.cycle_usage" />
-                    <Metric label="Energy charge" value={money(cycle.energyCharge, home.currency)} identity="billing.cycle_charge" />
-                    <Metric label="Projected usage" value={energy(cycle.projectedUsageKwh)} identity="billing.projected_usage" />
-                    <Metric label="Projected bill" value={money(cycle.projectedBill, home.currency)} identity="billing.projected_bill" />
+                    <Metric label="Current monitored usage" value={energy(cycle.usageKwh)} identity="billing.cycle_usage" detail="Power Monitor sensors" />
+                    <Metric label="Estimated energy cost" value={money(cycle.energyCharge, home.currency)} identity="billing.cycle_charge" detail="Rates applied to sensor kWh" />
+                    <Metric label="Projected sensor usage" value={energy(cycle.projectedUsageKwh)} identity="billing.projected_usage" detail="Sensor trend only" />
+                    <Metric label="Projected energy cost" value={money(cycle.projectedEnergyCharge, home.currency)} identity="billing.projected_energy_cost" detail="Not a utility bill" />
                   </StatGrid>
                   {cycle.tiers.length > 0 ? (
                     <div className="tier-list">
@@ -257,13 +257,13 @@ export function BillingPage() {
               )}
             </Surface>
 
-            <Surface title="Past bills" subtitle="Imported statements and calculated cycle records">
+            <Surface title="Reference bills" subtitle="Imported statements retained as evidence; not used in monitored calculations">
               {bills.isLoading ? <LoadingState label="Loading past bills…" /> : bills.error ? <ErrorState error={bills.error} retry={() => void bills.refetch()} /> : (bills.data?.length ?? 0) === 0 ? <EmptyState title="No past bills yet" message="Your first reviewed bill will appear here." /> : <PastBills bills={bills.data ?? []} currency={home.currency} />}
             </Surface>
           </div>
           <aside className="billing-side-column">
-            <Surface title="Latest bill" subtitle="Most recent local import">
-              {bills.data?.[0] ? <LatestBill bill={bills.data[0]} currency={home.currency} /> : <EmptyState title="No imported bill" message="Upload a PDF to prepare a reviewed rate plan and billing cycle." />}
+            <Surface title="Latest reference bill" subtitle="Reference only · not used in monitored calculations">
+              {bills.data?.[0] ? <LatestBill bill={bills.data[0]} currency={home.currency} /> : <EmptyState title="No imported bill" message="Upload a PDF to prepare reviewed rate rules." />}
             </Surface>
             <Surface title="Estimate confidence">
               <div className="confidence-card"><span>{cycle?.confidence ? statusLabel(cycle.confidence) : 'Waiting for history'}</span><p>Coverage {percentage(cycle?.coveragePercent)}. Estimates improve as synchronized readings fill the cycle.</p></div>
@@ -577,9 +577,4 @@ function PastBills({ bills, currency }: { bills: BillSummary[]; currency: string
 
 function LatestBill({ bill, currency }: { bill: BillSummary; currency: string }) {
   return <div className="latest-bill"><span className="pill success"><Check size={13} /> {statusLabel(bill.status)}</span><dl><div><dt>Bill period</dt><dd>{dateRange(bill.startsAt, bill.endsAt)}</dd></div><div><dt>Usage</dt><dd>{energy(bill.usageKwh)}</dd></div><div><dt>Total charges</dt><dd>{money(bill.total, currency)}</dd></div><div><dt>Imported</dt><dd>{dateTime(bill.createdAt)}</dd></div></dl></div>
-}
-
-function ordinal(value: number): string {
-  const suffix = value % 10 === 1 && value % 100 !== 11 ? 'st' : value % 10 === 2 && value % 100 !== 12 ? 'nd' : value % 10 === 3 && value % 100 !== 13 ? 'rd' : 'th'
-  return `${value}${suffix}`
 }

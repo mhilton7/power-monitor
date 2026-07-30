@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.rates.documents import RatePlanDocument, engine_plan
-from app.rates.engine import RateEngine
+from app.rates.engine import RateEngine, project_billing_cycle
 from app.rates.tiered import import_quality, normalized_import_rows
 
 CYCLE_START = datetime(2026, 7, 22, 7, tzinfo=UTC)
@@ -99,6 +99,68 @@ def test_reference_usage_is_allocated_chronologically_without_hard_coding_engine
         "Tier 2": Decimal("148.80"),
     }
     assert result.energy_charge == Decimal("322.50")
+
+
+def test_bill_reported_usage_is_reference_only_when_pricing_sensor_usage() -> None:
+    plan = tiered_plan()
+    plan["tiers"] = [
+        {**plan["tiers"][0], "price_per_kwh": "0.32"},  # type: ignore[index]
+        {**plan["tiers"][1], "price_per_kwh": "0.42"},  # type: ignore[index]
+    ]
+    bill_reported_usage = Decimal("850")
+    sensor_measured_usage = Decimal("100")
+
+    result = RateEngine(plan).calculate(
+        start=CYCLE_START,
+        end=CYCLE_END,
+        energy_kwh=sensor_measured_usage,
+        cycle_start=CYCLE_START,
+        cycle_end=CYCLE_END,
+    )
+
+    assert bill_reported_usage == Decimal("850")  # retained reference fixture
+    assert result.energy_by_tier == {"Tier 1": Decimal("100")}
+    assert result.energy_charge == Decimal("32.00")
+
+
+def test_bill_usage_is_not_a_projection_fallback_for_sensor_trend() -> None:
+    bill_reported_usage = Decimal("1200")
+    projection = project_billing_cycle(
+        actual_energy_kwh=Decimal("100"),
+        elapsed_seconds=7 * 86400,
+        total_seconds=28 * 86400,
+        method="straight_line",
+    )
+
+    assert bill_reported_usage == Decimal("1200")  # retained reference fixture
+    assert projection.projected_energy_kwh == Decimal("400")
+    assert projection.method == "straight_line"
+
+
+def test_six_hundred_sensor_kwh_is_split_chronologically_across_tiers() -> None:
+    plan = tiered_plan()
+    plan["tiers"] = [
+        {**plan["tiers"][0], "price_per_kwh": "0.32"},  # type: ignore[index]
+        {**plan["tiers"][1], "price_per_kwh": "0.42"},  # type: ignore[index]
+    ]
+
+    result = RateEngine(plan).calculate(
+        start=CYCLE_START,
+        end=CYCLE_END,
+        energy_kwh=Decimal("600"),
+        cycle_start=CYCLE_START,
+        cycle_end=CYCLE_END,
+    )
+
+    assert result.energy_by_tier == {
+        "Tier 1": Decimal("579"),
+        "Tier 2": Decimal("21"),
+    }
+    assert result.charge_by_tier == {
+        "Tier 1": Decimal("185.28"),
+        "Tier 2": Decimal("8.82"),
+    }
+    assert result.energy_charge == Decimal("194.10")
 
 
 def test_interval_crossing_threshold_splits_at_exact_cumulative_boundary() -> None:

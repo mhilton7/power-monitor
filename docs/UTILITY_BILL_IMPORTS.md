@@ -1,31 +1,25 @@
 # Utility-bill PDF imports
 
-Administrators open **Billing > Rate Plans > Custom Plan** and select **Import from utility
-bill** inside the existing custom-plan editor. **Upload current bill** on an
-account under **Billing > Utility Accounts** opens the same editor with
-the account preselected. The workflow processes a password-free PDF on the
-Power Monitor server and produces two separate reviewed outputs:
+Administrators choose **Billing > Import rates from bill**. The short,
+server-side workflow processes a password-free PDF and produces:
 
-1. a reusable custom rate-plan draft; and
-2. a bill-specific billing-cycle draft for the selected utility account.
+1. a reusable reviewed rate-plan draft containing tariff rules; and
+2. private reference evidence containing bill-specific dates, usage, charges,
+   totals, and source coordinates.
 
-The importer is a data-entry assistant, not a separate plan editor. After the
-administrator saves the evidence review, **Apply all reviewed values** provides
-the normal path: it performs fresh server-side rate validation, copies every
-nonblank reviewed field, the complete validated tariff document, and available
-source evidence into the unsaved Custom Plan, then returns to the editor. Blank
-extracted values preserve the current form value.
+The confirmation action is **Save rate rules**. It validates, publishes, and
+assigns the reviewed tariff version; it does not submit bill-reported usage,
+create a usage import, change usage authority, seed a tier cursor, or seed a
+projection. The confirmation screen lists the tariff fields that will be
+saved and the reference fields that will not be used.
 
-**Advanced field selection** retains the field-level keep/import/manual
-workflow for exceptions. Its Apply action remains disabled until at least one
-field or rule group is selected, so an unchanged draft cannot be reported as a
-successful import. Both paths update the current form only. The administrator
-then uses the normal calculation preview, draft save, publication, and
-assignment workflow.
+Applying exact bill dates is a separate optional **Apply cycle dates only**
+action. It updates start/end boundaries and marks the unfinalized cycle for
+sensor-based recalculation. It never applies the bill's kWh.
 
-Nothing is activated by upload or by applying extracted fields. Administrator
-review, rate-engine validation, explicit publication, and explicit account
-assignment remain separate actions.
+Nothing is activated by upload alone. Administrator review, rate-engine
+validation, publication, and account assignment remain server-authorized and
+audited.
 A single bill often omits tariff rules, so it must not be treated as proof that
 a rate definition is complete.
 
@@ -41,7 +35,7 @@ context; it does not publish, assign, or apply either draft.
 
 Each row under **Prior imports** has its own **Clear** action. Clearing a row
 removes only that import from the visible draft history; it does not delete the
-linked rate-plan draft, billing-cycle draft, imported usage, sanitized
+linked rate-plan draft, billing-cycle reference draft, sanitized
 evidence, source provenance, or audit events. The action is administrator-only,
 CSRF protected, revision checked, and audit logged. Re-uploading the same PDF
 for the same account restores the existing row instead of creating a duplicate
@@ -176,29 +170,27 @@ recurring tariff rule.
 
 ## Rate-plan and cycle outputs
 
-The rate-plan draft reuses the custom-rate editor, immutable rate versions, and
-managed-source evidence system. It may represent flat, time-of-use, tiered, or
-hybrid TOU+tiered pricing. Applying it updates one cloned editor document so an
-asynchronous extraction result cannot partially overwrite the live form. The
-one-click path imports reviewed nonblank values; the advanced path defaults
-each value to **Keep current** until the administrator explicitly chooses
-otherwise. Complete tariff coverage and existing rate-engine validation are
-required before publication.
+The rate-plan draft reuses immutable rate versions and managed-source evidence.
+It may represent flat, time-of-use, tiered, or hybrid TOU+tiered pricing.
+Complete tariff coverage and existing rate-engine validation are required
+before publication.
 
-The billing-cycle draft retains exact dates, utility-reported usage, reported
+The reference cycle draft retains exact dates, utility-reported usage, reported
 tier/TOU/meter allocations, energy subtotal, complete bill total, components,
-and reconciliation state. One-time credits, taxes, unexplained differences,
-and adjustments stay bill-specific unless an administrator separately
-configures a supported recurring rule.
+and reconciliation state with `calculation_role=reference_only`. One-time
+credits, taxes, unexplained differences, and adjustments stay bill-specific.
+A single bill never creates a recurring charge automatically.
 
-Importing the reviewed cycle never overwrites immutable sensor readings.
-Selecting utility-reported usage as tier authority is explicit and carries the
-bill provenance.
+The standard workflow cannot select utility-reported usage as tier authority.
+Advanced external corrections use a separate endpoint and require the exact
+`ALTER TIER PROGRESSION` confirmation, provenance, audit evidence, and
+reversal/supersession behavior.
 
 ## Official-source conflicts
 
-An uploaded bill defaults to a **Supporting source**. It may instead be reviewed
-as an authoritative account-specific source or reference-only evidence.
+An uploaded bill defaults to a **Supporting source**. Legacy source-role values
+remain readable, but bill-reported usage is always reference-only regardless
+of source role.
 Differences from the account configuration or approved managed sources produce
 field-level conflicts. Both sources are retained, and unresolved conflicts
 block publication and automatic activation.

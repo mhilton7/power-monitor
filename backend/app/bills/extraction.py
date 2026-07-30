@@ -978,7 +978,6 @@ def extract_bill(
             "pricing_model",
             "starts_at",
             "ends_at",
-            "total_usage_kwh",
             "threshold_interpretation",
         }
     ]

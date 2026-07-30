@@ -1,8 +1,9 @@
 # Usage imports
 
-Usage imports provide reviewed utility evidence without replacing immutable
-sensor readings. They are account scoped, permission checked, CSRF protected,
-hashed after normalization, and audited.
+Usage imports are an advanced correction workflow. They never replace
+immutable sensor readings and cannot be created by the normal bill upload.
+They are account scoped, permission checked, CSRF protected, hashed after
+normalization, and audited.
 
 ## Supported import kinds
 
@@ -11,6 +12,11 @@ hashed after normalization, and audited.
 - `cycle_cumulative`: timestamp and cumulative account kWh;
 - `cycle_dates`: exact cycle start and exclusive end; and
 - `bill_total`: cycle dates and final utility total for comparison.
+
+`cycle_dates` and `bill_total` require
+`calculation_role=reference_only`. Interval, daily, and cumulative correction
+imports require `calculation_role=advanced_external_correction` and the exact
+`ALTER TIER PROGRESSION` confirmation.
 
 Naive input timestamps are interpreted only in the explicitly selected import
 timezone and normalized to UTC. Decimal strings are retained exactly.
@@ -32,10 +38,11 @@ cycle-date imports cannot silently replace finalized boundaries.
 
 ## Authority and reconciliation
 
-Cumulative and account-complete interval/daily imports can provide tier
-context when configured as the account authority. Bill totals are comparison
-evidence, not rate definitions. Reconciliation adjustments require a separate
-reason and do not mutate either the import or calculated estimate.
+Separately confirmed cumulative and account-complete interval/daily imports
+can provide advanced tier context when explicitly configured as authority.
+Bill uploads and bill totals cannot become usage authority. Reconciliation
+adjustments require a separate reason and do not mutate either the import or
+calculated estimate.
 
 Never import credentials, access tokens, full account numbers, or unrelated
 personal data. Store only the evidence needed for calculation and review.

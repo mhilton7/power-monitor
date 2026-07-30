@@ -12,6 +12,7 @@ import pytest
 from jsonschema import Draft202012Validator
 from sqlalchemy import delete, func, select
 
+from app.billing_sources import bill_field_calculation_role
 from app.bills.extraction import (
     BillPdfError,
     extract_bill,
@@ -20,12 +21,19 @@ from app.bills.extraction import (
     redact_sensitive_text,
 )
 from app.db.models import (
+    AccountUsageAuthority,
     AuditEvent,
+    Device,
+    ManualAccountUsage,
+    NormalizedInterval,
+    RateAssignment,
     RateVersion,
     RateVersionSource,
+    RawReading,
     UtilityBillCycleDraft,
     UtilityBillExtractionRevision,
     UtilityBillImport,
+    UtilityUsageImport,
 )
 from app.formatting import (
     format_billing_period,
@@ -333,8 +341,24 @@ async def test_complete_bill_api_workflow_is_reviewed_separate_and_private(
     }
     assert normalized_artifact["billing_cycle"]["total_usage_kwh"] == "951"
     assert normalized_artifact["billing_cycle"]["full_bill_total"] == "355.00"
+    assert normalized_artifact["calculation_policy"] == {
+        "tariff_evidence_role": "tariff_rule",
+        "reference_bill_evidence_role": "reference_only",
+        "reported_usage_used_in_monitored_calculation": False,
+        "bill_total_used_in_monitored_calculation": False,
+    }
     assert isinstance(normalized_artifact["line_items"], list)
     assert all(item["value"] is not None for item in normalized_artifact["evidence"])
+    assert all(
+        item["calculation_role"] == bill_field_calculation_role(item["output_kind"], item["field"])
+        for item in normalized_artifact["evidence"]
+    )
+    evidence_roles = {
+        item["field"]: item["calculation_role"] for item in normalized_artifact["evidence"]
+    }
+    assert evidence_roles["tiers.0.price_per_kwh"] == "tariff_rule"
+    assert evidence_roles["total_usage_kwh"] == "reference_only"
+    assert evidence_roles["full_bill_total"] == "reference_only"
     assert all(
         item["confidence"]
         in {
@@ -348,7 +372,12 @@ async def test_complete_bill_api_workflow_is_reviewed_separate_and_private(
         for item in normalized_artifact["evidence"]
     )
     assert all(item["value"] is None for item in normalized_artifact["missing_fields"])
+    assert all(
+        item["calculation_role"] == bill_field_calculation_role(item["output_kind"], item["field"])
+        for item in normalized_artifact["missing_fields"]
+    )
     assert imported["cycle_draft"]["status"] == "draft"
+    assert imported["cycle_draft"]["calculation_role"] == "reference_only"
     assert imported["normalized"]["rate_plan"]["tiers"][0]["energy_charge"] == "173.7000000"
 
     bypass = await api_client.post(
@@ -437,14 +466,138 @@ async def test_complete_bill_api_workflow_is_reviewed_separate_and_private(
     version = await session.get(RateVersion, imported["rate_version_id"])
     assert version is not None and version.status == "published"
     cycle = await api_client.post(
-        f"/api/v1/admin/utility-bill-imports/{imported['id']}/import-billing-cycle",
+        f"/api/v1/admin/utility-bill-imports/{imported['id']}/apply-cycle-dates",
         headers=csrf(api_client),
     )
     assert cycle.status_code == 200, cycle.text
+    assert cycle.json()["calculation_role"] == "reference_only"
+    assert cycle.json()["utility_usage_import_id"] is None
+    assert cycle.json()["applied"] == ["cycle_start", "cycle_end"]
+    assert "reported_usage" in cycle.json()["excluded"]
     cycle_draft = await session.scalar(
         select(UtilityBillCycleDraft).where(UtilityBillCycleDraft.bill_import_id == imported["id"])
     )
     assert cycle_draft is not None and cycle_draft.status == "imported"
+    assert cycle_draft.calculation_role == "reference_only"
+    assert cycle_draft.utility_usage_import_id is None
+    assert (
+        await session.scalar(
+            select(func.count(UtilityUsageImport.id)).where(
+                UtilityUsageImport.utility_account_id == imported["utility_account_id"]
+            )
+        )
+        == 0
+    )
+    assert (
+        await session.scalar(
+            select(func.count(ManualAccountUsage.id)).where(
+                ManualAccountUsage.utility_account_id == imported["utility_account_id"]
+            )
+        )
+        == 0
+    )
+    assert (
+        await session.scalar(
+            select(func.count(AccountUsageAuthority.id)).where(
+                AccountUsageAuthority.utility_account_id == imported["utility_account_id"]
+            )
+        )
+        == 0
+    )
+
+    # The retained 951 kWh on the reviewed bill must not seed tier progress.
+    # A 100 kWh sensor interval is the only calculation input.
+    device = Device(
+        site_id=site["id"],
+        utility_account_id=account["id"],
+        hardware_id="bill-boundary-whole-home-sensor",
+        name="Whole Home",
+        measurement_role="main",
+        cost_scope="full_account",
+        include_in_default_site_total=True,
+    )
+    session.add(device)
+    await session.flush()
+    assert cycle_draft.starts_at is not None
+    assignment = await session.scalar(
+        select(RateAssignment).where(
+            RateAssignment.utility_account_id == account["id"],
+            RateAssignment.rate_version_id == imported["rate_version_id"],
+        )
+    )
+    assert assignment is not None
+    starts_at = assignment.effective_from
+    if starts_at.tzinfo is None:
+        starts_at = starts_at.replace(tzinfo=UTC)
+    ends_at = max(datetime.now(UTC), starts_at + timedelta(seconds=1))
+    raw = RawReading(
+        device_id=device.id,
+        site_id=site["id"],
+        sequence=1,
+        boot_id="123e4567-e89b-12d3-a456-426614174000",
+        interval_start=starts_at,
+        interval_end=ends_at,
+        time_trusted=True,
+        power_avg=Decimal("100000"),
+        device_interval_energy_wh=Decimal("100000"),
+        energy_method="device_interval",
+        ct_rating_amps=Decimal("200"),
+        quality_flags=[],
+        firmware_version="1.0.0",
+        record_hash="bill-boundary-sensor-reading",
+        original_payload=None,
+        ingestion_source="push",
+        ingested_at=ends_at,
+    )
+    session.add(raw)
+    await session.flush()
+    session.add(
+        NormalizedInterval(
+            raw_reading_id=raw.id,
+            device_id=device.id,
+            interval_start=starts_at,
+            interval_end=ends_at,
+            device_energy_wh=Decimal("100000"),
+            server_energy_wh=Decimal("100000"),
+            selected_energy_wh=Decimal("100000"),
+            selected_method="device_interval",
+            validation_result="valid",
+            validation_reason="bill-boundary integration fixture",
+        )
+    )
+    await session.commit()
+    authority = await api_client.put(
+        f"/api/v1/admin/utility-accounts/{account['id']}/usage-authority",
+        headers=csrf(api_client),
+        json={
+            "revision": None,
+            "authority_type": "whole_account_meter",
+            "device_ids": [device.id],
+            "source_reference": None,
+            "confidence": "high",
+            "complete_account": True,
+            "calculation_role": "sensor_measurements",
+        },
+    )
+    assert authority.status_code == 200, authority.text
+    recalculated = await api_client.post(
+        f"/api/v1/admin/utility-accounts/{account['id']}/billing-cycles/current/recalculate",
+        headers=csrf(api_client),
+    )
+    assert recalculated.status_code == 200, recalculated.text
+    calculation = recalculated.json()
+    assert Decimal(calculation["authoritative_usage_kwh"]) == Decimal("100")
+    assert Decimal(calculation["monitored_usage_kwh"]) == Decimal("100")
+    assert calculation["usage_source_type"] == "sensor_measurements"
+    assert calculation["bill_usage_calculation_role"] == "reference_only"
+    assert calculation["projection_source_type"] == "sensor_trend"
+    assert (
+        calculation["projected_usage_kwh"]
+        != normalized_artifact["billing_cycle"]["total_usage_kwh"]
+    )
+    assert calculation["current_tier"]["name"] == "Tier 1"
+    assert Decimal(calculation["energy_charge"]) == Decimal("30")
+    assert normalized_artifact["billing_cycle"]["total_usage_kwh"] == "951"
 
     removed = await api_client.delete(
         f"/api/v1/admin/utility-bill-imports/{imported['id']}/original",

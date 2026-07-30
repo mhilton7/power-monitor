@@ -39,6 +39,7 @@ COPY --chown=power-monitor:power-monitor shared /srv/shared
 COPY --chown=power-monitor:power-monitor scripts/worker_health.py /srv/scripts/worker_health.py
 COPY --chown=power-monitor:power-monitor tools/recover-admin.py /srv/tools/recover-admin.py
 COPY --chown=power-monitor:power-monitor tools/reconcile_backups.py /srv/tools/reconcile_backups.py
+COPY --chown=power-monitor:power-monitor tools/reconcile_bill_usage_authority.py /srv/tools/reconcile_bill_usage_authority.py
 USER power-monitor
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

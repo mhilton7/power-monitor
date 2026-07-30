@@ -14,30 +14,26 @@ import type {
 import { statusLabel } from '../../utils/format'
 
 type AuthorityMode =
-  | 'manual_cycle_usage'
   | 'whole_account_meter'
-  | 'partial_monitored_circuits'
+  | 'service_leg_pair'
 
 function supportedMode(value?: string): AuthorityMode {
   if (
     value === 'whole_account_meter'
-    || value === 'partial_monitored_circuits'
-    || value === 'manual_cycle_usage'
+    || value === 'service_leg_pair'
   ) return value
-  return 'manual_cycle_usage'
+  return 'whole_account_meter'
 }
 
 export function CostCalculationSetup({
   service,
   sensors,
   cycle,
-  latestBillId,
   onRefresh,
 }: {
   service: ElectricService
   sensors: SensorSummary[]
   cycle?: BillingCycleSummary
-  latestBillId?: string
   onRefresh: () => Promise<void>
 }) {
   const authority = useQuery({
@@ -52,8 +48,8 @@ export function CostCalculationSetup({
   return (
     <Surface
       className="cost-calculation-setup"
-      title="Tiered cost calculation"
-      subtitle="Whole-account usage authority and chronological billing-cycle allocation"
+      title="How usage is measured"
+      subtitle="Choose the Power Monitor sensors that represent the complete electric service"
     >
       {authority.isLoading ? <LoadingState label="Loading cost calculation setup…" /> : authority.error ? (
         <InlineNotice tone="danger">
@@ -64,11 +60,10 @@ export function CostCalculationSetup({
         </InlineNotice>
       ) : (
         <AuthorityEditor
-          key={`${authority.data?.revision ?? 0}-${latestBillId ?? 'no-bill'}`}
+          key={`${authority.data?.revision ?? 0}`}
           service={service}
           sensors={sensors}
           cycle={cycle}
-          latestBillId={latestBillId}
           authority={authority.data}
           onSaved={async () => {
             await authority.refetch()
@@ -84,14 +79,12 @@ function AuthorityEditor({
   service,
   sensors,
   cycle,
-  latestBillId,
   authority,
   onSaved,
 }: {
   service: ElectricService
   sensors: SensorSummary[]
   cycle?: BillingCycleSummary
-  latestBillId?: string
   authority?: UsageAuthority
   onSaved: () => Promise<void>
 }) {
@@ -100,37 +93,43 @@ function AuthorityEditor({
     () => sensors.filter((sensor) => sensor.utilityAccountId === service.id),
     [sensors, service.id],
   )
-  const [mode, setMode] = useState<AuthorityMode>(supportedMode(authority?.authorityType))
+  const serviceLegSensors = useMemo(
+    () => assignedSensors.filter((sensor) => sensor.measurementRole === 'service-leg'),
+    [assignedSensors],
+  )
+  const [mode, setMode] = useState<AuthorityMode>(
+    authority?.authorityType
+      ? supportedMode(authority.authorityType)
+      : serviceLegSensors.length === 2
+        ? 'service_leg_pair'
+        : 'whole_account_meter',
+  )
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>(
     authority?.deviceIds.length
       ? authority.deviceIds
-      : assignedSensors.map((sensor) => sensor.id),
+      : serviceLegSensors.length === 2
+        ? serviceLegSensors.map((sensor) => sensor.id)
+        : assignedSensors.slice(0, 1).map((sensor) => sensor.id),
   )
   const [notice, setNotice] = useState('')
 
-  const needsBillContext = mode === 'manual_cycle_usage'
-    || mode === 'partial_monitored_circuits'
-  const validSelection = mode === 'manual_cycle_usage'
-    ? Boolean(latestBillId || authority?.sourceReference)
-    : mode === 'whole_account_meter'
-      ? selectedDeviceIds.length === 1
-      : selectedDeviceIds.length > 0 && Boolean(latestBillId || authority?.sourceReference)
+  const validSelection = mode === 'whole_account_meter'
+    ? selectedDeviceIds.length === 1
+    : selectedDeviceIds.length === 2
 
   const saveAndRecalculate = useMutation({
     mutationFn: async () => {
-      const sourceReference = latestBillId
-        ? `utility-bill:${latestBillId}`
-        : authority?.sourceReference
       await request(
         `/api/v1/admin/utility-accounts/${service.id}/usage-authority`,
         json('PUT', {
           revision: authority?.configured ? authority.revision : null,
           authority_type: mode,
           aggregate_set_id: null,
-          device_ids: mode === 'manual_cycle_usage' ? [] : selectedDeviceIds,
-          source_reference: sourceReference,
-          confidence: latestBillId ? 'utility_verified' : authority?.confidence ?? 'unverified',
-          complete_account: mode !== 'partial_monitored_circuits',
+          device_ids: selectedDeviceIds,
+          source_reference: null,
+          confidence: 'high',
+          complete_account: true,
+          calculation_role: 'sensor_measurements',
         }),
       )
       return request(
@@ -142,8 +141,8 @@ function AuthorityEditor({
     onSuccess: async (result) => {
       setNotice(
         result.available
-          ? `Chronological allocation recalculated at version ${result.recalculationVersion}.`
-          : result.warnings[0] ?? 'The authority was saved, but more billing context is required.',
+          ? `Sensor usage and chronological tier allocation recalculated at version ${result.recalculationVersion}.`
+          : result.warnings[0] ?? 'The sensor selection was saved, but more readings are required.',
       )
       await Promise.all([
         client.invalidateQueries({ queryKey: ['billing-cycle-summary', service.id] }),
@@ -164,8 +163,8 @@ function AuthorityEditor({
     onSuccess: async (result) => {
       setNotice(
         result.available
-          ? `Chronological allocation recalculated at version ${result.recalculationVersion}.`
-          : result.warnings[0] ?? 'More billing context is required.',
+          ? `Sensor usage and chronological tier allocation recalculated at version ${result.recalculationVersion}.`
+          : result.warnings[0] ?? 'More sensor readings are required.',
       )
       await Promise.all([
         client.invalidateQueries({ queryKey: ['billing-cycle-summary', service.id] }),
@@ -186,17 +185,20 @@ function AuthorityEditor({
         <span>
           <strong>
             {authority?.configured
-              ? `${statusLabel(authority.authorityType ?? 'manual_cycle_usage')} · ${statusLabel(authority.confidence)}`
-              : 'Usage authority not configured'}
+              ? authority.calculationRole === 'sensor_measurements'
+                ? `Power Monitor sensors · ${statusLabel(authority.authorityType ?? 'whole_account_meter')}`
+                : 'Previous external usage source requires review'
+              : 'Sensor usage source not configured'}
           </strong>
           <small>
-            Finalized cycles are immutable. Only the current unfinalized cycle is recalculated.
+            Rates come from the selected rate plan. Usage, tier progress, and projections
+            come from accepted sensor readings.
           </small>
         </span>
       </div>
       <div className="form-grid">
         <label className="span-all">
-          <span>How should whole-account tier progress be established?</span>
+          <span>Complete-service measurement</span>
           <select
             value={mode}
             onChange={(event) => {
@@ -204,17 +206,21 @@ function AuthorityEditor({
               setMode(nextMode)
               if (nextMode === 'whole_account_meter' && selectedDeviceIds.length > 1) {
                 setSelectedDeviceIds(selectedDeviceIds.slice(0, 1))
+              } else if (nextMode === 'service_leg_pair') {
+                setSelectedDeviceIds(
+                  serviceLegSensors.length >= 2
+                    ? serviceLegSensors.slice(0, 2).map((sensor) => sensor.id)
+                    : selectedDeviceIds.slice(0, 2),
+                )
               }
             }}
           >
-            <option value="manual_cycle_usage">Reviewed utility bill or manual account usage</option>
             <option value="whole_account_meter">One whole-home meter sensor</option>
-            <option value="partial_monitored_circuits">Partial circuits with utility-bill context</option>
+            <option value="service_leg_pair">Two non-overlapping service-leg sensors</option>
           </select>
         </label>
-        {mode !== 'manual_cycle_usage' && (
-          <fieldset className="choice-grid span-all">
-            <legend>{mode === 'whole_account_meter' ? 'Whole-home sensor' : 'Monitored branch sensors'}</legend>
+        <fieldset className="choice-grid span-all">
+            <legend>{mode === 'whole_account_meter' ? 'Whole-home sensor' : 'Service-leg sensors'}</legend>
             {assignedSensors.length ? assignedSensors.map((sensor) => {
               const selected = selectedDeviceIds.includes(sensor.id)
               return (
@@ -223,6 +229,11 @@ function AuthorityEditor({
                     type={mode === 'whole_account_meter' ? 'radio' : 'checkbox'}
                     name="usage-authority-sensors"
                     checked={selected}
+                    disabled={
+                      mode === 'service_leg_pair'
+                      && !selected
+                      && selectedDeviceIds.length >= 2
+                    }
                     onChange={() => {
                       setSelectedDeviceIds(
                         mode === 'whole_account_meter'
@@ -245,12 +256,18 @@ function AuthorityEditor({
               </InlineNotice>
             )}
           </fieldset>
-        )}
       </div>
-      {needsBillContext && !latestBillId && !authority?.sourceReference && (
+      {!validSelection && (
         <InlineNotice tone="warning">
-          Upload and approve an electric bill before using this authority. A branch sensor
-          cannot determine the household tier by itself.
+          Usage source needs attention. Select {mode === 'whole_account_meter'
+            ? 'one sensor that measures the complete service'
+            : 'exactly two non-overlapping service-leg sensors'} to calculate tiered costs.
+        </InlineNotice>
+      )}
+      {authority?.configured && authority.calculationRole !== 'sensor_measurements' && (
+        <InlineNotice tone="warning">
+          The previous bill or external usage source is excluded from normal calculations.
+          Save a reviewed sensor selection to recalculate the unfinalized cycle.
         </InlineNotice>
       )}
       {cycle?.finalizedAt && (
@@ -260,6 +277,17 @@ function AuthorityEditor({
         </InlineNotice>
       )}
       {cycle?.warnings.map((warning) => <InlineNotice key={warning}>{warning}</InlineNotice>)}
+      <details className="advanced-usage-corrections">
+        <summary>Advanced usage corrections and external meter data</summary>
+        <InlineNotice tone="warning">
+          Advanced corrections change tier progression. They are not required for normal
+          sensor-based monitoring and cannot be created by uploading a bill.
+        </InlineNotice>
+        <p>
+          Administrators can manage explicitly confirmed external interval data,
+          cumulative corrections, reversals, and provenance in Detailed Rates.
+        </p>
+      </details>
       {notice && <InlineNotice tone="success"><Check /> {notice}</InlineNotice>}
       {error && <InlineNotice tone="danger">{errorMessage(error)}</InlineNotice>}
       <div className="form-actions">

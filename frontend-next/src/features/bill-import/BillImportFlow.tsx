@@ -8,13 +8,12 @@ import { InlineNotice, LoadingState } from '../../components/feedback/States'
 import type { BillImportDetail, ElectricService, Home } from '../../types/models'
 import { dateRange, dateTime, energy, money, statusLabel } from '../../utils/format'
 
-type Step = 'upload' | 'review' | 'confirm' | 'apply' | 'done'
+type Step = 'upload' | 'review' | 'confirm' | 'done'
 
 const steps: Array<{ id: Step; label: string }> = [
   { id: 'upload', label: 'Upload' },
-  { id: 'review', label: 'Review' },
+  { id: 'review', label: 'Review rate rules' },
   { id: 'confirm', label: 'Confirm' },
-  { id: 'apply', label: 'Apply' },
   { id: 'done', label: 'Done' },
 ]
 
@@ -33,7 +32,7 @@ export function BillImportFlow({
   const [bill, setBill] = useState<BillImportDetail>()
   const [threshold, setThreshold] = useState<'fixed_cycle_threshold' | 'daily_baseline' | 'baseline_multiplier' | 'unknown'>('unknown')
   const [confirmed, setConfirmed] = useState(false)
-  const [applied, setApplied] = useState<{ rate: boolean; cycle: boolean }>({ rate: false, cycle: false })
+  const [cycleDatesApplied, setCycleDatesApplied] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const client = useQueryClient()
 
@@ -64,7 +63,9 @@ export function BillImportFlow({
         `/api/v1/admin/utility-bill-imports/${bill.id}/review`,
         json('PUT', {
           revision: bill.revision,
-          field_reviews: bill.fields.map((field) => ({ field_id: field.id, action: 'confirm' })),
+          field_reviews: bill.fields
+            .filter((field) => field.calculationRole === 'tariff_rule')
+            .map((field) => ({ field_id: field.id, action: 'confirm' })),
           conflict_resolutions: bill.conflicts.map((conflict) => ({
             conflict_id: conflict.id,
             decision: 'accepted_bill',
@@ -81,30 +82,19 @@ export function BillImportFlow({
       setStep('confirm')
     },
   })
-  const validate = useMutation({
+  const saveRateRules = useMutation({
     mutationFn: async () => {
       if (!bill) throw new Error('The extracted bill is unavailable.')
+      if (!serviceId) throw new Error('Create an electric service before saving these rate rules.')
       const result = await request<{ validation?: { valid?: boolean }; blocking_warnings?: string[] }>(
         `/api/v1/admin/utility-bill-imports/${bill.id}/validate`,
         json('POST'),
       )
       if (result.validation?.valid === false || (result.blocking_warnings?.length ?? 0) > 0) {
-        throw new Error('Resolve the highlighted bill values before applying this plan.')
+        throw new Error('Resolve the highlighted rate-rule values before saving this plan.')
       }
-      return result
-    },
-    onSuccess: () => {
-      setStep('apply')
-    },
-  })
-  const apply = useMutation({
-    mutationFn: async () => {
-      if (!bill) throw new Error('The extracted bill is unavailable.')
-      if (!serviceId) throw new Error('Create an electric service before applying this bill.')
       await request(`/api/v1/admin/utility-bill-imports/${bill.id}/publish-and-assign`, json('POST', {}))
-      setApplied((value) => ({ ...value, rate: true }))
-      await request(`/api/v1/admin/utility-bill-imports/${bill.id}/import-billing-cycle`, json('POST'))
-      setApplied({ rate: true, cycle: true })
+      return result
     },
     onSuccess: async () => {
       await Promise.all([
@@ -114,6 +104,22 @@ export function BillImportFlow({
         client.invalidateQueries({ queryKey: ['home-summary'] }),
       ])
       setStep('done')
+    },
+  })
+  const applyCycleDates = useMutation({
+    mutationFn: async () => {
+      if (!bill) throw new Error('The extracted bill is unavailable.')
+      return request(
+        `/api/v1/admin/utility-bill-imports/${bill.id}/apply-cycle-dates`,
+        json('POST'),
+      )
+    },
+    onSuccess: async () => {
+      setCycleDatesApplied(true)
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['billing-cycle-summary'] }),
+        client.invalidateQueries({ queryKey: ['home-summary'] }),
+      ])
     },
   })
   const reprocess = useMutation({
@@ -132,13 +138,18 @@ export function BillImportFlow({
   })
 
   const currentIndex = steps.findIndex((item) => item.id === step)
-  const error = upload.error ?? review.error ?? validate.error ?? apply.error ?? reprocess.error
-  const requiredMissing = bill?.missingFields.filter((field) => field.required) ?? []
+  const error = upload.error
+    ?? review.error
+    ?? saveRateRules.error
+    ?? applyCycleDates.error
+    ?? reprocess.error
+  const requiredMissing = bill?.missingFields.filter(
+    (field) => field.required && field.calculationRole === 'tariff_rule',
+  ) ?? []
   const retry = () => {
     if (step === 'upload') upload.mutate()
     else if (step === 'review') review.mutate()
-    else if (step === 'confirm') validate.mutate()
-    else if (step === 'apply') apply.mutate()
+    else if (step === 'confirm') saveRateRules.mutate()
   }
   return (
     <section className="workflow" role="dialog" aria-modal="true" aria-labelledby="bill-flow-title">
@@ -156,6 +167,12 @@ export function BillImportFlow({
       <div className="workflow-body">
         {step === 'upload' && (
           <>
+            <InlineNotice tone="info">
+              <strong>Rates from your bill; usage from your sensors.</strong> We use this
+              document to find energy prices, tier thresholds, schedules, and plan details.
+              Its reported kWh and total amount are never used to calculate monitored usage,
+              tier progress, or projected energy cost.
+            </InlineNotice>
             <div className="drop-zone" onClick={() => inputRef.current?.click()}>
               <Upload aria-hidden="true" />
               <strong>{file?.name ?? 'Choose your electric bill'}</strong>
@@ -166,7 +183,7 @@ export function BillImportFlow({
             {services.length > 1 && (
               <label><span>Electric service</span><select value={serviceId} onChange={(event) => { setServiceId(event.target.value); }}>{services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
             )}
-            {!serviceId && <InlineNotice tone="warning">This bill can be reviewed now, but an electric service is required before Apply.</InlineNotice>}
+            {!serviceId && <InlineNotice tone="warning">This bill can be reviewed now, but an electric service is required before its rate rules can be saved.</InlineNotice>}
             <div className="workflow-security"><ShieldCheck /><span><strong>Processed locally</strong><small>Text extraction, OCR fallback, validation, and evidence storage remain on this server.</small></span></div>
           </>
         )}
@@ -181,8 +198,12 @@ export function BillImportFlow({
               </div>
               <span className="pill">{statusLabel(bill.processingStatus)}</span>
             </div>
-            {bill.fields.length
-              ? <div className="review-groups">{groupBillFields(bill).map((group) => (
+            <InlineNotice tone="info">
+              Review only the reusable tariff rules below. Power Monitor sensor readings
+              remain the exclusive normal usage source.
+            </InlineNotice>
+            {bill.fields.some((field) => field.calculationRole === 'tariff_rule')
+              ? <div className="review-groups">{groupBillFields(bill, 'tariff_rule').map((group) => (
                 <section key={group.label} className="review-group">
                   <h3>{group.label}</h3>
                   <div className="review-fields">{group.fields.map((field) => (
@@ -194,18 +215,18 @@ export function BillImportFlow({
                   ))}</div>
                 </section>
               ))}</div>
-              : <InlineNotice tone="warning">Unsupported bill layout. No recognized values can be applied.</InlineNotice>}
+              : <InlineNotice tone="warning">Unsupported bill layout. No recognized rate rules can be saved.</InlineNotice>}
             {requiredMissing.length > 0 && (
               <section className="missing-fields needs-review" aria-label="Needs review">
                 <h3>Needs review</h3>
-                <p>These required values were not found and must be corrected before Apply.</p>
+                <p>These required tariff values were not found and must be corrected before saving.</p>
                 <ul>{requiredMissing.map((field) => <li key={`${field.outputKind}-${field.path}`}><strong>{statusLabel(field.path)}</strong><span>{field.reason}</span></li>)}</ul>
               </section>
             )}
-            {bill.missingFields.some((field) => !field.required) && (
+            {bill.missingFields.some((field) => !field.required && field.calculationRole === 'tariff_rule') && (
               <details className="missing-fields">
-                <summary>Fields not found on this bill ({bill.missingFields.filter((field) => !field.required).length})</summary>
-                <ul>{bill.missingFields.filter((field) => !field.required).map((field) => <li key={`${field.outputKind}-${field.path}`}><strong>{statusLabel(field.path)}</strong><span>{field.state === 'not_applicable' ? 'Not applicable' : field.reason}</span></li>)}</ul>
+                <summary>Optional rate fields not found ({bill.missingFields.filter((field) => !field.required && field.calculationRole === 'tariff_rule').length})</summary>
+                <ul>{bill.missingFields.filter((field) => !field.required && field.calculationRole === 'tariff_rule').map((field) => <li key={`${field.outputKind}-${field.path}`}><strong>{statusLabel(field.path)}</strong><span>{field.state === 'not_applicable' ? 'Not applicable' : field.reason}</span></li>)}</ul>
               </details>
             )}
             {bill.conflicts.map((conflict) => <InlineNotice key={conflict.id} tone="warning"><strong>Existing setup differs — {statusLabel(conflict.path)}.</strong> {conflict.message}</InlineNotice>)}
@@ -217,35 +238,89 @@ export function BillImportFlow({
               <a className="button ghost compact" href={`/api/v1/admin/utility-bill-imports/${bill.id}/normalized`} target="_blank" rel="noreferrer">View normalized data</a>
               <a className="button ghost compact" href={`/api/v1/admin/utility-bill-imports/${bill.id}/sanitized-evidence`} download>Download normalized JSON</a>
             </div>
+            <details className="bill-reference-details">
+              <summary>
+                Reference information from uploaded bill
+                <span className="pill muted">Not used in calculation</span>
+              </summary>
+              <p>
+                These bill-specific values are retained as evidence only. They do not seed
+                monitored usage, tier progress, projections, or energy-cost estimates.
+              </p>
+              <div className="review-groups">{groupBillFields(bill, 'reference_only').map((group) => (
+                <section key={group.label} className="review-group">
+                  <h3>{group.label}</h3>
+                  <div className="review-fields">{group.fields.map((field) => (
+                    <div key={field.id}>
+                      <span>{statusLabel(field.label)}</span>
+                      <strong>{field.value}</strong>
+                      <small>Reference only · {field.sourcePage ? `Page ${field.sourcePage}` : 'Source retained'}</small>
+                    </div>
+                  ))}</div>
+                </section>
+              ))}</div>
+            </details>
           </>
         )}
         {step === 'confirm' && bill && (
           <div className="confirm-card">
             <FileCheck2 />
-            <h3>Confirm the reviewed values</h3>
-            <p>This creates a separate rate-plan version and billing-cycle draft. Nothing was activated from upload alone.</p>
-            <dl>
-              <div><dt>Bill period</dt><dd>{dateRange(bill.startsAt, bill.endsAt)}</dd></div>
-              <div><dt>Usage</dt><dd>{energy(bill.usageKwh)}</dd></div>
-              <div><dt>Total</dt><dd>{money(bill.total, home.currency)}</dd></div>
-              <div><dt>Destination</dt><dd>{services.find((item) => item.id === serviceId)?.name ?? 'Electric service required'}</dd></div>
-            </dl>
-            <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(event) => { setConfirmed(event.target.checked); }} /><span>I reviewed these values and want to continue.</span></label>
-          </div>
-        )}
-        {step === 'apply' && (
-          <div className="confirm-card">
-            <ShieldCheck />
-            <h3>Ready to apply</h3>
-            <p>The reviewed plan will become the current plan for this electric service. Existing versions, evidence, and historical assignments remain available.</p>
-            {apply.isPending && <LoadingState label={applied.rate ? 'Importing the billing cycle…' : 'Publishing and assigning the reviewed rate…'} />}
+            <h3>Save reviewed rate rules</h3>
+            <p>
+              This creates and assigns a reviewed rate-plan version. Usage will continue
+              to come from Power Monitor sensors.
+            </p>
+            <div className="bill-boundary-summary">
+              <section>
+                <h4>Will import</h4>
+                <ul>
+                  {bill.fields
+                    .filter((field) => field.calculationRole === 'tariff_rule')
+                    .slice(0, 8)
+                    .map((field) => <li key={field.id}>{statusLabel(field.label)}: {field.value}</li>)}
+                </ul>
+              </section>
+              <section>
+                <h4>Will not import</h4>
+                <ul>
+                  <li>{energy(bill.usageKwh)} reported usage</li>
+                  <li>{money(bill.total, home.currency)} bill total</li>
+                  <li>Bill tier allocation or current tier</li>
+                  <li>Taxes, credits, balances, or projection seeds</li>
+                </ul>
+              </section>
+            </div>
+            <p>
+              Destination: <strong>{services.find((item) => item.id === serviceId)?.name ?? 'Electric service required'}</strong>
+            </p>
+            <label className="check-row"><input type="checkbox" checked={confirmed} onChange={(event) => { setConfirmed(event.target.checked); }} /><span>I reviewed these rate rules and understand that bill usage is reference only.</span></label>
+            {saveRateRules.isPending && <LoadingState label="Saving and assigning the reviewed rate rules…" />}
           </div>
         )}
         {step === 'done' && (
           <div className="done-state">
             <span><Check /></span>
-            <h3>Bill applied</h3>
-            <p>Your reviewed rate and billing cycle are now connected to this electric service.</p>
+            <h3>Rate rules saved</h3>
+            <p>
+              The reviewed tariff is connected to this electric service. Bill-reported
+              usage and totals remain reference evidence and did not change calculations.
+            </p>
+            {bill?.startsAt && bill.endsAt && !cycleDatesApplied && (
+              <div className="optional-cycle-dates">
+                <strong>Optional: apply billing-cycle dates only</strong>
+                <span>{dateRange(bill.startsAt, bill.endsAt)}</span>
+                <small>This updates start and end dates. It does not import bill kWh.</small>
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={applyCycleDates.isPending}
+                  onClick={() => { applyCycleDates.mutate() }}
+                >
+                  {applyCycleDates.isPending ? 'Applying dates…' : 'Apply cycle dates only'}
+                </button>
+              </div>
+            )}
+            {cycleDatesApplied && <InlineNotice tone="success">Cycle dates applied. Sensor usage remains unchanged.</InlineNotice>}
             <button type="button" className="button primary" onClick={onClose}>Return to Billing</button>
           </div>
         )}
@@ -255,9 +330,8 @@ export function BillImportFlow({
         <footer className="workflow-footer">
           <button type="button" className="button secondary" onClick={onClose}>Cancel</button>
           {step === 'upload' && <button type="button" className="button primary" disabled={!file || upload.isPending} onClick={() => { upload.mutate(); }}>{upload.isPending ? 'Extracting…' : 'Upload and review'}</button>}
-          {step === 'review' && <button type="button" className="button primary" disabled={review.isPending || bill?.fields.length === 0 || requiredMissing.length > 0} onClick={() => { review.mutate(); }}>{review.isPending ? 'Saving review…' : 'Confirm extracted values'}</button>}
-          {step === 'confirm' && <button type="button" className="button primary" disabled={!confirmed || validate.isPending} onClick={() => { validate.mutate(); }}>{validate.isPending ? 'Validating…' : 'Continue to Apply'}</button>}
-          {step === 'apply' && <button type="button" className="button primary" disabled={apply.isPending || !serviceId} onClick={() => { apply.mutate(); }}>{apply.isPending ? 'Applying…' : 'Apply plan and billing cycle'}</button>}
+          {step === 'review' && <button type="button" className="button primary" disabled={review.isPending || !bill?.fields.some((field) => field.calculationRole === 'tariff_rule') || requiredMissing.length > 0} onClick={() => { review.mutate(); }}>{review.isPending ? 'Saving review…' : 'Review rate rules'}</button>}
+          {step === 'confirm' && <button type="button" className="button primary" disabled={!confirmed || saveRateRules.isPending || !serviceId} onClick={() => { saveRateRules.mutate(); }}>{saveRateRules.isPending ? 'Saving…' : 'Save rate rules'}</button>}
         </footer>
       )}
     </section>
@@ -284,8 +358,16 @@ function reviewGroup(path: string): typeof reviewGroupOrder[number] {
   return 'Bill summary'
 }
 
-function groupBillFields(bill: BillImportDetail) {
+function groupBillFields(
+  bill: BillImportDetail,
+  calculationRole: 'tariff_rule' | 'reference_only',
+) {
   return reviewGroupOrder
-    .map((label) => ({ label, fields: bill.fields.filter((field) => reviewGroup(field.path) === label) }))
+    .map((label) => ({
+      label,
+      fields: bill.fields.filter(
+        (field) => field.calculationRole === calculationRole && reviewGroup(field.path) === label,
+      ),
+    }))
     .filter((group) => group.fields.length > 0)
 }

@@ -1,5 +1,24 @@
 # Power Monitor Server 1.0.0
 
+## Sensor-authoritative billing and simplified rate import
+
+- Treats uploaded utility bills as reviewed tariff evidence only: plan identity,
+  prices, schedules, and tier thresholds may be imported, while reported kWh,
+  tier allocations, subtotals, totals, taxes, and credits remain reference-only.
+- Removes the standard bill-import path that created cumulative usage, usage
+  authority, tier-progress, and projection seeds from a bill.
+- Calculates current usage, chronological tier progression, energy cost, and
+  projections from reviewed Power Monitor sensor measurements; missing
+  full-account coverage is unavailable rather than replaced with bill usage or
+  zero.
+- Adds append-only migration `20260730_0021` plus a dry-run-first reconciliation
+  tool for legacy bill-derived authority. Unfinalized cycles can be recalculated
+  from immutable sensor readings; finalized cycles are preserved and flagged.
+- Simplifies Billing into rate plan, billing cycle, sensor usage source, and a
+  collapsed advanced area. The four-step bill wizard saves reviewed rate rules,
+  labels bill quantities as reference-only, and applies dates only through a
+  separate optional action.
+
 ## Safe backup consolidation and durable low-power History
 
 - Adds an owner-only **Replace all backups** operation that inventories current

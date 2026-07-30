@@ -75,6 +75,12 @@ const cycle: BillingCycleSummary = {
   pricingModel: 'tiered',
   tiers: [],
   warnings: ['Chronological tier allocation has not been calculated.'],
+  usageSourceType: 'unavailable',
+  billUsageCalculationRole: 'reference_only',
+  projectionSourceType: 'unavailable',
+  tierProgressSourceType: 'unavailable',
+  recalculationRequired: false,
+  legacyBillAuthorityReviewRequired: false,
 }
 
 function parseBody(options: unknown): Record<string, unknown> {
@@ -153,7 +159,7 @@ describe('sensor topology and tier allocation setup', () => {
     )
   })
 
-  it('saves reviewed bill usage authority before recalculating the current cycle', async () => {
+  it('saves a sensor measurement authority before recalculating the current cycle', async () => {
     requestMock.mockImplementation((
       path: string,
       options?: unknown,
@@ -163,18 +169,20 @@ describe('sensor topology and tier allocation setup', () => {
       if (path === '/api/v1/admin/utility-accounts/service-1/usage-authority') {
         if ((options as RequestInit | undefined)?.method === 'PUT') {
           expect(parseBody(options)).toMatchObject({
-            authority_type: 'manual_cycle_usage',
-            device_ids: [],
-            source_reference: 'utility-bill:bill-1',
-            confidence: 'utility_verified',
+            authority_type: 'whole_account_meter',
+            device_ids: ['sensor-1'],
+            source_reference: null,
+            confidence: 'high',
             complete_account: true,
+            calculation_role: 'sensor_measurements',
           })
           value = {
             configured: true,
-            authority_type: 'manual_cycle_usage',
-            device_ids: [],
-            source_reference: 'utility-bill:bill-1',
-            confidence: 'utility_verified',
+            authority_type: 'whole_account_meter',
+            calculation_role: 'sensor_measurements',
+            device_ids: ['sensor-1'],
+            source_reference: null,
+            confidence: 'high',
             complete_account: true,
             revision: 1,
           }
@@ -182,6 +190,7 @@ describe('sensor topology and tier allocation setup', () => {
           value = {
             configured: false,
             authority_type: null,
+            calculation_role: 'unavailable',
             device_ids: [],
             confidence: 'unknown',
             complete_account: false,
@@ -201,6 +210,9 @@ describe('sensor topology and tier allocation setup', () => {
           },
           recalculation_version: 1,
           pricing_model: 'tiered',
+          usage_source_type: 'sensor_measurements',
+          projection_source_type: 'sensor_trend',
+          tier_progress_source_type: 'sensor_measurements',
           tiers: [],
           warnings: [],
         }
@@ -214,15 +226,14 @@ describe('sensor topology and tier allocation setup', () => {
         service={service}
         sensors={[{ ...sensor, utilityAccountId: service.id }]}
         cycle={cycle}
-        latestBillId="bill-1"
         onRefresh={() => Promise.resolve()}
       />,
     )
 
-    await screen.findByText('Usage authority not configured')
+    await screen.findByText('Sensor usage source not configured')
     await user.click(screen.getByRole('button', { name: 'Save and recalculate' }))
 
-    expect(await screen.findByText(/Chronological allocation recalculated at version 1/))
+    expect(await screen.findByText(/Sensor usage and chronological tier allocation recalculated at version 1/))
       .toBeVisible()
     const putIndex = requestMock.mock.calls.findIndex((call) => (
       call[0] === '/api/v1/admin/utility-accounts/service-1/usage-authority'

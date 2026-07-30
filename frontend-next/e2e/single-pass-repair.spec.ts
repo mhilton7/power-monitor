@@ -59,9 +59,9 @@ const bill = {
     ends_at: '2026-07-01T07:00:00Z',
   },
   fields: [
-    { id: 'field-1', field_key: 'plan_name', output_kind: 'rate_plan', effective_value: 'DOMESTIC', confidence: 'parser_confirmed', page_number: 1 },
-    { id: 'field-2', field_key: 'total_usage_kwh', output_kind: 'billing_cycle', effective_value: '951.000', confidence: 'arithmetic_confirmed', page_number: 1 },
-    { id: 'field-3', field_key: 'tier_1_rate', output_kind: 'rate_plan', effective_value: '0.30000000', confidence: 'arithmetic_confirmed', page_number: 3 },
+    { id: 'field-1', field_key: 'plan_name', output_kind: 'rate_plan', calculation_role: 'tariff_rule', effective_value: 'DOMESTIC', confidence: 'parser_confirmed', page_number: 1 },
+    { id: 'field-2', field_key: 'total_usage_kwh', output_kind: 'billing_cycle', calculation_role: 'reference_only', effective_value: '951.000', confidence: 'arithmetic_confirmed', page_number: 1 },
+    { id: 'field-3', field_key: 'tier_1_rate', output_kind: 'rate_plan', calculation_role: 'tariff_rule', effective_value: '0.30000000', confidence: 'arithmetic_confirmed', page_number: 3 },
   ],
   conflicts: [],
   blocking_warnings: [],
@@ -90,6 +90,12 @@ const bill = {
       starts_at: '2026-06-01T07:00:00Z',
       ends_at: '2026-07-01T07:00:00Z',
     },
+    calculation_policy: {
+      tariff_evidence_role: 'tariff_rule',
+      reference_bill_evidence_role: 'reference_only',
+      reported_usage_used_in_monitored_calculation: false,
+      bill_total_used_in_monitored_calculation: false,
+    },
     plan_candidate: {
       plan_name: 'DOMESTIC',
       plan_code: 'DOMESTIC',
@@ -97,13 +103,13 @@ const bill = {
     },
     line_items: [],
     evidence: [
-      { field: 'plan_name', output_kind: 'rate_plan', value: 'DOMESTIC', confidence: 'parser_confirmed', source_page: 1, parser_version: '1.0.0' },
-      { field: 'total_usage_kwh', output_kind: 'billing_cycle', value: '951.000', confidence: 'arithmetic_confirmed', source_page: 1, parser_version: '1.0.0' },
+      { field: 'plan_name', output_kind: 'rate_plan', calculation_role: 'tariff_rule', value: 'DOMESTIC', confidence: 'parser_confirmed', source_page: 1, parser_version: '1.0.0' },
+      { field: 'total_usage_kwh', output_kind: 'billing_cycle', calculation_role: 'reference_only', value: '951.000', confidence: 'arithmetic_confirmed', source_page: 1, parser_version: '1.0.0' },
     ],
     validation: { status: 'pass' },
     warnings: [],
     missing_fields: [
-      { field: 'account_suffix', output_kind: 'account', value: null, state: 'not_found_on_bill', required: false, reason: 'The uploaded detail pages did not show an account number.' },
+      { field: 'account_suffix', output_kind: 'account', calculation_role: 'reference_only', value: null, state: 'not_found_on_bill', required: false, reason: 'The uploaded detail pages did not show an account number.' },
     ],
     ignored_sections: [],
     page_classifications: [],
@@ -225,15 +231,22 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
     if (pathname === '/api/v1/admin/utility-bill-imports' && request.method() === 'GET') {
       return route.fulfill({ json: observed.cycleImported ? [{ ...bill, status: 'imported', billing_cycle: bill.cycle_draft }] : [] })
     }
-    if (pathname === `/api/v1/admin/utility-bill-imports/${bill.id}/review`) return route.fulfill({ json: { ...bill, status: 'reviewed', revision: 2 } })
+    if (pathname === `/api/v1/admin/utility-bill-imports/${bill.id}/review`) return route.fulfill({ json: { ...bill, status: 'ready_to_publish', revision: 2 } })
     if (pathname === `/api/v1/admin/utility-bill-imports/${bill.id}/validate`) return route.fulfill({ json: { validation: { valid: true }, blocking_warnings: [] } })
     if (pathname === `/api/v1/admin/utility-bill-imports/${bill.id}/publish-and-assign`) {
       observed.billPublished = true
       return route.fulfill({ json: { status: 'active' } })
     }
-    if (pathname === `/api/v1/admin/utility-bill-imports/${bill.id}/import-billing-cycle`) {
+    if (pathname === `/api/v1/admin/utility-bill-imports/${bill.id}/apply-cycle-dates`) {
       observed.cycleImported = true
-      return route.fulfill({ json: { status: 'imported' } })
+      return route.fulfill({
+        json: {
+          status: 'imported',
+          calculation_role: 'reference_only',
+          applied: ['cycle_start', 'cycle_end'],
+          excluded: ['reported_usage', 'bill_total', 'tier_allocation'],
+        },
+      })
     }
     if (pathname === '/api/v1/rates/plans' && request.method() === 'POST') {
       observed.rateDraft = request.postDataJSON() as Record<string, unknown>
@@ -696,9 +709,9 @@ test('bill importer is visible, keyboard contained, retryable, and URL-backed', 
   await mockRepairServer(page)
   await page.goto('/billing')
   await expect(page.getByRole('heading', { name: 'Billing', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Upload electric bill' }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Import rates from bill' }).first()).toBeVisible()
   await expect(page).toHaveScreenshot('billing-simple.png', { fullPage: true, animations: 'disabled' })
-  const trigger = page.getByRole('button', { name: 'Upload electric bill' }).first()
+  const trigger = page.getByRole('button', { name: 'Import rates from bill' }).first()
   await trigger.click()
   await expect(page).toHaveURL(/action=upload/)
   const dialog = page.getByRole('dialog', { name: 'Upload electric bill' })
@@ -729,9 +742,15 @@ test('bill importer is visible, keyboard contained, retryable, and URL-backed', 
   await expect(dialog.getByText('sanitized-sce-domestic-bill.pdf')).toBeVisible()
   await expect(dialog.getByText('Southern California Edison')).toBeVisible()
   await expect(dialog.getByText('6 pages · Text extraction', { exact: false })).toBeVisible()
-  await expect(dialog.getByText('Fields not found on this bill (1)')).toBeVisible()
-  await expect(dialog.getByText('Unknown', { exact: true })).toHaveCount(0)
+  const referenceDetails = dialog.locator('details.bill-reference-details')
+  await expect(referenceDetails.getByText('Reference information from uploaded bill')).toBeVisible()
+  await expect(dialog.getByText('Not used in calculation')).toBeVisible()
   await expect(page).toHaveScreenshot('importer-review.png', { fullPage: true, animations: 'disabled' })
+  await referenceDetails.getByText('Reference information from uploaded bill').click()
+  await expect(referenceDetails.getByText('951.000')).toBeVisible()
+  await expect(referenceDetails).toHaveScreenshot('importer-reference-only.png', {
+    animations: 'disabled',
+  })
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   await expect(page).toHaveURL(/\/billing$/)
@@ -783,13 +802,17 @@ test('reviewed bill applies its plan and cycle and refreshes Billing', async ({ 
   const dialog = page.getByRole('dialog', { name: 'Upload electric bill' })
   await page.locator('input[type="file"]').setInputFiles(path.resolve('../backend/tests/fixtures/bills/sanitized-sce-domestic-bill.pdf'))
   await page.getByRole('button', { name: 'Upload and review' }).click()
-  await page.getByRole('button', { name: 'Confirm extracted values' }).click()
-  await expect(page.getByRole('heading', { name: 'Confirm the reviewed values' })).toBeVisible()
-  await page.getByRole('checkbox', { name: 'I reviewed these values and want to continue.' }).check()
-  await page.getByRole('button', { name: 'Continue to Apply' }).click()
-  await page.getByRole('button', { name: 'Apply plan and billing cycle' }).click()
-  await expect(page.getByRole('heading', { name: 'Bill applied' })).toBeVisible()
+  await page.getByRole('button', { name: 'Review rate rules' }).click()
+  await expect(page.getByRole('heading', { name: 'Save reviewed rate rules' })).toBeVisible()
+  await page.getByRole('checkbox', {
+    name: 'I reviewed these rate rules and understand that bill usage is reference only.',
+  }).check()
+  await page.getByRole('button', { name: 'Save rate rules' }).click()
+  await expect(page.getByRole('heading', { name: 'Rate rules saved' })).toBeVisible()
   expect(observed.billPublished).toBe(true)
+  expect(observed.cycleImported).toBe(false)
+  await page.getByRole('button', { name: 'Apply cycle dates only' }).click()
+  await expect(page.getByText('Cycle dates applied. Sensor usage remains unchanged.')).toBeVisible()
   expect(observed.cycleImported).toBe(true)
   await page.getByRole('button', { name: 'Return to Billing' }).click()
   await expect(dialog).toHaveCount(0)
@@ -1057,7 +1080,7 @@ test('repair surfaces do not overflow or overlap at the active viewport', async 
   await page.goto('/billing?advanced=rates')
   await page.getByRole('button', { name: 'New plan' }).click()
   await expectNoDocumentOverflow(page)
-  await page.getByRole('button', { name: 'Upload electric bill' }).click()
+  await page.getByRole('button', { name: 'Import rates from bill' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await expectNoDocumentOverflow(page)
 })

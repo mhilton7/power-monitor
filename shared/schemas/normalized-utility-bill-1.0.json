@@ -13,6 +13,7 @@
     "billing_cycle",
     "plan_candidate",
     "line_items",
+    "calculation_policy",
     "evidence",
     "validation",
     "warnings",
@@ -32,6 +33,22 @@
     "line_items": {
       "type": "array",
       "items": {"type": "object"}
+    },
+    "calculation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tariff_evidence_role",
+        "reference_bill_evidence_role",
+        "reported_usage_used_in_monitored_calculation",
+        "bill_total_used_in_monitored_calculation"
+      ],
+      "properties": {
+        "tariff_evidence_role": {"const": "tariff_rule"},
+        "reference_bill_evidence_role": {"const": "reference_only"},
+        "reported_usage_used_in_monitored_calculation": {"const": false},
+        "bill_total_used_in_monitored_calculation": {"const": false}
+      }
     },
     "evidence": {
       "type": "array",
@@ -108,6 +125,7 @@
       "required": [
         "field",
         "output_kind",
+        "calculation_role",
         "value",
         "confidence",
         "source_page",
@@ -121,6 +139,7 @@
       "properties": {
         "field": {"type": "string", "minLength": 1},
         "output_kind": {"type": "string", "minLength": 1},
+        "calculation_role": {"enum": ["tariff_rule", "reference_only"]},
         "value": {},
         "confidence": {
           "enum": [
@@ -153,6 +172,7 @@
       "required": [
         "field",
         "output_kind",
+        "calculation_role",
         "value",
         "state",
         "required",
@@ -161,6 +181,7 @@
       "properties": {
         "field": {"type": "string", "minLength": 1},
         "output_kind": {"type": "string", "minLength": 1},
+        "calculation_role": {"enum": ["tariff_rule", "reference_only"]},
         "value": {"type": "null"},
         "state": {"enum": ["not_found_on_bill", "not_applicable"]},
         "required": {"type": "boolean"},

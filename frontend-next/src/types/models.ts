@@ -123,6 +123,7 @@ export interface CircuitSummary {
 export interface UsageAuthority {
   configured: boolean
   authorityType?: string
+  calculationRole: 'sensor_measurements' | 'advanced_external_correction' | 'reference_only' | 'unavailable'
   completeAccount: boolean
   confidence: string
   sourceReference?: string
@@ -277,6 +278,13 @@ export interface BillingCycleSummary {
   pricingModel?: HomeSummary['pricingModel']
   tiers: TierLine[]
   warnings: string[]
+  rateSourceType?: 'reviewed_bill' | 'managed_source' | 'custom_rate_plan'
+  usageSourceType: 'sensor_measurements' | 'advanced_external_correction' | 'unavailable'
+  billUsageCalculationRole: 'reference_only'
+  projectionSourceType: 'sensor_trend' | 'advanced_external_correction' | 'unavailable'
+  tierProgressSourceType: 'sensor_measurements' | 'advanced_external_correction' | 'unavailable'
+  recalculationRequired: boolean
+  legacyBillAuthorityReviewRequired: boolean
 }
 
 export interface BillSummary {
@@ -312,6 +320,7 @@ export interface MissingBillField {
   state: 'not_found_on_bill' | 'needs_review' | 'not_applicable' | 'conflict' | 'unsupported'
   required: boolean
   reason: string
+  calculationRole: 'tariff_rule' | 'reference_only'
 }
 
 export interface BillFieldEvidence {
@@ -323,6 +332,7 @@ export interface BillFieldEvidence {
   sourceText?: string
   parserRule?: string
   parserVersion: string
+  calculationRole: 'tariff_rule' | 'reference_only'
 }
 
 export interface NormalizedUtilityBill {
@@ -370,6 +380,7 @@ export interface BillImportDetail extends BillSummary {
     path: string
     label: string
     outputKind: string
+    calculationRole: 'tariff_rule' | 'reference_only'
     value: string
     confidence: BillFieldConfidence
     sourcePage?: number

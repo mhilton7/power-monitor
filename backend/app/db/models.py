@@ -1444,6 +1444,7 @@ class UtilityBillExtractedField(Base):
         ForeignKey("utility_bill_extraction_revisions.id", ondelete="CASCADE"), index=True
     )
     output_kind: Mapped[str] = mapped_column(String(24), index=True)
+    calculation_role: Mapped[str] = mapped_column(String(32), default="reference_only", index=True)
     field_key: Mapped[str] = mapped_column(String(240))
     raw_value: Mapped[Any | None] = mapped_column(JSON)
     normalized_value: Mapped[Any | None] = mapped_column(JSON)
@@ -1471,6 +1472,10 @@ class UtilityBillExtractedField(Base):
         CheckConstraint(
             "output_kind IN ('account','rate_plan','billing_cycle')",
             name="utility_bill_field_output_kind",
+        ),
+        CheckConstraint(
+            "calculation_role IN ('tariff_rule','reference_only')",
+            name="utility_bill_field_calculation_role",
         ),
         CheckConstraint(
             "extraction_method IN ('text','ocr','mixed','administrator')",
@@ -1530,6 +1535,7 @@ class UtilityBillCycleDraft(Base):
         ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True, nullable=True
     )
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    calculation_role: Mapped[str] = mapped_column(String(32), default="reference_only", index=True)
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cycle_days: Mapped[int | None] = mapped_column(Integer)
@@ -1563,6 +1569,10 @@ class UtilityBillCycleDraft(Base):
         CheckConstraint(
             "status IN ('draft','approved','imported','rejected')",
             name="utility_bill_cycle_draft_status",
+        ),
+        CheckConstraint(
+            "calculation_role = 'reference_only'",
+            name="utility_bill_cycle_draft_reference_only",
         ),
         CheckConstraint(
             "threshold_interpretation IN ('fixed_cycle_threshold','daily_baseline',"
@@ -1626,6 +1636,15 @@ class BillingCycle(Base):
     boundary_source: Mapped[str] = mapped_column(String(32), default="generated")
     override_revision: Mapped[int] = mapped_column(Integer, default=0)
     recalculation_version: Mapped[int] = mapped_column(Integer, default=0)
+    usage_source_type: Mapped[str] = mapped_column(
+        String(40), default="sensor_measurements", index=True
+    )
+    projection_source_type: Mapped[str] = mapped_column(String(40), default="sensor_trend")
+    tier_progress_source_type: Mapped[str] = mapped_column(
+        String(40), default="sensor_measurements"
+    )
+    recalculation_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    legacy_bill_authority_review_required: Mapped[bool] = mapped_column(Boolean, default=False)
     locked_snapshot_hash: Mapped[str | None] = mapped_column(String(64))
     created_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
@@ -1649,6 +1668,21 @@ class BillingCycle(Base):
             "boundary_source IN ('generated','manual_override','utility_import','external_feed')",
             name="billing_cycle_boundary_source",
         ),
+        CheckConstraint(
+            "usage_source_type IN ('sensor_measurements','advanced_external_correction',"
+            "'unavailable')",
+            name="billing_cycle_usage_source_type",
+        ),
+        CheckConstraint(
+            "projection_source_type IN ('sensor_trend','advanced_external_correction',"
+            "'unavailable')",
+            name="billing_cycle_projection_source_type",
+        ),
+        CheckConstraint(
+            "tier_progress_source_type IN ('sensor_measurements',"
+            "'advanced_external_correction','unavailable')",
+            name="billing_cycle_tier_progress_source_type",
+        ),
     )
 
 
@@ -1659,6 +1693,9 @@ class AccountUsageAuthority(Base):
         ForeignKey("utility_accounts.id", ondelete="CASCADE"), unique=True, index=True
     )
     authority_type: Mapped[str] = mapped_column(String(48))
+    calculation_role: Mapped[str] = mapped_column(
+        String(40), default="sensor_measurements", index=True
+    )
     aggregate_set_id: Mapped[str | None] = mapped_column(
         ForeignKey("aggregate_sets.id", ondelete="SET NULL")
     )
@@ -1680,6 +1717,11 @@ class AccountUsageAuthority(Base):
             "confidence IN ('unverified','low','medium','high','utility_verified')",
             name="account_usage_authority_confidence",
         ),
+        CheckConstraint(
+            "calculation_role IN ('sensor_measurements','advanced_external_correction',"
+            "'reference_only')",
+            name="account_usage_authority_calculation_role",
+        ),
     )
 
 
@@ -1694,6 +1736,9 @@ class ManualAccountUsage(Base):
     )
     effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     cumulative_kwh: Mapped[Decimal] = mapped_column(Numeric(24, 9))
+    calculation_role: Mapped[str] = mapped_column(
+        String(40), default="advanced_external_correction", index=True
+    )
     source_note: Mapped[str] = mapped_column(String(500))
     evidence_reference: Mapped[str | None] = mapped_column(String(500))
     idempotency_key: Mapped[str] = mapped_column(String(128))
@@ -1710,6 +1755,10 @@ class ManualAccountUsage(Base):
             "verification_status IN ('unverified','verified','reconciled')",
             name="manual_account_usage_verification",
         ),
+        CheckConstraint(
+            "calculation_role IN ('advanced_external_correction','reference_only')",
+            name="manual_account_usage_calculation_role",
+        ),
     )
 
 
@@ -1720,6 +1769,9 @@ class UtilityUsageImport(Base):
         ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
     )
     import_kind: Mapped[str] = mapped_column(String(32))
+    calculation_role: Mapped[str] = mapped_column(
+        String(40), default="advanced_external_correction", index=True
+    )
     status: Mapped[str] = mapped_column(String(24), default="preview")
     timezone: Mapped[str] = mapped_column(String(64))
     source_name: Mapped[str] = mapped_column(String(240))
@@ -1742,6 +1794,10 @@ class UtilityUsageImport(Base):
         CheckConstraint(
             "status IN ('preview','committed','rejected','reversed')",
             name="utility_usage_import_status",
+        ),
+        CheckConstraint(
+            "calculation_role IN ('advanced_external_correction','reference_only')",
+            name="utility_usage_import_calculation_role",
         ),
     )
 

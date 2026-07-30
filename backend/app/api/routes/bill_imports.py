@@ -881,27 +881,24 @@ async def publish_and_assign_utility_bill_rate(
     }
 
 
-@router.post("/admin/utility-bill-imports/{bill_id}/import-billing-cycle")
-async def import_utility_bill_cycle(
+@router.post("/admin/utility-bill-imports/{bill_id}/apply-cycle-dates")
+@router.post(
+    "/admin/utility-bill-imports/{bill_id}/import-billing-cycle",
+    deprecated=True,
+)
+async def apply_utility_bill_cycle_dates(
     bill_id: str,
     request: Request,
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    if "usage_imports.manage" not in principal.permissions:
-        raise ProblemError(
-            403,
-            "Usage import permission required",
-            "Importing utility billing-cycle evidence requires usage import permission",
-            "forbidden",
-        )
     bill = await _bill(session, principal, bill_id)
     if bill.utility_account_id is None:
         raise ProblemError(
             409,
             "Utility account required",
-            "Select a utility account before applying billing-cycle data",
+            "Select a utility account before applying billing-cycle dates",
             "bill_account_context_required",
         )
     account = await _account(session, principal, bill.utility_account_id)
@@ -913,7 +910,7 @@ async def import_utility_bill_cycle(
     )
     session.add(
         audit_event(
-            action="utility_bill.billing_cycle_imported",
+            action="utility_bill.cycle_dates_applied",
             actor_type="user",
             actor_id=principal.user.id,
             request=request,
@@ -922,7 +919,9 @@ async def import_utility_bill_cycle(
             details={
                 "bill_import_id": bill.id,
                 "billing_cycle_id": draft.billing_cycle_id,
-                "utility_usage_import_id": draft.utility_usage_import_id,
+                "calculation_role": "reference_only",
+                "usage_import_created": False,
+                "usage_authority_changed": False,
                 "monitored_readings_overwritten": False,
             },
         )
@@ -932,7 +931,17 @@ async def import_utility_bill_cycle(
         "cycle_draft_id": draft.id,
         "status": draft.status,
         "billing_cycle_id": draft.billing_cycle_id,
-        "utility_usage_import_id": draft.utility_usage_import_id,
+        "utility_usage_import_id": None,
+        "calculation_role": "reference_only",
+        "applied": ["cycle_start", "cycle_end"],
+        "excluded": [
+            "reported_usage",
+            "usage_by_tier",
+            "usage_by_tou",
+            "bill_total",
+            "current_tier",
+            "projection",
+        ],
     }
 
 

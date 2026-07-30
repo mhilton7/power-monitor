@@ -81,10 +81,12 @@ See [Rate sources](RATE_SOURCES.md).
 ## Availability and limitations
 
 Tier progress requires an exact billing cycle, an effective rate assignment,
-and authoritative whole-account cumulative usage. A partial circuit can be
-priced against imported/manual whole-account context but cannot advance the
-account tier itself. If context is missing, the server reports unavailable
-instead of assuming zero usage or Tier 1.
+and reviewed complete-service sensor measurements. Uploaded bill kWh never
+initializes the cursor or supplies fallback usage. A partial circuit can be
+priced only against a separately confirmed advanced whole-account correction
+and cannot advance the account tier itself. If sensor authority or readings
+are missing, the server reports unavailable instead of assuming zero usage or
+Tier 1.
 
 Displayed costs are estimates, not a utility bill. Taxes, meter accuracy,
 provider charges, credits, and utility corrections can differ.

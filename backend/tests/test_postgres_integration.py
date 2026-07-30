@@ -99,7 +99,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 ORDER BY direction
                 """
             )
-            assert revision == "20260730_0020"
+            assert revision == "20260730_0021"
             assert table_count == 98
             engine = create_async_engine(url)
             try:
@@ -155,7 +155,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260730_0020"
+                "20260730_0021"
             )
 
             await connection.execute("DROP SCHEMA public CASCADE")
@@ -215,7 +215,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260730_0020"
+                "20260730_0021"
             )
             assert (
                 await connection.fetchval(

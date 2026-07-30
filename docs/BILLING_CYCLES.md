@@ -1,11 +1,11 @@
 # Billing cycles
 
-Reviewed utility-bill PDFs create a separate billing-cycle draft containing
-exact dates and utility-reported cumulative usage. Importing that draft creates
-or updates the cycle only through the existing cycle/usage-import services; it
-does not overwrite immutable monitored readings. Bill-specific credits,
-adjustments, and complete-bill totals remain source evidence rather than
-recurring rate rules. See [Utility-bill PDF imports](UTILITY_BILL_IMPORTS.md).
+Reviewed utility-bill PDFs retain exact dates and utility-reported cumulative
+usage in a reference-only cycle draft. **Apply cycle dates only** may create or
+update start/end boundaries, but never imports reported kWh or changes usage
+authority. Bill usage, credits, adjustments, and complete totals remain source
+evidence and never seed current usage, tiers, or projection. See
+[Utility-bill PDF imports](UTILITY_BILL_IMPORTS.md).
 
 Billing-cycle identity is per utility account. Each persisted cycle has exact
 UTC `starts_at` and `ends_at` instants derived from local utility dates or an
@@ -30,7 +30,7 @@ never silently overwritten.
 - `recalculating`: changed readings, dates, authority, or imports require a
   complete chronological replay.
 - `expected` or `confirmed` after calculation: allocation segments, tier
-  totals, component totals, projection, rate/version provenance, authority
+  totals, component totals, sensor-only projection, rate/version provenance, authority
   provenance, and coverage are persisted at a new recalculation version.
 - `finalized`: calculated evidence is immutable. Later backfill is recorded for
   review but never rewrites the finalized result.
@@ -43,7 +43,7 @@ provider-adjustment boundaries are honored during replay.
 
 Finalization requires an available calculation. The final cycle stores the
 calculation version, exact source boundaries, rates, usage-authority evidence,
-and confidence. A committed `bill_total` import can be compared with the
+and confidence. A reference-only `bill_total` import can be compared with the
 estimate. Administrators may add explicit reconciliation adjustments with a
 reason and evidence reference; they do not mutate the rate or raw readings.
 

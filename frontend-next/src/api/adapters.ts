@@ -3,6 +3,7 @@ import type {
   AlertSummary,
   BackupSummary,
   BillImportDetail,
+  BillFieldEvidence,
   BillSummary,
   BillingCycleSummary,
   CircuitSummary,
@@ -343,9 +344,22 @@ export function adaptCircuits(value: unknown): CircuitSummary[] {
 
 export function adaptUsageAuthority(value: unknown): UsageAuthority {
   const source = record(value, 'usage authority')
+  const calculationRole = stringValue(
+    source.calculation_role,
+    booleanValue(source.configured) ? 'reference_only' : 'unavailable',
+  )
+  if (![
+    'sensor_measurements',
+    'advanced_external_correction',
+    'reference_only',
+    'unavailable',
+  ].includes(calculationRole)) {
+    throw new Error('Usage authority returned an unsupported calculation role')
+  }
   return {
     configured: booleanValue(source.configured),
     authorityType: optionalString(source.authority_type),
+    calculationRole: calculationRole as UsageAuthority['calculationRole'],
     completeAccount: booleanValue(source.complete_account),
     confidence: stringValue(source.confidence, 'unknown'),
     sourceReference: optionalString(source.source_reference),
@@ -512,6 +526,18 @@ export function adaptBillingCycle(value: unknown): BillingCycleSummary {
   const source = record(value, 'billing cycle')
   const cycle = source.cycle ? record(source.cycle, 'cycle') : {}
   const currentTier = source.current_tier ? record(source.current_tier, 'current tier') : {}
+  const usageSource = stringValue(source.usage_source_type, 'unavailable')
+  const projectionSource = stringValue(source.projection_source_type, 'unavailable')
+  const tierProgressSource = stringValue(source.tier_progress_source_type, 'unavailable')
+  if (!['sensor_measurements', 'advanced_external_correction', 'unavailable'].includes(usageSource)) {
+    throw new Error(`Unsupported billing usage source: ${usageSource}`)
+  }
+  if (!['sensor_trend', 'advanced_external_correction', 'unavailable'].includes(projectionSource)) {
+    throw new Error(`Unsupported billing projection source: ${projectionSource}`)
+  }
+  if (!['sensor_measurements', 'advanced_external_correction', 'unavailable'].includes(tierProgressSource)) {
+    throw new Error(`Unsupported tier progress source: ${tierProgressSource}`)
+  }
   return {
     available: booleanValue(source.available),
     id: optionalString(cycle.id),
@@ -544,6 +570,13 @@ export function adaptBillingCycle(value: unknown): BillingCycleSummary {
       cost: optionalString(tier.energy_charge),
     })),
     warnings: stringList(source.warnings),
+    rateSourceType: optionalString(source.rate_source_type) as BillingCycleSummary['rateSourceType'],
+    usageSourceType: usageSource as BillingCycleSummary['usageSourceType'],
+    billUsageCalculationRole: 'reference_only',
+    projectionSourceType: projectionSource as BillingCycleSummary['projectionSourceType'],
+    tierProgressSourceType: tierProgressSource as BillingCycleSummary['tierProgressSourceType'],
+    recalculationRequired: booleanValue(cycle.recalculation_required),
+    legacyBillAuthorityReviewRequired: booleanValue(cycle.legacy_bill_authority_review_required),
   }
 }
 
@@ -717,6 +750,10 @@ export function adaptBillDetail(value: unknown): BillImportDetail {
       state,
       required: booleanValue(field.required),
       reason: stringValue(field.reason, 'The bill did not contain this field.'),
+      calculationRole: stringValue(
+        field.calculation_role,
+        stringValue(field.output_kind) === 'rate_plan' ? 'tariff_rule' : 'reference_only',
+      ) as BillImportDetail['missingFields'][number]['calculationRole'],
     }
   })
   const fields = extractedFields
@@ -726,6 +763,10 @@ export function adaptBillDetail(value: unknown): BillImportDetail {
       path: stringValue(field.field_key),
       label: stringValue(field.field_key).replaceAll('_', ' '),
       outputKind: stringValue(field.output_kind),
+      calculationRole: stringValue(
+        field.calculation_role,
+        stringValue(field.output_kind) === 'rate_plan' ? 'tariff_rule' : 'reference_only',
+      ) as BillImportDetail['fields'][number]['calculationRole'],
       value: stringValue(field.effective_value),
       confidence: confidence(field.confidence),
       sourcePage: typeof field.page_number === 'number' ? field.page_number : undefined,
@@ -775,6 +816,10 @@ export function adaptBillDetail(value: unknown): BillImportDetail {
       evidence: objectList(normalized.evidence).map((item) => ({
         path: stringValue(item.field),
         outputKind: stringValue(item.output_kind),
+        calculationRole: stringValue(
+          item.calculation_role,
+          stringValue(item.output_kind) === 'rate_plan' ? 'tariff_rule' : 'reference_only',
+        ) as BillFieldEvidence['calculationRole'],
         value: stringValue(item.value),
         confidence: confidence(item.confidence),
         sourcePage: typeof item.source_page === 'number' ? item.source_page : undefined,
