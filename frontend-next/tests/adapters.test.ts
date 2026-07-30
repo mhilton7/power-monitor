@@ -32,27 +32,30 @@ describe('typed homeowner adapters', () => {
       id: 'sensor-1',
       name: 'Indoor-AC',
       status: 'online_synchronized',
-      current_watts: '1.0',
+      current_watts: '0.8',
       voltage_volts: '120.4',
       current_amps: '0.01',
       frequency_hz: '60.0',
       power_factor: '0.83',
       latest_measurement_at: '2026-07-29T21:55:00Z',
+      measurement_received_at: '2026-07-29T21:55:02Z',
       last_seen_at: '2026-07-29T21:55:02Z',
       measurement_freshness: 'live',
       measurement_source: 'heartbeat_live',
       measurement_invalid_metrics: [],
     }])
     const live = adaptHomeSummary({
-      current_load_w: '1.0',
+      current_load_w: '0.8',
       reporting_devices: 1,
       has_live_data: true,
       latest_data_at: '2026-07-29T21:55:00Z',
+      latest_received_at: '2026-07-29T21:55:02Z',
+      server_now: '2026-07-29T21:55:03Z',
     }, sensors)
 
     expect(sensors[0]).toMatchObject({
       name: 'Indoor-AC',
-      currentPowerW: '1.0',
+      currentPowerW: '0.8',
       voltageVolts: '120.4',
       currentAmps: '0.01',
       frequencyHz: '60.0',
@@ -61,10 +64,12 @@ describe('typed homeowner adapters', () => {
       measurementSource: 'heartbeat_live',
     })
     expect(live).toMatchObject({
-      currentPowerW: '1.0',
+      currentPowerW: '0.8',
       reportingSensors: 1,
       hasLiveData: true,
       latestDataAt: '2026-07-29T21:55:00Z',
+      latestReceivedAt: '2026-07-29T21:55:02Z',
+      serverNow: '2026-07-29T21:55:03Z',
     })
 
     const missing = adaptHomeSummary({

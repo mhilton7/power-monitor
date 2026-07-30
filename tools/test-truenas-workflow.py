@@ -15,6 +15,7 @@ import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import httpx
 import yaml
@@ -661,16 +662,20 @@ def backup_and_restore(
         "/srv/scripts/backup-container.sh",
         capture=True,
     )
-    backup_dir = backup_output.splitlines()[-1].strip()
-    if not backup_dir.startswith("/data/backups/power-monitor-"):
-        raise WorkflowFailure("backup service did not return a completed backup path")
+    backup_run_id = backup_output.splitlines()[-1].strip()
+    try:
+        UUID(backup_run_id)
+    except ValueError as exc:
+        raise WorkflowFailure(
+            "backup service did not return a backup run UUID"
+        ) from exc
     run_compose(
         compose,
         "run",
         "--rm",
         "backup",
         "/srv/scripts/verify-backup-container.sh",
-        backup_dir,
+        backup_run_id,
     )
     restore_database = "power_monitor_integration_restore"
     run_compose(
@@ -679,7 +684,7 @@ def backup_and_restore(
         "--rm",
         "backup",
         "/srv/scripts/restore-container.sh",
-        backup_dir,
+        backup_run_id,
         restore_database,
         "--yes",
     )

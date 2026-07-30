@@ -66,8 +66,8 @@ docker compose up -d --wait
 Assert-NativeSuccess 'Docker health gate'
 $backupOutput = docker compose --profile tools run --rm backup /srv/scripts/backup-container.sh
 Assert-NativeSuccess 'Backup generation gate'
-$backupPath = ($backupOutput | Select-Object -Last 1).Trim()
-docker compose --profile tools run --rm backup /srv/scripts/verify-backup-container.sh $backupPath
+$backupRunId = ($backupOutput | Select-Object -Last 1).Trim()
+docker compose --profile tools run --rm backup /srv/scripts/verify-backup-container.sh $backupRunId
 Assert-NativeSuccess 'Backup restore-verification gate'
 docker compose ps
 Assert-NativeSuccess 'Docker Compose status'

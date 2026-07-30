@@ -1329,6 +1329,38 @@ class BackupRequestCreate(ApiModel):
         return self
 
 
+class BackupVerifyRequest(ApiModel):
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
+class BackupDeleteRequest(ApiModel):
+    confirmation: Literal["DELETE"]
+    backup_id_confirmation: str = Field(min_length=8, max_length=36)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class BackupView(ApiModel):
+    id: str
+    started_at: datetime
+    completed_at: datetime | None
+    status: str
+    manifest_hash: str | None
+    verified_at: datetime | None
+    verification_details: dict[str, Any]
+    size_bytes: int | None
+    encrypted: bool
+    verification_started_at: datetime | None
+    verification_completed_at: datetime | None
+    verification_attempt_count: int
+    failed_stage: str | None
+    safe_error_code: str | None
+    safe_error_summary: str | None
+    exit_code: int | None
+    deleted_at: datetime | None
+    deletion_reason: str | None
+    artifact_removal_result: str | None
+
+
 class LogExportCreate(ApiModel):
     start_date: date | None = None
     end_date: date | None = None
@@ -1593,7 +1625,9 @@ class FleetSummary(ApiModel):
     reporting_devices: int
     latest_data_at: datetime | None
     latest_measurement_at: datetime | None
+    latest_received_at: datetime | None
     latest_heartbeat_at: datetime | None
+    server_now: datetime
     coverage_percent: Decimal | None
     disclosure: str
 

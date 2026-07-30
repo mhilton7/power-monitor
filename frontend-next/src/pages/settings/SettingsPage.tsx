@@ -23,7 +23,7 @@ import {
   Wifi,
   Wrench,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useLocation, useNavigate } from '../../app/router'
 import { hasPermission, isOwner } from '../../access/permissions'
 import {
@@ -39,6 +39,7 @@ import { ApiError, json, request } from '../../api/client'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
 import { Surface } from '../../components/data-display/Surface'
 import { DropdownMenu, DropdownMenuItem } from '../../components/overlays/DropdownMenu'
+import { ModalLayer } from '../../components/overlays/ModalLayer'
 import { SensorSetupFlow } from '../../features/sensors/SensorSetupFlow'
 import { useAppearance } from '../../state/AppearanceContext'
 import { useAuth } from '../../state/AuthContext'
@@ -49,6 +50,7 @@ import type {
   FamilyMember,
   FamilyRoleOption,
   PermissionOption,
+  BackupSummary,
   SystemHealthStatus,
   TestLoadProfile,
 } from '../../types/models'
@@ -537,10 +539,12 @@ function DataSettings() {
   const client = useQueryClient()
   const { resolution } = useSingleHome()
   const homeId = resolution?.state === 'ready' ? resolution.home.id : undefined
+  const createKey = useRef<string | null>(null)
+  const [selectedBackup, setSelectedBackup] = useState<BackupSummary>()
   const backups = useQuery({ queryKey: ['backups'], queryFn: () => request('/api/v1/backups', {}, adaptBackups) })
   const requests = useQuery({
     queryKey: ['backup-requests'],
-    queryFn: () => request<Array<{ id: string; operation: string; status: string; maintenance_required: boolean }>>('/api/v1/backup-requests'),
+    queryFn: () => request<Array<{ id: string; operation: string; status: string; backup_id?: string; maintenance_required: boolean }>>('/api/v1/backup-requests'),
     refetchInterval: 10_000,
   })
   const exports = useQuery({ queryKey: ['exports'], queryFn: () => request<Record<string, unknown>[]>('/api/v1/exports') })
@@ -552,26 +556,106 @@ function DataSettings() {
     mutationFn: () => request('/api/v1/admin/logs/exports', json('POST', {})),
   })
   const submit = useMutation({
-    mutationFn: ({ operation, backupId }: { operation: 'create' | 'restore_preflight'; backupId?: string }) => request('/api/v1/backup-requests', json('POST', {
+    mutationFn: ({ operation, backupId, idempotencyKey }: { operation: 'create' | 'restore_preflight'; backupId?: string; idempotencyKey: string }) => request('/api/v1/backup-requests', json('POST', {
       operation,
       backup_id: backupId,
       confirmation: operation === 'restore_preflight' ? 'VERIFY RESTORE' : undefined,
-      idempotency_key: crypto.randomUUID(),
+      idempotency_key: idempotencyKey,
     })),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ['backup-requests'] })
       await client.invalidateQueries({ queryKey: ['backups'] })
     },
+    onSettled: () => {
+      createKey.current = null
+    },
   })
+  const verify = useMutation({
+    mutationFn: (backupId: string) => request(
+      `/api/v1/backups/${backupId}/verify`,
+      json('POST', { idempotency_key: crypto.randomUUID() }),
+      (value) => adaptBackups([value])[0],
+    ),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['backup-requests'] })
+      await client.invalidateQueries({ queryKey: ['backups'] })
+    },
+  })
+  const remove = useMutation({
+    mutationFn: ({ backupId, shortId, reason }: { backupId: string; shortId: string; reason: string }) => request(
+      `/api/v1/backups/${backupId}`,
+      json('DELETE', {
+        confirmation: 'DELETE',
+        backup_id_confirmation: shortId,
+        reason,
+      }),
+      (value) => adaptBackups([value])[0],
+    ),
+    onSuccess: async () => {
+      setSelectedBackup(undefined)
+      await client.invalidateQueries({ queryKey: ['backup-requests'] })
+      await client.invalidateQueries({ queryKey: ['backups'] })
+    },
+  })
+  const activeRequests = requests.data?.filter((item) => ['queued', 'running'].includes(item.status)) ?? []
+  const operationPending = submit.isPending || verify.isPending || remove.isPending || activeRequests.length > 0
+  const verifiedCount = backups.data?.filter((backup) => backup.verifiedAt && !backup.deletedAt).length ?? 0
+  const requestDelete = (backup: BackupSummary) => {
+    if (backup.verifiedAt && verifiedCount <= 1) return
+    const word = prompt(`Type DELETE to remove backup ${backup.id.slice(0, 8)}. Audit history is preserved.`)
+    if (word !== 'DELETE') return
+    const shortId = prompt(`Type the backup ID prefix exactly: ${backup.id.slice(0, 8)}`)
+    if (shortId !== backup.id.slice(0, 8)) return
+    const reason = prompt('Reason for deletion (required):')
+    if (!reason || reason.trim().length < 3) return
+    remove.mutate({ backupId: backup.id, shortId, reason: reason.trim() })
+  }
+  const createBackup = () => {
+    if (operationPending || createKey.current) return
+    createKey.current = crypto.randomUUID()
+    submit.mutate({
+      operation: 'create',
+      idempotencyKey: createKey.current,
+    })
+  }
   return (
     <>
-      <Surface title="Data & Backups" subtitle="Local PostgreSQL backups with verification and retention." action={<button className="button primary" type="button" disabled={submit.isPending} onClick={() => { submit.mutate({ operation: 'create' }); }}><DatabaseBackup /> Back up now</button>}>
+      <Surface title="Data & Backups" subtitle="Local PostgreSQL backups with isolated restore verification and protected retention." action={<button className="button primary" type="button" disabled={operationPending} onClick={createBackup}><DatabaseBackup /> Back up now</button>}>
         <InlineNotice>Nightly backups are created by the isolated backup service. Restore always begins with an automated verification preflight.</InlineNotice>
         {submit.isSuccess && <InlineNotice tone="success">Request queued for the isolated backup service.</InlineNotice>}
-        {submit.error && <InlineNotice tone="danger">{submit.error.message}</InlineNotice>}
-        {requests.data?.filter((item) => ['queued', 'running'].includes(item.status)).map((item) => <div className="list-row" key={item.id}><RefreshCw className="spin" /><span><strong>{item.operation === 'create' ? 'Creating verified backup' : 'Checking restore readiness'}</strong><small>The isolated backup service is processing this request.</small></span><span className="pill">{item.status}</span></div>)}
-        {backups.isLoading ? <LoadingState /> : backups.data?.length ? backups.data.map((backup) => <div className="list-row" key={backup.id}><DatabaseBackup /><span><strong>{new Date(backup.createdAt).toLocaleString()}</strong><small>{backup.verifiedAt ? `Verified ${relativeTime(backup.verifiedAt)}` : 'Awaiting verification'}{backup.sizeBytes ? ` · ${fileSize(backup.sizeBytes)}` : ''}</small></span><span className={`pill ${backup.verifiedAt ? 'success' : 'warning'}`}>{backup.status}</span><button className="button secondary" type="button" disabled={!backup.verifiedAt || submit.isPending} onClick={() => { if (confirm('Verify this backup again and prepare a restore maintenance checkpoint? No live data will be overwritten.')) submit.mutate({ operation: 'restore_preflight', backupId: backup.id }); }}>Restore</button></div>) : <EmptyState title="No backup record yet" message="The scheduled backup service records its first verified run after deployment." />}
+        {(submit.error || verify.error || remove.error) && <InlineNotice tone="danger">{submit.error?.message ?? verify.error?.message ?? remove.error?.message}</InlineNotice>}
+        {activeRequests.map((item) => <div className="list-row" key={item.id}><RefreshCw className="spin" /><span><strong>{backupOperationLabel(item.operation)}</strong><small>The isolated backup service is processing one global backup operation.</small></span><span className="pill">{item.status === 'queued' ? 'Queued' : 'Running'}</span></div>)}
+        {backups.isLoading ? <LoadingState /> : backups.data?.length ? backups.data.map((backup) => {
+          const canDelete = backupDeleteEligible(backup.status) && !(backup.verifiedAt && verifiedCount <= 1)
+          return (
+            <div className="list-row backup-row" key={backup.id}>
+              <DatabaseBackup />
+              <span>
+                <strong>{new Date(backup.createdAt).toLocaleString()}</strong>
+                <small>
+                  {backupStatusDescription(backup)}
+                  {backup.sizeBytes !== undefined ? ` · ${fileSize(backup.sizeBytes)}` : ''}
+                </small>
+              </span>
+              <span className={`pill ${backupStatusTone(backup.status)}`}>{backupStatusLabel(backup.status)}</span>
+              <div className="inline-actions">
+                <button className="button secondary compact" type="button" onClick={() => { setSelectedBackup(backup); }}>Details</button>
+                {['completed_unverified', 'verification_failed'].includes(backup.status) && <button className="button secondary compact" type="button" disabled={operationPending} onClick={() => { verify.mutate(backup.id); }}>{backup.status === 'verification_failed' ? 'Retry verification' : 'Verify now'}</button>}
+                {backup.status === 'verified' && <>
+                  <button className="button secondary compact" type="button" disabled={operationPending} onClick={() => { verify.mutate(backup.id); }}>Verify again</button>
+                  <button className="button secondary compact" type="button" disabled={operationPending} onClick={() => {
+                    if (confirm('Run a fresh isolated restore verification and prepare a restore maintenance checkpoint? Production data will not be overwritten.')) {
+                      submit.mutate({ operation: 'restore_preflight', backupId: backup.id, idempotencyKey: crypto.randomUUID() })
+                    }
+                  }}>Restore</button>
+                </>}
+                {backupDeleteEligible(backup.status) && <button className="button danger compact" type="button" disabled={operationPending || !canDelete} title={!canDelete ? 'The last verified backup is protected' : undefined} onClick={() => { requestDelete(backup); }}><Trash2 /> {backup.status === 'deletion_failed' ? 'Retry cleanup' : 'Delete'}</button>}
+              </div>
+            </div>
+          )
+        }) : <EmptyState title="No backup record yet" message="The scheduled backup service records its first verified run after deployment." />}
       </Surface>
+      {selectedBackup && <BackupDetails backup={selectedBackup} onClose={() => { setSelectedBackup(undefined); }} />}
       <Surface title="Exports" subtitle="Download server-generated history and audit files.">
         <div className="list-row"><Gauge /><span><strong>{exports.data?.length ?? 0} export jobs</strong><small>Generated files remain local to this server.</small></span></div>
         <div className="inline-actions"><button className="button secondary" type="button" disabled={createExport.isPending || !homeId} onClick={() => { createExport.mutate(); }}>Export usage</button><button className="button secondary" type="button" disabled={createLogs.isPending} onClick={() => { createLogs.mutate(); }}>Download logs</button></div>
@@ -580,6 +664,88 @@ function DataSettings() {
       </Surface>
     </>
   )
+}
+
+const BACKUP_STATUS_LABELS: Record<string, string> = {
+  queued: 'Queued',
+  creating: 'Creating backup',
+  completed_unverified: 'Verification pending',
+  verification_queued: 'Verification queued',
+  verifying: 'Verifying',
+  verified: 'Verified',
+  backup_failed: 'Backup failed',
+  verification_failed: 'Verification failed',
+  deleting: 'Deleting',
+  deletion_failed: 'Deletion failed',
+  deleted: 'Deleted',
+  restore_preflight: 'Restore preflight',
+  restoring: 'Restoring',
+  restore_failed: 'Restore failed',
+}
+
+function backupStatusLabel(status: string) {
+  return BACKUP_STATUS_LABELS[status] ?? 'Unknown'
+}
+
+function backupStatusTone(status: string) {
+  if (status === 'verified') return 'success'
+  if (['backup_failed', 'verification_failed', 'deletion_failed', 'restore_failed'].includes(status)) return 'danger'
+  if (status === 'deleted') return ''
+  return 'warning'
+}
+
+function backupStatusDescription(backup: BackupSummary) {
+  if (backup.safeErrorSummary) return backup.safeErrorSummary
+  if (backup.verifiedAt) return `Verified ${relativeTime(backup.verifiedAt)}`
+  if (backup.status === 'deleted') return 'Artifacts removed; audit history retained'
+  return backupStatusLabel(backup.status)
+}
+
+function backupOperationLabel(operation: string) {
+  return {
+    create: 'Creating backup',
+    verify: 'Verifying backup',
+    restore_preflight: 'Checking restore readiness',
+    delete: 'Deleting backup',
+  }[operation] ?? 'Processing backup'
+}
+
+function backupDeleteEligible(status: string) {
+  return ['verified', 'completed_unverified', 'verification_failed', 'backup_failed', 'deletion_failed'].includes(status)
+}
+
+function BackupDetails({ backup, onClose }: { backup: BackupSummary; onClose: () => void }) {
+  const details = backup.verificationDetails
+  return (
+    <ModalLayer onRequestClose={onClose}>
+      <section className="modal-card backup-details-dialog" role="dialog" aria-modal="true" aria-labelledby="backup-details-title">
+        <header><div><small>Local restore point</small><h2 id="backup-details-title">Backup details</h2></div><button className="icon-button" type="button" aria-label="Close backup details" onClick={onClose}>×</button></header>
+        <dl className="detail-list">
+          <dt>Backup ID</dt><dd>{backup.id}</dd>
+          <dt>Created</dt><dd>{new Date(backup.createdAt).toLocaleString()}</dd>
+          <dt>Completed</dt><dd>{backup.completedAt ? new Date(backup.completedAt).toLocaleString() : 'Not completed'}</dd>
+          <dt>Verified</dt><dd>{backup.verifiedAt ? new Date(backup.verifiedAt).toLocaleString() : 'Not verified'}</dd>
+          <dt>Status</dt><dd>{backupStatusLabel(backup.status)}</dd>
+          <dt>Size</dt><dd>{fileSize(backup.sizeBytes)}</dd>
+          <dt>Encryption</dt><dd>{backup.encrypted ? 'Encrypted' : 'Not encrypted'}</dd>
+          <dt>Manifest fingerprint</dt><dd>{backup.manifestFingerprint ?? 'Unavailable'}</dd>
+          <dt>Verification attempts</dt><dd>{backup.verificationAttempts}</dd>
+          <dt>Migration revision</dt><dd>{backupDetailValue(details.migration_revision)}</dd>
+          <dt>Table count</dt><dd>{backupDetailValue(details.table_count)}</dd>
+          {backup.failedStage && <><dt>Failed stage</dt><dd>{backup.failedStage}</dd></>}
+          {backup.safeErrorCode && <><dt>Error code</dt><dd>{backup.safeErrorCode}</dd></>}
+          {backup.safeErrorSummary && <><dt>Safe error</dt><dd>{backup.safeErrorSummary}</dd></>}
+        </dl>
+        <footer><button className="button secondary" type="button" onClick={onClose}>Close</button></footer>
+      </section>
+    </ModalLayer>
+  )
+}
+
+function backupDetailValue(value: unknown) {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+    ? String(value)
+    : 'Unavailable'
 }
 
 function AdvancedSettings() {

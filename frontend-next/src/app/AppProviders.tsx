@@ -3,6 +3,7 @@ import { StrictMode, type ReactNode } from 'react'
 import { BrowserRouter } from './router'
 import { AppearanceProvider } from '../state/AppearanceContext'
 import { AuthProvider } from '../state/AuthContext'
+import { SecondClockProvider } from '../state/SecondClockContext'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,7 +18,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <AppearanceProvider>
           <BrowserRouter>
-            <AuthProvider>{children}</AuthProvider>
+            <SecondClockProvider>
+              <AuthProvider>{children}</AuthProvider>
+            </SecondClockProvider>
           </BrowserRouter>
         </AppearanceProvider>
       </QueryClientProvider>

@@ -1,10 +1,42 @@
 # Testing and release gates
 
+## Backup lifecycle and presentation gate (2026-07-30)
+
+The portable backend/simulator suite passes 211 tests with three separately
+gated scenarios skipped. Ruff lint/format, strict mypy, OpenAPI/contracts,
+static Compose, and the TrueNAS template validator pass. The greenfield
+frontend passes lint, TypeScript, 74 unit/component tests, the production
+bundle check, and 131 applicable Playwright tests with 25 intentional
+project/viewport skips.
+
+An isolated PostgreSQL 17 deployment created and automatically verified backup
+run `26716a4c-cefe-4447-b000-68e988fce8aa`. Verification checked every artifact
+and manifest hash, restored into a uniquely named clean database, confirmed
+Alembic `20260730_0019`, 98 public tables, all five required tables, and three
+status-layout revisions, then dropped the temporary database. A second verified
+backup was explicitly deleted through the API: the database state, audit event,
+and removal of 357,458 bytes of storage were independently confirmed. No
+`pm_verify_%` database remained.
+
+Browser regressions prove the backup screen is read-only until an explicit
+action, duplicate backup requests are guarded, verification/deletion require
+confirmation, one shared local clock advances receipt ages without one-second
+network traffic, `0.8 W` is preserved, and History coverage is rendered as
+`60.34%`. Reviewed captures are:
+
+- `docs/screenshots/data-backups-repaired.png`
+- `docs/screenshots/home-live-receipt-precision.png`
+- `docs/screenshots/history-coverage-formatting.png`
+
+The physical PZEM was unavailable during this gate, so a real attached-sensor
+`0.8 W` observation remains a required hardware acceptance step; the automated
+path uses deterministic API data and is not represented as physical proof.
+
 ## Live sensor pipeline acceptance (2026-07-29)
 
 The portable backend/simulator run passes 203 tests. The separately gated
 PostgreSQL 17 migration test passes populated upgrade, downgrade/re-upgrade,
-prior-schema upgrade, and clean install at Alembic `20260729_0018`. The
+prior-schema upgrade, and clean install at Alembic `20260730_0019`. The
 100-device gate accepts and deduplicates 18,000 readings. Ruff lint/format,
 strict mypy, generated OpenAPI, contracts, static Compose, and the TrueNAS
 template and rendered-deployment validators pass.
@@ -17,7 +49,7 @@ tablet, and mobile layouts, including power, voltage, current, frequency, and
 power factor.
 
 Fresh API, frontend, and backup images build successfully. The standard stack
-is healthy at migration head `20260729_0018`. The isolated seven-service
+is healthy at migration head `20260730_0019`. The isolated seven-service
 TrueNAS-equivalent deployment passes one-shot migration, signed three-device
 heartbeats, 90 durable historical readings, SCE calculation, internal-CA TLS,
 gateway-only port publication, encrypted/checksummed backup, and clean
@@ -661,7 +693,7 @@ docker compose up -d --wait
 docker compose ps
 docker compose exec api alembic current
 docker compose --profile tools run --rm backup /srv/scripts/backup-container.sh
-docker compose --profile tools run --rm backup /srv/scripts/verify-backup-container.sh /data/backups/<backup-directory>
+docker compose --profile tools run --rm backup /srv/scripts/verify-backup-container.sh <backup-run-uuid>
 ```
 
 The original 2026-07-20 Docker release run rebuilt the API, frontend, and backup images,

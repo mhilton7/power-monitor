@@ -54,6 +54,8 @@ export interface HomeSummary {
   activeAlerts: number
   recentPeakW?: string
   latestDataAt?: string
+  latestReceivedAt?: string
+  serverNow?: string
   coveragePercent?: string
   hasLiveData: boolean
   hasEnergyData: boolean
@@ -579,10 +581,23 @@ export interface PermissionOption {
 export interface BackupSummary {
   id: string
   createdAt: string
+  completedAt?: string
   status: string
   verifiedAt?: string
   sizeBytes?: number
   encrypted: boolean
+  manifestFingerprint?: string
+  verificationStartedAt?: string
+  verificationCompletedAt?: string
+  verificationAttempts: number
+  verificationDetails: Record<string, unknown>
+  failedStage?: string
+  safeErrorCode?: string
+  safeErrorSummary?: string
+  exitCode?: number
+  deletedAt?: string
+  deletionReason?: string
+  artifactRemovalResult?: string
 }
 
 export interface AdvancedHealthSummary {

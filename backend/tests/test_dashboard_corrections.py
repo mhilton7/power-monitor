@@ -401,7 +401,7 @@ async def test_live_measurement_is_consistent_between_devices_and_fleet(
         "measured_at": datetime.now(UTC).isoformat(),
         "voltage_v": "120.4",
         "current_a": "0.01",
-        "power_w": "1.0",
+        "power_w": "0.8",
         "power_factor": "0.83",
         "frequency_hz": "60.0",
         "energy_wh": "10",
@@ -430,18 +430,21 @@ async def test_live_measurement_is_consistent_between_devices_and_fleet(
     assert fleet_response.status_code == 200, fleet_response.text
     device = next(item for item in devices_response.json() if item["id"] == device_id)
     fleet = fleet_response.json()
-    assert Decimal(device["current_watts"]) == Decimal("1.0")
+    assert Decimal(device["current_watts"]) == Decimal("0.8")
     assert Decimal(device["voltage_volts"]) == Decimal("120.4")
     assert Decimal(device["current_amps"]) == Decimal("0.01")
     assert Decimal(device["frequency_hz"]) == Decimal("60.0")
     assert Decimal(device["power_factor"]) == Decimal("0.83")
     assert device["measurement_freshness"] == "live"
     assert device["latest_measurement_at"] is not None
-    assert Decimal(fleet["current_load_w"]) == Decimal("1.0")
+    assert device["measurement_received_at"] is not None
+    assert Decimal(fleet["current_load_w"]) == Decimal("0.8")
     assert fleet["reporting_devices"] == 1
     assert fleet["has_live_data"] is True
     assert fleet["latest_data_at"] is not None
     assert fleet["latest_measurement_at"] == fleet["latest_data_at"]
+    assert fleet["latest_received_at"] == device["measurement_received_at"]
+    assert fleet["server_now"] is not None
 
     interval_end = datetime.now(UTC)
     interval_start = interval_end - timedelta(minutes=1)

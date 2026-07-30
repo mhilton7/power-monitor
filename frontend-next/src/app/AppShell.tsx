@@ -21,8 +21,9 @@ import { useAppearance } from '../state/AppearanceContext'
 import { useAuth } from '../state/AuthContext'
 import { useLiveHome } from '../state/LiveHomeContext'
 import { useSingleHome } from '../state/SingleHomeContext'
-import { power, relativeTime } from '../utils/format'
+import { power } from '../utils/format'
 import { AlertDrawer } from '../features/alerts/AlertDrawer'
+import { ElapsedTime } from '../components/data-display/ElapsedTime'
 import { StatusDot } from '../components/data-display/Surface'
 import { DropdownMenu, DropdownMenuItem } from '../components/overlays/DropdownMenu'
 import { ConfigurationStatusChip } from '../features/configuration/ConfigurationStatusSurface'
@@ -93,7 +94,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="live-facts" aria-label="Current home status">
           <div><Gauge aria-hidden="true" /><span><small>Live data</small><StatusDot state={liveState} label={summary?.hasLiveData ? 'Live' : 'Waiting'} /></span></div>
           <div><Zap aria-hidden="true" /><span><small>Current load</small><strong>{power(summary?.currentPowerW)}</strong></span></div>
-          <div className="freshness"><Clock3 aria-hidden="true" /><span><small>Last data</small><strong>{relativeTime(summary?.latestDataAt)}</strong></span></div>
+          <div className="freshness"><Clock3 aria-hidden="true" /><span><small>Last data</small><strong><ElapsedTime timestamp={summary?.latestReceivedAt} serverNow={summary?.serverNow} /></strong></span></div>
         </div>
         <div className="top-actions">
           <ConfigurationStatusChip status={configuration} className="top-configuration-status" />

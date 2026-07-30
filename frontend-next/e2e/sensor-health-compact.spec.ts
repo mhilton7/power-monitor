@@ -20,12 +20,13 @@ function sensor(
     id,
     name,
     status: 'online_synchronized',
-    current_watts: '1.0',
+    current_watts: '0.8',
     voltage_volts: '116.3',
     current_amps: '0.00',
     frequency_hz: '60.0',
     power_factor: '0.00',
     latest_measurement_at: new Date().toISOString(),
+    measurement_received_at: new Date().toISOString(),
     last_seen_at: new Date().toISOString(),
     measurement_source: 'heartbeat_live',
     measurement_freshness: 'live',
@@ -72,13 +73,15 @@ async function mockHome(page: Page, sensors: Record<string, unknown>[]) {
         assignment: null,
       },
       '/api/v1/fleet/summary': {
-        current_load_w: '1.0',
+        current_load_w: '0.8',
         energy_today_kwh: '0',
         estimated_cost_today: '0',
         reporting_devices: 1,
         active_alerts: 0,
-        recent_peak_w: '1.0',
+        recent_peak_w: '0.8',
         latest_data_at: new Date().toISOString(),
+        latest_received_at: new Date().toISOString(),
+        server_now: new Date().toISOString(),
         has_live_data: true,
         has_energy_data: false,
         has_cost_data: false,
@@ -145,7 +148,7 @@ test('Sensor Health renders one compact accessible measurement strip per sensor'
   await expect(card.getByLabel('Power measurement invalid')).toHaveText('—')
   await expect(card.getByLabel('Power factor measurement invalid')).toHaveText('—')
   await expect(card.getByLabel('Current, 0.00 A')).toHaveCount(2)
-  await expect(card.getByText('Last reading Jul 29, 2023')).toBeVisible()
+  await expect(card.getByText(/Received \d+s ago/)).toHaveCount(2)
   await expect(card.getByRole('link', { name: 'Manage' })).toHaveCSS('white-space', 'nowrap')
   await expect(card).toHaveScreenshot('sensor-health-compact-multiple.png')
 
@@ -169,12 +172,51 @@ test('one-sensor Sensor Health remains compact without horizontal overflow', asy
     scrollWidth: element.scrollWidth,
   }))
   expect(geometry.scrollWidth - geometry.clientWidth).toBeLessThanOrEqual(1)
+  await expect(page.getByText('0.8 W')).toHaveCount(4)
+  await expect(page.getByText('1 W', { exact: true })).toHaveCount(0)
 
   if (process.env.UPDATE_SENSOR_HEALTH_DOCS === '1' && testInfo.project.name === 'mobile') {
     await card.screenshot({
       path: path.resolve('..', 'docs', 'screenshots', 'sensor-health-after-mobile.png'),
     })
   }
+  if (process.env.UPDATE_BACKUP_LIVE_DOCS === '1' && testInfo.project.name === 'desktop') {
+    await page.screenshot({
+      path: path.resolve('..', 'docs', 'screenshots', 'home-live-receipt-precision.png'),
+      fullPage: true,
+    })
+  }
+})
+
+test('one shared local timer advances Home and sensor receipt ages without one-second requests', async ({ page }) => {
+  const now = Date.now()
+  const receivedAt = new Date(now - 1_000).toISOString()
+  const requests: string[] = []
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/')) requests.push(request.url())
+  })
+  await mockHome(page, [
+    sensor('sensor-1', 'Indoor-AC', {
+      latest_measurement_at: receivedAt,
+      measurement_received_at: receivedAt,
+      last_seen_at: receivedAt,
+    }),
+  ])
+  await page.goto('/home')
+
+  const homeAge = page.locator('[data-metric-identity="home.last_data"]')
+  const sensorAge = page.locator('.sensor-health-row', { hasText: 'Indoor-AC' })
+  await expect(homeAge).toContainText(/\d+s ago/)
+  await expect(sensorAge).toContainText(/Received \d+s ago/)
+  const initialHomeSeconds = elapsedSeconds(await homeAge.innerText())
+  const initialSensorSeconds = elapsedSeconds(await sensorAge.innerText())
+  const requestCount = requests.length
+  await page.waitForTimeout(2_100)
+  const laterHomeSeconds = elapsedSeconds(await homeAge.innerText())
+  const laterSensorSeconds = elapsedSeconds(await sensorAge.innerText())
+  expect(laterHomeSeconds).toBeGreaterThan(initialHomeSeconds)
+  expect(laterSensorSeconds).toBeGreaterThan(initialSensorSeconds)
+  expect(requests.length).toBe(requestCount)
 })
 
 test('compact strips remain within two lines across the required viewport and zoom matrix', async ({ page }, testInfo) => {
@@ -228,3 +270,9 @@ test('compact strips remain within two lines across the required viewport and zo
     ).toBeLessThanOrEqual(2)
   }
 })
+
+function elapsedSeconds(text: string): number {
+  const match = text.match(/(\d+)s ago/)
+  if (!match) throw new Error(`Expected a seconds-level elapsed label, received: ${text}`)
+  return Number(match[1])
+}

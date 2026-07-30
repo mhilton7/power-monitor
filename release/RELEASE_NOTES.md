@@ -1,5 +1,20 @@
 # Power Monitor Server 1.0.0
 
+## Verified backups and precise live-data presentation
+
+- Replaces restart-sensitive, in-memory backup scheduling with database-backed,
+  idempotent create/verify jobs and reconciles interrupted or orphaned runs.
+- Adds explicit backup verification and protected deletion APIs and UI, atomic
+  publication, manifest/checksum validation, PostgreSQL 17 test restoration,
+  encryption-aware verification, retention safety, and audited lifecycle
+  metadata without exposing host paths.
+- Uses one application-level one-second clock for receipt-age labels, based on
+  the server receipt timestamp and server clock, without one-second API traffic.
+- Preserves fractional live power such as `0.8 W`, distinguishes missing values
+  from measured zero, and limits History coverage percentages to two decimals.
+- Adds append-only Alembic revision `20260730_0019`, regenerated contracts,
+  responsive visual regressions, and TrueNAS backup/recovery documentation.
+
 ## Authoritative live sensor measurements
 
 - Resolves heartbeat and committed-reading data through one validated,

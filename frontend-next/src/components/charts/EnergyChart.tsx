@@ -11,7 +11,7 @@ import {
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import type { HistoryPoint } from '../../types/models'
-import { energy, money, power } from '../../utils/format'
+import { energy, money, percentage, power } from '../../utils/format'
 
 ChartJS.register(CategoryScale, LinearScale, TimeScale, PointElement, LineElement, Filler, Tooltip, Legend)
 
@@ -95,7 +95,7 @@ export function EnergyChart({
                       point.period ? `Period: ${point.period}` : '',
                       point.tier ? `Tier: ${point.tier}` : '',
                       point.rate ? `Rate: ${point.rate}/kWh` : '',
-                      `Coverage: ${point.coveragePercent}%`,
+                      `Coverage: ${percentage(point.coveragePercent)}`,
                     ].filter(Boolean)
                   },
                 },
@@ -123,7 +123,7 @@ export function EnergyChart({
                   <td>{point.missing ? 'Missing' : energy(point.energyKwh)}</td>
                   <td>{point.missing ? 'Missing' : money(point.cost, currency)}</td>
                   <td>{[point.tier, point.period].filter(Boolean).join(' · ') || 'Not available'}</td>
-                  <td>{point.coveragePercent}%</td>
+                  <td>{percentage(point.coveragePercent)}</td>
                 </tr>
               ))}
             </tbody>

@@ -12,7 +12,7 @@ import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
 import { useTestMode } from '../../state/TestModeContext'
 import type { HistoryFilters, HistoryMetric, HistoryRange, HistoryScope } from '../../types/models'
-import { energy, money, number, power, rate } from '../../utils/format'
+import { energy, money, percentage, power, rate } from '../../utils/format'
 
 const ranges: Array<{ value: HistoryRange; label: string }> = [
   { value: 'today', label: 'Today' },
@@ -140,7 +140,7 @@ export function HistoryPage() {
           {Number(history.data.coveragePercent) < 99 && (
             <InlineNotice tone="warning">
               <AlertTriangle size={17} />
-              Coverage is {number(history.data.coveragePercent, 1)}%. Missing readings remain gaps and are not replaced with zero.
+              Coverage is {percentage(history.data.coveragePercent)}. Missing readings remain gaps and are not replaced with zero.
             </InlineNotice>
           )}
           {history.data.warnings.map((warning) => <InlineNotice key={warning} tone="warning">{warning}</InlineNotice>)}
@@ -150,7 +150,7 @@ export function HistoryPage() {
               <Metric label="Estimated cost" value={money(history.data.cost, home.currency)} identity="history.cost" detail="Interval energy charges" />
               <Metric label="Blended rate" value={rate(history.data.blendedRate, home.currency)} identity="history.blended_rate" />
               <Metric label="Peak power" value={power(history.data.peakPowerW)} identity="history.peak_power" />
-              <Metric label="Coverage" value={`${number(history.data.coveragePercent, 1)}%`} identity="data.coverage" />
+              <Metric label="Coverage" value={percentage(history.data.coveragePercent)} identity="data.coverage" />
             </StatGrid>
           </Surface>
           <Surface title="Energy over time" subtitle="Tier and time-of-use context is available in each interval tooltip.">

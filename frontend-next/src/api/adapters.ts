@@ -529,6 +529,8 @@ export function adaptHomeSummary(
     recentPeakW: optionalString(fleet.recent_peak_w),
     latestDataAt: optionalString(fleet.latest_data_at)
       ?? optionalString(fleet.latest_measurement_at),
+    latestReceivedAt: optionalString(fleet.latest_received_at),
+    serverNow: optionalString(fleet.server_now),
     coveragePercent: optionalString(fleet.coverage_percent),
     hasLiveData: booleanValue(fleet.has_live_data),
     hasEnergyData: booleanValue(fleet.has_energy_data),
@@ -818,14 +820,32 @@ export function adaptPermissions(value: unknown): PermissionOption[] {
 }
 
 export function adaptBackups(value: unknown): BackupSummary[] {
-  return records(value, 'backups').map((backup) => ({
-    id: stringValue(backup.id),
-    createdAt: stringValue(backup.started_at, stringValue(backup.created_at)),
-    status: stringValue(backup.status, 'unknown'),
-    verifiedAt: optionalString(backup.verified_at),
-    sizeBytes: typeof backup.size_bytes === 'number' ? backup.size_bytes : undefined,
-    encrypted: booleanValue(backup.encrypted),
-  }))
+  return records(value, 'backups').map((backup) => {
+    const verificationDetails = backup.verification_details
+      ? record(backup.verification_details, 'backup verification details')
+      : {}
+    return {
+      id: stringValue(backup.id),
+      createdAt: stringValue(backup.started_at, stringValue(backup.created_at)),
+      completedAt: optionalString(backup.completed_at),
+      status: stringValue(backup.status, 'unknown'),
+      verifiedAt: optionalString(backup.verified_at),
+      sizeBytes: typeof backup.size_bytes === 'number' ? backup.size_bytes : undefined,
+      encrypted: booleanValue(backup.encrypted),
+      manifestFingerprint: optionalString(backup.manifest_hash),
+      verificationStartedAt: optionalString(backup.verification_started_at),
+      verificationCompletedAt: optionalString(backup.verification_completed_at),
+      verificationAttempts: numberValue(backup.verification_attempt_count),
+      verificationDetails,
+      failedStage: optionalString(backup.failed_stage),
+      safeErrorCode: optionalString(backup.safe_error_code),
+      safeErrorSummary: optionalString(backup.safe_error_summary),
+      exitCode: typeof backup.exit_code === 'number' ? backup.exit_code : undefined,
+      deletedAt: optionalString(backup.deleted_at),
+      deletionReason: optionalString(backup.deletion_reason),
+      artifactRemovalResult: optionalString(backup.artifact_removal_result),
+    }
+  })
 }
 
 export function adaptHealth(value: unknown): AdvancedHealthSummary {

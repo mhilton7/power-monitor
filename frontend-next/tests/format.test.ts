@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   current,
   energy,
+  elapsedSince,
   fileSize,
   frequency,
   money,
   power,
   powerFactor,
+  percentage,
   rate,
   sensorMeasurementTime,
   statusLabel,
@@ -34,6 +36,62 @@ describe('centralized display formatting', () => {
     expect(powerFactor('0.83')).toBe('0.83')
     expect(powerFactor(undefined)).toBe('—')
     expect(current('-0')).toBe('0.00 A')
+  })
+
+  it.each([
+    [0, '0 W'],
+    [0.04, '0.04 W'],
+    [0.8, '0.8 W'],
+    [1, '1 W'],
+    [1.25, '1.25 W'],
+    [9.99, '9.99 W'],
+    [10, '10 W'],
+    [12.4, '12.4 W'],
+    [999.5, '999.5 W'],
+    [1000, '1 kW'],
+    [1250, '1.25 kW'],
+  ])('preserves useful power precision for %s', (value, expected) => {
+    expect(power(value)).toBe(expected)
+  })
+
+  it('rejects missing or non-finite power without fabricating zero', () => {
+    expect(power(null)).toBe('—')
+    expect(power(undefined)).toBe('—')
+    expect(power(Number.NaN)).toBe('—')
+    expect(power(Number.POSITIVE_INFINITY)).toBe('—')
+    expect(power(-0)).toBe('0 W')
+  })
+
+  it.each([
+    ['60.3444444444444', '60.34%'],
+    ['60.3', '60.3%'],
+    ['60', '60%'],
+    ['0', '0%'],
+    ['99.999', '100%'],
+    ['100', '100%'],
+    ['100.00000000001', '100%'],
+  ])('formats coverage %s as %s', (value, expected) => {
+    expect(percentage(value)).toBe(expected)
+  })
+
+  it.each([null, undefined, Number.NaN, Number.POSITIVE_INFINITY, -1, 101])(
+    'rejects invalid coverage %s',
+    (value) => {
+      expect(percentage(value)).toBe('—')
+    },
+  )
+
+  it('formats elapsed receipt age from an authoritative server baseline', () => {
+    const observed = Date.parse('2026-07-30T12:00:00Z')
+    expect(elapsedSince('2026-07-30T12:00:00Z', observed, '2026-07-30T12:00:00Z', observed))
+      .toBe('Just now')
+    expect(elapsedSince('2026-07-30T11:59:56Z', observed + 1_000, '2026-07-30T12:00:00Z', observed))
+      .toBe('5s ago')
+    expect(elapsedSince('2026-07-30T11:58:56Z', observed, '2026-07-30T12:00:00Z', observed))
+      .toBe('1m 4s ago')
+    expect(elapsedSince(undefined, observed)).toBe('Waiting for data')
+    expect(elapsedSince('not-a-date', observed)).toBe('Invalid timestamp')
+    expect(elapsedSince('2026-07-30T12:01:00Z', observed)).toBe('Invalid timestamp')
   })
 
   it('keeps sensor timestamps readable without five-digit hour counts', () => {

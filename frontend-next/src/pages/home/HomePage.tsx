@@ -16,6 +16,7 @@ import { Link } from '../../app/router'
 import { adaptHistory } from '../../api/adapters'
 import { json, request } from '../../api/client'
 import { EnergyChart } from '../../components/charts/EnergyChart'
+import { ElapsedTime } from '../../components/data-display/ElapsedTime'
 import { Metric, StatusDot, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, LoadingState } from '../../components/feedback/States'
 import { Page, PageHeader, StatGrid } from '../../components/layout/Layout'
@@ -33,7 +34,6 @@ import {
   money,
   power,
   rate,
-  relativeTime,
   statusLabel,
 } from '../../utils/format'
 
@@ -72,7 +72,7 @@ export function HomePage() {
         <StatGrid className="home-status-grid">
           <Metric label="Live data" value="Not connected" identity="home.live_status" detail="Waiting for the first signed heartbeat" />
           <Metric label="Current load" value={power(summary.currentPowerW)} identity="home.current_load" detail="No reporting sensors" />
-          <Metric label="Last data" value={relativeTime(summary.latestDataAt)} identity="home.last_data" detail="Readings remain private on this server" />
+          <Metric label="Sensor data last received" value={<ElapsedTime timestamp={summary.latestReceivedAt} serverNow={summary.serverNow} />} identity="home.last_data" detail="Readings remain private on this server" />
           <Metric label="Current plan" value={summary.currentPlan ?? 'Not configured'} identity="home.current_plan" detail={summary.currentRate ? rate(summary.currentRate, home.currency) : 'Upload a bill or choose a plan'} />
         </StatGrid>
         <div className="home-onboarding-grid">
@@ -133,7 +133,7 @@ export function HomePage() {
       <StatGrid className="home-status-grid">
         <Metric label="Live data" value={summary.hasLiveData ? 'Connected' : 'Waiting'} identity="home.live_status" detail={`${summary.reportingSensors} of ${summary.totalSensors} sensors reporting`} />
         <Metric label="Sensors" value={`${summary.onlineSensors}/${summary.totalSensors}`} identity="home.sensor_status" detail={summary.attentionSensors ? `${summary.attentionSensors} need attention` : 'All sensors reporting'} />
-        <Metric label="Last data" value={relativeTime(summary.latestDataAt)} identity="home.last_data" detail={summary.hasLiveData ? 'Signed reading received' : 'Waiting for a fresh reading'} />
+        <Metric label="Sensor data last received" value={<ElapsedTime timestamp={summary.latestReceivedAt} serverNow={summary.serverNow} />} identity="home.last_data" detail={summary.hasLiveData ? 'Accepted by this server' : 'Waiting for a fresh reading'} />
         <Metric label="Current rate" value={rate(summary.currentRate, home.currency)} identity="home.current_rate" detail={summary.currentPeriod ?? summary.currentTier ?? summary.currentPlan ?? 'Plan not configured'} />
         <Metric label="Active alerts" value={summary.activeAlerts} identity="home.active_alerts" detail={summary.activeAlerts ? 'Review recommended' : 'Nothing needs attention'} />
       </StatGrid>
@@ -155,7 +155,7 @@ export function HomePage() {
           {appearance.showSensorsCard && <Surface className="sensor-health-card" title="Sensor health" subtitle={`${summary.onlineSensors} online · ${summary.attentionSensors} need attention`} action={<Link className="text-link" to="/settings/sensors">Manage <ArrowRight /></Link>}>
             <div className="sensor-peek">
               {sensors.slice(0, 4).map((sensor) => (
-                <SensorHealthEntry key={sensor.id} sensor={sensor} />
+                <SensorHealthEntry key={sensor.id} sensor={sensor} serverNow={summary.serverNow} />
               ))}
             </div>
           </Surface>}

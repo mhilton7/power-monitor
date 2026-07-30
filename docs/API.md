@@ -19,9 +19,19 @@ actionable readiness model used throughout the greenfield frontend. See
 `GET /api/v1/backup-requests` lists authorized request state and
 `POST /api/v1/backup-requests` queues either an idempotent `create` or a
 confirmed `restore_preflight` operation. Responses never contain secret values
-or dataset paths. The UID/GID 10003 backup scheduler claims these jobs and uses
-the existing encrypted backup/verification scripts; a live database restore is
-not exposed as a browser API.
+or dataset paths. `POST /api/v1/backups/{backup_id}/verify` idempotently queues
+verification for a completed or previously failed run. `DELETE
+/api/v1/backups/{backup_id}` requires `DELETE`, the matching ID prefix, and a
+reason; the final verified backup is protected. The UID/GID 10003 backup
+scheduler enforces one global operation, automatically queues a real temporary
+PostgreSQL restore after creation, and processes safe trash-first deletion. A
+live database restore is not exposed as a browser API.
+
+`GET /api/v1/fleet/summary` keeps measurement, receipt, heartbeat, and response
+time separate through `latest_measurement_at`, `latest_received_at`,
+`latest_heartbeat_at`, and `server_now`. The browser uses the receipt and server
+timestamps for its local elapsed-time display; it does not poll this route once
+per second.
 
 Guided utility-account APIs are under `/api/v1/admin/sites/{site_id}/utility-accounts` and
 `/api/v1/admin/utility-accounts/{account_id}`. Subresources provide immutable rate-assignment

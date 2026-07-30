@@ -1,14 +1,17 @@
-export function number(value: string | number | undefined, digits = 1): string {
+export function number(value: string | number | null | undefined, digits = 1): string {
+  if (value === null || value === undefined || value === '') return 'Unavailable'
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return 'Unavailable'
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(parsed)
 }
 
-export function power(value: string | number | undefined): string {
+export function power(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—'
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return '—'
-  if (Math.abs(parsed) >= 1000) return `${number(parsed / 1000, 2)} kW`
-  return `${number(parsed, 0)} W`
+  const normalized = Object.is(parsed, -0) ? 0 : parsed
+  if (Math.abs(normalized) >= 1000) return `${number(normalized / 1000, 2)} kW`
+  return `${number(normalized, 2)} W`
 }
 
 export function voltage(value: string | number | undefined): string {
@@ -85,6 +88,53 @@ export function relativeTime(value: string | undefined): string {
   const minutes = Math.round(seconds / 60)
   if (Math.abs(minutes) < 60) return formatter.format(minutes, 'minute')
   return formatter.format(Math.round(minutes / 60), 'hour')
+}
+
+const FUTURE_TIMESTAMP_TOLERANCE_MS = 5_000
+const VERY_OLD_TIMESTAMP_MS = 7 * 24 * 60 * 60 * 1_000
+
+export function elapsedSince(
+  value: string | undefined,
+  nowMs: number,
+  serverNow?: string,
+  observedAtMs = nowMs,
+): string {
+  if (!value) return 'Waiting for data'
+  const timestampMs = new Date(value).getTime()
+  const serverNowMs = serverNow ? new Date(serverNow).getTime() : Number.NaN
+  const effectiveNow = Number.isFinite(serverNowMs)
+    ? serverNowMs + Math.max(0, nowMs - observedAtMs)
+    : nowMs
+  if (!Number.isFinite(timestampMs) || timestampMs - effectiveNow > FUTURE_TIMESTAMP_TOLERANCE_MS) {
+    return 'Invalid timestamp'
+  }
+  const elapsedMs = Math.max(0, effectiveNow - timestampMs)
+  if (elapsedMs >= VERY_OLD_TIMESTAMP_MS) {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(timestampMs))
+  }
+  const seconds = Math.floor(elapsedMs / 1_000)
+  if (seconds < 1) return 'Just now'
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s ago`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ${minutes % 60}m ago`
+}
+
+export function percentage(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—'
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return '—'
+  const epsilon = 1e-9
+  if (parsed < 0 || parsed > 100 + epsilon) return '—'
+  const normalized = parsed > 100 ? 100 : Object.is(parsed, -0) ? 0 : parsed
+  return `${new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(normalized)}%`
 }
 
 export function sensorMeasurementTime(

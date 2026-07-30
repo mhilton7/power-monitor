@@ -285,6 +285,20 @@ PERMISSION_DEFINITIONS = (
     ),
     _permission("backups.create", "Backups and logs", "Create backups", "Request logical backups."),
     _permission(
+        "backups.verify",
+        "Backups and logs",
+        "Verify backups",
+        "Run an isolated restore verification for a completed backup.",
+        True,
+    ),
+    _permission(
+        "backups.delete",
+        "Backups and logs",
+        "Delete backups",
+        "Remove eligible backup artifacts while preserving audit history.",
+        True,
+    ),
+    _permission(
         "backups.restore", "Backups and logs", "Restore backups", "Restore a verified backup.", True
     ),
     _permission(
@@ -441,6 +455,8 @@ PERMISSION_DEPENDENCIES: dict[str, frozenset[str]] = {
     "costs.recalculate": frozenset({"costs.view"}),
     "usage_imports.manage": frozenset({"usage.view", "utility_accounts.view"}),
     "backups.restore": frozenset({"backups.view"}),
+    "backups.verify": frozenset({"backups.view"}),
+    "backups.delete": frozenset({"backups.view"}),
     "interface_text.manage": frozenset({"interface_text.view"}),
     "status_indicators.manage": frozenset({"status_indicators.view"}),
     "sites.manage": frozenset({"sites.view"}),

@@ -178,6 +178,8 @@
   .review-fields, .confirm-card dl { grid-template-columns: 1fr; }
   .missing-fields li { grid-template-columns: 1fr; }
   .modal-card { width: 100%; max-height: 100vh; height: 100%; border: 0; border-radius: 0; }
+  .backup-details-dialog .detail-list { grid-template-columns: 1fr; }
+  .backup-details-dialog .detail-list dd { margin-bottom: .5rem; }
   .permission-groups { grid-template-columns: 1fr; }
   .home-primary-onboarding { grid-template-columns: 1fr; min-height: auto; padding: var(--space-5); }
   .home-onboarding-icon { width: 4.5rem; }

@@ -3238,5 +3238,72 @@ UPDATE devices
 
 UPDATE alembic_version SET version_num='20260729_0018' WHERE alembic_version.version_num = '20260725_0017';
 
+-- Running upgrade 20260729_0018 -> 20260730_0019
+
+ALTER TABLE backup_runs ADD COLUMN requested_by VARCHAR(36);
+
+ALTER TABLE backup_runs ADD CONSTRAINT fk_backup_runs_requested_by FOREIGN KEY(requested_by) REFERENCES users (id) ON DELETE SET NULL;
+
+CREATE INDEX ix_backup_runs_requested_by ON backup_runs (requested_by);
+
+ALTER TABLE backup_runs ADD COLUMN trigger_type VARCHAR(24) DEFAULT 'manual' NOT NULL;
+
+ALTER TABLE backup_runs ADD COLUMN size_bytes BIGINT;
+
+ALTER TABLE backup_runs ADD COLUMN encrypted BOOLEAN DEFAULT false NOT NULL;
+
+ALTER TABLE backup_runs ADD COLUMN verification_started_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE backup_runs ADD COLUMN verification_completed_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE backup_runs ADD COLUMN verification_attempt_count INTEGER DEFAULT '0' NOT NULL;
+
+ALTER TABLE backup_runs ADD COLUMN failed_stage VARCHAR(80);
+
+ALTER TABLE backup_runs ADD COLUMN safe_error_code VARCHAR(80);
+
+ALTER TABLE backup_runs ADD COLUMN safe_error_summary VARCHAR(500);
+
+ALTER TABLE backup_runs ADD COLUMN exit_code INTEGER;
+
+ALTER TABLE backup_runs ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE;
+
+CREATE INDEX ix_backup_runs_deleted_at ON backup_runs (deleted_at);
+
+ALTER TABLE backup_runs ADD COLUMN deleted_by VARCHAR(36);
+
+ALTER TABLE backup_runs ADD CONSTRAINT fk_backup_runs_deleted_by FOREIGN KEY(deleted_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE backup_runs ADD COLUMN deletion_reason VARCHAR(500);
+
+ALTER TABLE backup_runs ADD COLUMN original_size_bytes BIGINT;
+
+ALTER TABLE backup_runs ADD COLUMN artifact_removal_result VARCHAR(80);
+
+ALTER TABLE backup_runs ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL;
+
+UPDATE backup_runs
+        SET status = CASE
+            WHEN status = 'running' THEN 'backup_failed'
+            WHEN status = 'failed' THEN 'backup_failed'
+            WHEN status = 'completed' AND verified_at IS NOT NULL THEN 'verified'
+            WHEN status = 'completed' THEN 'completed_unverified'
+            ELSE status
+        END,
+        safe_error_code = CASE
+            WHEN status = 'running' THEN 'INTERRUPTED_CREATE'
+            ELSE safe_error_code
+        END,
+        safe_error_summary = CASE
+            WHEN status = 'running' THEN 'Backup creation was interrupted before this upgrade'
+            ELSE safe_error_summary
+        END;
+
+CREATE UNIQUE INDEX uq_background_jobs_active_backup_operation ON background_jobs (dedupe_key) WHERE dedupe_key = 'backup:global' AND status IN ('queued','running');
+
+CREATE UNIQUE INDEX uq_background_jobs_backup_idempotency ON background_jobs (idempotency_key) WHERE idempotency_key IS NOT NULL AND job_type IN ('backup_create','backup_verify','backup_restore_preflight','backup_delete');
+
+UPDATE alembic_version SET version_num='20260730_0019' WHERE alembic_version.version_num = '20260729_0018';
+
 COMMIT;
 

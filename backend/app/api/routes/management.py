@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -59,6 +60,7 @@ from app.db.models import (
     Utility,
     UtilityAccount,
     UtilityAccountSiteAssignment,
+    new_uuid,
 )
 from app.history import MAX_HISTORY_BUCKETS, history_csv, query_history
 from app.live_measurements import load_latest_measurements, log_measurement_decision
@@ -69,7 +71,10 @@ from app.schemas import (
     AlertAcknowledge,
     AlertRuleWrite,
     AlertSilence,
+    BackupDeleteRequest,
     BackupRequestCreate,
+    BackupVerifyRequest,
+    BackupView,
     CircuitCreate,
     CircuitView,
     CredentialRotationRequest,
@@ -1891,6 +1896,10 @@ async def fleet_summary(
         (item.measured_at for item in contributing if item.measured_at is not None),
         default=None,
     )
+    latest_received_at = max(
+        (item.received_at for item in contributing if item.received_at is not None),
+        default=None,
+    )
     latest_heartbeat_at = max(
         (
             heartbeat.received_at
@@ -2054,7 +2063,9 @@ async def fleet_summary(
         reporting_devices=reporting_devices,
         latest_data_at=latest_measurement_at,
         latest_measurement_at=latest_measurement_at,
+        latest_received_at=latest_received_at,
         latest_heartbeat_at=latest_heartbeat_at,
+        server_now=now,
         coverage_percent=coverage_percent,
         disclosure=ESTIMATE_DISCLOSURE,
     )
@@ -2950,24 +2961,72 @@ async def list_audit_events(
     ]
 
 
-@router.get("/backups")
-async def list_backups(principal: Principal, session: DbSession) -> list[dict[str, Any]]:
+BACKUP_JOB_TYPES = (
+    "backup_create",
+    "backup_verify",
+    "backup_restore_preflight",
+    "backup_delete",
+)
+ACTIVE_BACKUP_JOB_STATUSES = ("queued", "running")
+BACKUP_IDENTIFIER_PATTERN = re.compile(r"^power-monitor-\d{8}T\d{6}Z(?:-[0-9a-f]{8})?$")
+
+
+def _backup_payload(run: BackupRun) -> BackupView:
+    return BackupView(
+        id=run.id,
+        started_at=run.started_at,
+        completed_at=run.completed_at,
+        status=run.status,
+        manifest_hash=run.manifest_hash,
+        verified_at=run.verified_at,
+        verification_details=dict(run.verification_details or {}),
+        size_bytes=run.size_bytes,
+        encrypted=run.encrypted,
+        verification_started_at=run.verification_started_at,
+        verification_completed_at=run.verification_completed_at,
+        verification_attempt_count=run.verification_attempt_count,
+        failed_stage=run.failed_stage,
+        safe_error_code=run.safe_error_code,
+        safe_error_summary=run.safe_error_summary,
+        exit_code=run.exit_code,
+        deleted_at=run.deleted_at,
+        deletion_reason=run.deletion_reason,
+        artifact_removal_result=run.artifact_removal_result,
+    )
+
+
+async def _active_backup_job(session: DbSession) -> BackgroundJob | None:
+    return await session.scalar(
+        select(BackgroundJob)
+        .where(
+            BackgroundJob.job_type.in_(BACKUP_JOB_TYPES),
+            BackgroundJob.status.in_(ACTIVE_BACKUP_JOB_STATUSES),
+        )
+        .order_by(BackgroundJob.requested_at)
+        .limit(1)
+    )
+
+
+def _backup_operation_in_progress(job: BackgroundJob) -> ProblemError:
+    return ProblemError(
+        409,
+        "Backup operation already in progress",
+        "Wait for the active backup operation to finish before starting another",
+        "backup_operation_active",
+        extra={
+            "job_id": job.id,
+            "backup_id": dict(job.progress or {}).get("backup_run_id"),
+        },
+    )
+
+
+@router.get("/backups", response_model=list[BackupView])
+async def list_backups(principal: Principal, session: DbSession) -> list[BackupView]:
     _permission(principal, "backups.view")
     runs = list(
         await session.scalars(select(BackupRun).order_by(BackupRun.started_at.desc()).limit(100))
     )
-    return [
-        {
-            "id": run.id,
-            "started_at": run.started_at,
-            "completed_at": run.completed_at,
-            "status": run.status,
-            "manifest_hash": run.manifest_hash,
-            "verified_at": run.verified_at,
-            "verification_details": run.verification_details,
-        }
-        for run in runs
-    ]
+    return [_backup_payload(run) for run in runs]
 
 
 def _backup_request_payload(job: BackgroundJob) -> dict[str, Any]:
@@ -2975,9 +3034,12 @@ def _backup_request_payload(job: BackgroundJob) -> dict[str, Any]:
     progress = dict(job.progress or {})
     return {
         "id": job.id,
-        "operation": (
-            "restore_preflight" if job.job_type == "backup_restore_preflight" else "create"
-        ),
+        "operation": {
+            "backup_create": "create",
+            "backup_verify": "verify",
+            "backup_restore_preflight": "restore_preflight",
+            "backup_delete": "delete",
+        }.get(job.job_type, job.job_type),
         "status": job.status,
         "requested_at": job.requested_at,
         "started_at": job.started_at,
@@ -2996,7 +3058,7 @@ async def list_backup_requests(principal: Principal, session: DbSession) -> list
     requests = list(
         await session.scalars(
             select(BackgroundJob)
-            .where(BackgroundJob.job_type.in_(["backup_create", "backup_restore_preflight"]))
+            .where(BackgroundJob.job_type.in_(BACKUP_JOB_TYPES))
             .order_by(BackgroundJob.requested_at.desc())
             .limit(100)
         )
@@ -3013,9 +3075,22 @@ async def create_backup_request(
 ) -> dict[str, Any]:
     permission = "backups.create" if payload.operation == "create" else "backups.restore"
     _permission(principal, permission)
+    operation_job_type = (
+        "backup_create" if payload.operation == "create" else "backup_restore_preflight"
+    )
+    existing = await session.scalar(
+        select(BackgroundJob).where(
+            BackgroundJob.job_type == operation_job_type,
+            BackgroundJob.idempotency_key == payload.idempotency_key,
+        )
+    )
+    if existing is not None:
+        return _backup_request_payload(existing)
     backup: BackupRun | None = None
     if payload.operation == "restore_preflight":
-        backup = await session.get(BackupRun, payload.backup_id)
+        backup = await session.scalar(
+            select(BackupRun).where(BackupRun.id == payload.backup_id).with_for_update()
+        )
         if backup is None:
             raise ProblemError(
                 404, "Backup not found", "The selected backup does not exist", "backup_missing"
@@ -3027,21 +3102,44 @@ async def create_backup_request(
                 "Only a completed, automatically restored and verified backup can be selected",
                 "backup_not_verified",
             )
-    correlation_id = f"backup-request:{principal.user.id}:{payload.idempotency_key}"
-    existing = await session.scalar(
-        select(BackgroundJob).where(BackgroundJob.correlation_id == correlation_id)
-    )
-    if existing is not None:
-        return _backup_request_payload(existing)
+    correlation_digest = hashlib.sha256(payload.idempotency_key.encode()).hexdigest()[:48]
+    correlation_id = f"backup:{principal.user.id}:{correlation_digest}"
+    active = await _active_backup_job(session)
+    if active is not None:
+        raise _backup_operation_in_progress(active)
     now = datetime.now(UTC)
+    if payload.operation == "create":
+        backup = BackupRun(
+            id=new_uuid(),
+            started_at=now,
+            status="queued",
+            path=None,
+            manifest_hash=None,
+            verified_at=None,
+            verification_details={},
+            requested_by=principal.user.id,
+            trigger_type="manual",
+            encrypted=False,
+            verification_attempt_count=0,
+            updated_at=now,
+        )
+        session.add(backup)
+    else:
+        assert backup is not None
+        backup.status = "restore_preflight"
+        backup.updated_at = now
     job = BackgroundJob(
-        job_type=("backup_create" if payload.operation == "create" else "backup_restore_preflight"),
+        id=new_uuid(),
+        job_type=operation_job_type,
         status="queued",
         requested_by=principal.user.id,
         requested_at=now,
         scheduled_for=now,
         correlation_id=correlation_id,
-        progress={"backup_run_id": backup.id} if backup else {},
+        dedupe_key="backup:global",
+        idempotency_key=payload.idempotency_key,
+        trigger_type="manual",
+        progress={"backup_run_id": backup.id},
         result={},
     )
     session.add(job)
@@ -3053,7 +3151,7 @@ async def create_backup_request(
             request=request,
             object_type="backup_request",
             object_id=job.id,
-            details={"backup_id": backup.id if backup else None},
+            details={"backup_id": backup.id},
         )
     )
     try:
@@ -3061,12 +3159,200 @@ async def create_backup_request(
     except IntegrityError:
         await session.rollback()
         existing = await session.scalar(
-            select(BackgroundJob).where(BackgroundJob.correlation_id == correlation_id)
+            select(BackgroundJob).where(
+                BackgroundJob.job_type == operation_job_type,
+                BackgroundJob.idempotency_key == payload.idempotency_key,
+            )
         )
-        if existing is None:
-            raise
-        return _backup_request_payload(existing)
+        if existing is not None:
+            return _backup_request_payload(existing)
+        active = await _active_backup_job(session)
+        if active is not None:
+            raise _backup_operation_in_progress(active) from None
+        raise
     return _backup_request_payload(job)
+
+
+@router.post("/backups/{backup_id}/verify", response_model=BackupView, status_code=202)
+async def verify_backup(
+    backup_id: str,
+    payload: BackupVerifyRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> BackupView:
+    _permission(principal, "backups.verify")
+    backup = await session.scalar(
+        select(BackupRun).where(BackupRun.id == backup_id).with_for_update()
+    )
+    if backup is None:
+        raise ProblemError(
+            404, "Backup not found", "The selected backup does not exist", "backup_missing"
+        )
+    existing = await session.scalar(
+        select(BackgroundJob).where(
+            BackgroundJob.job_type == "backup_verify",
+            BackgroundJob.idempotency_key == payload.idempotency_key,
+        )
+    )
+    if existing is not None:
+        return _backup_payload(backup)
+    if backup.status == "verified" and backup.verified_at is not None:
+        return _backup_payload(backup)
+    if backup.status not in {"completed_unverified", "verification_failed"}:
+        raise ProblemError(
+            409,
+            "Backup cannot be verified",
+            f"A backup in the {backup.status} state cannot start verification",
+            "backup_verify_transition_invalid",
+        )
+    if backup.path is None or not BACKUP_IDENTIFIER_PATTERN.fullmatch(Path(backup.path).name):
+        raise ProblemError(
+            409,
+            "Backup artifact is not addressable",
+            "The backup record does not contain a safe local artifact identifier",
+            "backup_artifact_identifier_invalid",
+        )
+    active = await _active_backup_job(session)
+    if active is not None:
+        raise _backup_operation_in_progress(active)
+    now = datetime.now(UTC)
+    backup.status = "verification_queued"
+    backup.updated_at = now
+    job = BackgroundJob(
+        id=new_uuid(),
+        job_type="backup_verify",
+        status="queued",
+        requested_by=principal.user.id,
+        requested_at=now,
+        scheduled_for=now,
+        correlation_id=f"backup-verify:{backup.id}:{backup.verification_attempt_count + 1}",
+        dedupe_key="backup:global",
+        idempotency_key=payload.idempotency_key,
+        trigger_type="manual",
+        progress={"backup_run_id": backup.id},
+        result={},
+    )
+    session.add(job)
+    session.add(
+        audit_event(
+            action="backup.verification_requested",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="backup_run",
+            object_id=backup.id,
+        )
+    )
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        active = await _active_backup_job(session)
+        if active is not None:
+            raise _backup_operation_in_progress(active) from None
+        raise
+    return _backup_payload(backup)
+
+
+@router.delete("/backups/{backup_id}", response_model=BackupView, status_code=202)
+async def delete_backup(
+    backup_id: str,
+    payload: BackupDeleteRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> BackupView:
+    _permission(principal, "backups.delete")
+    backup = await session.scalar(
+        select(BackupRun).where(BackupRun.id == backup_id).with_for_update()
+    )
+    if backup is None:
+        raise ProblemError(
+            404, "Backup not found", "The selected backup does not exist", "backup_missing"
+        )
+    if payload.backup_id_confirmation not in {backup.id, backup.id[:8]}:
+        raise ProblemError(
+            422,
+            "Backup confirmation does not match",
+            "Enter the first eight characters of the backup ID exactly",
+            "backup_confirmation_invalid",
+        )
+    eligible = {
+        "verified",
+        "completed_unverified",
+        "verification_failed",
+        "backup_failed",
+        "deletion_failed",
+    }
+    if backup.status not in eligible:
+        raise ProblemError(
+            409,
+            "Backup cannot be deleted",
+            f"A backup in the {backup.status} state cannot be deleted",
+            "backup_delete_transition_invalid",
+        )
+    if backup.verified_at is not None:
+        verified_count = await session.scalar(
+            select(func.count())
+            .select_from(BackupRun)
+            .where(BackupRun.verified_at.is_not(None), BackupRun.deleted_at.is_(None))
+        )
+        if int(verified_count or 0) <= 1:
+            raise ProblemError(
+                409,
+                "Last verified backup is protected",
+                "Create and verify another backup before deleting this one",
+                "last_verified_backup_protected",
+            )
+    active = await _active_backup_job(session)
+    if active is not None:
+        raise _backup_operation_in_progress(active)
+    now = datetime.now(UTC)
+    backup.status = "deleting"
+    backup.deleted_by = principal.user.id
+    backup.deletion_reason = payload.reason
+    backup.original_size_bytes = backup.size_bytes
+    backup.updated_at = now
+    attempt = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(BackgroundJob)
+            .where(
+                BackgroundJob.job_type == "backup_delete",
+                BackgroundJob.correlation_id.like(f"backup-delete:{backup.id}:%"),
+            )
+        )
+        or 0
+    )
+    job = BackgroundJob(
+        id=new_uuid(),
+        job_type="backup_delete",
+        status="queued",
+        requested_by=principal.user.id,
+        requested_at=now,
+        scheduled_for=now,
+        correlation_id=f"backup-delete:{backup.id}:{attempt + 1}",
+        dedupe_key="backup:global",
+        idempotency_key=f"delete:{backup.id}:{attempt + 1}",
+        trigger_type="manual",
+        progress={"backup_run_id": backup.id},
+        result={},
+    )
+    session.add(job)
+    session.add(
+        audit_event(
+            action="backup.deletion_requested",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="backup_run",
+            object_id=backup.id,
+            details={"reason": payload.reason},
+        )
+    )
+    await session.commit()
+    return _backup_payload(backup)
 
 
 @router.get("/reports")

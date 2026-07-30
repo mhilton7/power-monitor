@@ -39,7 +39,7 @@ import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
 import { useTestMode } from '../../state/TestModeContext'
 import type { BillSummary, ElectricService, RateAssignmentResult } from '../../types/models'
-import { dateRange, dateTime, energy, money, rate, statusLabel } from '../../utils/format'
+import { dateRange, dateTime, energy, money, percentage, rate, statusLabel } from '../../utils/format'
 import { isOwner } from '../../access/permissions'
 
 interface LibraryPlan {
@@ -250,7 +250,7 @@ export function BillingPage() {
               {bills.data?.[0] ? <LatestBill bill={bills.data[0]} currency={home.currency} /> : <EmptyState title="No imported bill" message="Upload a PDF to prepare a reviewed rate plan and billing cycle." />}
             </Surface>
             <Surface title="Estimate confidence">
-              <div className="confidence-card"><span>{cycle?.confidence ? statusLabel(cycle.confidence) : 'Waiting for history'}</span><p>Coverage {cycle?.coveragePercent ?? '0'}%. Estimates improve as synchronized readings fill the cycle.</p></div>
+              <div className="confidence-card"><span>{cycle?.confidence ? statusLabel(cycle.confidence) : 'Waiting for history'}</span><p>Coverage {percentage(cycle?.coveragePercent)}. Estimates improve as synchronized readings fill the cycle.</p></div>
             </Surface>
           </aside>
         </div>

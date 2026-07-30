@@ -6734,8 +6734,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  additionalProperties: true
+                  $ref: '#/components/schemas/BackupView'
                 title: Response List Backups Api V1 Backups Get
         '422':
           description: Validation Error
@@ -6812,6 +6811,102 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Create Backup Request Api V1 Backup Requests Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/backups/{backup_id}/verify:
+    post:
+      tags:
+      - management
+      summary: Verify Backup
+      operationId: verify_backup_api_v1_backups__backup_id__verify_post
+      parameters:
+      - name: backup_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Backup Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackupVerifyRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/backups/{backup_id}:
+    delete:
+      tags:
+      - management
+      summary: Delete Backup
+      operationId: delete_backup_api_v1_backups__backup_id__delete
+      parameters:
+      - name: backup_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Backup Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackupDeleteRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackupView'
         '422':
           description: Validation Error
           content:
@@ -12114,6 +12209,29 @@ components:
       required:
       - until
       title: AlertSilence
+    BackupDeleteRequest:
+      properties:
+        confirmation:
+          type: string
+          const: DELETE
+          title: Confirmation
+        backup_id_confirmation:
+          type: string
+          maxLength: 36
+          minLength: 8
+          title: Backup Id Confirmation
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 3
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - confirmation
+      - backup_id_confirmation
+      - reason
+      title: BackupDeleteRequest
     BackupRequestCreate:
       properties:
         operation:
@@ -12146,6 +12264,133 @@ components:
       - operation
       - idempotency_key
       title: BackupRequestCreate
+    BackupVerifyRequest:
+      properties:
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+      additionalProperties: false
+      type: object
+      required:
+      - idempotency_key
+      title: BackupVerifyRequest
+    BackupView:
+      properties:
+        id:
+          type: string
+          title: Id
+        started_at:
+          type: string
+          format: date-time
+          title: Started At
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+        status:
+          type: string
+          title: Status
+        manifest_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Manifest Hash
+        verified_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Verified At
+        verification_details:
+          additionalProperties: true
+          type: object
+          title: Verification Details
+        size_bytes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Size Bytes
+        encrypted:
+          type: boolean
+          title: Encrypted
+        verification_started_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Verification Started At
+        verification_completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Verification Completed At
+        verification_attempt_count:
+          type: integer
+          title: Verification Attempt Count
+        failed_stage:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failed Stage
+        safe_error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Safe Error Code
+        safe_error_summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Safe Error Summary
+        exit_code:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Exit Code
+        deleted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Deleted At
+        deletion_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deletion Reason
+        artifact_removal_result:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Artifact Removal Result
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - started_at
+      - completed_at
+      - status
+      - manifest_hash
+      - verified_at
+      - verification_details
+      - size_bytes
+      - encrypted
+      - verification_started_at
+      - verification_completed_at
+      - verification_attempt_count
+      - failed_stage
+      - safe_error_code
+      - safe_error_summary
+      - exit_code
+      - deleted_at
+      - deletion_reason
+      - artifact_removal_result
+      title: BackupView
     BillAccountContextWrite:
       properties:
         revision:
@@ -13621,12 +13866,22 @@ components:
             format: date-time
           - type: 'null'
           title: Latest Measurement At
+        latest_received_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Latest Received At
         latest_heartbeat_at:
           anyOf:
           - type: string
             format: date-time
           - type: 'null'
           title: Latest Heartbeat At
+        server_now:
+          type: string
+          format: date-time
+          title: Server Now
         coverage_percent:
           anyOf:
           - type: string
@@ -13656,7 +13911,9 @@ components:
       - reporting_devices
       - latest_data_at
       - latest_measurement_at
+      - latest_received_at
       - latest_heartbeat_at
+      - server_now
       - coverage_percent
       - disclosure
       title: FleetSummary

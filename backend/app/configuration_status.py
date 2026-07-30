@@ -339,7 +339,7 @@ async def build_configuration_status(
 
     verified_backup = await session.scalar(
         select(BackupRun.id)
-        .where(BackupRun.status == "completed", BackupRun.verified_at.is_not(None))
+        .where(BackupRun.status == "verified", BackupRun.verified_at.is_not(None))
         .order_by(BackupRun.verified_at.desc())
         .limit(1)
     )

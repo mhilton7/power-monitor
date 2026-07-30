@@ -939,6 +939,10 @@ tbody th { font-weight: 700; }
 .modal-card > header h2 { margin: .15rem 0 0; }
 .modal-card > header small { color: var(--accent); text-transform: uppercase; letter-spacing: .1em; }
 .modal-card > footer { justify-content: flex-end; border-top: 1px solid var(--line); border-bottom: 0; }
+.backup-details-dialog .detail-list { display: grid; grid-template-columns: minmax(9rem, .45fr) minmax(0, 1fr); gap: .65rem 1.2rem; margin: 0; padding: 1.3rem 1.4rem; overflow: auto; }
+.backup-details-dialog .detail-list dt { color: var(--muted); }
+.backup-details-dialog .detail-list dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-weight: 700; }
+.backup-row .inline-actions { justify-content: flex-end; }
 .setup-body { min-height: 270px; overflow-y: auto; padding: 1.5rem; }
 .small-modal { width: min(560px, 100%); }
 .role-editor { width: min(1040px, 100%); }

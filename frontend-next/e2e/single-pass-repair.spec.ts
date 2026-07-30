@@ -633,7 +633,9 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
         recent_peak_w: configured ? '3850' : null,
         latest_data_at: configured ? liveMeasurementAt : null,
         latest_measurement_at: configured ? liveMeasurementAt : null,
+        latest_received_at: configured ? liveMeasurementAt : null,
         latest_heartbeat_at: configured ? liveMeasurementAt : null,
+        server_now: liveMeasurementAt,
         has_live_data: configured,
         has_energy_data: configured,
         has_cost_data: configured,
@@ -658,8 +660,21 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
       },
       '/api/v1/history/query': {
         scope: { display_name: 'Whole Home' },
-        summary: { energy_kwh: configured ? '12.450' : null, energy_cost: configured ? '4.28' : null, coverage_percent: configured ? '98.5' : '0', contributing_sensor_count: configured ? 1 : 0 },
-        combined: [],
+        summary: { energy_kwh: configured ? '12.450' : null, energy_cost: configured ? '4.28' : null, coverage_percent: configured ? '60.3444444444444' : '0', contributing_sensor_count: configured ? 1 : 0 },
+        combined: configured ? [{
+          interval_start_utc: '2026-07-25T11:00:00Z',
+          interval_end_utc: '2026-07-25T12:00:00Z',
+          local_start: 'Jul 25, 4:00 AM',
+          average_power_w: '0.8',
+          energy_kwh: '0.0008',
+          energy_cost: '0.0003',
+          rate_per_kwh: '0.344',
+          tou_period: 'Off-Peak',
+          coverage_percent: '60.3444444444444',
+          contributing_sensor_count: 1,
+          included_sensor_count: 1,
+          rate_contributions: [],
+        }] : [],
         warnings: [],
         rate_versions_used: [],
       },
@@ -1012,7 +1027,7 @@ test('Home has intentional empty and configured dashboard layouts', async ({ pag
   await expect(page).toHaveScreenshot('home-repair-connected.png', { fullPage: true, animations: 'disabled' })
 })
 
-test('History preserves intentional no-data and configured layouts', async ({ page }) => {
+test('History preserves intentional no-data and configured layouts', async ({ page }, testInfo) => {
   await mockRepairServer(page)
   await page.goto('/history')
   await expect(page.getByRole('heading', { name: 'History' })).toBeVisible()
@@ -1021,7 +1036,18 @@ test('History preserves intentional no-data and configured layouts', async ({ pa
   await mockRepairServer(page, true)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Whole Home', exact: true })).toBeVisible()
+  await expect(page.getByText('60.34%')).toHaveCount(3)
+  await expect(page.getByText('60.3444444444444%', { exact: true })).toHaveCount(0)
+  await page.getByText('View accessible data table').click()
+  await expect(page.getByRole('cell', { name: '60.34%' })).toBeVisible()
   await expect(page).toHaveScreenshot('history-data.png', { fullPage: true, animations: 'disabled' })
+  if (process.env.UPDATE_BACKUP_LIVE_DOCS === '1' && testInfo.project.name === 'desktop') {
+    await page.screenshot({
+      path: path.resolve('..', 'docs', 'screenshots', 'history-coverage-formatting.png'),
+      fullPage: false,
+      animations: 'disabled',
+    })
+  }
 })
 
 test('repair surfaces do not overflow or overlap at the active viewport', async ({ page }) => {

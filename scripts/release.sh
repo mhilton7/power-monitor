@@ -19,8 +19,8 @@ MYPYPATH=backend "$python_bin" -m mypy worker simulator --explicit-package-bases
 docker compose config --quiet
 docker compose build --pull
 docker compose up -d --wait
-path=$(docker compose --profile tools run --rm backup /srv/scripts/backup-container.sh | tail -1)
-docker compose --profile tools run --rm backup /srv/scripts/verify-backup-container.sh "$path"
+run_id=$(docker compose --profile tools run --rm backup /srv/scripts/backup-container.sh | tail -1)
+docker compose --profile tools run --rm backup /srv/scripts/verify-backup-container.sh "$run_id"
 docker compose ps
 
 : "${TRUENAS_COMPOSE_FILE:?set TRUENAS_COMPOSE_FILE to the rendered digest-pinned deployment}"

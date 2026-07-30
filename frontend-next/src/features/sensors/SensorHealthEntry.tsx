@@ -1,9 +1,16 @@
 import { StatusDot } from '../../components/data-display/Surface'
+import { ElapsedTime } from '../../components/data-display/ElapsedTime'
 import type { SensorSummary } from '../../types/models'
 import { sensorMeasurementTime } from '../../utils/format'
 import { SensorElectricalStrip } from './SensorElectricalStrip'
 
-export function SensorHealthEntry({ sensor }: { sensor: SensorSummary }) {
+export function SensorHealthEntry({
+  sensor,
+  serverNow,
+}: {
+  sensor: SensorSummary
+  serverNow?: string
+}) {
   const stateLabel = sensorStateLabel(sensor.measurementFreshness)
   return (
     <article
@@ -14,12 +21,14 @@ export function SensorHealthEntry({ sensor }: { sensor: SensorSummary }) {
         <div>
           <StatusDot state={sensorDotState(sensor.measurementFreshness)} label={sensor.name} />
           <small>
-            {sensor.latestMeasurementAt
-              ? sensorMeasurementTime(
-                  sensor.latestMeasurementAt,
-                  sensor.measurementFreshness,
-                )
-              : sensorStateDetail(sensor.measurementFreshness)}
+            {sensor.measurementReceivedAt
+              ? <>Received <ElapsedTime timestamp={sensor.measurementReceivedAt} serverNow={serverNow} /></>
+              : sensor.latestMeasurementAt
+                ? sensorMeasurementTime(
+                    sensor.latestMeasurementAt,
+                    sensor.measurementFreshness,
+                  )
+                : sensorStateDetail(sensor.measurementFreshness)}
           </small>
         </div>
         <span className={`pill ${sensor.measurementFreshness}`}>

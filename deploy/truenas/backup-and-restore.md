@@ -1,11 +1,12 @@
 # Backup and restore on TrueNAS
 
 The `backup` service remains running as a scheduler. At `02:17` UTC each night by
-default it creates a PostgreSQL custom-format logical dump plus firmware, config,
+default it queues one idempotent PostgreSQL custom-format logical dump plus firmware, config,
 report, and archived SCE rate-source evidence archives. It encrypts every artifact when
 `BACKUP_ENCRYPTION_KEY_FILE` is configured (the TrueNAS deployment always
 configures it), writes SHA-256 checksums and a manifest, atomically publishes the
-completed directory, and removes backups older than 30 days.
+completed directory. Retention is processed through the protected deletion
+state machine; it never removes the final verified backup.
 
 Immediately after creation, the scheduler verifies checksums, decrypts the dump
 in tmpfs, restores it into a newly created temporary PostgreSQL database, checks
@@ -21,11 +22,13 @@ The API records an audited, idempotent request and the isolated `backup`
 service claims it using its file-backed database password. The browser never
 receives a database password, encryption key, or host path.
 
-1. Submit the request and wait for the row to report **Completed / Verified**.
-2. Use **Verify restore** on that row to enqueue a non-destructive restore
+1. Submit the request and follow **Queued**, **Creating backup**,
+   **Verification queued**, and **Verifying** until the row reports
+   **Verified**.
+2. Use **Restore** on that row to enqueue a non-destructive restore
    preflight. This rechecks the selected artifact; it never overwrites the live
    database.
-3. Copy the completed `power-monitor-YYYYMMDDTHHMMSSZ` directory off-system and
+3. Copy the completed `power-monitor-YYYYMMDDTHHMMSSZ-RUNPREFIX` directory off-system and
    verify its `checksums.sha256` after transfer. Store the encryption key
    separately; losing it makes the encrypted backup unrecoverable.
 
@@ -46,21 +49,19 @@ This archive also includes retained private utility-bill originals and
 sanitized evidence, so off-system copies require the same confidentiality
 controls as the database and must remain encrypted.
 
-## Test restore
+## Verification and safe cleanup
 
-From **Apps > Installed > power-monitor > Workloads**, open the `backup` workload
-shell. The shell is provided by the managed App workload; do not use the TrueNAS
-host shell or invoke the Docker CLI.
+Use **Settings > Data & Backups** in the Power Monitor interface. **Verify now**
+and **Retry verification** always restore into an isolated temporary PostgreSQL
+database; they do not overwrite live data. **Details** shows the migration
+revision, table count, attempts, encryption state, manifest fingerprint, and
+safe failure evidence.
 
-```text
-/srv/scripts/verify-backup-container.sh /data/backups/power-monitor-TIMESTAMP
-/srv/scripts/restore-container.sh /data/backups/power-monitor-TIMESTAMP power_monitor_restore_test --yes
-psql -h postgres -U power_monitor -d power_monitor_restore_test -c "SELECT version_num FROM alembic_version"
-```
-
-The password is loaded from `PGPASSWORD_FILE`; do not paste it into the shell or
-command history. Delete a test database after the validation window using the
-same controlled workload shell.
+Deletion requires `DELETE`, the displayed eight-character backup ID prefix, and
+a reason. The final verified backup is blocked from deletion. Missing artifacts
+can be cleaned up through the same action without granting the browser direct
+filesystem access. Manage the production App lifecycle through the TrueNAS Apps
+web interface; do not use direct Docker commands in the TrueNAS host shell.
 
 ## Production recovery
 

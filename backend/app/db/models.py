@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -1198,6 +1199,28 @@ class BackgroundJob(Base):
             postgresql_where=text("dedupe_key IS NOT NULL AND status IN ('queued','running')"),
             sqlite_where=text("dedupe_key IS NOT NULL AND status IN ('queued','running')"),
         ),
+        Index(
+            "uq_background_jobs_active_backup_operation",
+            "dedupe_key",
+            unique=True,
+            postgresql_where=text(
+                "dedupe_key = 'backup:global' AND status IN ('queued','running')"
+            ),
+            sqlite_where=text("dedupe_key = 'backup:global' AND status IN ('queued','running')"),
+        ),
+        Index(
+            "uq_background_jobs_backup_idempotency",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text(
+                "idempotency_key IS NOT NULL AND job_type IN "
+                "('backup_create','backup_verify','backup_restore_preflight','backup_delete')"
+            ),
+            sqlite_where=text(
+                "idempotency_key IS NOT NULL AND job_type IN "
+                "('backup_create','backup_verify','backup_restore_preflight','backup_delete')"
+            ),
+        ),
     )
 
 
@@ -2035,6 +2058,27 @@ class BackupRun(Base):
     manifest_hash: Mapped[str | None] = mapped_column(String(64))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     verification_details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    requested_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    trigger_type: Mapped[str] = mapped_column(String(24), default="manual")
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    encrypted: Mapped[bool] = mapped_column(Boolean, default=False)
+    verification_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verification_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verification_attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_stage: Mapped[str | None] = mapped_column(String(80))
+    safe_error_code: Mapped[str | None] = mapped_column(String(80))
+    safe_error_summary: Mapped[str | None] = mapped_column(String(500))
+    exit_code: Mapped[int | None] = mapped_column(Integer)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    deleted_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    deletion_reason: Mapped[str | None] = mapped_column(String(500))
+    original_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    artifact_removal_result: Mapped[str | None] = mapped_column(String(80))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
 
 
 class LogExportJob(Base):
