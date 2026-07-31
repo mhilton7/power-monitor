@@ -11,9 +11,18 @@ import {
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import type { HistoryPoint } from '../../types/models'
-import { energy, money, percentage, power } from '../../utils/format'
+import { energy, money, percentage, power, rate } from '../../utils/format'
 
 ChartJS.register(CategoryScale, LinearScale, TimeScale, PointElement, LineElement, Filler, Tooltip, Legend)
+
+export function energyChartTooltipLines(point: HistoryPoint, currency: string): string[] {
+  return [
+    point.period ? `Period: ${point.period}` : '',
+    point.tier ? `Tier: ${point.tier}` : '',
+    point.rate ? `Rate: ${rate(point.rate, currency)}` : '',
+    `Coverage: ${percentage(point.coveragePercent)}`,
+  ].filter(Boolean)
+}
 
 export function EnergyChart({
   points,
@@ -91,12 +100,7 @@ export function EnergyChart({
                   afterBody(items) {
                     const point = points[items[0]?.dataIndex ?? 0]
                     if (!point) return []
-                    return [
-                      point.period ? `Period: ${point.period}` : '',
-                      point.tier ? `Tier: ${point.tier}` : '',
-                      point.rate ? `Rate: ${point.rate}/kWh` : '',
-                      `Coverage: ${percentage(point.coveragePercent)}`,
-                    ].filter(Boolean)
+                    return energyChartTooltipLines(point, currency)
                   },
                 },
               },
