@@ -262,6 +262,109 @@ test('a fresh real sensor measurement stays consistent across Home and Sensor He
   await expect(page.getByText('Waiting for data')).toHaveCount(0)
 })
 
+test('missing history intervals remain visible gaps without crashing Home or History', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => { pageErrors.push(error.message) })
+  await page.route('**/api/v1/devices*', async (route) => {
+    await route.fulfill({ json: [{
+      id: 'sensor-1',
+      name: 'Indoor-AC',
+      status: 'online_synchronized',
+      current_watts: '1000',
+      latest_measurement_at: '2026-07-30T18:45:00Z',
+      last_seen_at: '2026-07-30T18:45:02Z',
+      measurement_freshness: 'live',
+      measurement_invalid_metrics: [],
+      backlog: 0,
+    }] })
+  })
+  await page.route('**/api/v1/fleet/summary*', async (route) => {
+    await route.fulfill({ json: {
+      current_load_w: '1000',
+      energy_today_kwh: '0.55',
+      estimated_cost_today: '0.17',
+      reporting_devices: 1,
+      total_devices: 1,
+      online_devices: 1,
+      active_alerts: 0,
+      recent_peak_w: '1200',
+      latest_data_at: '2026-07-30T18:45:00Z',
+      latest_measurement_at: '2026-07-30T18:45:00Z',
+      latest_received_at: '2026-07-30T18:45:02Z',
+      server_now: '2026-07-30T18:45:02Z',
+      has_live_data: true,
+      has_energy_data: true,
+      has_cost_data: false,
+    } })
+  })
+  await page.route('**/api/v1/history/query', async (route) => {
+    await route.fulfill({ json: {
+      scope: { display_name: 'Whole Home', timezone: 'America/Los_Angeles' },
+      bucket: '15m',
+      summary: {
+        start_utc: '2026-07-30T18:00:00Z',
+        end_utc: '2026-07-30T18:45:00Z',
+        energy_kwh: '0.55',
+        energy_cost: '0.17',
+        average_power_w: '733.3',
+        peak_power_w: '1200',
+        blended_rate_per_kwh: '0.30863',
+        coverage_percent: '66.67',
+        contributing_sensor_count: 1,
+      },
+      combined: [
+        {
+          interval_start_utc: '2026-07-30T18:00:00Z',
+          interval_end_utc: '2026-07-30T18:15:00Z',
+          average_power_w: '1000',
+          energy_kwh: '0.25',
+          energy_cost: '0.08',
+          coverage_percent: '100',
+          contributing_sensor_count: 1,
+          included_sensor_count: 1,
+          rate_contributions: [],
+        },
+        {
+          interval_start_utc: '2026-07-30T18:15:00Z',
+          interval_end_utc: '2026-07-30T18:30:00Z',
+          average_power_w: null,
+          energy_kwh: null,
+          energy_cost: null,
+          coverage_percent: '0',
+          contributing_sensor_count: 0,
+          included_sensor_count: 1,
+          rate_contributions: [],
+        },
+        {
+          interval_start_utc: '2026-07-30T18:30:00Z',
+          interval_end_utc: '2026-07-30T18:45:00Z',
+          average_power_w: '1200',
+          energy_kwh: '0.30',
+          energy_cost: '0.09',
+          coverage_percent: '100',
+          contributing_sensor_count: 1,
+          included_sensor_count: 1,
+          rate_contributions: [],
+        },
+      ],
+      warnings: [],
+      rate_versions_used: [],
+    } })
+  })
+
+  await page.goto('/history')
+  await expect(page.getByRole('heading', { name: 'History' })).toBeVisible()
+  await expect(page.getByText('1 interval missing; the line remains intentionally broken.')).toBeVisible()
+  await expect(page.locator('.chart-canvas canvas')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'This page needs attention' })).toHaveCount(0)
+
+  await page.goto('/home')
+  await expect(page.getByText('1 interval missing; the line remains intentionally broken.')).toBeVisible()
+  await expect(page.locator('.chart-canvas canvas')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'This page needs attention' })).toHaveCount(0)
+  expect(pageErrors).toEqual([])
+})
+
 test('legacy routes redirect without rendering a legacy page', async ({ page }) => {
   await page.goto('/devices')
   await expect(page).toHaveURL(/\/settings\/sensors/)

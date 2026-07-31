@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { energyChartTooltipLines } from '../src/components/charts/EnergyChart'
+import { energyChartSeries, energyChartTooltipLines } from '../src/components/charts/EnergyChart'
 import { chartAvailabilityMessage, chartAxisValue, chartIntervalLabel, chartTickLabel, chartTickTimestamps, colorWithAlpha } from '../src/components/charts/chartUtils'
 import { chartColorContrast, normalizeChartColor } from '../src/state/AppearanceContext'
 import type { HistoryPoint } from '../src/types/models'
@@ -38,6 +38,23 @@ describe('energy chart tooltip formatting', () => {
     expect(energyChartTooltipLines(point, 'USD')).toEqual([
       'Coverage: 100%',
     ])
+  })
+
+  it('represents missing intervals as timestamped gaps instead of null chart data', () => {
+    const points: HistoryPoint[] = [
+      { start: '2026-07-30T18:00:00Z', end: '2026-07-30T18:15:00Z', label: '11:00 AM', energyKwh: '0.25', coveragePercent: '100', missing: false },
+      { start: '2026-07-30T18:15:00Z', end: '2026-07-30T18:30:00Z', label: '11:15 AM', coveragePercent: '0', missing: true },
+      { start: '2026-07-30T18:30:00Z', end: '2026-07-30T18:45:00Z', label: '11:30 AM', energyKwh: '0.30', coveragePercent: '100', missing: false },
+    ]
+
+    const series = energyChartSeries(points, 'energyKwh')
+
+    expect(series).toHaveLength(3)
+    expect(series).not.toContain(null)
+    expect(series.every((point) => Number.isFinite(point.x))).toBe(true)
+    expect(series[0]?.y).toBe(0.25)
+    expect(Number.isNaN(series[1]?.y)).toBe(true)
+    expect(series[2]?.y).toBe(0.30)
   })
 
   it('formats exact intervals and bucket-aware ticks in the account timezone', () => {

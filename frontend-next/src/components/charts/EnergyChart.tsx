@@ -11,7 +11,23 @@ export function energyChartTooltipLines(point: HistoryPoint, currency: string): 
   return [point.period ? `Period: ${point.period}` : '', point.tier ? `Tier: ${point.tier}` : '', point.rate ? `Rate: ${rate(point.rate, currency)}` : '', `Coverage: ${percentage(point.coveragePercent)}`].filter(Boolean)
 }
 
-type ChartDatum = ScatterDataPoint | null
+type ChartDatum = ScatterDataPoint
+
+export function energyChartSeries(
+  points: HistoryPoint[],
+  field: 'powerW' | 'energyKwh' | 'cost',
+): ChartDatum[] {
+  return points.flatMap((point) => {
+    const x = Date.parse(point.start)
+    if (!Number.isFinite(x)) return []
+    const rawValue = point[field]
+    const y = rawValue === undefined || rawValue.trim() === '' ? Number.NaN : Number(rawValue)
+    // With parsing disabled, Chart.js still requires every datum to be an
+    // object so its scale resolver can read x. NaN is the supported y-axis
+    // gap marker; a literal null datum makes getMinMax dereference null.x.
+    return [{ x, y: point.missing || !Number.isFinite(y) ? Number.NaN : y }]
+  })
+}
 
 export function EnergyChart({ points, mode, currency, title, timezone = 'UTC', bucket = '15m', rangeStart, rangeEnd }: {
   points: HistoryPoint[]
@@ -26,11 +42,7 @@ export function EnergyChart({ points, mode, currency, title, timezone = 'UTC', b
   const { chartColors } = useAppearance()
   const invalidCount = points.filter((point) => !Number.isFinite(Date.parse(point.start)) || !Number.isFinite(Date.parse(point.end))).length
   const ordered = points.filter((point) => Number.isFinite(Date.parse(point.start)) && Number.isFinite(Date.parse(point.end))).sort((left, right) => Date.parse(left.start) - Date.parse(right.start))
-  const series = (field: 'powerW' | 'energyKwh' | 'cost'): ChartDatum[] => ordered.map((point) => {
-    const x = Date.parse(point.start)
-    const y = Number(point[field])
-    return point.missing || !Number.isFinite(x) || !Number.isFinite(y) ? null : { x, y }
-  })
+  const series = (field: 'powerW' | 'energyKwh' | 'cost'): ChartDatum[] => energyChartSeries(ordered, field)
   const datasets: ChartDataset<'line', ChartDatum[]>[] = mode === 'power'
     ? [{ label: 'Power (W)', data: series('powerW'), borderColor: chartColors.power, backgroundColor: colorWithAlpha(chartColors.power, .12), fill: true, tension: .2, spanGaps: false, pointRadius: 0, yAxisID: 'power' }]
     : [
