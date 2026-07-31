@@ -38,6 +38,7 @@ from app.db.models import (
     Circuit,
     CostCalculationRun,
     CostIntervalResult,
+    DashboardAppearance,
     Device,
     DeviceAddress,
     DeviceConfigVersion,
@@ -83,6 +84,8 @@ from app.schemas import (
     CircuitCreate,
     CircuitView,
     CredentialRotationRequest,
+    DashboardAppearanceView,
+    DashboardAppearanceWrite,
     DeviceConfigCreate,
     DeviceListItem,
     DeviceMeasurementAssignmentView,
@@ -117,6 +120,11 @@ ESTIMATE_DISCLOSURE = (
     "Estimate, not utility bill. Results depend on monitored coverage, configured rates, "
     "meter accuracy, provider adjustments, taxes, credits, and tariff changes."
 )
+DEFAULT_CHART_COLORS = {
+    "chart_power_color": "#78DFBF",
+    "chart_energy_color": "#78DFBF",
+    "chart_cost_color": "#C9A7FF",
+}
 
 
 def _permission(principal: Principal, permission: str) -> None:
@@ -133,6 +141,84 @@ def _permission(principal: Principal, permission: str) -> None:
 def _site_allowed(principal: Principal, site_id: str) -> None:
     if not principal.can_access_site(site_id):
         raise ProblemError(404, "Resource not found", "Resource does not exist", "resource_missing")
+
+
+async def _dashboard_appearance(session: DbSession, *, lock: bool = False) -> DashboardAppearance:
+    query = select(DashboardAppearance).where(DashboardAppearance.id == "current")
+    if lock:
+        query = query.with_for_update()
+    appearance = await session.scalar(query)
+    if appearance is None:
+        appearance = DashboardAppearance(
+            id="current",
+            **DEFAULT_CHART_COLORS,
+            revision=1,
+            updated_at=datetime.now(UTC),
+        )
+        session.add(appearance)
+        await session.flush()
+    return appearance
+
+
+@router.get("/appearance", response_model=DashboardAppearanceView)
+async def get_dashboard_appearance(
+    principal: Principal,
+    session: DbSession,
+) -> DashboardAppearance:
+    # Every authenticated dashboard user receives the same published colors.
+    return await _dashboard_appearance(session)
+
+
+@router.put("/appearance", response_model=DashboardAppearanceView)
+async def update_dashboard_appearance(
+    payload: DashboardAppearanceWrite,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> DashboardAppearance:
+    _permission(principal, "settings.manage")
+    appearance = await _dashboard_appearance(session, lock=True)
+    if payload.expected_revision != appearance.revision:
+        raise ProblemError(
+            409,
+            "Appearance changed",
+            "Reload the published chart colors before applying your changes",
+            "appearance_revision_conflict",
+            extra={"current_revision": appearance.revision},
+        )
+    before = {
+        "power": appearance.chart_power_color,
+        "energy": appearance.chart_energy_color,
+        "cost": appearance.chart_cost_color,
+    }
+    appearance.chart_power_color = payload.chart_power_color
+    appearance.chart_energy_color = payload.chart_energy_color
+    appearance.chart_cost_color = payload.chart_cost_color
+    appearance.revision += 1
+    appearance.updated_by = principal.user.id
+    appearance.updated_at = datetime.now(UTC)
+    session.add(
+        audit_event(
+            action="appearance.chart_colors_published",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="dashboard_appearance",
+            object_id=appearance.id,
+            details={
+                "before": before,
+                "after": {
+                    "power": appearance.chart_power_color,
+                    "energy": appearance.chart_energy_color,
+                    "cost": appearance.chart_cost_color,
+                },
+                "revision": appearance.revision,
+            },
+        )
+    )
+    await session.commit()
+    await session.refresh(appearance)
+    return appearance
 
 
 @router.get("/sites", response_model=list[SiteView])
@@ -2819,19 +2905,91 @@ async def dismiss_notification(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    suppression = await _suppress_recommendation(
-        notification_id,
-        NotificationSuppressRequest(
-            scope="user",
-            reason="Dismissed current optional recommendation",
-            confirmed=True,
-        ),
-        request,
-        principal,
+    views = await load_notification_views(
         session,
-        event_type="dismissed",
+        user_id=principal.user.id,
+        permissions=set(principal.permissions),
+        all_sites=principal.all_sites,
+        site_ids=set(principal.site_ids),
+        include_dismissed=True,
     )
-    return {"id": suppression.id, "active": suppression.active, "revision": suppression.revision}
+    selected = next((item for item in views if item.id == notification_id), None)
+    if selected is None:
+        raise ProblemError(
+            404,
+            "Notification not found",
+            "Notification does not exist",
+            "notification_missing",
+        )
+    if selected.kind == "setup_recommendation":
+        suppression = await _suppress_recommendation(
+            notification_id,
+            NotificationSuppressRequest(
+                scope="user",
+                reason="Removed from the notification center",
+                confirmed=True,
+            ),
+            request,
+            principal,
+            session,
+            event_type="dismissed",
+        )
+        return {
+            "id": suppression.id,
+            "notification_id": notification_id,
+            "dismissed": True,
+        }
+
+    required_permission = (
+        "alerts.manage_delivery" if selected.kind == "delivery_issue" else "alerts.acknowledge"
+    )
+    _permission(principal, required_permission)
+    now = datetime.now(UTC)
+    existing = await session.scalar(
+        select(NotificationEvent)
+        .where(
+            NotificationEvent.notification_id == notification_id,
+            NotificationEvent.event_type == "dismissed",
+            NotificationEvent.actor_id == principal.user.id,
+            NotificationEvent.occurred_at >= selected.last_seen_at,
+        )
+        .order_by(NotificationEvent.occurred_at.desc())
+        .limit(1)
+    )
+    if existing is not None:
+        return {"id": existing.id, "notification_id": notification_id, "dismissed": True}
+    event = NotificationEvent(
+        notification_id=notification_id,
+        event_type="dismissed",
+        occurred_at=now,
+        actor_id=principal.user.id,
+        site_id=selected.affected_resource.id
+        if selected.affected_resource and selected.affected_resource.type == "home"
+        else None,
+        category=selected.category,
+        severity=selected.severity,
+        resource_type=selected.affected_resource.type if selected.affected_resource else None,
+        resource_id=selected.affected_resource.id if selected.affected_resource else None,
+        details={
+            "reason": "Removed from the notification center",
+            "last_seen_at": selected.last_seen_at.isoformat(),
+            "monitoring_preserved": True,
+        },
+    )
+    session.add(event)
+    session.add(
+        audit_event(
+            action="notification.dismissed",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="notification",
+            object_id=notification_id,
+            details={"monitoring_preserved": True},
+        )
+    )
+    await session.commit()
+    return {"id": event.id, "notification_id": notification_id, "dismissed": True}
 
 
 @router.get("/notification-suppressions", response_model=list[NotificationSuppressionItem])

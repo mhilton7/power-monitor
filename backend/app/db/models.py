@@ -228,6 +228,19 @@ class InterfaceTextState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class DashboardAppearance(Base):
+    __tablename__ = "dashboard_appearance"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default="current")
+    chart_power_color: Mapped[str] = mapped_column(String(7), default="#78DFBF")
+    chart_energy_color: Mapped[str] = mapped_column(String(7), default="#78DFBF")
+    chart_cost_color: Mapped[str] = mapped_column(String(7), default="#C9A7FF")
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class StatusLayoutRevision(Base):
     __tablename__ = "status_layout_revisions"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)

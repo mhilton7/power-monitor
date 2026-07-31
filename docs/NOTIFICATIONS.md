@@ -21,6 +21,12 @@ means "seen" and does not imply recovery. Silence always has an expiry and stops
 external delivery while leaving the condition visible. There is no manual technical-health
 resolve action.
 
+Any dismissible notification can also be removed from one user's notification
+center. Removal appends a `dismissed` event and preserves the alert, monitoring,
+delivery evidence, and audit history. It is not a technical-health resolve. If
+the authoritative condition is observed again after removal, the updated
+notification returns automatically.
+
 ## Detailed contract
 
 `GET /api/v1/notifications` returns a bounded, paginated list. `GET
@@ -78,7 +84,9 @@ authentication, recipient rejection, and SMTP response failure.
 ## Permissions
 
 - `alerts.view`: view operational alerts and history within effective site scope.
-- `alerts.acknowledge`: acknowledge, silence, and end silence.
+- `alerts.acknowledge`: acknowledge, silence, end silence, and remove an
+  operational notification from the current user's notification center without
+  resolving it.
 - `alerts.manage_rules`: change alert rules.
 - `alerts.manage_delivery`: configure/test delivery and suppress or restore optional email
   recommendations.
@@ -89,7 +97,7 @@ Checks use effective permission sets for built-in and custom roles, not role nam
 
 `GET /api/v1/notification-history` is paginated and filterable by event type, severity,
 category, resource, and date range. Open, update, acknowledge, silence, expiry, resolve,
-reopen, suppression, restoration, and delivery transitions append `NotificationEvent`
+reopen, dismissal, suppression, restoration, and delivery transitions append `NotificationEvent`
 records. They are not edited when current alert state changes.
 
 Structured logs contain safe IDs, rule/category/resource/site, state, severity, actor or

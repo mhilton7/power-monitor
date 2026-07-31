@@ -16,13 +16,11 @@ export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <AppearanceProvider>
-          <BrowserRouter>
-            <SecondClockProvider>
-              <AuthProvider>{children}</AuthProvider>
-            </SecondClockProvider>
-          </BrowserRouter>
-        </AppearanceProvider>
+        <BrowserRouter>
+          <SecondClockProvider>
+            <AuthProvider><AppearanceProvider>{children}</AppearanceProvider></AuthProvider>
+          </SecondClockProvider>
+        </BrowserRouter>
       </QueryClientProvider>
     </StrictMode>
   )

@@ -60,6 +60,7 @@ def test_initial_migration_is_frozen_and_covers_metadata() -> None:
         "utility_account_site_assignments",
         "notification_suppressions",
         "notification_events",
+        "dashboard_appearance",
     }
     assert "CREATE UNIQUE INDEX" in schema
     assert "ix_raw_site_time" in schema
@@ -158,6 +159,16 @@ def test_detailed_notifications_migration_is_additive_and_audited() -> None:
     assert '"safe_error_code"' in revision
     assert "uq_notification_suppression_active_user" in revision
     assert "uq_notification_suppression_active_home" in revision
+
+
+def test_dashboard_appearance_migration_is_additive_and_seeds_shared_colors() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (root / "alembic" / "versions" / "20260731_0024_dashboard_appearance.py").read_text()
+    assert 'down_revision = "20260731_0023"' in revision
+    assert '"dashboard_appearance"' in revision
+    assert "#78DFBF" in revision
+    assert "#C9A7FF" in revision
+    assert "DROP SCHEMA" not in revision
 
 
 def test_dashboard_information_architecture_migration_preserves_layout_history() -> None:

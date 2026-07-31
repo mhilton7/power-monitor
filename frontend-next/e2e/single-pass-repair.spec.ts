@@ -1088,7 +1088,7 @@ test('History preserves intentional no-data and configured layouts', async ({ pa
   await expect(page.getByRole('heading', { name: 'Whole Home', exact: true })).toBeVisible()
   await expect(page.getByText('60.34%')).toHaveCount(4)
   await expect(page.getByText('60.3444444444444%', { exact: true })).toHaveCount(0)
-  await expect(page.getByText(/Readings are available beginning Jul 25, 8:15 AM/)).toBeVisible()
+  await expect(page.getByText(/Data begins Jul 25, 8:15 AM/)).toBeVisible()
   await expect(page.getByText(/Each point represents one 15-minute interval/)).toBeVisible()
   await page.getByText('View accessible data table').click()
   await expect(page.getByRole('rowheader', { name: 'Jul 25, 8:15–8:30 AM' })).toBeVisible()

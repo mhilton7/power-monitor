@@ -4681,6 +4681,75 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/appearance:
+    get:
+      tags:
+      - management
+      summary: Get Dashboard Appearance
+      operationId: get_dashboard_appearance_api_v1_appearance_get
+      parameters:
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardAppearanceView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - management
+      summary: Update Dashboard Appearance
+      operationId: update_dashboard_appearance_api_v1_appearance_put
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardAppearanceWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardAppearanceView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sites:
     get:
       tags:
@@ -14014,6 +14083,63 @@ components:
       - effective_to
       - state
       title: CurrentRateAssignmentDetail
+    DashboardAppearanceView:
+      properties:
+        chart_power_color:
+          type: string
+          pattern: ^#[0-9A-F]{6}$
+          title: Chart Power Color
+        chart_energy_color:
+          type: string
+          pattern: ^#[0-9A-F]{6}$
+          title: Chart Energy Color
+        chart_cost_color:
+          type: string
+          pattern: ^#[0-9A-F]{6}$
+          title: Chart Cost Color
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      additionalProperties: false
+      type: object
+      required:
+      - chart_power_color
+      - chart_energy_color
+      - chart_cost_color
+      - revision
+      - updated_at
+      title: DashboardAppearanceView
+    DashboardAppearanceWrite:
+      properties:
+        chart_power_color:
+          type: string
+          pattern: ^#[0-9A-Fa-f]{6}$
+          title: Chart Power Color
+        chart_energy_color:
+          type: string
+          pattern: ^#[0-9A-Fa-f]{6}$
+          title: Chart Energy Color
+        chart_cost_color:
+          type: string
+          pattern: ^#[0-9A-Fa-f]{6}$
+          title: Chart Cost Color
+        expected_revision:
+          type: integer
+          minimum: 1.0
+          title: Expected Revision
+      additionalProperties: false
+      type: object
+      required:
+      - chart_power_color
+      - chart_energy_color
+      - chart_cost_color
+      - expected_revision
+      title: DashboardAppearanceWrite
     DayScheduleDocument:
       properties:
         day_type:

@@ -269,6 +269,8 @@
 .chart-guide-item i { width: 1.8rem; height: 3px; border-radius: 999px; }
 .chart-guide-item i.dashed { background: repeating-linear-gradient(90deg, currentcolor 0 7px, transparent 7px 11px) !important; }
 .chart-gap-guide { color: var(--warning); }
+.chart-gap-guide { display: flex; align-items: center; gap: .4rem; line-height: 1.35; }
+.chart-gap-guide svg { width: 1rem; height: 1rem; flex: 0 0 auto; }
 .surface { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel); padding: var(--space-5); box-shadow: 0 1px 0 rgb(255 255 255 / 2%) inset; }
 .surface + .surface { margin-top: var(--space-4); }
 .surface-header { display: flex; align-items: start; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-4); }

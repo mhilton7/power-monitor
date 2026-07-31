@@ -50,7 +50,7 @@ import { DropdownMenu, DropdownMenuItem } from '../../components/overlays/Dropdo
 import { ModalLayer } from '../../components/overlays/ModalLayer'
 import { SensorSetupFlow } from '../../features/sensors/SensorSetupFlow'
 import { MeasurementAssignmentDialog } from '../../features/sensors/MeasurementAssignmentDialog'
-import { chartColorContrast, useAppearance, type ChartColorKind } from '../../state/AppearanceContext'
+import { chartColorContrast, DEFAULT_CHART_COLORS, useAppearance, type ChartColorKind } from '../../state/AppearanceContext'
 import { useAuth } from '../../state/AuthContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
@@ -676,7 +676,7 @@ const ALERT_RULES: AlertRuleDefinition[] = [
   },
 ]
 
-function ChartColorControl({ kind, color, onChange }: { kind: ChartColorKind; color: string; onChange: (color: string) => void }) {
+function ChartColorControl({ kind, color, onChange, disabled = false }: { kind: ChartColorKind; color: string; onChange: (color: string) => void; disabled?: boolean }) {
   const [draft, setDraft] = useState<string>()
   const label = kind === 'cost' ? 'Estimated cost' : kind.charAt(0).toUpperCase() + kind.slice(1)
   const updateDraft = (value: string) => {
@@ -686,8 +686,8 @@ function ChartColorControl({ kind, color, onChange }: { kind: ChartColorKind; co
   return (
     <div className="chart-color-row">
       <span>{label}</span>
-      <label className="chart-color-swatch"><span className="sr-only">{label} color picker</span><input type="color" value={color} onChange={(event) => { onChange(event.target.value) }} /></label>
-      <label className="chart-color-hex"><span className="sr-only">{label} hexadecimal color</span><input aria-invalid={draft !== undefined && !/^#[0-9a-f]{6}$/iu.test(draft)} inputMode="text" maxLength={7} pattern="#[0-9A-Fa-f]{6}" value={draft ?? color} onChange={(event) => { updateDraft(event.target.value) }} onBlur={() => { setDraft(undefined) }} /></label>
+      <label className="chart-color-swatch"><span className="sr-only">{label} color picker</span><input type="color" value={color} disabled={disabled} onChange={(event) => { onChange(event.target.value) }} /></label>
+      <label className="chart-color-hex"><span className="sr-only">{label} hexadecimal color</span><input aria-invalid={draft !== undefined && !/^#[0-9a-f]{6}$/iu.test(draft)} inputMode="text" maxLength={7} pattern="#[0-9A-Fa-f]{6}" value={draft ?? color} disabled={disabled} onChange={(event) => { updateDraft(event.target.value) }} onBlur={() => { setDraft(undefined) }} /></label>
       <i className="chart-color-preview" aria-hidden="true" style={{ backgroundColor: color }} />
     </div>
   )
@@ -695,18 +695,30 @@ function ChartColorControl({ kind, color, onChange }: { kind: ChartColorKind; co
 
 function AppearanceSettings() {
   const appearance = useAppearance()
+  const { session } = useAuth()
+  const canPublish = hasPermission(session, 'settings.manage')
+  const [colorOverrides, setColorOverrides] = useState<Partial<Record<ChartColorKind, string>>>({})
+  const draftColors = { ...appearance.chartColors, ...colorOverrides }
+  const colorsDirty = Object.keys(colorOverrides).length > 0
+  const publishColors = useMutation({
+    mutationFn: () => appearance.publishChartColors(draftColors),
+    onSuccess: () => { setColorOverrides({}) },
+  })
   const chartBackground = appearance.theme === 'light' ? '#FFFFFF' : '#10251D'
   return (
-    <Surface title="Appearance" subtitle="Stored only in this browser.">
+    <Surface title="Appearance" subtitle="Personal display options and administrator-published chart colors.">
       <fieldset className="segmented-field"><legend>Theme</legend>{(['dark', 'light', 'system'] as const).map((value) => <button type="button" key={value} className={appearance.theme === value ? 'active' : ''} onClick={() => { appearance.setTheme(value); }}>{value}</button>)}</fieldset>
       <fieldset className="segmented-field"><legend>Density</legend>{(['comfortable', 'compact'] as const).map((value) => <button type="button" key={value} className={appearance.density === value ? 'active' : ''} onClick={() => { appearance.setDensity(value); }}>{value}</button>)}</fieldset>
       <label>Accent color<input type="color" value={appearance.accent} onChange={(event) => { appearance.setAccent(event.target.value); }} /></label>
       <div className="chart-color-settings">
-        <div className="surface-header"><div><h3>History chart colors</h3><p>Stored only in this browser and applied to Home and History charts.</p></div><button type="button" className="button secondary" onClick={appearance.resetChartColors}>Reset colors</button></div>
+        <div className="surface-header"><div><h3>History chart colors</h3><p>Published by an administrator and applied to Home and History charts for every user.</p></div><div className="inline-actions"><button type="button" className="button secondary" disabled={!canPublish || publishColors.isPending} onClick={() => { setColorOverrides({ ...DEFAULT_CHART_COLORS }) }}>Reset colors</button><button type="button" className="button primary" disabled={!canPublish || !colorsDirty || publishColors.isPending} onClick={() => { publishColors.mutate() }}>{publishColors.isPending ? 'Applying…' : 'Apply colors'}</button></div></div>
         {(['power', 'energy', 'cost'] as const).map((kind) => (
-          <ChartColorControl key={kind} kind={kind} color={appearance.chartColors[kind]} onChange={(value) => { appearance.setChartColor(kind, value) }} />
+          <ChartColorControl key={kind} kind={kind} color={draftColors[kind]} disabled={!canPublish} onChange={(value) => { setColorOverrides((current) => ({ ...current, [kind]: value.toUpperCase() })) }} />
         ))}
-        {Object.values(appearance.chartColors).some((color) => chartColorContrast(color, chartBackground) < 3) && <InlineNotice tone="warning">One or more chart lines have low contrast in the selected theme. The color is preserved; choose a more distinct color for easier reading.</InlineNotice>}
+        {Object.values(draftColors).some((color) => chartColorContrast(color, chartBackground) < 3) && <InlineNotice tone="warning">One or more chart lines have low contrast in the selected theme. The color is preserved; choose a more distinct color for easier reading.</InlineNotice>}
+        {publishColors.isSuccess && <InlineNotice tone="success">Chart colors applied for every user.</InlineNotice>}
+        {publishColors.error && <InlineNotice tone="danger">{publishColors.error.message}</InlineNotice>}
+        {!canPublish && <InlineNotice>Only an administrator can change the shared chart colors.</InlineNotice>}
         <small>Choose colors that remain distinguishable against the chart background. Cost is also rendered with a dashed line.</small>
       </div>
       <h3>Home cards</h3>

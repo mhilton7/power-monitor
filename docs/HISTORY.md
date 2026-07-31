@@ -44,8 +44,9 @@ truthful rather than being compressed into equally spaced categories. Missing
 intervals break the line, and invalid timestamps are reported instead of being
 silently moved to the chart edge. Tick marks are selected from actual bucket
 boundaries rather than arbitrary subdivisions. When synchronized readings begin
-after the selected range starts, the chart explicitly says when readings become
-available and leaves the earlier interval empty.
+after the selected range starts, one compact warning identifies the first data
+time and the number of missing intervals shown as gaps. The earlier interval
+remains empty.
 
 Tooltips and the accessible table share the same exact interval formatter, for
 example `Jul 31, 8:15–8:30 AM`. Midnight crossings include both dates, and a
@@ -53,13 +54,14 @@ daylight-saving offset change is appended so repeated local times stay distinct.
 Every vertical scale has a visible title. Energy + Cost explicitly identifies the
 solid left Energy scale and dashed right Cost scale, so color is not the only cue.
 
-Appearance stores Power, Energy, and Estimated cost line colors locally under
-`pm-chart-power-color`, `pm-chart-energy-color`, and `pm-chart-cost-color`.
-Each color has a native color picker and an editable `#RRGGBB` field. Only
-six-digit hexadecimal colors are accepted; invalid stored values fall back to
-`#78DFBF`, `#78DFBF`, and `#C9A7FF`. Fill opacity derives from the selected line
-color, reset restores all defaults, and the settings surface warns without
-overwriting a valid color when contrast is below 3:1.
+Appearance publishes one Power, Energy, and Estimated cost chart palette from
+the server. Administrators edit a draft with the native color picker or
+`#RRGGBB` field and select **Apply colors**; every authenticated user then sees
+that revision on Home and History. Revision checks prevent one administrator
+from silently overwriting another administrator's newer change. Invalid values
+fall back to `#78DFBF`, `#78DFBF`, and `#C9A7FF`. Reset prepares those defaults
+as a draft and still requires Apply. Fill opacity derives from the published
+line color, and low contrast is reported without altering the selection.
 
 ## Page information hierarchy
 

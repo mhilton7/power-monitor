@@ -329,3 +329,73 @@ async def test_acknowledge_and_silence_preserve_active_condition(
         assert stored and stored.status == "acknowledged" and stored.resolved_at is None
         assert stored.acknowledged_at is not None
         assert stored.silenced_until is None
+
+
+@pytest.mark.asyncio
+async def test_remove_hides_one_users_notification_until_the_condition_updates(
+    api_client: Any,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+) -> None:
+    client: httpx.AsyncClient = api_client
+    await client.post(
+        "/api/v1/auth/bootstrap",
+        json={
+            "bootstrap_secret": "test-bootstrap-secret-with-at-least-16",
+            "email": "remove-notification@example.com",
+            "display_name": "Notification Owner",
+            "password": "Long-Production-Password-42!",
+        },
+    )
+    async with session_factory_fixture() as session:
+        site = await session.scalar(select(Site).where(Site.is_default.is_(True)))
+        assert site
+        rule = AlertRule(
+            name="Old sensor warning",
+            rule_type="heartbeat_stale",
+            severity="warning",
+            site_id=site.id,
+            configuration={"stale_after_seconds": 60},
+        )
+        session.add(rule)
+        await session.flush()
+        alert = AlertInstance(
+            rule_id=rule.id,
+            site_id=site.id,
+            status="active",
+            severity="warning",
+            opened_at=datetime.now(UTC) - timedelta(days=1),
+            last_seen_at=datetime.now(UTC) - timedelta(days=1),
+            evidence={"stale_after_seconds": 60},
+        )
+        session.add(alert)
+        await session.commit()
+        alert_id = alert.id
+        site_id = site.id
+
+    before = (await client.get(f"/api/v1/notifications?site_id={site_id}")).json()["items"]
+    item = next(entry for entry in before if entry["id"] == alert_id)
+    assert item["suppression"]["dismissible"] is True
+    removed = await client.post(
+        f"/api/v1/notifications/{alert_id}/dismiss",
+        headers=csrf(client),
+    )
+    assert removed.status_code == 201, removed.text
+    assert removed.json()["dismissed"] is True
+    after = (await client.get(f"/api/v1/notifications?site_id={site_id}")).json()["items"]
+    assert all(entry["id"] != alert_id for entry in after)
+
+    async with session_factory_fixture() as session:
+        event = await session.scalar(
+            select(NotificationEvent).where(
+                NotificationEvent.notification_id == alert_id,
+                NotificationEvent.event_type == "dismissed",
+            )
+        )
+        assert event and event.details["monitoring_preserved"] is True
+        stored = await session.get(AlertInstance, alert_id)
+        assert stored
+        stored.last_seen_at = datetime.now(UTC) + timedelta(seconds=1)
+        await session.commit()
+
+    returned = (await client.get(f"/api/v1/notifications?site_id={site_id}")).json()["items"]
+    assert any(entry["id"] == alert_id for entry in returned)

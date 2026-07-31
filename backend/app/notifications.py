@@ -14,6 +14,7 @@ from app.db.models import (
     Device,
     NotificationAttempt,
     NotificationChannel,
+    NotificationEvent,
     NotificationSuppression,
     Site,
     User,
@@ -565,6 +566,7 @@ async def load_notification_views(
     site_ids: set[str],
     requested_site_id: str | None = None,
     include_resolved: bool = True,
+    include_dismissed: bool = False,
 ) -> list[NotificationView]:
     now = datetime.now(UTC)
     alert_query = select(AlertInstance).order_by(AlertInstance.last_seen_at.desc()).limit(1000)
@@ -579,6 +581,20 @@ async def load_notification_views(
     if not include_resolved:
         alert_query = alert_query.where(AlertInstance.status != "resolved")
     alerts = list(await session.scalars(alert_query))
+    dismissed_events = list(
+        await session.scalars(
+            select(NotificationEvent)
+            .where(
+                NotificationEvent.actor_id == user_id,
+                NotificationEvent.event_type == "dismissed",
+            )
+            .order_by(NotificationEvent.occurred_at.desc())
+            .limit(2000)
+        )
+    )
+    dismissed_at: dict[str, datetime] = {}
+    for event in dismissed_events:
+        dismissed_at.setdefault(event.notification_id, _aware(event.occurred_at))
     rule_ids = {item.rule_id for item in alerts}
     device_ids = {item.device_id for item in alerts if item.device_id}
     site_id_values = {item.site_id for item in alerts if item.site_id}
@@ -767,7 +783,7 @@ async def load_notification_views(
                         else {"attempted": False}
                     ),
                     "suppression": {
-                        "dismissible": False,
+                        "dismissible": "alerts.acknowledge" in permissions,
                         "permanently_suppressible": False,
                         "currently_suppressed": False,
                         "allowed_scopes": [],
@@ -842,7 +858,7 @@ async def load_notification_views(
                             or latest.response_summary,
                         },
                         "suppression": {
-                            "dismissible": False,
+                            "dismissible": "alerts.manage_delivery" in permissions,
                             "permanently_suppressible": False,
                             "currently_suppressed": False,
                             "allowed_scopes": [],
@@ -940,6 +956,14 @@ async def load_notification_views(
                             }
                         )
                     )
+
+    if not include_dismissed:
+        output = [
+            item
+            for item in output
+            if dismissed_at.get(item.id) is None
+            or dismissed_at[item.id] < _aware(item.last_seen_at)
+        ]
 
     severity_order = {"critical": 4, "error": 3, "warning": 2, "info": 1}
     kind_order = {"operational_alert": 3, "delivery_issue": 2, "setup_recommendation": 1}

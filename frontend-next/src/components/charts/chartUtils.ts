@@ -82,7 +82,7 @@ export function chartAvailabilityMessage(
   const beginning = zoned(firstAvailable.start, timezone, {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })
-  return `Readings are available beginning ${beginning}. Earlier intervals in this range contain no synchronized data.`
+  return `Data begins ${beginning}`
 }
 
 export function chartIntervalLabel(start: string, end: string, timezone: string): string {

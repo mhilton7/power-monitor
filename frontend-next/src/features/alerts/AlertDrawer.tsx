@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, Check, ChevronDown, ChevronRight, Clock3, ExternalLink, EyeOff, X } from 'lucide-react'
+import { Bell, Check, ChevronDown, ChevronRight, Clock3, ExternalLink, EyeOff, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from '../../app/router'
 import { hasPermission } from '../../access/permissions'
@@ -17,6 +17,7 @@ export function AlertDrawer({ open, alerts, onClose }: { open: boolean; alerts: 
   const [expanded, setExpanded] = useState<string>()
   const [silencing, setSilencing] = useState<AlertSummary>()
   const [suppressing, setSuppressing] = useState<AlertSummary>()
+  const [removing, setRemoving] = useState<AlertSummary>()
 
   useEffect(() => {
     if (!open) return
@@ -43,19 +44,20 @@ export function AlertDrawer({ open, alerts, onClose }: { open: boolean; alerts: 
         </header>
         <div className="drawer-content">
           {alerts.length === 0 ? <EmptyState title="Everything looks calm" message="There are no active issues or recommendations for your home." /> : <>
-            <NotificationSection title="Active issues" items={groups.active} expanded={expanded} setExpanded={setExpanded} canAcknowledge={canAcknowledge} canManageDelivery={canManageDelivery} onSilence={setSilencing} onSuppress={setSuppressing} onClose={onClose} />
-            <NotificationSection title="Recommendations" items={groups.recommendations} expanded={expanded} setExpanded={setExpanded} canAcknowledge={canAcknowledge} canManageDelivery={canManageDelivery} onSilence={setSilencing} onSuppress={setSuppressing} onClose={onClose} />
-            <NotificationSection title="Recently resolved" items={groups.resolved} expanded={expanded} setExpanded={setExpanded} canAcknowledge={false} canManageDelivery={false} onSilence={setSilencing} onSuppress={setSuppressing} onClose={onClose} />
+            <NotificationSection title="Active issues" items={groups.active} expanded={expanded} setExpanded={setExpanded} canAcknowledge={canAcknowledge} canManageDelivery={canManageDelivery} onSilence={setSilencing} onSuppress={setSuppressing} onRemove={setRemoving} onClose={onClose} />
+            <NotificationSection title="Recommendations" items={groups.recommendations} expanded={expanded} setExpanded={setExpanded} canAcknowledge={canAcknowledge} canManageDelivery={canManageDelivery} onSilence={setSilencing} onSuppress={setSuppressing} onRemove={setRemoving} onClose={onClose} />
+            <NotificationSection title="Recently resolved" items={groups.resolved} expanded={expanded} setExpanded={setExpanded} canAcknowledge={false} canManageDelivery={false} onSilence={setSilencing} onSuppress={setSuppressing} onRemove={setRemoving} onClose={onClose} />
           </>}
         </div>
       </aside>
       {silencing && <SilenceDialog notification={silencing} onClose={() => { setSilencing(undefined) }} />}
       {suppressing && <SuppressDialog notification={suppressing} onClose={() => { setSuppressing(undefined) }} />}
+      {removing && <RemoveNotificationDialog notification={removing} onClose={() => { setRemoving(undefined) }} />}
     </>
   )
 }
 
-function NotificationSection({ title, items, expanded, setExpanded, canAcknowledge, canManageDelivery, onSilence, onSuppress, onClose }: {
+function NotificationSection({ title, items, expanded, setExpanded, canAcknowledge, canManageDelivery, onSilence, onSuppress, onRemove, onClose }: {
   title: string
   items: AlertSummary[]
   expanded?: string
@@ -64,13 +66,14 @@ function NotificationSection({ title, items, expanded, setExpanded, canAcknowled
   canManageDelivery: boolean
   onSilence: (notification: AlertSummary) => void
   onSuppress: (notification: AlertSummary) => void
+  onRemove: (notification: AlertSummary) => void
   onClose: () => void
 }) {
   if (!items.length) return null
-  return <section className="notification-section" aria-labelledby={`notification-${title.replaceAll(' ', '-').toLowerCase()}`}><h3 id={`notification-${title.replaceAll(' ', '-').toLowerCase()}`}>{title}<span>{items.length}</span></h3><ul className="alert-list">{items.map((item) => <NotificationRow key={item.id} item={item} open={expanded === item.id} onToggle={() => { setExpanded(expanded === item.id ? undefined : item.id) }} canAcknowledge={canAcknowledge} canManageDelivery={canManageDelivery} onSilence={() => { onSilence(item) }} onSuppress={() => { onSuppress(item) }} onClose={onClose} />)}</ul></section>
+  return <section className="notification-section" aria-labelledby={`notification-${title.replaceAll(' ', '-').toLowerCase()}`}><h3 id={`notification-${title.replaceAll(' ', '-').toLowerCase()}`}>{title}<span>{items.length}</span></h3><ul className="alert-list">{items.map((item) => <NotificationRow key={item.id} item={item} open={expanded === item.id} onToggle={() => { setExpanded(expanded === item.id ? undefined : item.id) }} canAcknowledge={canAcknowledge} canManageDelivery={canManageDelivery} onSilence={() => { onSilence(item) }} onSuppress={() => { onSuppress(item) }} onRemove={() => { onRemove(item) }} onClose={onClose} />)}</ul></section>
 }
 
-function NotificationRow({ item, open, onToggle, canAcknowledge, canManageDelivery, onSilence, onSuppress, onClose }: {
+function NotificationRow({ item, open, onToggle, canAcknowledge, canManageDelivery, onSilence, onSuppress, onRemove, onClose }: {
   item: AlertSummary
   open: boolean
   onToggle: () => void
@@ -78,6 +81,7 @@ function NotificationRow({ item, open, onToggle, canAcknowledge, canManageDelive
   canManageDelivery: boolean
   onSilence: () => void
   onSuppress: () => void
+  onRemove: () => void
   onClose: () => void
 }) {
   const client = useQueryClient()
@@ -107,6 +111,7 @@ function NotificationRow({ item, open, onToggle, canAcknowledge, canManageDelive
         {canAcknowledge && item.status === 'silenced' && <button type="button" className="button secondary compact" disabled={endSilence.isPending} onClick={() => { endSilence.mutate() }}>End silence</button>}
         {item.remediation.action && <button type="button" className="button primary compact" onClick={() => { onClose(); navigate(item.remediation.action?.target ?? '/') }}>{item.remediation.action.label}<ExternalLink size={14} /></button>}
         {canManageDelivery && item.suppression.permanentlySuppressible && <button type="button" className="button secondary compact" onClick={onSuppress}><EyeOff size={15} /> Do not remind me again</button>}
+        {item.suppression.dismissible && <button type="button" className="button danger compact" onClick={onRemove}><Trash2 size={15} /> Remove</button>}
       </div>
     </div>}
   </li>
@@ -140,4 +145,18 @@ function SuppressDialog({ notification, onClose }: { notification: AlertSummary;
   useEffect(() => { firstRef.current?.focus() }, [])
   const save = useMutation({ mutationFn: () => request(`/api/v1/notifications/${encodeURIComponent(notification.id)}/suppress`, { method: 'POST', body: JSON.stringify({ scope, reason, confirmed }) }), onSuccess: async () => { await client.invalidateQueries({ queryKey: ['alerts'] }); await client.invalidateQueries({ queryKey: ['notification-suppressions'] }); onClose() } })
   return <div className="modal-backdrop"><form className="modal-card small-modal" role="dialog" aria-modal="true" aria-labelledby="suppress-title" onSubmit={(event) => { event.preventDefault(); save.mutate() }}><header><div><small>Optional recommendation</small><h2 id="suppress-title">Stop email setup reminders?</h2></div><button type="button" className="icon-button" aria-label="Close ignore dialog" onClick={onClose}><X /></button></header><div className="setup-body form-grid single"><p>Power Monitor will continue showing alerts in the dashboard, but no email will be sent until a delivery channel is configured.</p><fieldset><legend>Reminder scope</legend><label><input ref={firstRef} type="radio" name="scope" checked={scope === 'home'} onChange={() => { setScope('home') }} /> Do not remind this home again</label><label><input type="radio" name="scope" checked={scope === 'user'} onChange={() => { setScope('user') }} /> Dismiss for me</label></fieldset><label>Reason (optional)<textarea value={reason} onChange={(event) => { setReason(event.target.value) }} /></label><label className="check-row"><input type="checkbox" checked={confirmed} onChange={(event) => { setConfirmed(event.target.checked) }} /> I understand dashboard alerts continue and I can restore this reminder from Settings.</label>{save.error && <p className="error-text">{save.error.message}</p>}</div><footer><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button type="submit" className="button primary" disabled={!confirmed || save.isPending}>Do not remind me again</button></footer></form></div>
+}
+
+function RemoveNotificationDialog({ notification, onClose }: { notification: AlertSummary; onClose: () => void }) {
+  const client = useQueryClient()
+  const firstRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => { firstRef.current?.focus() }, [])
+  const remove = useMutation({
+    mutationFn: () => request(`/api/v1/notifications/${encodeURIComponent(notification.id)}/dismiss`, { method: 'POST' }),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['alerts'] })
+      onClose()
+    },
+  })
+  return <div className="modal-backdrop"><div className="modal-card small-modal" role="dialog" aria-modal="true" aria-labelledby="remove-notification-title"><header><div><small>Notification center</small><h2 id="remove-notification-title">Remove this notification?</h2></div><button type="button" className="icon-button" aria-label="Close remove dialog" onClick={onClose}><X /></button></header><div className="setup-body form-grid single"><p><strong>{notification.title}</strong> will be removed from your notification center.</p><p>Monitoring, alert rules, delivery history, and the audit record remain active. If the condition changes or happens again, a new update will appear.</p>{remove.error && <p className="error-text">{remove.error.message}</p>}</div><footer><button ref={firstRef} type="button" className="button secondary" onClick={onClose}>Cancel</button><button type="button" className="button danger" disabled={remove.isPending} onClick={() => { remove.mutate() }}><Trash2 size={15} /> {remove.isPending ? 'Removing…' : 'Remove notification'}</button></footer></div></div>
 }

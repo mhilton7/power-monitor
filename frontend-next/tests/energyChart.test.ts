@@ -85,7 +85,7 @@ describe('energy chart tooltip formatting', () => {
       Date.parse('2026-07-31T14:00:00Z'), Date.parse('2026-07-31T15:15:00Z'), Date.parse('2026-07-31T15:30:00Z'), Date.parse('2026-07-31T16:00:00Z'),
     ])
     expect(chartAvailabilityMessage(points, '2026-07-31T14:00:00Z', 'America/Los_Angeles')).toBe(
-      'Readings are available beginning Jul 31, 8:15 AM. Earlier intervals in this range contain no synchronized data.',
+      'Data begins Jul 31, 8:15 AM',
     )
     const firstPoint = points[0]
     expect(firstPoint).toBeDefined()

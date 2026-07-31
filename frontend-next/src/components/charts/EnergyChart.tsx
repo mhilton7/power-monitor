@@ -1,5 +1,6 @@
 import { Chart as ChartJS, Filler, Legend, LinearScale, LineElement, PointElement, Tooltip, type ChartData, type ChartDataset, type ChartOptions, type ScatterDataPoint } from 'chart.js'
 import { Line } from 'react-chartjs-2'
+import { AlertTriangle } from 'lucide-react'
 import { useAppearance } from '../../state/AppearanceContext'
 import type { HistoryBucket, HistoryPoint } from '../../types/models'
 import { energy, money, percentage, power, rate } from '../../utils/format'
@@ -72,6 +73,10 @@ export function EnergyChart({ points, mode, currency, title, timezone = 'UTC', b
   }
   const missingCount = ordered.filter((point) => point.missing).length
   const availabilityMessage = chartAvailabilityMessage(ordered, rangeStart, timezone)
+  const gapMessage = [
+    availabilityMessage,
+    missingCount > 0 ? `${missingCount} missing interval${missingCount === 1 ? '' : 's'} shown as gaps` : undefined,
+  ].filter(Boolean).join(' · ')
   const guideItems = mode === 'energy_cost'
     ? [{ color: chartColors.energy, label: 'Solid line · Left scale: Energy (kWh)' }, { color: chartColors.cost, label: `Dashed line · Right scale: Estimated cost (${currency})`, dashed: true }]
     : mode === 'power' ? [{ color: chartColors.power, label: 'Solid line · Left scale: Power (W)' }]
@@ -81,8 +86,7 @@ export function EnergyChart({ points, mode, currency, title, timezone = 'UTC', b
     <p className="sr-only" role="img">{title}. {ordered.length} time intervals. Missing readings are rendered as gaps.</p>
     <p className="chart-scale-guide">Each point represents one {bucket === '1d' ? 'day' : bucket.replace('m', '-minute').replace('h', '-hour')} interval · shown in {timezone}.</p>
     <div className="chart-scale-guide" aria-label={guideItems.map((item) => item.label).join('. ')}>{guideItems.map((item) => <span className="chart-guide-item" key={item.label}><i className={item.dashed ? 'dashed' : ''} style={{ backgroundColor: item.color, color: item.color }} />{item.label}</span>)}</div>
-    {availabilityMessage && <p className="chart-gap-guide">{availabilityMessage}</p>}
-    {missingCount > 0 && <p className="chart-gap-guide">{missingCount} interval{missingCount === 1 ? '' : 's'} missing; the line remains intentionally broken.</p>}
+    {gapMessage && <p className="chart-gap-guide"><AlertTriangle aria-hidden="true" /> <span>{gapMessage}.</span></p>}
     {invalidCount > 0 && <p className="chart-gap-guide">{invalidCount} interval{invalidCount === 1 ? '' : 's'} could not be plotted because its timestamp was invalid.</p>}
     <div className="chart-canvas" aria-hidden="true"><Line data={data} options={options} /></div>
     <details className="chart-table"><summary>View accessible data table</summary><div className="table-scroll"><table>

@@ -1370,6 +1370,26 @@ class NotificationHistoryPage(ApiModel):
     total: int
 
 
+class DashboardAppearanceView(ApiModel):
+    chart_power_color: str = Field(pattern=r"^#[0-9A-F]{6}$")
+    chart_energy_color: str = Field(pattern=r"^#[0-9A-F]{6}$")
+    chart_cost_color: str = Field(pattern=r"^#[0-9A-F]{6}$")
+    revision: int = Field(ge=1)
+    updated_at: datetime
+
+
+class DashboardAppearanceWrite(ApiModel):
+    chart_power_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    chart_energy_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    chart_cost_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    expected_revision: int = Field(ge=1)
+
+    @field_validator("chart_power_color", "chart_energy_color", "chart_cost_color")
+    @classmethod
+    def normalize_chart_color(cls, value: str) -> str:
+        return value.upper()
+
+
 class UserCreate(ApiModel):
     email: EmailStr
     display_name: str = Field(min_length=1, max_length=120)

@@ -37,6 +37,13 @@ async function mockServer(page: Page) {
         },
       },
       '/api/v1/sites': [home],
+      '/api/v1/appearance': {
+        chart_power_color: '#78DFBF',
+        chart_energy_color: '#78DFBF',
+        chart_cost_color: '#C9A7FF',
+        revision: 1,
+        updated_at: '2026-07-31T12:00:00Z',
+      },
       '/api/v1/devices': [],
       '/api/v1/utility-accounts': [],
       '/api/v1/electric-services/default/current-rate-assignment': {
@@ -150,6 +157,10 @@ async function mockServer(page: Page) {
       '/api/v1/admin/network/runtime': { ingress: 'signed_private', pull: 'disabled' },
       '/api/v1/audit-events': [],
     }
+    if (path === '/api/v1/appearance' && route.request().method() === 'PUT') {
+      const payload = route.request().postDataJSON() as Record<string, unknown>
+      return route.fulfill({ json: { ...payload, revision: 2, updated_at: '2026-07-31T12:05:00Z' } })
+    }
     const exact = data[path]
     if (exact !== undefined) return route.fulfill({ json: exact })
     if (path === '/api/v1/events/stream') return route.fulfill({ status: 204 })
@@ -179,7 +190,7 @@ test('normal production routes use only the four-workspace shell', async ({ page
   await expect(page).toHaveScreenshot('home-empty-dark.png', { fullPage: true })
 })
 
-test('Appearance exposes editable, persistent, resettable chart colors', async ({ page }, testInfo) => {
+test('Appearance applies administrator-published chart colors for every user', async ({ page }, testInfo) => {
   await page.goto('/settings/appearance')
   await expect(page.getByRole('heading', { name: 'History chart colors' })).toBeVisible()
   const powerHex = page.getByLabel('Power hexadecimal color')
@@ -187,8 +198,11 @@ test('Appearance exposes editable, persistent, resettable chart colors', async (
   await expect(powerHex).toHaveValue('#78DFBF')
   await powerHex.fill('#336699')
   await costHex.fill('#FF8800')
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('pm-chart-power-color'))).toBe('#336699')
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('pm-chart-cost-color'))).toBe('#FF8800')
+  const publishRequest = page.waitForRequest((request) => request.url().endsWith('/api/v1/appearance') && request.method() === 'PUT')
+  await page.getByRole('button', { name: 'Apply colors' }).click()
+  const published = await publishRequest
+  expect(published.postDataJSON()).toMatchObject({ chart_power_color: '#336699', chart_cost_color: '#FF8800', expected_revision: 1 })
+  await expect(page.getByText('Chart colors applied for every user.')).toBeVisible()
   const capturesAppearance = ['desktop', 'mobile', 'edge', 'firefox', 'webkit'].includes(testInfo.project.name)
   if (capturesAppearance) await expect(page).toHaveScreenshot('appearance-chart-colors-custom.png', { fullPage: true, animations: 'disabled' })
   await page.getByRole('button', { name: 'Reset colors' }).click()
@@ -354,12 +368,12 @@ test('missing history intervals remain visible gaps without crashing Home or His
 
   await page.goto('/history')
   await expect(page.getByRole('heading', { name: 'History' })).toBeVisible()
-  await expect(page.getByText('1 interval missing; the line remains intentionally broken.')).toBeVisible()
+  await expect(page.getByText(/1 missing interval shown as gaps/)).toBeVisible()
   await expect(page.locator('.chart-canvas canvas')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'This page needs attention' })).toHaveCount(0)
 
   await page.goto('/home')
-  await expect(page.getByText('1 interval missing; the line remains intentionally broken.')).toBeVisible()
+  await expect(page.getByText(/1 missing interval shown as gaps/)).toBeVisible()
   await expect(page.locator('.chart-canvas canvas')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'This page needs attention' })).toHaveCount(0)
   expect(pageErrors).toEqual([])

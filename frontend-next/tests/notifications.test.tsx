@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AlertSummary } from '../src/types/models'
 
 let permissions = ['alerts.view', 'alerts.acknowledge', 'alerts.manage_delivery', 'devices.view']
 const navigateMock = vi.hoisted(() => vi.fn())
+const requestMock = vi.hoisted(() => vi.fn(() => Promise.resolve({})))
 
 vi.mock('../src/state/AuthContext', () => ({
   useAuth: () => ({
@@ -17,7 +18,7 @@ vi.mock('../src/state/AuthContext', () => ({
 }))
 
 vi.mock('../src/app/router', () => ({ useNavigate: () => navigateMock }))
-vi.mock('../src/api/client', () => ({ request: vi.fn(() => Promise.resolve({})) }))
+vi.mock('../src/api/client', () => ({ request: requestMock }))
 
 import { AlertDrawer } from '../src/features/alerts/AlertDrawer'
 
@@ -47,7 +48,7 @@ const heartbeat: AlertSummary = {
     action: { label: 'Open sensor details', target: '/settings/sensors', requiredPermissions: ['devices.view'] },
   },
   delivery: { attempted: true, channelName: 'Home email', lastOutcome: 'retry_scheduled', safeErrorCode: 'smtp_starttls_failed', safeErrorSummary: 'STARTTLS negotiation failed' },
-  suppression: { dismissible: false, permanentlySuppressible: false, currentlySuppressed: false, allowedScopes: [] },
+  suppression: { dismissible: true, permanentlySuppressible: false, currentlySuppressed: false, allowedScopes: [] },
 }
 
 const recommendation: AlertSummary = {
@@ -80,6 +81,7 @@ function renderDrawer(alerts = [heartbeat, recommendation]) {
 describe('detailed notification center', () => {
   beforeEach(() => {
     permissions = ['alerts.view', 'alerts.acknowledge', 'alerts.manage_delivery', 'devices.view']
+    requestMock.mockClear()
   })
 
   it('shows prioritized sections and detailed actionable evidence', async () => {
@@ -118,5 +120,18 @@ describe('detailed notification center', () => {
     await user.click(screen.getByRole('button', { name: /Indoor-AC stopped reporting/ }))
     expect(screen.queryByRole('button', { name: /Acknowledge/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Silence/ })).not.toBeInTheDocument()
+  })
+
+  it('requires confirmation before removing a notification while preserving monitoring', async () => {
+    const user = userEvent.setup()
+    renderDrawer([heartbeat])
+    await user.click(screen.getByRole('button', { name: /Indoor-AC stopped reporting/ }))
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    const dialog = screen.getByRole('dialog', { name: /Remove this notification/ })
+    expect(within(dialog).getByText(/Monitoring, alert rules, delivery history, and the audit record remain active/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Remove notification' }))
+    await waitFor(() => {
+      expect(requestMock).toHaveBeenCalledWith('/api/v1/notifications/alert-1/dismiss', { method: 'POST' })
+    })
   })
 })
