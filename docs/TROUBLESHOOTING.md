@@ -57,10 +57,12 @@ disable TLS verification or store the password in Power Monitor settings.
 - **One or more sensors have no circuit assignment:** open **Settings >
   Sensors**, use the sensor's **Manage** menu, and select **Assign circuit and
   electric service**. Create or choose the physical circuit and matching
-  service. Enable inclusion in the Home total only after confirming that it
-  does not overlap a parent, child, whole-home, or paired service-leg meter.
-  The warning clears after every selected sensor has an explicit relationship;
-  old readings remain intact.
+  service. Once every measurement sensor has a distinct non-overlapping circuit
+  on that service, the live Home total combines them automatically. The Home
+  fallback checkbox is used only when topology is incomplete or ambiguous and
+  must not select a parent together with its child, a duplicate circuit, or an
+  incomplete service-leg pair. The warning clears after every selected sensor
+  has an explicit relationship; old readings remain intact.
 - **Unexpected cost:** confirm timezone, interval coverage, effective plan/version, cost scope, billing dates, baseline, fixed-charge count, CCA/DA, taxes, credits, and source date.
 - **Current rate says unavailable:** open **Billing > Utility Accounts**.
   Confirm the account is active, a published version covers the current instant,

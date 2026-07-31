@@ -13,6 +13,8 @@ import { useSingleHome } from '../../state/SingleHomeContext'
 import { useTestMode } from '../../state/TestModeContext'
 import type { HistoryFilters, HistoryMetric, HistoryRange, HistoryScope } from '../../types/models'
 import { energy, money, percentage, power, rate } from '../../utils/format'
+import { hasPermission } from '../../access/permissions'
+import { useAuth } from '../../state/AuthContext'
 
 const ranges: Array<{ value: HistoryRange; label: string }> = [
   { value: 'today', label: 'Today' },
@@ -30,13 +32,16 @@ const metrics: Array<{ value: HistoryMetric; label: string }> = [
 ]
 
 export function HistoryPage() {
+  const { session } = useAuth()
+  const canViewCosts = hasPermission(session, 'costs.view')
+  const canExport = hasPermission(session, 'history.export')
   const { resolution } = useSingleHome()
   const { sensors, cycle } = useLiveHome()
   const testMode = useTestMode()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const [filters, setFilters] = useState<HistoryFilters>({
     range: '7d',
-    metric: 'energy_cost',
+    metric: canViewCosts ? 'energy_cost' : 'energy',
     scope: 'home',
   })
   const payload = useMemo(
@@ -70,7 +75,7 @@ export function HistoryPage() {
       <PageHeader
         title="History"
         description="See how your home used energy and what it cost over time."
-        action={<button type="button" className="button secondary" disabled={!payload || exportHistory.isPending} onClick={() => { exportHistory.mutate(); }}>
+        action={canExport && <button type="button" className="button secondary" disabled={!payload || exportHistory.isPending} onClick={() => { exportHistory.mutate(); }}>
           <Download size={17} /> {exportHistory.isPending ? 'Preparing…' : 'Export'}
         </button>}
       />
@@ -101,7 +106,7 @@ export function HistoryPage() {
           <label>
             <span><Gauge size={15} /> Metric</span>
             <select value={filters.metric} onChange={(event) => { setFilters((current) => ({ ...current, metric: event.target.value as HistoryMetric })); }}>
-              {metrics.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              {metrics.filter((item) => canViewCosts || !['cost', 'energy_cost'].includes(item.value)).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
           </label>
           <label>
@@ -147,15 +152,15 @@ export function HistoryPage() {
           <Surface title={history.data.title} subtitle={`${filters.scope === 'home' ? 'Whole Home' : 'Individual sensor'} · ${history.data.contributingSensors} contributing sensor${history.data.contributingSensors === 1 ? '' : 's'}`}>
             <StatGrid className="history-summary">
               <Metric label="Energy" value={energy(history.data.energyKwh)} identity="history.energy" />
-              <Metric label="Estimated cost" value={money(history.data.cost, home.currency)} identity="history.cost" detail="Interval energy charges" />
-              <Metric label="Blended rate" value={rate(history.data.blendedRate, home.currency)} identity="history.blended_rate" />
+              {canViewCosts && <Metric label="Estimated cost" value={money(history.data.cost, home.currency)} identity="history.cost" detail="Interval energy charges" />}
+              {canViewCosts && <Metric label="Blended rate" value={rate(history.data.blendedRate, home.currency)} identity="history.blended_rate" />}
               <Metric label="Peak power" value={power(history.data.peakPowerW)} identity="history.peak_power" />
               <Metric label="Coverage" value={percentage(history.data.coveragePercent)} identity="data.coverage" />
             </StatGrid>
           </Surface>
           <Surface title="Energy over time" subtitle="Tier and time-of-use context is available in each interval tooltip.">
             {history.data.points.length ? (
-              <EnergyChart points={history.data.points} mode={filters.metric} currency={home.currency} title={`${history.data.title} ${filters.metric} history`} />
+              <EnergyChart points={history.data.points} mode={filters.metric} currency={home.currency} title={`${history.data.title} ${filters.metric} history`} timezone={history.data.timezone} bucket={history.data.bucket} rangeStart={history.data.rangeStart} rangeEnd={history.data.rangeEnd} />
             ) : (
               <EmptyState title="No readings in this range" message="Try a wider range or check the sensor’s connection." />
             )}

@@ -13209,6 +13209,11 @@ components:
         target:
           type: string
           title: Target
+        required_permissions:
+          items:
+            type: string
+          type: array
+          title: Required Permissions
       additionalProperties: false
       type: object
       required:
@@ -18557,6 +18562,10 @@ components:
             type: string
           type: array
           title: Site Ids
+        access_revision:
+          type: integer
+          title: Access Revision
+          default: 1
       additionalProperties: false
       type: object
       required:

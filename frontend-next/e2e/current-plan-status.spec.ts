@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { PERMISSION_CODES } from '../src/access/permissions'
 
 test('Set as current updates Billing, Home, History, and configuration without reload', async ({ page }) => {
   let current = false
@@ -24,7 +25,7 @@ test('Set as current updates Billing, Home, History, and configuration without r
           email: 'owner@example.test',
           display_name: 'Home Owner',
           roles: ['admin'],
-          permissions: ['sites.view', 'utility_accounts.view', 'rates.view', 'rates.assign', 'rates.manage_custom'],
+          permissions: [...PERMISSION_CODES],
           all_sites: true,
           site_ids: [],
         },

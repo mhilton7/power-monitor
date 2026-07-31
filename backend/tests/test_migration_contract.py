@@ -131,6 +131,19 @@ def test_status_indicator_layout_migration_is_append_only() -> None:
     assert "def downgrade()" in revision
 
 
+def test_strict_viewer_permission_migration_revokes_stale_access() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260731_0022_strict_viewer_permissions.py"
+    ).read_text()
+    assert 'down_revision = "20260730_0021"' in revision
+    assert "'history.export', 'costs.export'" in revision
+    assert "access_revision = access_revision + 1" in revision
+    assert "UPDATE sessions SET revoked_at" in revision
+    assert "role.builtin_migrated" in revision
+    assert "DROP TABLE" not in revision
+
+
 def test_dashboard_information_architecture_migration_preserves_layout_history() -> None:
     root = Path(__file__).resolve().parents[1]
     revision = (

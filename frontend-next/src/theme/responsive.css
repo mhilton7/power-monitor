@@ -154,6 +154,8 @@
   .tier-list span:last-child,
   .period-summary span:last-child { text-align: left; }
   .chart-canvas { min-height: 280px; }
+  .chart-color-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .chart-color-row > span { grid-column: 1 / -1; }
   .advanced-disclosure > summary,
   .rate-tab-panel { padding: 1rem; }
   .structured-list li {

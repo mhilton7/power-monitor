@@ -8,9 +8,11 @@ import {
   X,
 } from 'lucide-react'
 import { useState } from 'react'
+import { hasRequiredPermissionCodes } from '../../access/permissions'
 import { Link } from '../../app/router'
 import { ModalLayer } from '../../components/overlays/ModalLayer'
 import type { ConfigurationState, ConfigurationStatus } from '../../types/models'
+import { useAuth } from '../../state/AuthContext'
 
 function icon(state: ConfigurationState) {
   if (state === 'ready') return <CheckCircle2 aria-hidden="true" />
@@ -56,6 +58,7 @@ function ConfigurationStatusDialog({
   status: ConfigurationStatus
   onClose: () => void
 }) {
+  const { session } = useAuth()
   return (
     <section
       className="modal-card configuration-status-dialog"
@@ -92,9 +95,9 @@ function ConfigurationStatusDialog({
                 <div><dt>Why it matters</dt><dd>{issue.whyItMatters}</dd></div>
                 <div><dt>How to fix it</dt><dd>{issue.howToFix}</dd></div>
               </dl>
-              <Link className="button secondary compact" to={issue.action.target} onClick={onClose}>
+              {hasRequiredPermissionCodes(session, issue.action.requiredPermissions) && <Link className="button secondary compact" to={issue.action.target} onClick={onClose}>
                 <Settings2 size={16} /> {issue.action.label} <ChevronRight size={15} />
-              </Link>
+              </Link>}
             </div>
           </article>
         ))}

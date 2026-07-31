@@ -28,12 +28,18 @@ import { StatusDot } from '../components/data-display/Surface'
 import { DropdownMenu, DropdownMenuItem } from '../components/overlays/DropdownMenu'
 import { ConfigurationStatusChip } from '../features/configuration/ConfigurationStatusSurface'
 import { useTestMode } from '../state/TestModeContext'
+import {
+  canAccessSettings,
+  roleLabel,
+  ROUTE_POLICIES,
+  satisfiesPolicy,
+} from '../access/permissions'
 
 export const PRIMARY_DESTINATIONS = [
-  { label: 'Home', path: '/home', icon: Home },
-  { label: 'History', path: '/history', icon: History },
-  { label: 'Billing', path: '/billing', icon: CreditCard },
-  { label: 'Settings', path: '/settings', icon: Settings },
+  { label: 'Home', path: '/home', icon: Home, policy: ROUTE_POLICIES.home },
+  { label: 'History', path: '/history', icon: History, policy: ROUTE_POLICIES.history },
+  { label: 'Billing', path: '/billing', icon: CreditCard, policy: ROUTE_POLICIES.billing },
+  { label: 'Settings', path: '/settings', icon: Settings, policy: undefined },
 ] as const
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -47,6 +53,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const liveState = summary?.hasLiveData ? 'live' : summary?.totalSensors ? 'waiting' : 'attention'
+  const destinations = PRIMARY_DESTINATIONS.filter((destination) => destination.path === '/settings'
+    ? canAccessSettings(session)
+    : satisfiesPolicy(session, destination.policy))
 
   const logout = async () => {
     await request('/api/v1/auth/logout', json('POST'))
@@ -62,7 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {!railCollapsed && <div><strong>Power Monitor</strong><small>Local energy intelligence</small></div>}
         </div>
         <nav aria-label="Primary">
-          {PRIMARY_DESTINATIONS.map(({ label, path, icon: Icon }) => (
+          {destinations.map(({ label, path, icon: Icon }) => (
             <NavLink
               key={path}
               to={path}
@@ -115,7 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               menuClassName="user-popover"
               trigger={<>
                 <CircleUserRound aria-hidden="true" />
-                <span><strong>{session?.user?.name ?? 'User'}</strong><small>{session?.user?.roles.includes('admin') ? 'Owner' : 'Family'}</small></span>
+                <span><strong>{session?.user?.name ?? 'User'}</strong><small>{roleLabel(session)}</small></span>
                 <Menu aria-hidden="true" />
               </>}
             >
@@ -154,7 +163,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <nav className="mobile-nav" aria-label="Primary mobile">
-        {PRIMARY_DESTINATIONS.map(({ label, path, icon: Icon }) => (
+        {destinations.map(({ label, path, icon: Icon }) => (
           <NavLink key={path} to={path}>
             <Icon aria-hidden="true" />
             <span>{label}</span>

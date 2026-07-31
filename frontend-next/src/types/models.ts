@@ -18,6 +18,7 @@ export interface UserSession {
     permissions: string[]
     allHomes: boolean
     homeIds: string[]
+    accessRevision: number
   }
 }
 
@@ -185,6 +186,7 @@ export interface ConfigurationAction {
   id: string
   label: string
   target: string
+  requiredPermissions: string[]
 }
 
 export interface ConfigurationIssue {
@@ -569,6 +571,8 @@ export interface HistoryPoint {
   missing: boolean
 }
 
+export type HistoryBucket = '5m' | '15m' | '1h' | '1d'
+
 export interface HistoryView {
   title: string
   points: HistoryPoint[]
@@ -581,6 +585,10 @@ export interface HistoryView {
   contributingSensors: number
   warnings: string[]
   ratePlans: string[]
+  bucket: HistoryBucket
+  timezone: string
+  rangeStart: string
+  rangeEnd: string
 }
 
 export type FamilyRole = 'Owner' | 'Family Member' | 'Viewer'

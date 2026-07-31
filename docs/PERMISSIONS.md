@@ -23,11 +23,22 @@ renames them. Dependencies are validated server-side, including `users.manage`
 | Built-in role | Effective template |
 |---|---|
 | Administrator (`admin`) | Every catalog permission, including protected-user management. |
-| Regular User / Read-Only Viewer (`viewer`) | Overview, Usage, History/export, Costs/export, assigned Sites, Topology, Devices, Rates, Alerts, and published status-layout view. |
+| Regular User / Read-Only Viewer (`viewer`) | Read-only Home, History, and Billing data: `overview.view`, `usage.view`, `history.view`, `costs.view`, `sites.view`, `utility_accounts.view`, `topology.view`, `devices.view`, `rates.view`, `alerts.view`, and `status_indicators.view`. Export, private-bill, Settings, and mutation permissions are intentionally excluded. |
 | Operator (`operator`) | Viewer plus topology and device management, enrollment, firmware view, alert acknowledgement, and alert-rule management. Device removal remains excluded and separately protected. |
 | Rate Manager (`rate-manager`) | Viewer plus custom rates, rate sources/checks, candidate review/approval, and assignment. |
 
 Custom roles contain a validated subset of the same catalog. Direct per-user permission grants are intentionally not used; effective permissions are the union of assigned active roles, constrained by site scope.
+
+The frontend treats the permission list in `/api/v1/auth/session` as authoritative;
+role names are informational only. Home requires `overview.view`, History requires
+`history.view`, and Billing requires `costs.view` or `rates.view`. Settings is shown
+only when at least one Settings section policy is satisfied, and every action is
+checked separately. A user/access revision change cancels and removes cached
+permission-sensitive queries before the next account can render them.
+
+The `20260731_0022` migration removes legacy Viewer export grants, records a role
+revision and audit event, increments affected users' `access_revision`, and revokes
+their active sessions so the stricter permission set takes effect immediately.
 
 Only Administrator receives `status_indicators.manage` by default. Viewer,
 Operator, and Rate Manager receive `status_indicators.view`; their effective

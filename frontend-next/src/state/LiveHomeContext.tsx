@@ -20,6 +20,8 @@ import type {
   SensorSummary,
 } from '../types/models'
 import { useSingleHome } from './SingleHomeContext'
+import { useAuth } from './AuthContext'
+import { hasAnyPermission, hasPermission } from '../access/permissions'
 
 interface LiveHomeValue {
   summary?: HomeSummary
@@ -38,70 +40,78 @@ const LiveHomeContext = createContext<LiveHomeValue | undefined>(undefined)
 
 export function LiveHomeProvider({ children }: { children: ReactNode }) {
   const client = useQueryClient()
+  const { session } = useAuth()
   const { resolution } = useSingleHome()
   const homeId = resolution?.state === 'ready' ? resolution.home.id : undefined
+  const boundary = session?.user ? `${session.user.id}:${session.user.accessRevision}` : 'anonymous'
+  const canViewSensors = hasPermission(session, 'devices.view')
+  const canViewServices = hasPermission(session, 'utility_accounts.view')
+  const canViewRates = hasPermission(session, 'rates.view')
+  const canViewCosts = hasAnyPermission(session, ['costs.view', 'usage.view'])
+  const canViewAlerts = hasPermission(session, 'alerts.view')
+  const canViewOverview = hasPermission(session, 'overview.view')
   const sensors = useQuery({
-    queryKey: ['sensors', homeId],
+    queryKey: ['sensors', boundary, homeId],
     queryFn: () => request(`/api/v1/devices?site_id=${encodeURIComponent(homeId ?? '')}`, {}, adaptSensors),
-    enabled: Boolean(homeId),
+    enabled: Boolean(homeId && canViewSensors),
     refetchInterval: 15_000,
   })
   const services = useQuery({
-    queryKey: ['electric-services', homeId],
+    queryKey: ['electric-services', boundary, homeId],
     queryFn: () => request('/api/v1/utility-accounts', {}, adaptElectricServices),
-    enabled: Boolean(homeId),
+    enabled: Boolean(homeId && canViewServices),
     select: (items) => items.filter((item) => item.homeId === homeId && item.status === 'active'),
     refetchInterval: 60_000,
   })
   const configuration = useQuery({
-    queryKey: ['configuration-status', homeId],
+    queryKey: ['configuration-status', boundary, homeId],
     queryFn: () => request(
       `/api/v1/configuration-status?site_id=${encodeURIComponent(homeId ?? '')}`,
       {},
       adaptConfigurationStatus,
     ),
-    enabled: Boolean(homeId),
+    enabled: Boolean(homeId && canViewOverview),
     retry: 1,
     refetchInterval: 60_000,
   })
   const currentAssignment = useQuery({
-    queryKey: ['current-rate-assignment', homeId],
+    queryKey: ['current-rate-assignment', boundary, homeId],
     queryFn: () => request(
       `/api/v1/electric-services/default/current-rate-assignment?site_id=${encodeURIComponent(homeId ?? '')}`,
       {},
       adaptCurrentRateAssignment,
     ),
-    enabled: Boolean(homeId),
+    enabled: Boolean(homeId && canViewRates),
     retry: 1,
     refetchInterval: 60_000,
   })
   const activeService = services.data?.[0]
   const cycle = useQuery({
-    queryKey: ['billing-cycle-summary', activeService?.id],
+    queryKey: ['billing-cycle-summary', boundary, activeService?.id],
     queryFn: () => request(`/api/v1/utility-accounts/${activeService?.id ?? ''}/tier-status`, {}, adaptBillingCycle),
-    enabled: Boolean(activeService?.id),
+    enabled: Boolean(activeService?.id && canViewCosts),
     retry: 1,
     refetchInterval: 60_000,
   })
   const fleet = useQuery({
-    queryKey: ['home-summary', homeId],
+    queryKey: ['home-summary', boundary, homeId],
     queryFn: () => request<unknown>(`/api/v1/fleet/summary?site_id=${encodeURIComponent(homeId ?? '')}`),
-    enabled: Boolean(homeId),
+    enabled: Boolean(homeId && canViewOverview),
     refetchInterval: 15_000,
   })
   const alerts = useQuery({
-    queryKey: ['alerts', 'active'],
+    queryKey: ['alerts', boundary, 'active'],
     queryFn: () => request('/api/v1/alerts?status=active', {}, adaptAlerts),
-    enabled: Boolean(homeId),
+    enabled: Boolean(homeId && canViewAlerts),
     refetchInterval: 30_000,
   })
 
   useEffect(() => {
-    if (!homeId || typeof EventSource === 'undefined') return
+    if (!homeId || !canViewOverview || typeof EventSource === 'undefined') return
     const source = new EventSource(`/api/v1/events/stream?site_id=${encodeURIComponent(homeId)}`)
     const refreshLive = () => {
-      void client.invalidateQueries({ queryKey: ['home-summary', homeId] })
-      void client.invalidateQueries({ queryKey: ['sensors', homeId] })
+      void client.invalidateQueries({ queryKey: ['home-summary'] })
+      void client.invalidateQueries({ queryKey: ['sensors'] })
       void client.invalidateQueries({ queryKey: ['history'] })
     }
     source.addEventListener('heartbeat', refreshLive)
@@ -117,7 +127,7 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     return () => {
       source.close()
     }
-  }, [client, homeId])
+  }, [canViewOverview, client, homeId])
 
   const summary = useMemo(
     () => fleet.data
@@ -140,7 +150,7 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
       queryRefreshTime: new Date().toISOString(),
     })
   }, [homeId, sensors.data, summary])
-  const error = fleet.error ?? sensors.error ?? services.error ?? alerts.error
+  const error = fleet.error
   const value: LiveHomeValue = {
     summary,
     sensors: sensors.data ?? [],
@@ -149,7 +159,9 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     cycle: cycle.data,
     configuration: configuration.data,
     currentAssignment: currentAssignment.data,
-    loading: fleet.isLoading || sensors.isLoading || services.isLoading,
+    loading: fleet.isLoading
+      || (canViewSensors && sensors.isLoading)
+      || (canViewServices && services.isLoading),
     error,
     refresh: async () => {
       await Promise.all([

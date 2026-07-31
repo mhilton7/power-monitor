@@ -24,9 +24,31 @@ from app.rates.documents import validate_document
 from app.rates.service import version_document
 from app.schemas import ConfigurationAction, ConfigurationIssue, ConfigurationStatus
 
+_ACTION_PERMISSIONS: dict[str, list[str]] = {
+    "electric_service.create": ["utility_accounts.manage"],
+    "electric_service.review": ["utility_accounts.manage"],
+    "rate_assignment.repair": ["rates.assign"],
+    "rate_assignment.make_current": ["rates.assign"],
+    "rate_version.review": ["rates.manage_custom"],
+    "billing_cycle.configure": ["utility_accounts.manage"],
+    "billing_cycle.recalculate": ["usage_imports.manage"],
+    "sensor.measurement_assignment": ["topology.manage"],
+    "sensor.enroll": ["enrollment.manage"],
+    "sensor.review": ["devices.manage"],
+    "billing.usage_authority": ["usage_imports.manage"],
+    "notification.configure": ["alerts.manage_delivery"],
+    "backup.review": ["backups.view"],
+    "rate_source.review": ["rates.manage_sources"],
+}
+
 
 def _action(action_id: str, label: str, target: str) -> ConfigurationAction:
-    return ConfigurationAction(id=action_id, label=label, target=target)
+    return ConfigurationAction(
+        id=action_id,
+        label=label,
+        target=target,
+        required_permissions=_ACTION_PERMISSIONS.get(action_id, ["settings.manage"]),
+    )
 
 
 def _issue(

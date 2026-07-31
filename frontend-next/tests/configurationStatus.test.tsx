@@ -1,6 +1,15 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('../src/state/AuthContext', () => ({
+  useAuth: () => ({
+    session: { authenticated: true, user: { id: 'admin-1', email: 'admin@example.test', displayName: 'Admin', roles: ['administrator'], permissions: ['rates.assign'], accessRevision: 1 } },
+    loading: false,
+    error: undefined,
+    refresh: () => Promise.resolve(),
+  }),
+}))
 import { BrowserRouter } from '../src/app/router'
 import { ConfigurationStatusChip } from '../src/features/configuration/ConfigurationStatusSurface'
 import type { ConfigurationStatus } from '../src/types/models'
@@ -25,6 +34,7 @@ const status: ConfigurationStatus = {
       id: 'rate_assignment.make_current',
       label: 'Choose current plan',
       target: '/billing?advanced=rates&tab=versions',
+      requiredPermissions: ['rates.assign'],
     },
   }],
 }
@@ -49,6 +59,6 @@ describe('configuration status surface', () => {
 
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(trigger).toHaveFocus()
+    await waitFor(() => expect(trigger).toHaveFocus())
   })
 })

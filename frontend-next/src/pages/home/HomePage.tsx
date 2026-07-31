@@ -13,10 +13,10 @@ import {
   Zap,
 } from 'lucide-react'
 import { Link } from '../../app/router'
+import { hasAnyPermission, hasPermission } from '../../access/permissions'
 import { adaptHistory } from '../../api/adapters'
 import { json, request } from '../../api/client'
 import { EnergyChart } from '../../components/charts/EnergyChart'
-import { ElapsedTime } from '../../components/data-display/ElapsedTime'
 import { Metric, StatusDot, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, LoadingState } from '../../components/feedback/States'
 import { Page, PageHeader, StatGrid } from '../../components/layout/Layout'
@@ -27,6 +27,7 @@ import { useAppearance } from '../../state/AppearanceContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
 import { useTestMode } from '../../state/TestModeContext'
+import { useAuth } from '../../state/AuthContext'
 import type { HistoryFilters } from '../../types/models'
 import {
   dateRange,
@@ -43,6 +44,10 @@ export function HomePage() {
   const { resolution } = useSingleHome()
   const { summary, sensors, alerts, cycle, configuration, loading, error, refresh } = useLiveHome()
   const appearance = useAppearance()
+  const { session } = useAuth()
+  const canEnroll = hasPermission(session, 'enrollment.manage')
+  const canManageSensors = hasAnyPermission(session, ['devices.manage', 'topology.manage', 'enrollment.manage'])
+  const canManageBills = hasPermission(session, 'utility_bills.manage')
   const testMode = useTestMode()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const dailyHistory = useQuery({
@@ -64,15 +69,14 @@ export function HomePage() {
       <Page className="home-page home-empty-state">
         <PageHeader
           eyebrow="Home overview"
-          title={`Good ${dayPart()}, ${firstName()}`}
+          title={`Good ${dayPart()}, ${firstName(session?.user?.name)}`}
           description={`Finish the two private setup steps for ${home.name}; live readings will appear automatically after the first signed heartbeat.`}
-          action={<Link className="button primary" to="/settings/sensors?action=add"><RadioTower size={17} /> Connect sensor</Link>}
+          action={canEnroll && <Link className="button primary" to="/settings/sensors?action=add"><RadioTower size={17} /> Connect sensor</Link>}
         />
         {testMode.state?.enabled && <TestModeHomePreview currency={home.currency} />}
         <StatGrid className="home-status-grid">
           <Metric label="Live data" value="Not connected" identity="home.live_status" detail="Waiting for the first signed heartbeat" />
           <Metric label="Current load" value={power(summary.currentPowerW)} identity="home.current_load" detail="No reporting sensors" />
-          <Metric label="Sensor data last received" value={<ElapsedTime timestamp={summary.latestReceivedAt} serverNow={summary.serverNow} />} identity="home.last_data" detail="Readings remain private on this server" />
           <Metric label="Current plan" value={summary.currentPlan ?? 'Not configured'} identity="home.current_plan" detail={summary.currentRate ? rate(summary.currentRate, home.currency) : 'Upload a bill or choose a plan'} />
         </StatGrid>
         <div className="home-onboarding-grid">
@@ -87,7 +91,9 @@ export function HomePage() {
                 <li><Clock3 /> Automatic history synchronization</li>
                 <li><Check /> No cloud account required</li>
               </ul>
-              <Link className="button primary" to="/settings/sensors?action=add"><RadioTower size={17} /> Connect sensor</Link>
+              {canEnroll
+                ? <Link className="button primary" to="/settings/sensors?action=add"><RadioTower size={17} /> Connect sensor</Link>
+                : <p className="read-only-guidance">No sensors are connected yet. The home owner can add a sensor from Settings.</p>}
             </div>
           </Surface>
           <Surface className="home-setup-card" title="Billing setup" subtitle="Optional until you want cost estimates">
@@ -101,7 +107,7 @@ export function HomePage() {
               <div className="home-setup-complete">
                 <span className="icon-tile"><ReceiptText /></span>
                 <div><strong>Add your electric rate</strong><p>A reviewed bill can prepare a rate plan and exact billing cycle without changing anything on upload.</p></div>
-                <Link className="button secondary" to="/billing?action=upload"><Upload size={17} /> Upload electric bill</Link>
+                {canManageBills && <Link className="button secondary" to="/billing?action=upload"><Upload size={17} /> Upload electric bill</Link>}
               </div>
             )}
           </Surface>
@@ -125,7 +131,7 @@ export function HomePage() {
     <Page className="home-page home-connected-state">
       <PageHeader
         eyebrow="Home overview"
-        title={`Good ${dayPart()}, ${firstName()}`}
+        title={`Good ${dayPart()}, ${firstName(session?.user?.name)}`}
         description={`Here is what is happening at ${home.name}.`}
         action={<Link className="button secondary" to="/history">View History <ArrowRight size={16} /></Link>}
       />
@@ -133,7 +139,6 @@ export function HomePage() {
       <StatGrid className="home-status-grid">
         <Metric label="Live data" value={summary.hasLiveData ? 'Connected' : 'Waiting'} identity="home.live_status" detail={`${summary.reportingSensors} of ${summary.totalSensors} sensors reporting`} />
         <Metric label="Sensors" value={`${summary.onlineSensors}/${summary.totalSensors}`} identity="home.sensor_status" detail={summary.attentionSensors ? `${summary.attentionSensors} need attention` : 'All sensors reporting'} />
-        <Metric label="Sensor data last received" value={<ElapsedTime timestamp={summary.latestReceivedAt} serverNow={summary.serverNow} />} identity="home.last_data" detail={summary.hasLiveData ? 'Accepted by this server' : 'Waiting for a fresh reading'} />
         <Metric label="Current rate" value={rate(summary.currentRate, home.currency)} identity="home.current_rate" detail={summary.currentPeriod ?? summary.currentTier ?? summary.currentPlan ?? 'Plan not configured'} />
         <Metric label="Active alerts" value={summary.activeAlerts} identity="home.active_alerts" detail={summary.activeAlerts ? 'Review recommended' : 'Nothing needs attention'} />
       </StatGrid>
@@ -152,7 +157,7 @@ export function HomePage() {
           </StatGrid>
         </Surface>
         <div className="home-side-stack">
-          {appearance.showSensorsCard && <Surface className="sensor-health-card" title="Sensor health" subtitle={`${summary.onlineSensors} online · ${summary.attentionSensors} need attention`} action={<Link className="text-link" to="/settings/sensors">Manage <ArrowRight /></Link>}>
+          {appearance.showSensorsCard && <Surface className="sensor-health-card" title="Sensor health" subtitle={`${summary.onlineSensors} online · ${summary.attentionSensors} need attention`} action={canManageSensors && <Link className="text-link" to="/settings/sensors">Manage <ArrowRight /></Link>}>
             <div className="sensor-peek">
               {sensors.slice(0, 4).map((sensor) => (
                 <SensorHealthEntry key={sensor.id} sensor={sensor} serverNow={summary.serverNow} />
@@ -166,7 +171,7 @@ export function HomePage() {
                 <div><small>{summary.currentTier ? 'Current tier' : 'Current period'}</small><strong>{summary.currentTier ?? summary.currentPeriod ?? 'Flat rate'}</strong><span>{rate(summary.currentRate, home.currency)}</span></div>
               </div>
             ) : (
-              <EmptyState compact title="Rate plan needed" message="Upload a reviewed bill or select a published plan to calculate costs." action={<Link className="button secondary compact" to="/billing?action=upload">Set up billing</Link>} />
+              <EmptyState compact title="Rate plan needed" message="Upload a reviewed bill or select a published plan to calculate costs." action={canManageBills && <Link className="button secondary compact" to="/billing?action=upload">Set up billing</Link>} />
             )}
             {summary.nextPeriod && <p className="next-rate">Next: {summary.nextPeriod} at {rate(summary.nextRate, home.currency)}</p>}
           </Surface>
@@ -184,7 +189,7 @@ export function HomePage() {
         </Surface>
       ) : (
         <Surface className="home-billing-callout">
-          <EmptyState compact title="Add billing to see energy costs" message="Upload an electric bill to prepare a reviewed rate plan and exact cycle dates." action={<Link className="button primary" to="/billing?action=upload"><ReceiptText size={17} /> Upload electric bill</Link>} />
+          <EmptyState compact title="Add billing to see energy costs" message="Upload an electric bill to prepare a reviewed rate plan and exact cycle dates." action={canManageBills && <Link className="button primary" to="/billing?action=upload"><ReceiptText size={17} /> Upload electric bill</Link>} />
         </Surface>
       )}
 
@@ -194,7 +199,7 @@ export function HomePage() {
         action={<Link className="text-link" to="/history">Explore History <ArrowRight /></Link>}
       >
         {dailyHistory.isLoading ? <LoadingState label="Loading today’s readings…" /> : dailyHistory.error ? <ErrorState error={dailyHistory.error} retry={() => void dailyHistory.refetch()} /> : dailyHistory.data?.points.length ? (
-          <EnergyChart points={dailyHistory.data.points} mode="energy" currency={home.currency} title="Today’s whole-home energy" />
+          <EnergyChart points={dailyHistory.data.points} mode="energy" currency={home.currency} title="Today’s whole-home energy" timezone={dailyHistory.data.timezone} bucket={dailyHistory.data.bucket} rangeStart={dailyHistory.data.rangeStart} rangeEnd={dailyHistory.data.rangeEnd} />
         ) : (
           <EmptyState compact title="Waiting for today’s history" message="Intervals appear after synchronized sensor readings are stored." />
         )}
@@ -244,12 +249,6 @@ function dayPart(): string {
   return hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'
 }
 
-function firstName(): string {
-  const fallback = 'there'
-  try {
-    const stored = document.querySelector('.user-button strong')?.textContent?.trim()
-    return stored?.split(/\s+/)[0] ?? fallback
-  } catch {
-    return fallback
-  }
+function firstName(displayName: string | undefined): string {
+  return displayName?.trim().split(/\s+/)[0] || 'there'
 }

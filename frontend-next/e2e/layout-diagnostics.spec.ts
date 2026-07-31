@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { PERMISSION_CODES } from '../src/access/permissions'
 
 const captureDirectory = process.env.CAPTURE_LAYOUT_DIR
 const capturePhase = process.env.CAPTURE_LAYOUT_PHASE ?? 'diagnostic'
@@ -107,7 +108,7 @@ async function mockLayoutServer(page: Page) {
           email: 'owner@example.test',
           display_name: 'Home Owner',
           roles: ['admin'],
-          permissions: ['rates.view', 'rates.manage_custom', 'rates.manage_sources', 'rates.check_sources', 'rates.review_candidates', 'rates.assign', 'adjustments.manage'],
+          permissions: [...PERMISSION_CODES],
           all_sites: true,
           site_ids: [],
         },

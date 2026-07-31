@@ -65,3 +65,19 @@ production-like HTTPS origin before claiming real password-manager validation:
 Record only the browser version, tested origin, pass/fail result, and sanitized
 observations. Never record the password or include it in a screenshot.
 
+## Dashboard typography and History charts
+
+Production dashboard text uses the native system UI stack:
+`ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`.
+It does not alias an installed font under a custom family name, which previously
+made glyph metrics and heading spacing vary by browser and operating system.
+Page titles use `1.08` line height, `-.015em` letter spacing, `.04em` word spacing,
+and balanced wrapping without inserting literal spaces.
+
+The Playwright matrix retains the existing dark/light desktop, tablet, and mobile
+coverage and also runs native Microsoft Edge, desktop Firefox, and WebKit. History time labels are produced
+from explicit server interval timestamps and the configured Home timezone rather
+than the browser timezone. Manual review should confirm page-title wrapping,
+15-minute tick labels, exact interval tooltips, visible axis titles, gap notices,
+and chart-color controls in current Chromium, Edge, Firefox, and Safari/WebKit.
+

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react'
 import { adaptSession } from '../api/adapters'
 import { request } from '../api/client'
 import type { UserSession } from '../types/models'
@@ -21,6 +21,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     retry: false,
     staleTime: 30_000,
   })
+  const boundary = session.data?.user
+    ? `${session.data.user.id}:${session.data.user.accessRevision}`
+    : session.data?.authenticated === false ? 'anonymous' : undefined
+  const previousBoundary = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!boundary) return
+    if (previousBoundary.current && previousBoundary.current !== boundary) {
+      void client.cancelQueries({ predicate: (query) => query.queryKey[0] !== 'session' })
+      client.removeQueries({ predicate: (query) => query.queryKey[0] !== 'session' })
+    }
+    previousBoundary.current = boundary
+  }, [boundary, client])
   return (
     <AuthContext.Provider
       value={{

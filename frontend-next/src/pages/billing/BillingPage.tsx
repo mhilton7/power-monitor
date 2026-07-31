@@ -16,7 +16,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from '../../app/router'
 import {
   adaptBills,
@@ -41,7 +41,7 @@ import { useSingleHome } from '../../state/SingleHomeContext'
 import { useTestMode } from '../../state/TestModeContext'
 import type { BillSummary, ElectricService, RateAssignmentResult } from '../../types/models'
 import { dateRange, dateTime, energy, money, percentage, rate, statusLabel } from '../../utils/format'
-import { isOwner } from '../../access/permissions'
+import { hasAnyPermission, hasPermission } from '../../access/permissions'
 
 interface LibraryPlan {
   id: string
@@ -88,20 +88,35 @@ export function BillingPage() {
   const { resolution } = useSingleHome()
   const { services, sensors, cycle, configuration, refresh } = useLiveHome()
   const { session } = useAuth()
+  const canViewPrivateBills = hasPermission(session, 'utility_bills.view')
+  const canManageBills = hasPermission(session, 'utility_bills.manage')
+  const canManageServices = hasPermission(session, 'utility_accounts.manage')
+  const canManageCustomRates = hasPermission(session, 'rates.manage_custom')
+  const canAssignRates = hasPermission(session, 'rates.assign')
+  const canRemoveRates = hasPermission(session, 'rates.remove')
+  const canManageUsageAuthority = hasPermission(session, 'usage_imports.manage')
+  const canManageAdvancedRates = hasAnyPermission(session, [
+    'rates.manage_custom', 'rates.manage_sources', 'rates.check_sources',
+    'rates.review_candidates', 'rates.approve_candidates', 'rates.assign',
+    'rates.remove', 'rates.restore', 'adjustments.manage',
+  ])
   const testMode = useTestMode()
   const [params, setParams] = useSearchParams()
-  const importOpen = params.get('action') === 'upload'
+  const importOpen = canManageBills && params.get('action') === 'upload'
   const [planDetail, setPlanDetail] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(params.get('advanced') === 'rates')
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [lifecycleAction, setLifecycleAction] = useState<'unassign' | 'retire' | 'remove'>()
   const [assignmentNotice, setAssignmentNotice] = useState('')
+  const importTriggerRef = useRef<HTMLButtonElement>(null)
+  const restoreImportFocusRef = useRef(false)
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const service = services[0]
   const bills = useQuery({
     queryKey: ['bills', service?.id],
     queryFn: () => request(`/api/v1/admin/utility-bill-imports${service?.id ? `?utility_account_id=${encodeURIComponent(service.id)}` : ''}`, {}, adaptBills),
     retry: 1,
+    enabled: canViewPrivateBills,
   })
   const plans = useQuery({
     queryKey: ['billing-plan-library'],
@@ -122,6 +137,7 @@ export function BillingPage() {
   const tieredCostSetupRequired = currentLibraryPlan?.pricingModel === 'tiered'
     || currentLibraryPlan?.pricingModel === 'time_of_use_tiered'
   const openImporter = useCallback(() => {
+    restoreImportFocusRef.current = true
     const next = new URLSearchParams(params)
     next.set('action', 'upload')
     setParams(next)
@@ -132,6 +148,16 @@ export function BillingPage() {
     setParams(next, { replace: true })
     void bills.refetch()
   }, [bills, params, setParams])
+  useEffect(() => {
+    if (importOpen || !restoreImportFocusRef.current) return
+    restoreImportFocusRef.current = false
+    const timer = window.setTimeout(() => {
+      const trigger = importTriggerRef.current
+        ?? document.querySelector<HTMLButtonElement>('[data-canonical-action="bill.upload"]')
+      trigger?.focus({ preventScroll: true })
+    }, 100)
+    return () => { window.clearTimeout(timer) }
+  }, [importOpen])
   const advancedTab = ['plans', 'sources', 'versions', 'evidence', 'removed', 'adjustments'].includes(params.get('tab') ?? '')
     ? params.get('tab') as 'plans' | 'sources' | 'versions' | 'evidence' | 'removed' | 'adjustments'
     : 'plans'
@@ -142,7 +168,7 @@ export function BillingPage() {
     setParams(next)
     setAdvancedOpen(true)
   }, [params, setParams])
-  const advancedRequested = params.get('advanced') === 'rates'
+  const advancedRequested = canManageAdvancedRates && params.get('advanced') === 'rates'
 
   if (!home) return <ErrorState error={new Error('The default home is unavailable.')} />
   return (
@@ -150,7 +176,7 @@ export function BillingPage() {
       <PageHeader
         title="Billing"
         description="Rates from your plan, usage from your Power Monitor sensors."
-        action={<button type="button" className="button primary" data-canonical-action="bill.upload" onClick={openImporter}>
+        action={canManageBills && <button ref={importTriggerRef} type="button" className="button primary" data-canonical-action="bill.upload" onClick={openImporter}>
           <Upload size={17} /> Import rates from bill
         </button>}
       />
@@ -185,7 +211,7 @@ export function BillingPage() {
 
       {!service ? (
         <Surface>
-          <EmptyState title="Set up your electric service" message="Create the household billing record before assigning a rate plan or applying a bill." action={<button className="button secondary" type="button" disabled={createService.isPending} onClick={() => { createService.mutate(); }}><Plus size={17} /> {createService.isPending ? 'Creating…' : 'Create electric service'}</button>} />
+          <EmptyState title="Set up your electric service" message={canManageServices ? 'Create the household billing record before assigning a rate plan or applying a bill.' : 'The home owner has not configured an electric service yet.'} action={canManageServices && <button className="button secondary" type="button" disabled={createService.isPending} onClick={() => { createService.mutate(); }}><Plus size={17} /> {createService.isPending ? 'Creating…' : 'Create electric service'}</button>} />
           {createService.error && <p className="form-error" role="alert">{errorMessage(createService.error)}</p>}
         </Surface>
       ) : (
@@ -206,20 +232,18 @@ export function BillingPage() {
               </div>
               <div className="card-actions">
                 <button type="button" className="button secondary" onClick={() => { setPlanDetail(!planDetail); }}><FileSearch size={16} /> Review plan</button>
-                {isOwner(session ?? { authenticated: false, bootstrapRequired: false }) && <button type="button" className="button secondary" onClick={() => { openAdvanced('plans'); }}><Pencil size={16} /> Edit plan</button>}
-                <div className="more-menu">
+                {canManageCustomRates && <button type="button" className="button secondary" onClick={() => { openAdvanced('plans'); }}><Pencil size={16} /> Edit plan</button>}
+                {(canAssignRates || canRemoveRates) && <div className="more-menu">
                   <DropdownMenu label="Rate plan actions" trigger={<><MoreHorizontal size={17} /> More <ChevronDown size={14} /></>}>
-                    <DropdownMenuItem actionId={service.currentPlan ? 'rate_assignment.replace_current' : 'rate_assignment.make_current'} onSelect={() => { setReplaceOpen(true) }}>{service.currentPlan ? 'Replace current plan' : 'Make a plan current'}</DropdownMenuItem>
-                    {currentLibraryPlan && <DropdownMenuItem actionId="rate_assignment.end" onSelect={() => { setLifecycleAction('unassign') }}><CircleOff size={15} /> End current assignment</DropdownMenuItem>}
-                    <DropdownMenuItem onSelect={() => { openAdvanced('versions'); }}>View versions</DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => { openAdvanced('evidence'); }}>View evidence</DropdownMenuItem>
-                    {currentLibraryPlan && <DropdownMenuItem actionId="rate_plan.retire" onSelect={() => { setLifecycleAction('retire') }}><Archive size={15} /> Retire plan</DropdownMenuItem>}
-                    {currentLibraryPlan && <DropdownMenuItem actionId="rate_plan.remove" className="danger" onSelect={() => { setLifecycleAction('remove') }}><Trash2 size={15} /> Remove plan</DropdownMenuItem>}
+                    {canAssignRates && <DropdownMenuItem actionId={service.currentPlan ? 'rate_assignment.replace_current' : 'rate_assignment.make_current'} onSelect={() => { setReplaceOpen(true) }}>{service.currentPlan ? 'Replace current plan' : 'Make a plan current'}</DropdownMenuItem>}
+                    {canAssignRates && currentLibraryPlan && <DropdownMenuItem actionId="rate_assignment.end" onSelect={() => { setLifecycleAction('unassign') }}><CircleOff size={15} /> End current assignment</DropdownMenuItem>}
+                    {canRemoveRates && currentLibraryPlan && <DropdownMenuItem actionId="rate_plan.retire" onSelect={() => { setLifecycleAction('retire') }}><Archive size={15} /> Retire plan</DropdownMenuItem>}
+                    {canRemoveRates && currentLibraryPlan && <DropdownMenuItem actionId="rate_plan.remove" className="danger" onSelect={() => { setLifecycleAction('remove') }}><Trash2 size={15} /> Remove plan</DropdownMenuItem>}
                   </DropdownMenu>
-                </div>
+                </div>}
               </div>
               {planDetail && <PlanDetail service={service} model={currentLibraryPlan?.pricingModel} cycle={cycle} currency={home.currency} />}
-              {replaceOpen && <ReplacePlanV2 service={service} homeId={home.id} plans={plans.data ?? []} onClose={() => { setReplaceOpen(false); }} onDone={(result) => {
+              {canAssignRates && replaceOpen && <ReplacePlanV2 service={service} homeId={home.id} plans={plans.data ?? []} onClose={() => { setReplaceOpen(false); }} onDone={(result) => {
                 setReplaceOpen(false)
                 setAssignmentNotice(result.state === 'current'
                   ? `Current plan updated to version ${result.version}. Billing, Home, and History now use this assignment.`
@@ -228,7 +252,7 @@ export function BillingPage() {
               }} />}
             </Surface>
 
-            {tieredCostSetupRequired && isOwner(session ?? { authenticated: false, bootstrapRequired: false }) && (
+            {tieredCostSetupRequired && canManageUsageAuthority && (
               <CostCalculationSetup
                 service={service}
                 sensors={sensors}
@@ -238,7 +262,7 @@ export function BillingPage() {
             )}
 
             <Surface title="Billing-cycle details" subtitle={dateRange(cycle?.startsAt, cycle?.endsAt)}>
-              {!cycle?.available ? <EmptyState compact title="Sensor-based estimate unavailable" message="Choose a complete-service sensor source and add billing-cycle dates. Bill-reported usage is never used as a fallback." action={<button type="button" className="button secondary compact" onClick={() => { document.querySelector('.cost-calculation-setup')?.scrollIntoView({ behavior: 'smooth' }) }}><ShieldCheck size={16} /> Configure sensor usage</button>} /> : (
+              {!cycle?.available ? <EmptyState compact title="Sensor-based estimate unavailable" message="Choose a complete-service sensor source and add billing-cycle dates. Bill-reported usage is never used as a fallback." action={canManageUsageAuthority && <button type="button" className="button secondary compact" onClick={() => { document.querySelector('.cost-calculation-setup')?.scrollIntoView({ behavior: 'smooth' }) }}><ShieldCheck size={16} /> Configure sensor usage</button>} /> : (
                 <>
                   <StatGrid className="cycle-metrics">
                     <Metric label="Current monitored usage" value={energy(cycle.usageKwh)} identity="billing.cycle_usage" detail="Power Monitor sensors" />
@@ -257,14 +281,14 @@ export function BillingPage() {
               )}
             </Surface>
 
-            <Surface title="Reference bills" subtitle="Imported statements retained as evidence; not used in monitored calculations">
+            {canViewPrivateBills && <Surface title="Reference bills" subtitle="Imported statements retained as evidence; not used in monitored calculations">
               {bills.isLoading ? <LoadingState label="Loading past bills…" /> : bills.error ? <ErrorState error={bills.error} retry={() => void bills.refetch()} /> : (bills.data?.length ?? 0) === 0 ? <EmptyState title="No past bills yet" message="Your first reviewed bill will appear here." /> : <PastBills bills={bills.data ?? []} currency={home.currency} />}
-            </Surface>
+            </Surface>}
           </div>
           <aside className="billing-side-column">
-            <Surface title="Latest reference bill" subtitle="Reference only · not used in monitored calculations">
+            {canViewPrivateBills && <Surface title="Latest reference bill" subtitle="Reference only · not used in monitored calculations">
               {bills.data?.[0] ? <LatestBill bill={bills.data[0]} currency={home.currency} /> : <EmptyState title="No imported bill" message="Upload a PDF to prepare reviewed rate rules." />}
-            </Surface>
+            </Surface>}
             <Surface title="Estimate confidence">
               <div className="confidence-card"><span>{cycle?.confidence ? statusLabel(cycle.confidence) : 'Waiting for history'}</span><p>Coverage {percentage(cycle?.coveragePercent)}. Estimates improve as synchronized readings fill the cycle.</p></div>
             </Surface>
@@ -272,7 +296,7 @@ export function BillingPage() {
         </div>
       )}
 
-      {isOwner(session ?? { authenticated: false, bootstrapRequired: false }) && (
+      {canManageAdvancedRates && (
         <details className="advanced-disclosure" open={advancedOpen || advancedRequested} onToggle={(event) => {
           setAdvancedOpen(event.currentTarget.open)
           if (!event.currentTarget.open && advancedRequested) {
@@ -287,8 +311,8 @@ export function BillingPage() {
         </details>
       )}
 
-      {importOpen && <ModalLayer onRequestClose={closeImporter}><BillImportFlow home={home} services={services} onClose={closeImporter} /></ModalLayer>}
-      {lifecycleAction && currentLibraryPlan && service && (
+      {canManageBills && importOpen && <ModalLayer onRequestClose={closeImporter} returnFocusRef={importTriggerRef}><BillImportFlow home={home} services={services} onClose={closeImporter} /></ModalLayer>}
+      {canRemoveRates && lifecycleAction && currentLibraryPlan && service && (
         <ModalLayer onRequestClose={() => { setLifecycleAction(undefined) }}>
           <PlanLifecycleDialog
             action={lifecycleAction}

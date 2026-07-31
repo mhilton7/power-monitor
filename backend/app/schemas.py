@@ -61,6 +61,7 @@ class UserSummary(ApiModel):
     permissions: list[str] = Field(default_factory=list)
     all_sites: bool = True
     site_ids: list[str] = Field(default_factory=list)
+    access_revision: int = 1
 
 
 class SessionView(ApiModel):
@@ -409,6 +410,7 @@ class ConfigurationAction(ApiModel):
     id: str
     label: str
     target: str
+    required_permissions: list[str] = Field(default_factory=list)
 
 
 class ConfigurationIssue(ApiModel):

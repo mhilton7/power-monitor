@@ -98,6 +98,7 @@ export function adaptSession(value: unknown): UserSession {
           permissions: stringList(user.permissions),
           allHomes: booleanValue(user.all_sites),
           homeIds: stringList(user.site_ids),
+          accessRevision: numberValue(user.access_revision, 1),
         }
       : undefined,
   }
@@ -459,6 +460,7 @@ export function adaptConfigurationStatus(value: unknown): ConfigurationStatus {
           id: stringValue(action.id),
           label: stringValue(action.label),
           target: stringValue(action.target),
+          requiredPermissions: stringList(action.required_permissions),
         },
       }
     }),
@@ -633,6 +635,8 @@ export function adaptHistory(value: unknown): HistoryView {
   const points = combined.length
     ? combined
     : individual.flatMap((series) => objectList(series.points))
+  const bucketValue = stringValue(source.bucket, '15m')
+  const bucket = ['5m', '15m', '1h', '1d'].includes(bucketValue) ? bucketValue as HistoryView['bucket'] : '15m'
   return {
     title: stringValue(scope.display_name, 'Whole Home'),
     points: points.map((point) => ({
@@ -659,6 +663,10 @@ export function adaptHistory(value: unknown): HistoryView {
     contributingSensors: numberValue(summary.contributing_sensor_count),
     warnings: objectList(source.warnings).map((warning) => stringValue(warning.message)).filter(Boolean),
     ratePlans: objectList(source.rate_versions_used).map((version) => stringValue(version.rate_plan_name)).filter(Boolean),
+    bucket,
+    timezone: stringValue(scope.timezone, 'UTC'),
+    rangeStart: stringValue(summary.start_utc, points[0] ? stringValue(points[0].interval_start_utc) : ''),
+    rangeEnd: stringValue(summary.end_utc, points.at(-1) ? stringValue(points.at(-1)?.interval_end_utc) : ''),
   }
 }
 

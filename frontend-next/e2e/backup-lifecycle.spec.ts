@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import path from 'node:path'
+import { PERMISSION_CODES } from '../src/access/permissions'
 
 const home = {
   id: 'home-1',
@@ -107,7 +108,7 @@ async function mockSettings(page: Page, writes: Array<{ method: string; path: st
           email: 'owner@example.test',
           display_name: 'Home Owner',
           roles: ['admin'],
-          permissions: [],
+          permissions: [...PERMISSION_CODES],
           all_sites: true,
           site_ids: [],
         },

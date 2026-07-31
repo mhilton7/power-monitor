@@ -63,6 +63,7 @@ from app.db.models import (
     new_uuid,
 )
 from app.history import MAX_HISTORY_BUCKETS, history_csv, query_history
+from app.home_aggregate import resolve_home_aggregate_devices
 from app.live_measurements import load_latest_measurements, log_measurement_decision
 from app.network_policy import ensure_site_policies, policy_cidrs, policy_for_site, policy_summary
 from app.problem import ProblemError
@@ -2016,13 +2017,8 @@ async def fleet_summary(
     elif not principal.all_sites:
         device_query = device_query.where(Device.site_id.in_(principal.site_ids))
     devices = list(await session.scalars(device_query))
-    included_devices = [device for device in devices if device.include_in_default_site_total]
-    if not included_devices and len(devices) == 1:
-        # Single Home starts with one energy-only CT. Until an administrator
-        # defines a richer topology, that sole sensor is the unambiguous Home
-        # aggregate. Sites with multiple sensors still require explicit
-        # topology selection to avoid double counting.
-        included_devices = devices
+    aggregate_selection = await resolve_home_aggregate_devices(session, devices)
+    included_devices = list(aggregate_selection.devices)
     included_device_ids = [device.id for device in included_devices]
     now = datetime.now(UTC)
     summary_site = await session.get(Site, site_id) if site_id else None
@@ -2065,6 +2061,12 @@ async def fleet_summary(
         default=None,
     )
     summary_logger = structlog.get_logger(__name__)
+    summary_logger.info(
+        "HOME_AGGREGATE_SELECTED",
+        selection_mode=aggregate_selection.mode,
+        included_device_count=len(included_devices),
+        topology_warnings=list(aggregate_selection.warnings),
+    )
     included_id_set = set(included_device_ids)
     for measurement in measurements.values():
         log_measurement_decision(measurement)

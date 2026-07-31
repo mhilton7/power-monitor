@@ -584,6 +584,105 @@ async def test_live_measurement_is_consistent_between_devices_and_fleet(
 
 
 @pytest.mark.asyncio
+async def test_fleet_combines_complete_non_overlapping_service_sensors(
+    api_client: Any,
+) -> None:
+    client: httpx.AsyncClient = api_client
+    await bootstrap(client, "multi-sensor-live-total@example.com")
+    site = (await client.get("/api/v1/sites")).json()[0]
+    account_response = await client.post(
+        "/api/v1/utility-accounts",
+        headers=csrf(client),
+        json={
+            "site_id": site["id"],
+            "name": "Single Home Electric Service",
+            "timezone": site["timezone"],
+            "currency": site["currency"],
+            "billing_cycle_start_day": 1,
+            "generation_provider": "sce",
+        },
+    )
+    assert account_response.status_code == 201, account_response.text
+    account = account_response.json()
+    sensor_details = [
+        ("esp32-indoor-live-total", "Indoor AC", "1.1", True),
+        ("esp32-outdoor-live-total", "Outdoor AC", "1.0", False),
+    ]
+    enrolled: list[tuple[str, bytes, str]] = []
+    for hardware_id, circuit_name, watts, included in sensor_details:
+        device_id, secret = await _enroll_sensor(client, hardware_id)
+        circuit_response = await client.post(
+            "/api/v1/circuits",
+            headers=csrf(client),
+            json={
+                "site_id": site["id"],
+                "parent_id": None,
+                "name": circuit_name,
+                "measurement_role": "branch",
+                "split_phase_group": None,
+            },
+        )
+        assert circuit_response.status_code == 201, circuit_response.text
+        assignment = await client.put(
+            f"/api/v1/admin/devices/{device_id}/measurement-assignment",
+            headers=csrf(client),
+            json={
+                "circuit_id": circuit_response.json()["id"],
+                "utility_account_id": account["id"],
+                "include_in_default_site_total": included,
+                "reason": f"Verified {circuit_name} branch assignment",
+            },
+        )
+        assert assignment.status_code == 200, assignment.text
+        enrolled.append((device_id, secret, watts))
+
+    for device_id, secret, watts in enrolled:
+        payload = _heartbeat(device_id)
+        payload["latest"] = {
+            "measured_at": datetime.now(UTC).isoformat(),
+            "voltage_v": "115.8",
+            "current_a": "0.01",
+            "power_w": watts,
+            "power_factor": "1.00",
+            "frequency_hz": "60.0",
+            "energy_wh": "10",
+        }
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        heartbeat = await client.post(
+            "/api/v1/device-heartbeats",
+            content=body,
+            headers={
+                **sign_headers(
+                    secret=secret,
+                    device_id=device_id,
+                    direction="device-to-server",
+                    method="POST",
+                    target="/api/v1/device-heartbeats",
+                    body=body,
+                ),
+                "Content-Type": "application/json",
+            },
+        )
+        assert heartbeat.status_code == 200, heartbeat.text
+
+    devices_response = await client.get(f"/api/v1/devices?site_id={site['id']}")
+    fleet_response = await client.get(f"/api/v1/fleet/summary?site_id={site['id']}")
+    assert devices_response.status_code == 200, devices_response.text
+    assert fleet_response.status_code == 200, fleet_response.text
+    devices = devices_response.json()
+    assert sorted(Decimal(item["current_watts"]) for item in devices) == [
+        Decimal("1.0"),
+        Decimal("1.1"),
+    ]
+    assert sum(item["included_in_default"] for item in devices) == 1
+    fleet = fleet_response.json()
+    assert Decimal(fleet["current_load_w"]) == Decimal("2.1")
+    assert fleet["reporting_devices"] == 2
+    assert fleet["has_live_data"] is True
+    assert fleet["latest_data_at"] is not None
+
+
+@pytest.mark.asyncio
 async def test_signed_unavailable_sequence_ranges_advance_device_cursor(
     api_client: Any,
 ) -> None:

@@ -35,6 +35,7 @@ from app.db.models import (
     UtilityAccount,
     WorkerState,
 )
+from app.home_aggregate import resolve_home_aggregate_devices
 from app.live_measurements import load_latest_measurements
 from app.problem import ProblemError
 from app.rates.documents import engine_plan
@@ -1970,9 +1971,8 @@ async def status_values(
         if measurements[item.id].freshness_state == "live"
         and measurements[item.id].power_watts is not None
     }
-    included_devices = [item for item in devices if item.include_in_default_site_total]
-    if not included_devices and len(devices) == 1:
-        included_devices = devices
+    aggregate_selection = await resolve_home_aggregate_devices(session, devices)
+    included_devices = list(aggregate_selection.devices)
     contributing = {
         item.id: reporting[item.id] for item in included_devices if item.id in reporting
     }

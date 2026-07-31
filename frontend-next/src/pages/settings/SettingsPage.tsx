@@ -25,7 +25,12 @@ import {
 } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useLocation, useNavigate } from '../../app/router'
-import { hasPermission, isOwner } from '../../access/permissions'
+import {
+  hasPermission,
+  satisfiesPolicy,
+  SETTINGS_SECTION_POLICIES,
+} from '../../access/permissions'
+import type { PermissionPolicy } from '../../access/permissions'
 import {
   adaptBackups,
   adaptCircuits,
@@ -43,7 +48,7 @@ import { DropdownMenu, DropdownMenuItem } from '../../components/overlays/Dropdo
 import { ModalLayer } from '../../components/overlays/ModalLayer'
 import { SensorSetupFlow } from '../../features/sensors/SensorSetupFlow'
 import { MeasurementAssignmentDialog } from '../../features/sensors/MeasurementAssignmentDialog'
-import { useAppearance } from '../../state/AppearanceContext'
+import { chartColorContrast, useAppearance, type ChartColorKind } from '../../state/AppearanceContext'
 import { useAuth } from '../../state/AuthContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
@@ -76,14 +81,14 @@ export function SettingsPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const routeSection = location.pathname.split('/')[2]
-  const section = SECTIONS.some(([key]) => key === routeSection) ? routeSection as Section : 'home'
   const { session } = useAuth()
-  const owner = session ? isOwner(session) : false
-  const visible = owner ? SECTIONS : SECTIONS.filter(([key]) => !['data', 'advanced'].includes(key))
+  const visible = SECTIONS.filter(([key]) => satisfiesPolicy(session, SETTINGS_SECTION_POLICIES[key]))
+  const requested = SECTIONS.some(([key]) => key === routeSection) ? routeSection as Section : undefined
+  const section = requested && visible.some(([key]) => key === requested) ? requested : visible[0]?.[0]
   return (
     <div className="workspace-page settings-page">
       <header className="page-heading">
-        <div><small>Manage your home</small><h1>Settings</h1><p>Update sensors, access, notifications, appearance, and local data.</p></div>
+        <div><small>Manage your home</small><h1 className="page-title">Settings</h1><p>Update sensors, access, notifications, appearance, and local data.</p></div>
       </header>
       <div className="settings-layout">
         <nav className="settings-nav" aria-label="Settings sections">
@@ -95,16 +100,8 @@ export function SettingsPage() {
           {section === 'family' && <FamilySettings />}
           {section === 'notifications' && <NotificationSettings />}
           {section === 'appearance' && <AppearanceSettings />}
-          {section === 'data' && owner && <DataSettings />}
-          {section === 'advanced' && owner && <AdvancedSettings />}
-          {(['data', 'advanced'] as Section[]).includes(section) && !owner && (
-            <Surface>
-              <div className="state-block error-state" role="alert">
-                <Shield aria-hidden="true" />
-                <div><strong>Owner access required</strong><p>This technical settings area is available only to the home owner.</p></div>
-              </div>
-            </Surface>
-          )}
+          {section === 'data' && <DataSettings />}
+          {section === 'advanced' && <AdvancedSettings />}
         </div>
       </div>
     </div>
@@ -158,11 +155,17 @@ function SensorSettings() {
   const { resolution } = useSingleHome()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const canManageTopology = Boolean(session && hasPermission(session, 'topology.manage'))
+  const canEnroll = hasPermission(session, 'enrollment.manage')
+  const canManageDevices = hasPermission(session, 'devices.manage')
+  const canRemoveDevices = hasPermission(session, 'devices.remove')
+  const canViewFirmware = hasPermission(session, 'firmware.view')
+  const canManageFirmware = hasPermission(session, 'firmware.manage')
+  const canManageTestMode = hasPermission(session, 'settings.manage')
   const testMode = useTestMode()
   const testSensors = useQuery({
     queryKey: ['sensor-test-mode-sensors'],
     queryFn: () => request('/api/v1/test-mode/sensors', {}, adaptTestModeSensors),
-    enabled: Boolean(testMode.state?.enabled),
+    enabled: Boolean(canManageTestMode && testMode.state?.enabled),
     refetchInterval: testMode.state?.enabled ? 5_000 : false,
   })
   const updateTestSensor = useMutation({
@@ -175,14 +178,14 @@ function SensorSettings() {
       await testMode.refresh()
     },
   })
-  const [adding, setAdding] = useState(new URLSearchParams(location.search).get('action') === 'add')
+  const [adding, setAdding] = useState(canEnroll && new URLSearchParams(location.search).get('action') === 'add')
   const [assignmentSensor, setAssignmentSensor] = useState<SensorSummary>()
   const assignmentRequested = new URLSearchParams(location.search).get('configuration') === 'measurement-assignment'
   const requestedSensor = assignmentRequested && !assignmentSensor
     ? sensors.find((sensor) => !sensor.circuitId || !sensor.utilityAccountId)
     : undefined
   const activeAssignmentSensor = assignmentSensor ?? requestedSensor
-  const firmware = useQuery({ queryKey: ['firmware-releases'], queryFn: () => request<Array<{ id: string; version: string; channel: string; active: boolean }>>('/api/v1/firmware-releases') })
+  const firmware = useQuery({ queryKey: ['firmware-releases'], queryFn: () => request<Array<{ id: string; version: string; channel: string; active: boolean }>>('/api/v1/firmware-releases'), enabled: canViewFirmware })
   const maintenance = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => enabled
       ? request(`/api/v1/devices/${id}/maintenance`, json('POST', { until: new Date(Date.now() + 3_600_000).toISOString(), note: 'Owner requested maintenance' }))
@@ -217,23 +220,23 @@ function SensorSettings() {
   })
   return (
     <>
-      <Surface title="Sensors" subtitle="Monitor setup, connectivity, storage, and firmware." action={home && <button className="button primary" type="button" onClick={() => { setAdding(true); }}><Plus /> Add sensor</button>}>
-        {!sensors.length ? <EmptyState title="No sensors connected" message="Add an ESP32 sensor to begin monitoring." action={home && <button type="button" className="button primary" onClick={() => { setAdding(true); }}>Connect sensor</button>} /> :
+      <Surface title="Sensors" subtitle="Monitor setup, connectivity, storage, and firmware." action={home && canEnroll && <button className="button primary" type="button" onClick={() => { setAdding(true); }}><Plus /> Add sensor</button>}>
+        {!sensors.length ? <EmptyState title="No sensors connected" message="Add an ESP32 sensor to begin monitoring." action={home && canEnroll && <button type="button" className="button primary" onClick={() => { setAdding(true); }}>Connect sensor</button>} /> :
           <div className="stack-list">{sensors.map((sensor) => <article className="sensor-row" key={sensor.id}>
             <span className={`sensor-icon ${sensor.online ? 'online' : ''}`}><Radio /></span>
             <span><strong>{sensor.name}</strong><small>{sensor.monitoredCircuit} · {sensor.firmware ?? 'Firmware unknown'} · last seen {relativeTime(sensor.lastSeenAt)}</small></span>
             <span className={`pill ${sensor.online ? 'success' : 'warning'}`}>{sensor.online ? 'Online' : 'Needs attention'}</span>
             <DropdownMenu label={`Manage ${sensor.name}`} triggerClassName="icon-button" menuClassName="row-menu" trigger={<MoreHorizontal />}>
               {canManageTopology && <DropdownMenuItem onSelect={() => { setAssignmentSensor(sensor) }}><Rows3 /> Assign circuit and electric service</DropdownMenuItem>}
-              <DropdownMenuItem onSelect={() => { configure.mutate({ id: sensor.id, currentName: sensor.name, currentCt: sensor.ctRatingAmps }); }}><Gauge /> Edit name and CT rating</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => { maintenance.mutate({ id: sensor.id, enabled: true }); }}><Wrench /> Start maintenance test</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => { void request(`/api/v1/devices/${sensor.id}/credential-rotation`, json('POST', { overlap_seconds: 3600 })); }}><KeyRound /> Rotate credentials</DropdownMenuItem>
-              {firmware.data?.[0] && <DropdownMenuItem onSelect={() => { const release = firmware.data[0]; if (release && confirm(`Install signed firmware ${release.version} on ${sensor.name}?`)) updateFirmware.mutate({ releaseId: release.id, sensorId: sensor.id }); }}><RefreshCw /> Update signed firmware</DropdownMenuItem>}
-              <DropdownMenuItem className="danger" onSelect={() => { if (confirm(`Remove ${sensor.name}? Historical readings will be preserved.`)) remove.mutate({ id: sensor.id, name: sensor.name }) }}><Trash2 /> Remove sensor</DropdownMenuItem>
+              {canManageDevices && <DropdownMenuItem onSelect={() => { configure.mutate({ id: sensor.id, currentName: sensor.name, currentCt: sensor.ctRatingAmps }); }}><Gauge /> Edit name and CT rating</DropdownMenuItem>}
+              {canManageDevices && <DropdownMenuItem onSelect={() => { maintenance.mutate({ id: sensor.id, enabled: true }); }}><Wrench /> Start maintenance test</DropdownMenuItem>}
+              {canManageDevices && <DropdownMenuItem onSelect={() => { void request(`/api/v1/devices/${sensor.id}/credential-rotation`, json('POST', { overlap_seconds: 3600 })); }}><KeyRound /> Rotate credentials</DropdownMenuItem>}
+              {canManageFirmware && firmware.data?.[0] && <DropdownMenuItem onSelect={() => { const release = firmware.data[0]; if (release && confirm(`Install signed firmware ${release.version} on ${sensor.name}?`)) updateFirmware.mutate({ releaseId: release.id, sensorId: sensor.id }); }}><RefreshCw /> Update signed firmware</DropdownMenuItem>}
+              {canRemoveDevices && <DropdownMenuItem className="danger" onSelect={() => { if (confirm(`Remove ${sensor.name}? Historical readings will be preserved.`)) remove.mutate({ id: sensor.id, name: sensor.name }) }}><Trash2 /> Remove sensor</DropdownMenuItem>}
             </DropdownMenu>
           </article>)}</div>}
       </Surface>
-      {testMode.state?.enabled && (
+      {canManageTestMode && testMode.state?.enabled && (
         <Surface
           className="test-mode-surface"
           title="Simulated sensors"
@@ -264,7 +267,7 @@ function SensorSettings() {
           ) : <EmptyState compact title="No active simulated sensors" message="Increase the simulated active sensor count in Test Mode settings." />}
         </Surface>
       )}
-      {home && adding && <SensorSetupFlow home={home} onClose={() => { setAdding(false); }} />}
+      {home && canEnroll && adding && <SensorSetupFlow home={home} onClose={() => { setAdding(false); }} />}
       {home && activeAssignmentSensor && (
         <ModalLayer onRequestClose={closeAssignment}>
           <MeasurementAssignmentDialog
@@ -295,6 +298,11 @@ function SensorSettings() {
 function FamilySettings() {
   const { session } = useAuth()
   const client = useQueryClient()
+  const canManageUsers = hasPermission(session, 'users.manage')
+  const canDisableUsers = hasPermission(session, 'users.disable')
+  const canRemoveUsers = hasPermission(session, 'users.remove')
+  const canRestoreUsers = hasPermission(session, 'users.restore')
+  const canViewRoles = hasPermission(session, 'roles.view')
   const family = useQuery({
     queryKey: ['family'],
     queryFn: () => request('/api/v1/admin/users?include_removed=true', {}, (value) => adaptFamily(value, session?.user?.id)),
@@ -302,6 +310,7 @@ function FamilySettings() {
   const roles = useQuery({
     queryKey: ['family-roles'],
     queryFn: () => request('/api/v1/admin/roles', {}, adaptFamilyRoles),
+    enabled: canViewRoles,
   })
   const [adding, setAdding] = useState(false)
   const lifecycle = useMutation({
@@ -336,10 +345,10 @@ function FamilySettings() {
     onSuccess: () => void client.invalidateQueries({ queryKey: ['family'] }),
   })
   return (
-    <Surface title="Family Access" subtitle="Invite people and choose what they can view or manage." action={<button className="button primary" type="button" onClick={() => { setAdding(true); }}><UserPlus /> Add person</button>}>
+    <Surface title="Family Access" subtitle="Invite people and choose what they can view or manage." action={canManageUsers && <button className="button primary" type="button" onClick={() => { setAdding(true); }}><UserPlus /> Add person</button>}>
       {family.isLoading ? <LoadingState /> : family.error ? <ErrorState error={family.error} retry={() => void family.refetch()} /> :
-        <div className="stack-list">{family.data?.map((member) => <div className="list-row family-row" key={member.id}><span className="avatar">{member.name.slice(0, 1).toUpperCase()}</span><span><strong>{member.name}{member.isSelf ? ' (you)' : ''}</strong><small>{member.email} · {member.activeSessions} active sessions · {member.status}</small></span>{member.status !== 'removed' && !member.isSelf && !member.protected ? <select aria-label={`Role for ${member.name}`} value={member.roleIds[0] ?? 'viewer'} onChange={(event) => { changeRole.mutate({ member, role: event.target.value }); }}>{roleOptions(roles.data).map((option) => <option key={option.id} value={option.id}>{homeRoleName(option)}</option>)}</select> : <span className="pill">{member.role}</span>}{!member.isSelf && !member.protected && <div className="inline-actions">{member.status === 'removed' ? <button type="button" className="button secondary" onClick={() => { lifecycle.mutate({ member, action: 'restore' }); }}>Restore</button> : <>{member.status === 'active' ? <button type="button" className="button secondary" onClick={() => { lifecycle.mutate({ member, action: 'disable' }); }}>Disable</button> : <button type="button" className="button secondary" onClick={() => { lifecycle.mutate({ member, action: 'enable' }); }}>Enable</button>}<button type="button" className="button secondary" disabled={!member.activeSessions} onClick={() => { lifecycle.mutate({ member, action: 'revoke-sessions' }); }}>Sign out sessions</button><button type="button" className="button danger" onClick={() => { if (confirm(`Remove ${member.name}? Access and sessions end, but audit history is retained.`)) lifecycle.mutate({ member, action: 'remove' }); }}>Remove</button></>}</div>}</div>)}</div>}
-      {adding && <InviteFamily roles={roleOptions(roles.data)} onClose={() => { setAdding(false); }} onSaved={() => void client.invalidateQueries({ queryKey: ['family'] })} />}
+        <div className="stack-list">{family.data?.map((member) => <div className="list-row family-row" key={member.id}><span className="avatar">{member.name.slice(0, 1).toUpperCase()}</span><span><strong>{member.name}{member.isSelf ? ' (you)' : ''}</strong><small>{member.email} · {member.activeSessions} active sessions · {member.status}</small></span>{canManageUsers && member.status !== 'removed' && !member.isSelf && !member.protected ? <select aria-label={`Role for ${member.name}`} value={member.roleIds[0] ?? 'viewer'} onChange={(event) => { changeRole.mutate({ member, role: event.target.value }); }}>{roleOptions(roles.data).map((option) => <option key={option.id} value={option.id}>{homeRoleName(option)}</option>)}</select> : <span className="pill">{member.role}</span>}{!member.isSelf && !member.protected && <div className="inline-actions">{member.status === 'removed' ? canRestoreUsers && <button type="button" className="button secondary" onClick={() => { lifecycle.mutate({ member, action: 'restore' }); }}>Restore</button> : <>{canDisableUsers && (member.status === 'active' ? <button type="button" className="button secondary" onClick={() => { lifecycle.mutate({ member, action: 'disable' }); }}>Disable</button> : <button type="button" className="button secondary" onClick={() => { lifecycle.mutate({ member, action: 'enable' }); }}>Enable</button>)}{canManageUsers && <button type="button" className="button secondary" disabled={!member.activeSessions} onClick={() => { lifecycle.mutate({ member, action: 'revoke-sessions' }); }}>Sign out sessions</button>}{canRemoveUsers && <button type="button" className="button danger" onClick={() => { if (confirm(`Remove ${member.name}? Access and sessions end, but audit history is retained.`)) lifecycle.mutate({ member, action: 'remove' }); }}>Remove</button>}</>}</div>}</div>)}</div>}
+      {canManageUsers && adding && <InviteFamily roles={roleOptions(roles.data)} onClose={() => { setAdding(false); }} onSaved={() => void client.invalidateQueries({ queryKey: ['family'] })} />}
     </Surface>
   )
 }
@@ -376,10 +385,13 @@ function NotificationSettings() {
   const { resolution } = useSingleHome()
   const homeId = resolution?.state === 'ready' ? resolution.home.id : undefined
   const canManageRules = session ? hasPermission(session, 'alerts.manage_rules') : false
-  const channels = useQuery({ queryKey: ['notification-channels'], queryFn: () => request<Record<string, unknown>[]>('/api/v1/notification-channels') })
+  const canManageDelivery = hasPermission(session, 'alerts.manage_delivery')
+  const canViewAlerts = hasPermission(session, 'alerts.view')
+  const channels = useQuery({ queryKey: ['notification-channels'], queryFn: () => request<Record<string, unknown>[]>('/api/v1/notification-channels'), enabled: canManageDelivery })
   const rules = useQuery({
     queryKey: ['alert-rules'],
     queryFn: () => request<AlertRule[]>('/api/v1/alert-rules'),
+    enabled: canViewAlerts || canManageRules,
   })
   const [advanced, setAdvanced] = useState(false)
   const [form, setForm] = useState({ host: '', port: '587', from: '', recipients: '', username: '', password: '' })
@@ -450,10 +462,10 @@ function NotificationSettings() {
         {saveRule.isSuccess && <InlineNotice tone="success">Notification preference saved.</InlineNotice>}
         {saveRule.error && <InlineNotice tone="danger">{saveRule.error.message}</InlineNotice>}
       </Surface>
-      <Surface title="Email delivery" subtitle="SMTP credentials are encrypted on the server and never returned to the browser." action={<button className="button secondary" type="button" onClick={() => { setAdvanced(!advanced); }}>{advanced ? 'Hide setup' : 'Set up email'}</button>}>
+      {canManageDelivery && <Surface title="Email delivery" subtitle="SMTP credentials are encrypted on the server and never returned to the browser." action={<button className="button secondary" type="button" onClick={() => { setAdvanced(!advanced); }}>{advanced ? 'Hide setup' : 'Set up email'}</button>}>
         {channels.data?.map((channel) => <div className="list-row" key={String(channel.id)}><Mail /><span><strong>{String(channel.name)}</strong><small>{String(channel.channel_type)} · secrets redacted</small></span><span className="pill success">Configured</span></div>)}
         {advanced && <form className="form-grid" onSubmit={(event) => { event.preventDefault(); save.mutate() }}><label>SMTP host<input required value={form.host} onChange={(event) => { setForm({ ...form, host: event.target.value }); }} /></label><label>Port<input type="number" value={form.port} onChange={(event) => { setForm({ ...form, port: event.target.value }); }} /></label><label>From address<input type="email" required value={form.from} onChange={(event) => { setForm({ ...form, from: event.target.value }); }} /></label><label>Recipients<input required value={form.recipients} onChange={(event) => { setForm({ ...form, recipients: event.target.value }); }} placeholder="you@example.com" /></label><label>Username<input autoComplete="off" value={form.username} onChange={(event) => { setForm({ ...form, username: event.target.value }); }} /></label><label>Password<input type="password" autoComplete="new-password" value={form.password} onChange={(event) => { setForm({ ...form, password: event.target.value }); }} /></label><div className="form-actions"><button className="button primary">Save email delivery</button></div></form>}
-      </Surface>
+      </Surface>}
     </>
   )
 }
@@ -552,13 +564,39 @@ const ALERT_RULES: AlertRuleDefinition[] = [
   },
 ]
 
+function ChartColorControl({ kind, color, onChange }: { kind: ChartColorKind; color: string; onChange: (color: string) => void }) {
+  const [draft, setDraft] = useState<string>()
+  const label = kind === 'cost' ? 'Estimated cost' : kind.charAt(0).toUpperCase() + kind.slice(1)
+  const updateDraft = (value: string) => {
+    setDraft(value)
+    if (/^#[0-9a-f]{6}$/iu.test(value)) onChange(value)
+  }
+  return (
+    <div className="chart-color-row">
+      <span>{label}</span>
+      <label className="chart-color-swatch"><span className="sr-only">{label} color picker</span><input type="color" value={color} onChange={(event) => { onChange(event.target.value) }} /></label>
+      <label className="chart-color-hex"><span className="sr-only">{label} hexadecimal color</span><input aria-invalid={draft !== undefined && !/^#[0-9a-f]{6}$/iu.test(draft)} inputMode="text" maxLength={7} pattern="#[0-9A-Fa-f]{6}" value={draft ?? color} onChange={(event) => { updateDraft(event.target.value) }} onBlur={() => { setDraft(undefined) }} /></label>
+      <i className="chart-color-preview" aria-hidden="true" style={{ backgroundColor: color }} />
+    </div>
+  )
+}
+
 function AppearanceSettings() {
   const appearance = useAppearance()
+  const chartBackground = appearance.theme === 'light' ? '#FFFFFF' : '#10251D'
   return (
     <Surface title="Appearance" subtitle="Stored only in this browser.">
       <fieldset className="segmented-field"><legend>Theme</legend>{(['dark', 'light', 'system'] as const).map((value) => <button type="button" key={value} className={appearance.theme === value ? 'active' : ''} onClick={() => { appearance.setTheme(value); }}>{value}</button>)}</fieldset>
       <fieldset className="segmented-field"><legend>Density</legend>{(['comfortable', 'compact'] as const).map((value) => <button type="button" key={value} className={appearance.density === value ? 'active' : ''} onClick={() => { appearance.setDensity(value); }}>{value}</button>)}</fieldset>
       <label>Accent color<input type="color" value={appearance.accent} onChange={(event) => { appearance.setAccent(event.target.value); }} /></label>
+      <div className="chart-color-settings">
+        <div className="surface-header"><div><h3>History chart colors</h3><p>Stored only in this browser and applied to Home and History charts.</p></div><button type="button" className="button secondary" onClick={appearance.resetChartColors}>Reset colors</button></div>
+        {(['power', 'energy', 'cost'] as const).map((kind) => (
+          <ChartColorControl key={kind} kind={kind} color={appearance.chartColors[kind]} onChange={(value) => { appearance.setChartColor(kind, value) }} />
+        ))}
+        {Object.values(appearance.chartColors).some((color) => chartColorContrast(color, chartBackground) < 3) && <InlineNotice tone="warning">One or more chart lines have low contrast in the selected theme. The color is preserved; choose a more distinct color for easier reading.</InlineNotice>}
+        <small>Choose colors that remain distinguishable against the chart background. Cost is also rendered with a dashed line.</small>
+      </div>
       <h3>Home cards</h3>
       <label className="toggle-row"><span><strong>Sensor summary</strong><small>Show the compact sensor status section on Home.</small></span><input type="checkbox" checked={appearance.showSensorsCard} onChange={(event) => { appearance.setShowSensorsCard(event.target.checked); }} /></label>
       <label className="toggle-row"><span><strong>Daily chart</strong><small>Show the simple whole-home energy chart on Home.</small></span><input type="checkbox" checked={appearance.showDailyChart} onChange={(event) => { appearance.setShowDailyChart(event.target.checked); }} /></label>
@@ -567,6 +605,13 @@ function AppearanceSettings() {
 }
 
 function DataSettings() {
+  const { session } = useAuth()
+  const canCreate = hasPermission(session, 'backups.create')
+  const canVerify = hasPermission(session, 'backups.verify')
+  const canDeleteBackups = hasPermission(session, 'backups.delete')
+  const canRestore = hasPermission(session, 'backups.restore')
+  const canExportHistory = hasPermission(session, 'history.export')
+  const canExportLogs = hasPermission(session, 'logs.export')
   const client = useQueryClient()
   const { resolution } = useSingleHome()
   const homeId = resolution?.state === 'ready' ? resolution.home.id : undefined
@@ -585,7 +630,7 @@ function DataSettings() {
       verified_backup_count: number
       estimated_reclaim_bytes: number
     }>('/api/v1/backups/replace-all-preview'),
-    enabled: replaceDialogOpen,
+    enabled: replaceDialogOpen && canCreate && canDeleteBackups,
   })
   const requests = useQuery({
     queryKey: ['backup-requests'],
@@ -600,7 +645,7 @@ function DataSettings() {
     }>>('/api/v1/backup-requests'),
     refetchInterval: 10_000,
   })
-  const exports = useQuery({ queryKey: ['exports'], queryFn: () => request<Record<string, unknown>[]>('/api/v1/exports') })
+  const exports = useQuery({ queryKey: ['exports'], queryFn: () => request<Record<string, unknown>[]>('/api/v1/exports'), enabled: canExportHistory })
   const createExport = useMutation({
     mutationFn: () => request('/api/v1/exports', json('POST', { format: 'csv', site_id: homeId, scope: 'whole_home' })),
     onSuccess: () => void client.invalidateQueries({ queryKey: ['exports'] }),
@@ -685,7 +730,7 @@ function DataSettings() {
   }
   return (
     <>
-      <Surface title="Data & Backups" subtitle="Local PostgreSQL backups with isolated restore verification and protected retention." action={<button className="button primary" type="button" disabled={operationPending} onClick={createBackup}><DatabaseBackup /> Back up now</button>}>
+      <Surface title="Data & Backups" subtitle="Local PostgreSQL backups with isolated restore verification and protected retention." action={canCreate && <button className="button primary" type="button" disabled={operationPending} onClick={createBackup}><DatabaseBackup /> Back up now</button>}>
         <InlineNotice>Nightly backups are created by the isolated backup service. Restore always begins with an automated verification preflight.</InlineNotice>
         {submit.isSuccess && <InlineNotice tone="success">Request queued for the isolated backup service.</InlineNotice>}
         {(submit.error || verify.error || remove.error || replaceAll.error) && <InlineNotice tone="danger">{submit.error?.message ?? verify.error?.message ?? remove.error?.message ?? replaceAll.error?.message}</InlineNotice>}
@@ -705,28 +750,28 @@ function DataSettings() {
               <span className={`pill ${backupStatusTone(backup.status)}`}>{backupStatusLabel(backup.status)}</span>
               <div className="inline-actions">
                 <button className="button secondary compact" type="button" onClick={() => { setSelectedBackup(backup); }}>Details</button>
-                {['completed_unverified', 'verification_failed'].includes(backup.status) && <button className="button secondary compact" type="button" disabled={operationPending} onClick={() => { verify.mutate(backup.id); }}>{backup.status === 'verification_failed' ? 'Retry verification' : 'Verify now'}</button>}
+                {canVerify && ['completed_unverified', 'verification_failed'].includes(backup.status) && <button className="button secondary compact" type="button" disabled={operationPending} onClick={() => { verify.mutate(backup.id); }}>{backup.status === 'verification_failed' ? 'Retry verification' : 'Verify now'}</button>}
                 {backup.status === 'verified' && <>
-                  <button className="button secondary compact" type="button" disabled={operationPending} onClick={() => { verify.mutate(backup.id); }}>Verify again</button>
-                  <button className="button secondary compact" type="button" disabled={operationPending} onClick={() => {
+                  {canVerify && <button className="button secondary compact" type="button" disabled={operationPending} onClick={() => { verify.mutate(backup.id); }}>Verify again</button>}
+                  {canRestore && <button className="button secondary compact" type="button" disabled={operationPending} onClick={() => {
                     if (confirm('Run a fresh isolated restore verification and prepare a restore maintenance checkpoint? Production data will not be overwritten.')) {
                       submit.mutate({ operation: 'restore_preflight', backupId: backup.id, idempotencyKey: crypto.randomUUID() })
                     }
-                  }}>Restore</button>
+                  }}>Restore</button>}
                 </>}
-                {backupDeleteEligible(backup.status) && <button className="button danger compact" type="button" disabled={operationPending || !canDelete} title={!canDelete ? 'The last verified backup is protected' : undefined} onClick={() => { requestDelete(backup); }}><Trash2 /> {backup.status === 'deletion_failed' ? 'Retry cleanup' : 'Delete'}</button>}
+                {canDeleteBackups && backupDeleteEligible(backup.status) && <button className="button danger compact" type="button" disabled={operationPending || !canDelete} title={!canDelete ? 'The last verified backup is protected' : undefined} onClick={() => { requestDelete(backup); }}><Trash2 /> {backup.status === 'deletion_failed' ? 'Retry cleanup' : 'Delete'}</button>}
               </div>
             </div>
           )
         }) : <EmptyState title="No backup record yet" message="The scheduled backup service records its first verified run after deployment." />}
       </Surface>
-      <Surface title="Advanced backup actions" subtitle="Protected owner-only operations that affect every local recovery point.">
+      {canCreate && canDeleteBackups && <Surface title="Advanced backup actions" subtitle="Protected operations that affect every local recovery point.">
         <div className="list-row">
           <DatabaseBackup />
           <span><strong>Replace all backups with one new backup</strong><small>Create and fully restore-test the replacement before older artifacts are removed.</small></span>
           <button className="button danger" type="button" disabled={operationPending} onClick={() => { setReplaceDialogOpen(true); }}>Replace all backups</button>
         </div>
-      </Surface>
+      </Surface>}
       {selectedBackup && <BackupDetails backup={selectedBackup} onClose={() => { setSelectedBackup(undefined); }} />}
       {replaceDialogOpen && (
         <ModalLayer onRequestClose={() => { if (!replaceAll.isPending) setReplaceDialogOpen(false) }}>
@@ -750,12 +795,12 @@ function DataSettings() {
           </section>
         </ModalLayer>
       )}
-      <Surface title="Exports" subtitle="Download server-generated history and audit files.">
+      {(canExportHistory || canExportLogs) && <Surface title="Exports" subtitle="Download server-generated history and audit files.">
         <div className="list-row"><Gauge /><span><strong>{exports.data?.length ?? 0} export jobs</strong><small>Generated files remain local to this server.</small></span></div>
-        <div className="inline-actions"><button className="button secondary" type="button" disabled={createExport.isPending || !homeId} onClick={() => { createExport.mutate(); }}>Export usage</button><button className="button secondary" type="button" disabled={createLogs.isPending} onClick={() => { createLogs.mutate(); }}>Download logs</button></div>
+        <div className="inline-actions">{canExportHistory && <button className="button secondary" type="button" disabled={createExport.isPending || !homeId} onClick={() => { createExport.mutate(); }}>Export usage</button>}{canExportLogs && <button className="button secondary" type="button" disabled={createLogs.isPending} onClick={() => { createLogs.mutate(); }}>Download logs</button>}</div>
         {(createExport.isSuccess || createLogs.isSuccess) && <InlineNotice tone="success">The local export job was queued.</InlineNotice>}
         {(createExport.error || createLogs.error) && <InlineNotice tone="danger">{createExport.error?.message ?? createLogs.error?.message}</InlineNotice>}
-      </Surface>
+      </Surface>}
     </>
   )
 }
@@ -843,7 +888,21 @@ function backupDetailValue(value: unknown) {
     : 'Unavailable'
 }
 
+const ADVANCED_DETAIL_POLICIES = {
+  'system-health': { allOf: ['settings.manage'] },
+  'sensor-test-mode': { allOf: ['settings.manage'] },
+  network: { allOf: ['network.manage'] },
+  rates: { anyOf: ['rates.manage_custom', 'rates.manage_sources', 'rates.check_sources'] },
+  topology: { allOf: ['topology.manage'] },
+  firmware: { allOf: ['firmware.manage'] },
+  interface: { allOf: ['interface_text.manage'] },
+  layout: { allOf: ['status_indicators.manage'] },
+  logs: { allOf: ['logs.export'] },
+  security: { allOf: ['audit.view'] },
+} as const satisfies Record<string, PermissionPolicy>
+
 function AdvancedSettings() {
+  const { session } = useAuth()
   const { resolution } = useSingleHome()
   const { services } = useLiveHome()
   const location = useLocation()
@@ -862,11 +921,12 @@ function AdvancedSettings() {
     ['logs', DatabaseBackup, 'Application logs'],
     ['security', Shield, 'Permissions & audit'],
   ] as const
-  const detail = options.some(([id]) => id === routeDetail) ? routeDetail : 'system-health'
+  const permittedOptions = options.filter(([id]) => satisfiesPolicy(session, ADVANCED_DETAIL_POLICIES[id]))
+  const detail = permittedOptions.some(([id]) => id === routeDetail) ? routeDetail : permittedOptions[0]?.[0]
   return (
     <div className="advanced-settings-stack">
       <Surface className="advanced-navigation" title="Advanced" subtitle="Technical controls are separated from everyday home settings.">
-        <div className="detail-picker">{options.map(([id, Icon, label]) => <button type="button" className={detail === id ? 'active' : ''} key={id} onClick={() => { navigate(`/settings/advanced/${id}`); }}><Icon />{label}</button>)}</div>
+        <div className="detail-picker">{permittedOptions.map(([id, Icon, label]) => <button type="button" className={detail === id ? 'active' : ''} key={id} onClick={() => { navigate(`/settings/advanced/${id}`); }}><Icon />{label}</button>)}</div>
       </Surface>
       {detail === 'system-health' && <HealthDetail />}
       {detail === 'sensor-test-mode' && <SensorTestModeDetail homeId={home?.id} currency={home?.currency ?? 'USD'} />}

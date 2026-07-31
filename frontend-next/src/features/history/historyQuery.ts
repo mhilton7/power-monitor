@@ -6,22 +6,37 @@ export interface HistoryWindow {
   bucket: '5m' | '15m' | '1h' | '1d'
 }
 
-function startOfLocalDay(now: Date): Date {
-  const value = new Date(now)
-  value.setHours(0, 0, 0, 0)
-  return value
+function zonedDateTime(value: string, timezone: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/u.exec(value)
+  if (!match) return new Date(value)
+  const desired = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4] ?? 0), Number(match[5] ?? 0))
+  let result = desired
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date(result))
+    const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((item) => item.type === type)?.value ?? 0)
+    const represented = Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'))
+    result += desired - represented
+  }
+  return new Date(result)
 }
 
-export function historyWindow(filters: HistoryFilters, cycleStart?: string, cycleEnd?: string): HistoryWindow {
+export function historyWindow(filters: HistoryFilters, cycleStart?: string, cycleEnd?: string, timezone = 'UTC'): HistoryWindow {
   const now = new Date()
-  if (filters.range === 'today') return { start: startOfLocalDay(now), end: now, bucket: '15m' }
+  if (filters.range === 'today') {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now)
+    const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? ''
+    const day = `${value('year')}-${value('month')}-${value('day')}`
+    return { start: zonedDateTime(day, timezone), end: now, bucket: '15m' }
+  }
   if (filters.range === '7d') return { start: new Date(now.getTime() - 7 * 86_400_000), end: now, bucket: '1h' }
   if (filters.range === '30d') return { start: new Date(now.getTime() - 30 * 86_400_000), end: now, bucket: '1d' }
   if (filters.range === 'cycle' && cycleStart) {
     return { start: new Date(cycleStart), end: cycleEnd ? new Date(Math.min(now.getTime(), new Date(cycleEnd).getTime())) : now, bucket: '1d' }
   }
-  const start = filters.customStart ? new Date(filters.customStart) : new Date(now.getTime() - 86_400_000)
-  const end = filters.customEnd ? new Date(filters.customEnd) : now
+  const start = filters.customStart ? zonedDateTime(filters.customStart, timezone) : new Date(now.getTime() - 86_400_000)
+  const end = filters.customEnd ? zonedDateTime(filters.customEnd, timezone) : now
   return { start, end, bucket: end.getTime() - start.getTime() > 14 * 86_400_000 ? '1d' : '1h' }
 }
 
@@ -31,7 +46,7 @@ export function historyPayload(
   cycleStart?: string,
   cycleEnd?: string,
 ): Record<string, unknown> {
-  const window = historyWindow(filters, cycleStart, cycleEnd)
+  const window = historyWindow(filters, cycleStart, cycleEnd, home.timezone)
   const metrics = filters.metric === 'power'
     ? ['power_w']
     : filters.metric === 'energy'

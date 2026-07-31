@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, type ReactNode } from 'react'
 import { adaptTestMode } from '../api/adapters'
 import { json, request } from '../api/client'
-import { isOwner } from '../access/permissions'
+import { hasPermission } from '../access/permissions'
 import type { TestLoadProfile, TestModeState } from '../types/models'
 import { useAuth } from './AuthContext'
 
@@ -41,7 +41,7 @@ function operationKey(): string {
 export function TestModeProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth()
   const client = useQueryClient()
-  const owner = Boolean(session?.authenticated && isOwner(session))
+  const owner = hasPermission(session, 'settings.manage')
   const query = useQuery({
     queryKey: ['sensor-test-mode'],
     queryFn: () => request('/api/v1/test-mode', {}, adaptTestMode),

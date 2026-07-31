@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 
 const focusableSelector = [
@@ -13,19 +13,27 @@ const focusableSelector = [
 export function ModalLayer({
   children,
   onRequestClose,
+  returnFocusRef,
 }: {
   children: ReactNode
   onRequestClose: () => void
+  returnFocusRef?: RefObject<HTMLElement | null>
 }) {
   const contentRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef(onRequestClose)
+  // WebKit may clear :active focus before passive effects run after a click.
+  // Capture the opener during the render that mounts the dialog so cleanup can
+  // reliably return keyboard focus in every supported engine.
+  const previousFocusRef = useRef<HTMLElement | null>(
+    document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  )
 
   useEffect(() => {
     closeRef.current = onRequestClose
   }, [onRequestClose])
 
   useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const returnFocus = returnFocusRef?.current ?? previousFocusRef.current
     const previousOverflow = document.body.style.overflow
     const previousPaddingRight = document.body.style.paddingRight
     const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
@@ -69,9 +77,13 @@ export function ModalLayer({
       document.removeEventListener('keydown', onKeyDown)
       document.body.style.overflow = previousOverflow
       document.body.style.paddingRight = previousPaddingRight
-      previousFocus?.focus()
+      // Restore after the close-driven URL/state update commits. WebKit can
+      // otherwise discard focus while the modal portal is being removed.
+      window.requestAnimationFrame(() => {
+        returnFocus?.focus({ preventScroll: true })
+      })
     }
-  }, [])
+  }, [returnFocusRef])
 
   return createPortal(
     <div className="modal-layer">

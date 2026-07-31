@@ -23,5 +23,12 @@ export default defineConfig({
     { name: 'desktop-light', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 }, colorScheme: 'light' } },
     { name: 'tablet', use: { ...devices['Desktop Chrome'], viewport: { width: 834, height: 1194 }, hasTouch: true } },
     { name: 'mobile', use: { ...devices['Pixel 7'] } },
+    {
+      name: 'edge',
+      grep: /Viewer receives|Appearance exposes|History preserves/,
+      use: { ...devices['Desktop Chrome'], channel: 'msedge', viewport: { width: 1440, height: 1000 } },
+    },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'], viewport: { width: 1440, height: 1000 } } },
+    { name: 'webkit', use: { ...devices['Desktop Safari'], viewport: { width: 1440, height: 1000 } } },
   ],
 })

@@ -24,11 +24,19 @@ energy and never adds cumulative PZEM lifetime registers.
 
 Parent/child circuits and multiple meters on the same circuit conflict in a
 combined ad hoc selection. The API rejects them with
-`history_topology_overlap`. Site totals include only sensors with
-`include_in_default_site_total`; when that explicit set contains a known
-overlap, the child/duplicate is excluded and returned in scope provenance.
-Saved aggregate allocation percentages are honored. Individual mode may compare
-overlapping sensors but does not present a combined energy/cost summary.
+`history_topology_overlap`. The live Home total automatically combines every
+active measurement sensor when all sensors have distinct, non-overlapping
+circuits on the same utility account. This also requires a complete two-leg set
+for split-phase service-leg sensors. If the topology is incomplete or ambiguous,
+Home falls back to the explicit `include_in_default_site_total` selection rather
+than guessing. The same resolver feeds the fleet summary and configurable live
+status indicators.
+
+Historical site totals retain their explicit sensor or saved-aggregate scope;
+when that set contains a known overlap, the child/duplicate is excluded and
+returned in scope provenance. Saved aggregate allocation percentages are
+honored. Individual mode may compare overlapping sensors but does not present a
+combined energy/cost summary.
 
 Incomplete topology is disclosed because the server cannot prove that an
 unassigned sensor is non-overlapping. Configure circuit relationships before

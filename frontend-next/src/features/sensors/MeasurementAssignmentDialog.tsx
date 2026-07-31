@@ -202,10 +202,11 @@ export function MeasurementAssignmentDialog({
             </label>
             <label className="toggle-row span-all">
               <span>
-                <strong>Include in the default Home total</strong>
+                <strong>Use for Home if topology is incomplete</strong>
                 <small>
-                  Enable only when this measurement does not overlap another included parent,
-                  child, whole-home, or service-leg sensor.
+                  Complete non-overlapping circuits on the same electric service combine
+                  automatically. Enable this explicit fallback only when it does not overlap a
+                  parent, child, whole-home, or service-leg sensor.
                 </small>
               </span>
               <input

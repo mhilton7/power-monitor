@@ -39,6 +39,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    environmentOptions: { jsdom: { url: 'https://power-monitor.test/' } },
     setupFiles: './tests/setup.ts',
     exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
     coverage: { reporter: ['text', 'html'] },

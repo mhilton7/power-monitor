@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { PERMISSION_CODES } from '../src/access/permissions'
 
 const home = {
   id: 'home-1',
@@ -30,7 +31,7 @@ async function mockServer(page: Page) {
           email: 'owner@example.test',
           display_name: 'Home Owner',
           roles: ['admin'],
-          permissions: ['roles.view', 'roles.manage'],
+          permissions: [...PERMISSION_CODES],
           all_sites: true,
           site_ids: [],
         },
@@ -173,6 +174,24 @@ test('normal production routes use only the four-workspace shell', async ({ page
   await expect(page.getByText('Connect your first sensor')).toBeVisible()
   await expect(primary.getByText('Devices')).toHaveCount(0)
   await expect(page).toHaveScreenshot('home-empty-dark.png', { fullPage: true })
+})
+
+test('Appearance exposes editable, persistent, resettable chart colors', async ({ page }, testInfo) => {
+  await page.goto('/settings/appearance')
+  await expect(page.getByRole('heading', { name: 'History chart colors' })).toBeVisible()
+  const powerHex = page.getByLabel('Power hexadecimal color')
+  const costHex = page.getByLabel('Estimated cost hexadecimal color')
+  await expect(powerHex).toHaveValue('#78DFBF')
+  await powerHex.fill('#336699')
+  await costHex.fill('#FF8800')
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('pm-chart-power-color'))).toBe('#336699')
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('pm-chart-cost-color'))).toBe('#FF8800')
+  const capturesAppearance = ['desktop', 'mobile', 'edge', 'firefox', 'webkit'].includes(testInfo.project.name)
+  if (capturesAppearance) await expect(page).toHaveScreenshot('appearance-chart-colors-custom.png', { fullPage: true, animations: 'disabled' })
+  await page.getByRole('button', { name: 'Reset colors' }).click()
+  await expect(powerHex).toHaveValue('#78DFBF')
+  await expect(costHex).toHaveValue('#C9A7FF')
+  if (capturesAppearance) await expect(page).toHaveScreenshot('appearance-chart-colors-default.png', { fullPage: true, animations: 'disabled' })
 })
 
 test('a fresh real sensor measurement stays consistent across Home and Sensor Health', async ({ page }) => {
@@ -366,8 +385,9 @@ test('System Health distinguishes server, schema, and owner permission states', 
     },
   }))
   await page.reload()
-  await expect(page.getByText('Owner access required')).toBeVisible()
-  await expect(page.getByText('This technical settings area is available only to the home owner.')).toBeVisible()
+  await expect(page.getByText('Access denied', { exact: true })).toBeVisible()
+  await expect(page.getByText('Your account does not have permission to open this workspace.')).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Primary' }).getByText('Settings')).toHaveCount(0)
 })
 
 test('System Health reports a bounded request timeout', async ({ page }, testInfo) => {
@@ -589,7 +609,7 @@ test('fresh deployment completes the skippable Single Home onboarding path', asy
       return route.fulfill({ json: {
         authenticated: true,
         bootstrap_required: false,
-        user: { id: 'owner-1', email: 'owner@example.test', display_name: 'Home Owner', roles: ['admin'], permissions: [], all_sites: true, site_ids: [] },
+        user: { id: 'owner-1', email: 'owner@example.test', display_name: 'Home Owner', roles: ['admin'], permissions: [...PERMISSION_CODES], all_sites: true, site_ids: [] },
       } })
     }
     if (path === '/api/v1/sites' && route.request().method() === 'POST') {

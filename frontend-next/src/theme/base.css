@@ -1,19 +1,14 @@
-@font-face {
-  font-family: "Power Sans";
-  src: local("Inter"), local("Segoe UI Variable"), local("Segoe UI");
-  font-display: swap;
-}
-
 * { box-sizing: border-box; }
 html { background: var(--bg); scroll-behavior: auto; }
-body { margin: 0; min-width: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 15px/1.5 "Power Sans", system-ui, sans-serif; }
+body { margin: 0; min-width: 0; min-height: 100vh; background: var(--bg); color: var(--text); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 button, input, select, textarea { color: inherit; font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .5; }
 a { color: var(--accent); text-decoration: none; }
 h1, h2, h3, p { margin-top: 0; }
-h1 { margin-bottom: .35rem; font-size: clamp(2rem, 4vw, 3.35rem); line-height: 1.03; letter-spacing: -.045em; }
+h1 { margin-bottom: .35rem; font-size: clamp(2rem, 4vw, 3.35rem); line-height: 1.08; letter-spacing: -.015em; }
+.page-title { max-width: 20ch; overflow-wrap: normal; text-wrap: balance; word-spacing: .04em; }
 h2 { margin-bottom: .25rem; font-size: 1.25rem; line-height: 1.2; letter-spacing: -.02em; }
 h3 { font-size: 1rem; }
 small { color: var(--muted); }

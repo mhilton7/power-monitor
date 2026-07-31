@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import path from 'node:path'
+import { PERMISSION_CODES } from '../src/access/permissions'
 
 const home = {
   id: 'home-1',
@@ -36,7 +37,11 @@ function sensor(
   }
 }
 
-async function mockHome(page: Page, sensors: Record<string, unknown>[]) {
+async function mockHome(
+  page: Page,
+  sensors: Record<string, unknown>[],
+  fleetOverrides: Record<string, unknown> = {},
+) {
   await page.route('**/api/v1/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname
     if (pathname === '/api/v1/events/stream') return route.fulfill({ status: 204 })
@@ -49,7 +54,7 @@ async function mockHome(page: Page, sensors: Record<string, unknown>[]) {
           email: 'owner@example.test',
           display_name: 'Home Owner',
           roles: ['admin'],
-          permissions: [],
+          permissions: [...PERMISSION_CODES],
           all_sites: true,
           site_ids: [],
         },
@@ -85,6 +90,7 @@ async function mockHome(page: Page, sensors: Record<string, unknown>[]) {
         has_live_data: true,
         has_energy_data: false,
         has_cost_data: false,
+        ...fleetOverrides,
       },
       '/api/v1/alerts': [],
       '/api/v1/test-mode': {
@@ -149,6 +155,7 @@ test('Sensor Health renders one compact accessible measurement strip per sensor'
   await expect(card.getByLabel('Power factor measurement invalid')).toHaveText('—')
   await expect(card.getByLabel('Current, 0.00 A')).toHaveCount(2)
   await expect(card.getByText(/Received \d+s ago/)).toHaveCount(2)
+  await expect(page.getByText('Sensor data last received', { exact: true })).toHaveCount(0)
   await expect(card.getByRole('link', { name: 'Manage' })).toHaveCSS('white-space', 'nowrap')
   await expect(card).toHaveScreenshot('sensor-health-compact-multiple.png')
 
@@ -157,6 +164,28 @@ test('Sensor Health renders one compact accessible measurement strip per sensor'
       path: path.resolve('..', 'docs', 'screenshots', 'sensor-health-after-desktop.png'),
     })
   }
+})
+
+test('Home displays the combined fleet value while preserving per-sensor readings', async ({ page }) => {
+  await mockHome(
+    page,
+    [
+      sensor('sensor-1', 'Indoor-AC', { current_watts: '1.1' }),
+      sensor('sensor-2', 'Outdoor-AC', { current_watts: '1.0' }),
+    ],
+    {
+      current_load_w: '2.1',
+      recent_peak_w: '2.1',
+      reporting_devices: 2,
+    },
+  )
+  await page.goto('/home')
+
+  await expect(page.locator('.power-reading strong')).toHaveText('2.1 W')
+  const health = page.locator('.sensor-health-card')
+  await expect(health.locator('.sensor-health-row', { hasText: 'Indoor-AC' })).toContainText('1.1 W')
+  await expect(health.locator('.sensor-health-row', { hasText: 'Outdoor-AC' })).toContainText('1 W')
+  await expect(page.getByText('Sensor data last received', { exact: true })).toHaveCount(0)
 })
 
 test('one-sensor Sensor Health remains compact without horizontal overflow', async ({ page }, testInfo) => {
@@ -188,7 +217,7 @@ test('one-sensor Sensor Health remains compact without horizontal overflow', asy
   }
 })
 
-test('one shared local timer advances Home and sensor receipt ages without one-second requests', async ({ page }) => {
+test('one shared local timer advances header and sensor receipt ages without one-second requests', async ({ page }) => {
   const now = Date.now()
   const receivedAt = new Date(now - 1_000).toISOString()
   const requests: string[] = []
@@ -204,17 +233,17 @@ test('one shared local timer advances Home and sensor receipt ages without one-s
   ])
   await page.goto('/home')
 
-  const homeAge = page.locator('[data-metric-identity="home.last_data"]')
+  const headerAge = page.locator('.live-facts .freshness')
   const sensorAge = page.locator('.sensor-health-row', { hasText: 'Indoor-AC' })
-  await expect(homeAge).toContainText(/\d+s ago/)
+  await expect(headerAge).toContainText(/\d+s ago/)
   await expect(sensorAge).toContainText(/Received \d+s ago/)
-  const initialHomeSeconds = elapsedSeconds(await homeAge.innerText())
+  const initialHeaderSeconds = elapsedSeconds(await headerAge.innerText())
   const initialSensorSeconds = elapsedSeconds(await sensorAge.innerText())
   const requestCount = requests.length
   await page.waitForTimeout(2_100)
-  const laterHomeSeconds = elapsedSeconds(await homeAge.innerText())
+  const laterHeaderSeconds = elapsedSeconds(await headerAge.innerText())
   const laterSensorSeconds = elapsedSeconds(await sensorAge.innerText())
-  expect(laterHomeSeconds).toBeGreaterThan(initialHomeSeconds)
+  expect(laterHeaderSeconds).toBeGreaterThan(initialHeaderSeconds)
   expect(laterSensorSeconds).toBeGreaterThan(initialSensorSeconds)
   expect(requests.length).toBe(requestCount)
 })

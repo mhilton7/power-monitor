@@ -27,6 +27,100 @@ async def bootstrap_admin(client: httpx.AsyncClient) -> dict[str, object]:
 
 
 @pytest.mark.asyncio
+async def test_builtin_viewer_is_strictly_read_only_across_safe_workspaces(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await bootstrap_admin(api_client)
+    sites = (await api_client.get("/api/v1/sites")).json()
+    assert sites
+    site_id = sites[0]["id"]
+    created = await api_client.post(
+        "/api/v1/users",
+        headers=csrf(api_client),
+        json={
+            "email": "strict-viewer@example.com",
+            "display_name": "Strict Viewer",
+            "password": "Production-Strict-Viewer-Password-42!",
+            "roles": ["viewer"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert (
+        await api_client.post("/api/v1/auth/logout", headers=csrf(api_client))
+    ).status_code == 204
+    login = await api_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "strict-viewer@example.com",
+            "password": "Production-Strict-Viewer-Password-42!",
+        },
+    )
+    assert login.status_code == 200, login.text
+    session = (await api_client.get("/api/v1/auth/session")).json()
+    permissions = set(session["user"]["permissions"])
+    assert {
+        "overview.view",
+        "history.view",
+        "costs.view",
+        "devices.view",
+        "rates.view",
+    } <= permissions
+    assert not (
+        {
+            "history.export",
+            "costs.export",
+            "bill_imports.manage",
+            "devices.manage",
+            "alerts.acknowledge",
+        }
+        & permissions
+    )
+    assert session["user"]["access_revision"] >= 1
+
+    assert (await api_client.get("/api/v1/sites")).status_code == 200
+    assert (await api_client.get(f"/api/v1/devices?site_id={site_id}")).status_code == 200
+    assert (await api_client.get(f"/api/v1/fleet/summary?site_id={site_id}")).status_code == 200
+    assert (await api_client.get("/api/v1/utility-accounts")).status_code == 200
+    assert (await api_client.get("/api/v1/admin/rate-plans")).status_code == 200
+    assert (await api_client.get("/api/v1/alerts")).status_code == 200
+
+    history_payload = {
+        "scope": {"type": "site", "site_id": site_id},
+        "display_mode": "combined",
+        "metrics": ["energy_kwh"],
+        "start_utc": "2026-07-30T00:00:00Z",
+        "end_utc": "2026-07-30T02:00:00Z",
+        "bucket": "1h",
+        "timezone": "America/Los_Angeles",
+    }
+    assert (
+        await api_client.post(
+            "/api/v1/history/query", headers=csrf(api_client), json=history_payload
+        )
+    ).status_code == 200
+    assert (
+        await api_client.post(
+            "/api/v1/history/export", headers=csrf(api_client), json=history_payload
+        )
+    ).status_code == 403
+    assert (await api_client.get("/api/v1/admin/utility-bill-imports")).status_code == 403
+    assert (
+        await api_client.post(
+            "/api/v1/enrollment-tokens",
+            headers=csrf(api_client),
+            json={"site_id": site_id, "name": "Denied viewer sensor"},
+        )
+    ).status_code == 403
+    assert (
+        await api_client.post(
+            "/api/v1/alerts/00000000-0000-0000-0000-000000000000/acknowledge",
+            headers=csrf(api_client),
+            json={"note": "Viewer must not acknowledge"},
+        )
+    ).status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_custom_role_site_scope_session_revocation_and_last_admin(
     api_client: httpx.AsyncClient,
 ) -> None:
@@ -358,6 +452,7 @@ async def test_custom_role_clone_revision_assignment_and_archive(
                 "costs.view",
                 "costs.export",
                 "sites.view",
+                "utility_accounts.view",
                 "topology.view",
                 "devices.view",
                 "rates.view",
@@ -408,6 +503,13 @@ async def test_custom_role_clone_revision_assignment_and_archive(
     )
     user_id = created.json()["id"]
     detail = (await api_client.get(f"/api/v1/admin/users/{user_id}")).json()
+    assert (
+        await api_client.post(
+            "/api/v1/auth/reauthenticate",
+            headers=csrf(api_client),
+            json={"password": "Production-Admin-Password-42!"},
+        )
+    ).status_code == 200
     assigned = await api_client.put(
         f"/api/v1/admin/users/{user_id}/access",
         headers=csrf(api_client),
@@ -416,6 +518,7 @@ async def test_custom_role_clone_revision_assignment_and_archive(
             "all_sites": True,
             "site_ids": [],
             "expected_revision": detail["access_revision"],
+            "confirm_high_risk": True,
         },
     )
     assert assigned.status_code == 200, assigned.text
@@ -436,6 +539,7 @@ async def test_custom_role_clone_revision_assignment_and_archive(
             "all_sites": True,
             "site_ids": [],
             "expected_revision": assigned.json()["access_revision"],
+            "confirm_high_risk": True,
         },
     )
     assert reassigned.status_code == 200

@@ -26,6 +26,18 @@ vi.mock('../src/state/SingleHomeContext', () => ({
   }),
 }))
 
+vi.mock('../src/state/AuthContext', () => ({
+  useAuth: () => ({
+    session: {
+      authenticated: true,
+      user: { id: 'viewer-1', email: 'viewer@example.test', displayName: 'Viewer', roles: ['viewer'], permissions: ['overview.view', 'devices.view', 'utility_accounts.view', 'rates.view', 'usage.view', 'costs.view', 'alerts.view'], accessRevision: 1 },
+    },
+    loading: false,
+    error: undefined,
+    refresh: () => Promise.resolve(),
+  }),
+}))
+
 import { LiveHomeProvider, useLiveHome } from '../src/state/LiveHomeContext'
 
 class FakeEventSource {

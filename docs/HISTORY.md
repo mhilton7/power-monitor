@@ -34,6 +34,33 @@ See [Historical cost calculation](HISTORY_COSTS.md),
 [multi-sensor aggregation](MULTI_SENSOR_AGGREGATION.md), and
 [History exports](HISTORY_EXPORTS.md).
 
+## Time scale and chart presentation
+
+The Single Home chart uses the server-returned bucket, range, and Home timezone.
+Five- and fifteen-minute buckets retain `:mm` labels; hourly buckets include date
+and hour; daily buckets show month and day. Points use their UTC interval start on
+a chronological linear axis, so a long empty portion of a selected range remains
+truthful rather than being compressed into equally spaced categories. Missing
+intervals break the line, and invalid timestamps are reported instead of being
+silently moved to the chart edge. Tick marks are selected from actual bucket
+boundaries rather than arbitrary subdivisions. When synchronized readings begin
+after the selected range starts, the chart explicitly says when readings become
+available and leaves the earlier interval empty.
+
+Tooltips and the accessible table share the same exact interval formatter, for
+example `Jul 31, 8:15–8:30 AM`. Midnight crossings include both dates, and a
+daylight-saving offset change is appended so repeated local times stay distinct.
+Every vertical scale has a visible title. Energy + Cost explicitly identifies the
+solid left Energy scale and dashed right Cost scale, so color is not the only cue.
+
+Appearance stores Power, Energy, and Estimated cost line colors locally under
+`pm-chart-power-color`, `pm-chart-energy-color`, and `pm-chart-cost-color`.
+Each color has a native color picker and an editable `#RRGGBB` field. Only
+six-digit hexadecimal colors are accepted; invalid stored values fall back to
+`#78DFBF`, `#78DFBF`, and `#C9A7FF`. Fill opacity derives from the selected line
+color, reset restores all defaults, and the settings surface warns without
+overwriting a valid color when contrast is below 3:1.
+
 ## Page information hierarchy
 
 History begins with its page identity, one consolidated **Rate context** item,

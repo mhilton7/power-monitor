@@ -5,6 +5,8 @@ import { request } from '../../api/client'
 import { dateTime, statusLabel } from '../../utils/format'
 import type { AlertSummary } from '../../types/models'
 import { EmptyState } from '../../components/feedback/States'
+import { hasPermission } from '../../access/permissions'
+import { useAuth } from '../../state/AuthContext'
 
 export function AlertDrawer({
   open,
@@ -16,15 +18,8 @@ export function AlertDrawer({
   onClose: () => void
 }) {
   const closeRef = useRef<HTMLButtonElement>(null)
-  const client = useQueryClient()
-  const acknowledge = useMutation({
-    mutationFn: (id: string) =>
-      request(`/api/v1/alerts/${id}/acknowledge`, {
-        method: 'POST',
-        body: JSON.stringify({ note: 'Acknowledged from Single Home alerts' }),
-      }),
-    onSuccess: async () => client.invalidateQueries({ queryKey: ['alerts'] }),
-  })
+  const { session } = useAuth()
+  const canAcknowledge = hasPermission(session, 'alerts.acknowledge')
 
   useEffect(() => {
     if (!open) return
@@ -66,14 +61,7 @@ export function AlertDrawer({
                     <p>{alert.message}</p>
                     <small>{dateTime(alert.openedAt)}</small>
                   </div>
-                  <button
-                    type="button"
-                    className="button secondary compact"
-                    disabled={acknowledge.isPending}
-                    onClick={() => { acknowledge.mutate(alert.id); }}
-                  >
-                    <Check size={15} /> Acknowledge
-                  </button>
+                  {canAcknowledge && <AcknowledgeAlertButton id={alert.id} />}
                 </li>
               ))}
             </ul>
@@ -81,5 +69,21 @@ export function AlertDrawer({
         </div>
       </aside>
     </>
+  )
+}
+
+function AcknowledgeAlertButton({ id }: { id: string }) {
+  const client = useQueryClient()
+  const acknowledge = useMutation({
+    mutationFn: () => request(`/api/v1/alerts/${id}/acknowledge`, {
+      method: 'POST',
+      body: JSON.stringify({ note: 'Acknowledged from Single Home alerts' }),
+    }),
+    onSuccess: async () => client.invalidateQueries({ queryKey: ['alerts'] }),
+  })
+  return (
+    <button type="button" className="button secondary compact" disabled={acknowledge.isPending} onClick={() => { acknowledge.mutate(); }}>
+      <Check size={15} /> Acknowledge
+    </button>
   )
 }

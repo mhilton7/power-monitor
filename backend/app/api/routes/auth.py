@@ -53,6 +53,7 @@ def _session_view(
             permissions=permissions,
             all_sites=user.all_sites,
             site_ids=site_ids,
+            access_revision=user.access_revision,
         ),
         expires_at=browser_session.expires_at,
         csrf_token=csrf,
