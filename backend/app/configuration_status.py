@@ -11,7 +11,6 @@ from app.db.models import (
     BillingCycle,
     Device,
     DeviceHeartbeat,
-    NotificationChannel,
     RateAssignment,
     RatePlan,
     RateSource,
@@ -444,33 +443,6 @@ async def build_configuration_status(
                     action=_action("sensor.review", "Review sensors", "/settings/sensors"),
                 )
             )
-
-    enabled_channels = int(
-        await session.scalar(
-            select(func.count())
-            .select_from(NotificationChannel)
-            .where(NotificationChannel.enabled.is_(True))
-        )
-        or 0
-    )
-    if enabled_channels == 0:
-        issues.append(
-            _issue(
-                issue_id="notification.channel-missing",
-                category="notification",
-                state="partially_configured",
-                title="Notification delivery is not configured",
-                what="No enabled notification channel is available.",
-                why="On-screen alerts still work, but email notifications cannot be delivered.",
-                fix="Add and test an SMTP notification channel.",
-                blocking=False,
-                action=_action(
-                    "notification.configure",
-                    "Configure notifications",
-                    "/settings/notifications",
-                ),
-            )
-        )
 
     verified_backup = await session.scalar(
         select(BackupRun.id)

@@ -270,7 +270,7 @@ test('Set as current updates Billing, Home, History, and configuration without r
         rate_versions_used: current ? [{ rate_plan_name: 'New Current Plan' }] : [],
       } })
     }
-    if (path === '/api/v1/alerts') return route.fulfill({ json: [] })
+    if (path === '/api/v1/notifications') return route.fulfill({ json: { items: [], page: 1, page_size: 200, total: 0 } })
     if (path === '/api/v1/admin/utility-bill-imports') return route.fulfill({ json: [] })
     return route.fulfill({ json: [] })
   })

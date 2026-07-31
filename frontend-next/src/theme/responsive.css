@@ -22,6 +22,7 @@
 }
 
 @media (max-width: 900px) {
+  .notification-history-filters { grid-template-columns: 1fr; }
   :root { --top-height: 68px; }
   html {
     scroll-padding-top: calc(var(--top-height) + .75rem);
@@ -104,6 +105,14 @@
 }
 
 @media (max-width: 620px) {
+  .notification-summary { grid-template-columns: minmax(0, 1fr) auto; }
+  .notification-summary > .severity { grid-column: 1; justify-self: start; }
+  .notification-summary-copy { grid-column: 1 / -1; }
+  .notification-summary > svg { grid-column: 2; grid-row: 1; }
+  .notification-facts, .notification-evidence { grid-template-columns: minmax(0, 1fr); }
+  .notification-actions .button { width: 100%; justify-content: center; }
+  .notification-channel-row { grid-template-columns: auto minmax(0, 1fr); }
+  .notification-channel-row .inline-actions { grid-column: 1 / -1; }
   h1 { font-size: 2.25rem; }
   .home-identity { display: none; }
   .live-facts > div {

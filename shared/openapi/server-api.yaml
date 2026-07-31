@@ -6106,6 +6106,14 @@ paths:
           - type: string
           - type: 'null'
           title: Status
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
       - name: pm_session
         in: cookie
         required: false
@@ -6125,6 +6133,117 @@ paths:
                   type: object
                   additionalProperties: true
                 title: Response List Alerts Api V1 Alerts Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notifications:
+    get:
+      tags:
+      - management
+      summary: List Notifications
+      operationId: list_notifications_api_v1_notifications_get
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Page Size
+      - name: state
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: State
+      - name: severity
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Severity
+      - name: category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category
+      - name: site_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPage'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notifications/{notification_id}:
+    get:
+      tags:
+      - management
+      summary: Get Notification
+      operationId: get_notification_api_v1_notifications__notification_id__get
+      parameters:
+      - name: notification_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Notification Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationView'
         '422':
           description: Validation Error
           content:
@@ -6345,6 +6464,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notifications/{alert_id}/acknowledge:
+    post:
+      tags:
+      - management
+      summary: Acknowledge Alert
+      operationId: acknowledge_alert_api_v1_notifications__alert_id__acknowledge_post
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Alert Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertAcknowledge'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Acknowledge Alert Api V1 Notifications  Alert Id  Acknowledge
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/alerts/{alert_id}/silence:
     post:
       tags:
@@ -6389,6 +6560,371 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Silence Alert Api V1 Alerts  Alert Id  Silence Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notifications/{alert_id}/silence:
+    post:
+      tags:
+      - management
+      summary: Silence Alert
+      operationId: silence_alert_api_v1_notifications__alert_id__silence_post
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Alert Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertSilence'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Silence Alert Api V1 Notifications  Alert Id  Silence
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - management
+      summary: End Notification Silence
+      operationId: end_notification_silence_api_v1_notifications__alert_id__silence_delete
+      parameters:
+      - name: alert_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Alert Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notifications/{notification_id}/suppress:
+    post:
+      tags:
+      - management
+      summary: Suppress Notification
+      operationId: suppress_notification_api_v1_notifications__notification_id__suppress_post
+      parameters:
+      - name: notification_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Notification Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationSuppressRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Suppress Notification Api V1 Notifications  Notification
+                  Id  Suppress Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notifications/{notification_id}/dismiss:
+    post:
+      tags:
+      - management
+      summary: Dismiss Notification
+      operationId: dismiss_notification_api_v1_notifications__notification_id__dismiss_post
+      parameters:
+      - name: notification_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Notification Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Dismiss Notification Api V1 Notifications  Notification
+                  Id  Dismiss Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notification-suppressions:
+    get:
+      tags:
+      - management
+      summary: List Notification Suppressions
+      operationId: list_notification_suppressions_api_v1_notification_suppressions_get
+      parameters:
+      - name: active_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+          title: Active Only
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationSuppressionItem'
+                title: Response List Notification Suppressions Api V1 Notification
+                  Suppressions Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notification-suppressions/{suppression_id}:
+    delete:
+      tags:
+      - management
+      summary: Restore Notification Suppression
+      operationId: restore_notification_suppression_api_v1_notification_suppressions__suppression_id__delete
+      parameters:
+      - name: suppression_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Suppression Id
+      - name: expected_revision
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+          title: Expected Revision
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/notification-history:
+    get:
+      tags:
+      - management
+      summary: List Notification History
+      operationId: list_notification_history_api_v1_notification_history_get
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Page Size
+      - name: state
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: State
+      - name: severity
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Severity
+      - name: category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category
+      - name: resource_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resource Id
+      - name: date_from
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Date From
+      - name: date_to
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Date To
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationHistoryPage'
         '422':
           description: Validation Error
           content:
@@ -15627,6 +16163,59 @@ components:
       - revision
       - mode
       title: NetworkPolicyWrite
+    NotificationAcknowledgement:
+      properties:
+        acknowledged_at:
+          type: string
+          format: date-time
+          title: Acknowledged At
+        acknowledged_by:
+          type: string
+          title: Acknowledged By
+        note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Note
+      additionalProperties: false
+      type: object
+      required:
+      - acknowledged_at
+      - acknowledged_by
+      title: NotificationAcknowledgement
+    NotificationAction:
+      properties:
+        label:
+          type: string
+          title: Label
+        target:
+          type: string
+          title: Target
+        required_permissions:
+          items:
+            type: string
+          type: array
+          title: Required Permissions
+      additionalProperties: false
+      type: object
+      required:
+      - label
+      - target
+      title: NotificationAction
+    NotificationCause:
+      properties:
+        code:
+          type: string
+          title: Code
+        explanation:
+          type: string
+          title: Explanation
+      additionalProperties: false
+      type: object
+      required:
+      - code
+      - explanation
+      title: NotificationCause
     NotificationChannelWrite:
       properties:
         name:
@@ -15655,6 +16244,545 @@ components:
       - name
       - channel_type
       title: NotificationChannelWrite
+    NotificationDelivery:
+      properties:
+        attempted:
+          type: boolean
+          title: Attempted
+        channel_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Channel Name
+        last_attempt_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Attempt At
+        last_outcome:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Outcome
+        retry_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Retry At
+        safe_error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Safe Error Code
+        safe_error_summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Safe Error Summary
+      additionalProperties: false
+      type: object
+      required:
+      - attempted
+      title: NotificationDelivery
+    NotificationEvidence:
+      properties:
+        label:
+          type: string
+          title: Label
+        value:
+          type: string
+          title: Value
+        status:
+          anyOf:
+          - type: string
+            enum:
+            - normal
+            - warning
+            - error
+          - type: 'null'
+          title: Status
+      additionalProperties: false
+      type: object
+      required:
+      - label
+      - value
+      title: NotificationEvidence
+    NotificationExpected:
+      properties:
+        label:
+          type: string
+          title: Label
+        operator:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Operator
+        value:
+          type: string
+          title: Value
+        unit:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Unit
+      additionalProperties: false
+      type: object
+      required:
+      - label
+      - value
+      title: NotificationExpected
+    NotificationHistoryItem:
+      properties:
+        id:
+          type: string
+          title: Id
+        notification_id:
+          type: string
+          title: Notification Id
+        event_type:
+          type: string
+          title: Event Type
+        occurred_at:
+          type: string
+          format: date-time
+          title: Occurred At
+        actor_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Actor Name
+        site_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Site Id
+        category:
+          type: string
+          title: Category
+        severity:
+          type: string
+          title: Severity
+        resource_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resource Type
+        resource_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resource Id
+        details:
+          additionalProperties: true
+          type: object
+          title: Details
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - notification_id
+      - event_type
+      - occurred_at
+      - category
+      - severity
+      title: NotificationHistoryItem
+    NotificationHistoryPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/NotificationHistoryItem'
+          type: array
+          title: Items
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        total:
+          type: integer
+          title: Total
+      additionalProperties: false
+      type: object
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: NotificationHistoryPage
+    NotificationMetric:
+      properties:
+        label:
+          type: string
+          title: Label
+        value:
+          type: string
+          title: Value
+        unit:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Unit
+        recorded_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Recorded At
+      additionalProperties: false
+      type: object
+      required:
+      - label
+      - value
+      title: NotificationMetric
+    NotificationPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/NotificationView'
+          type: array
+          title: Items
+        page:
+          type: integer
+          title: Page
+        page_size:
+          type: integer
+          title: Page Size
+        total:
+          type: integer
+          title: Total
+      additionalProperties: false
+      type: object
+      required:
+      - items
+      - page
+      - page_size
+      - total
+      title: NotificationPage
+    NotificationRemediation:
+      properties:
+        summary:
+          type: string
+          title: Summary
+        steps:
+          items:
+            type: string
+          type: array
+          title: Steps
+        automatic_recovery:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Automatic Recovery
+        action:
+          anyOf:
+          - $ref: '#/components/schemas/NotificationAction'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - summary
+      title: NotificationRemediation
+    NotificationResource:
+      properties:
+        type:
+          type: string
+          enum:
+          - sensor
+          - home
+          - server
+          - backup
+          - rate_source
+          - notification_channel
+          - firmware
+          - billing
+          - storage
+          title: Type
+        id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Id
+        name:
+          type: string
+          title: Name
+      additionalProperties: false
+      type: object
+      required:
+      - type
+      - name
+      title: NotificationResource
+    NotificationSilenceView:
+      properties:
+        silenced_until:
+          type: string
+          format: date-time
+          title: Silenced Until
+        silenced_by:
+          type: string
+          title: Silenced By
+        note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Note
+      additionalProperties: false
+      type: object
+      required:
+      - silenced_until
+      - silenced_by
+      title: NotificationSilenceView
+    NotificationSuppressRequest:
+      properties:
+        scope:
+          type: string
+          enum:
+          - user
+          - home
+          title: Scope
+        reason:
+          type: string
+          maxLength: 500
+          title: Reason
+          default: ''
+        confirmed:
+          type: boolean
+          title: Confirmed
+        expected_revision:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Expected Revision
+      additionalProperties: false
+      type: object
+      required:
+      - scope
+      - confirmed
+      title: NotificationSuppressRequest
+    NotificationSuppressionItem:
+      properties:
+        id:
+          type: string
+          title: Id
+        suppression_key:
+          type: string
+          title: Suppression Key
+        category:
+          type: string
+          title: Category
+        scope_type:
+          type: string
+          enum:
+          - user
+          - home
+          title: Scope Type
+        scope_name:
+          type: string
+          title: Scope Name
+        created_by:
+          type: string
+          title: Created By
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        source_notification_id:
+          type: string
+          title: Source Notification Id
+        active:
+          type: boolean
+          title: Active
+        restored_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Restored By
+        restored_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Restored At
+        revision:
+          type: integer
+          title: Revision
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - suppression_key
+      - category
+      - scope_type
+      - scope_name
+      - created_by
+      - created_at
+      - source_notification_id
+      - active
+      - revision
+      title: NotificationSuppressionItem
+    NotificationSuppressionView:
+      properties:
+        dismissible:
+          type: boolean
+          title: Dismissible
+        permanently_suppressible:
+          type: boolean
+          title: Permanently Suppressible
+        suppression_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Suppression Key
+        currently_suppressed:
+          type: boolean
+          title: Currently Suppressed
+          default: false
+        allowed_scopes:
+          items:
+            type: string
+            enum:
+            - user
+            - home
+          type: array
+          title: Allowed Scopes
+      additionalProperties: false
+      type: object
+      required:
+      - dismissible
+      - permanently_suppressible
+      title: NotificationSuppressionView
+    NotificationView:
+      properties:
+        id:
+          type: string
+          title: Id
+        code:
+          type: string
+          title: Code
+        kind:
+          type: string
+          enum:
+          - operational_alert
+          - setup_recommendation
+          - delivery_issue
+          title: Kind
+        category:
+          type: string
+          title: Category
+        severity:
+          type: string
+          enum:
+          - info
+          - warning
+          - error
+          - critical
+          title: Severity
+        state:
+          type: string
+          enum:
+          - open
+          - acknowledged
+          - silenced
+          - resolved
+          - dismissed
+          - suppressed
+          title: State
+        title:
+          type: string
+          title: Title
+        summary:
+          type: string
+          title: Summary
+        affected_resource:
+          anyOf:
+          - $ref: '#/components/schemas/NotificationResource'
+          - type: 'null'
+        first_seen_at:
+          type: string
+          format: date-time
+          title: First Seen At
+        last_seen_at:
+          type: string
+          format: date-time
+          title: Last Seen At
+        resolved_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Resolved At
+        occurrence_count:
+          type: integer
+          minimum: 1.0
+          title: Occurrence Count
+        duration_seconds:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Duration Seconds
+        observed:
+          anyOf:
+          - $ref: '#/components/schemas/NotificationMetric'
+          - type: 'null'
+        expected:
+          anyOf:
+          - $ref: '#/components/schemas/NotificationExpected'
+          - type: 'null'
+        cause:
+          anyOf:
+          - $ref: '#/components/schemas/NotificationCause'
+          - type: 'null'
+        evidence:
+          items:
+            $ref: '#/components/schemas/NotificationEvidence'
+          type: array
+          title: Evidence
+        impact:
+          type: string
+          title: Impact
+        remediation:
+          $ref: '#/components/schemas/NotificationRemediation'
+        acknowledgement:
+          anyOf:
+          - $ref: '#/components/schemas/NotificationAcknowledgement'
+          - type: 'null'
+        silence:
+          anyOf:
+          - $ref: '#/components/schemas/NotificationSilenceView'
+          - type: 'null'
+        delivery:
+          anyOf:
+          - $ref: '#/components/schemas/NotificationDelivery'
+          - type: 'null'
+        suppression:
+          $ref: '#/components/schemas/NotificationSuppressionView'
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - code
+      - kind
+      - category
+      - severity
+      - state
+      - title
+      - summary
+      - first_seen_at
+      - last_seen_at
+      - occurrence_count
+      - impact
+      - remediation
+      - suppression
+      title: NotificationView
     PasswordReset:
       properties:
         new_password:

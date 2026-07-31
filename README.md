@@ -5,6 +5,10 @@ Power Monitor Server is a self-hosted control plane for fleets of ESP32-S3 power
 The dashboard includes encrypted SMTP notification setup, test delivery and
 retry evidence, selectable sensor-disconnect alerts, and configurable power-surge
 thresholds and persistence timing.
+Notifications identify the affected resource, observed and expected evidence, impact,
+recovery, and exact remediation. Optional SMTP reminders can be durably ignored per user or
+Home and restored later without hiding operational faults. See
+[Notification behavior](docs/NOTIFICATIONS.md).
 
 Administrators can also download redacted, checksum-manifested application-log
 archives for any available range in the rolling 90-day window and safely

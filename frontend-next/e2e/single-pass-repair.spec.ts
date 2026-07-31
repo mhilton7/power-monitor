@@ -659,7 +659,7 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
         next_rate_period: hasBilling ? 'On-Peak' : null,
         next_rate: hasBilling ? '0.56700000' : null,
       },
-      '/api/v1/alerts': [],
+      '/api/v1/notifications': { items: [], page: 1, page_size: 200, total: 0 },
       '/api/v1/admin/utility-bill-imports': [],
       '/api/v1/rates/assignments/conflicts': {
         conflicts: [],

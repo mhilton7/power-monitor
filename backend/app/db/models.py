@@ -1998,10 +1998,17 @@ class AlertInstance(Base):
     status: Mapped[str] = mapped_column(String(24), index=True)
     severity: Mapped[str] = mapped_column(String(16))
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=1)
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     acknowledged_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     silenced_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    silenced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    silenced_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    silence_note: Mapped[str | None] = mapped_column(String(500))
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
@@ -2024,11 +2031,83 @@ class NotificationAttempt(Base):
         ForeignKey("notification_channels.id", ondelete="RESTRICT")
     )
     attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    queued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(24))
     attempt_number: Mapped[int] = mapped_column(Integer)
     response_summary: Mapped[str | None] = mapped_column(String(500))
+    safe_error_code: Mapped[str | None] = mapped_column(String(80))
+    safe_error_summary: Mapped[str | None] = mapped_column(String(500))
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_test: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class NotificationSuppression(Base):
+    __tablename__ = "notification_suppressions"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    suppression_key: Mapped[str] = mapped_column(String(160), index=True)
+    category: Mapped[str] = mapped_column(String(80), index=True)
+    scope_type: Mapped[str] = mapped_column(String(16))
+    user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    site_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sites.id", ondelete="RESTRICT"), index=True
+    )
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    reason: Mapped[str | None] = mapped_column(String(500))
+    source_notification_id: Mapped[str] = mapped_column(String(200))
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    restored_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    __table_args__ = (
+        CheckConstraint("scope_type IN ('user','home')", name="notification_suppression_scope"),
+        CheckConstraint(
+            "(scope_type = 'user' AND user_id IS NOT NULL AND site_id IS NULL) OR "
+            "(scope_type = 'home' AND site_id IS NOT NULL AND user_id IS NULL)",
+            name="notification_suppression_target",
+        ),
+        Index(
+            "uq_notification_suppression_active_user",
+            "suppression_key",
+            "user_id",
+            unique=True,
+            postgresql_where=text("active AND user_id IS NOT NULL"),
+            sqlite_where=text("active = 1 AND user_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_notification_suppression_active_home",
+            "suppression_key",
+            "site_id",
+            unique=True,
+            postgresql_where=text("active AND site_id IS NOT NULL"),
+            sqlite_where=text("active = 1 AND site_id IS NOT NULL"),
+        ),
+    )
+
+
+class NotificationEvent(Base):
+    __tablename__ = "notification_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    notification_id: Mapped[str] = mapped_column(String(200), index=True)
+    event_type: Mapped[str] = mapped_column(String(80), index=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    actor_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    site_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sites.id", ondelete="SET NULL"), index=True
+    )
+    category: Mapped[str] = mapped_column(String(80), index=True)
+    severity: Mapped[str] = mapped_column(String(16), index=True)
+    resource_type: Mapped[str | None] = mapped_column(String(40))
+    resource_id: Mapped[str | None] = mapped_column(String(80))
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
 class FirmwareRelease(TimestampMixin, Base):

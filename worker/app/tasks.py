@@ -5,6 +5,8 @@ import csv
 import hashlib
 import json
 import smtplib
+import socket
+import ssl
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from email.message import EmailMessage
@@ -14,10 +16,6 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
-from pydantic import ValidationError
-from sqlalchemy import func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.config import Settings
 from app.db.models import (
     AccountUsageAuthority,
@@ -40,6 +38,7 @@ from app.db.models import (
     NormalizedInterval,
     NotificationAttempt,
     NotificationChannel,
+    NotificationEvent,
     RateAdjustment,
     RatePeriod,
     RateVersion,
@@ -52,8 +51,10 @@ from app.db.models import (
     UtilityAccount,
     UtilityAccountAdjustment,
     WorkerState,
+    new_uuid,
 )
 from app.ingestion.service import normalize_energy
+from app.notifications import catalog_entry
 from app.polling.ssrf import validate_poll_target
 from app.rates.documents import engine_plan
 from app.rates.engine import RateEngine
@@ -61,6 +62,9 @@ from app.rates.service import version_document
 from app.rates.tiered import calculate_cycle_tier_status, current_billing_cycle
 from app.schemas import Reading
 from app.security.protocol import SecretCipher
+from pydantic import ValidationError
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -937,6 +941,54 @@ async def process_report_jobs(
     return completed
 
 
+class NotificationDeliveryError(RuntimeError):
+    def __init__(self, stage: str, code: str, summary: str) -> None:
+        super().__init__(summary)
+        self.stage = stage
+        self.code = code
+        self.summary = summary
+
+
+def _smtp_error(stage: str, exc: Exception) -> NotificationDeliveryError:
+    if isinstance(exc, socket.gaierror):
+        return NotificationDeliveryError(
+            stage, "smtp_dns_failed", "SMTP hostname could not be resolved"
+        )
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return NotificationDeliveryError(
+            stage, "smtp_timeout", f"SMTP {stage} timed out"
+        )
+    if isinstance(exc, ConnectionRefusedError):
+        return NotificationDeliveryError(
+            stage, "smtp_connection_refused", "SMTP server refused the TCP connection"
+        )
+    if isinstance(exc, (ssl.SSLError, smtplib.SMTPNotSupportedError)):
+        return NotificationDeliveryError(
+            stage, "smtp_tls_failed", "SMTP TLS negotiation failed"
+        )
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return NotificationDeliveryError(
+            stage,
+            "smtp_auth_rejected",
+            f"SMTP authentication was rejected ({exc.smtp_code})",
+        )
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        return NotificationDeliveryError(
+            stage,
+            "smtp_recipient_rejected",
+            "SMTP server rejected one or more recipients",
+        )
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return NotificationDeliveryError(
+            stage,
+            f"smtp_{exc.smtp_code}",
+            f"SMTP server rejected the {stage} step ({exc.smtp_code})",
+        )
+    return NotificationDeliveryError(
+        stage, f"smtp_{stage}_failed", f"SMTP {stage} failed ({type(exc).__name__})"
+    )
+
+
 def _send_smtp(config: dict[str, Any], subject: str, body: str) -> None:
     message = EmailMessage()
     message["Subject"] = subject
@@ -946,16 +998,28 @@ def _send_smtp(config: dict[str, Any], subject: str, body: str) -> None:
     message.set_content(body)
     host = str(config["host"])
     port = int(config["port"])
-    if config.get("implicit_tls"):
-        client: smtplib.SMTP = smtplib.SMTP_SSL(host, port, timeout=10)
-    else:
-        client = smtplib.SMTP(host, port, timeout=10)
+    try:
+        if config.get("implicit_tls"):
+            client: smtplib.SMTP = smtplib.SMTP_SSL(host, port, timeout=10)
+        else:
+            client = smtplib.SMTP(host, port, timeout=10)
+    except Exception as exc:
+        raise _smtp_error("connection", exc) from exc
     with client:
         if config.get("starttls", True) and not config.get("implicit_tls"):
-            client.starttls()
+            try:
+                client.starttls()
+            except Exception as exc:
+                raise _smtp_error("STARTTLS", exc) from exc
         if config.get("username"):
-            client.login(str(config["username"]), str(config.get("password", "")))
-        client.send_message(message, to_addrs=recipients)
+            try:
+                client.login(str(config["username"]), str(config.get("password", "")))
+            except Exception as exc:
+                raise _smtp_error("authentication", exc) from exc
+        try:
+            client.send_message(message, to_addrs=recipients)
+        except Exception as exc:  # noqa: BLE001 - provider libraries expose varied failures
+            raise _smtp_error("message submission", exc) from exc
 
 
 async def _deliver_notification(
@@ -1052,12 +1116,40 @@ async def process_notification_jobs(
                         alert_instance_id=alert.id,
                         channel_id=channel.id,
                         attempted_at=now,
+                        queued_at=now,
                         status="queued",
                         attempt_number=0,
                         response_summary=None,
                         next_attempt_at=now,
                         is_test=False,
                     )
+                )
+                rule_type = rule_types.get(alert.rule_id, "unknown")
+                entry = catalog_entry(rule_type, alert.severity)
+                session.add(
+                    NotificationEvent(
+                        notification_id=alert.id,
+                        event_type="delivery_queued",
+                        occurred_at=now,
+                        actor_id=None,
+                        site_id=alert.site_id,
+                        category=entry.category,
+                        severity=alert.severity,
+                        resource_type="notification_channel",
+                        resource_id=channel.id,
+                        details={"attempt_number": 0},
+                    )
+                )
+                logger.info(
+                    "notification.delivery_queued",
+                    notification_id=alert.id,
+                    rule_type=rule_type,
+                    category=entry.category,
+                    resource_id=alert.device_id or alert.site_id,
+                    site_id=alert.site_id,
+                    state="queued",
+                    severity=alert.severity,
+                    delivery_channel_id=channel.id,
                 )
     await session.flush()
     attempts = list(
@@ -1084,7 +1176,90 @@ async def process_notification_jobs(
         if current_channel is None or not current_channel.enabled:
             attempt.status = "cancelled"
             attempt.response_summary = "channel unavailable"
+            attempt.safe_error_code = "channel_disabled"
+            attempt.safe_error_summary = (
+                "The notification channel is disabled or unavailable"
+            )
+            attempt.completed_at = datetime.now(UTC)
+            session.add(
+                NotificationEvent(
+                    notification_id=current_alert.id
+                    if current_alert
+                    else f"delivery-test:{attempt.id}",
+                    event_type="delivery_channel_disabled",
+                    occurred_at=attempt.completed_at,
+                    actor_id=None,
+                    site_id=current_alert.site_id if current_alert else None,
+                    category="delivery",
+                    severity=current_alert.severity if current_alert else "info",
+                    resource_type="notification_channel",
+                    resource_id=attempt.channel_id,
+                    details={
+                        "attempt_number": attempt.attempt_number,
+                        "safe_error_code": attempt.safe_error_code,
+                    },
+                )
+            )
+            logger.warning(
+                "notification.delivery_failed",
+                notification_id=current_alert.id
+                if current_alert
+                else f"delivery-test:{attempt.id}",
+                delivery_channel_id=attempt.channel_id,
+                site_id=current_alert.site_id if current_alert else None,
+                state=attempt.status,
+                safe_error_code=attempt.safe_error_code,
+            )
             continue
+        attempt.status = "sending"
+        attempt.started_at = datetime.now(UTC)
+        attempt.response_summary = "Connecting"
+        current_rule_for_start = (
+            await session.get(AlertRule, current_alert.rule_id)
+            if current_alert
+            else None
+        )
+        started_entry = catalog_entry(
+            current_rule_for_start.rule_type
+            if current_rule_for_start
+            else "delivery_test",
+            current_alert.severity if current_alert else "info",
+        )
+        session.add(
+            NotificationEvent(
+                notification_id=current_alert.id
+                if current_alert
+                else f"delivery-test:{attempt.id}",
+                event_type="delivery_started",
+                occurred_at=attempt.started_at,
+                actor_id=None,
+                site_id=current_alert.site_id if current_alert else None,
+                category="delivery" if attempt.is_test else started_entry.category,
+                severity=current_alert.severity if current_alert else "info",
+                resource_type="notification_channel",
+                resource_id=current_channel.id,
+                details={"attempt_number": attempt.attempt_number},
+            )
+        )
+        logger.info(
+            "notification.delivery_started",
+            notification_id=current_alert.id
+            if current_alert
+            else f"delivery-test:{attempt.id}",
+            rule_type=current_rule_for_start.rule_type
+            if current_rule_for_start
+            else "delivery_test",
+            category="delivery" if attempt.is_test else started_entry.category,
+            resource_id=current_alert.device_id or current_alert.site_id
+            if current_alert
+            else None,
+            site_id=current_alert.site_id if current_alert else None,
+            state="sending",
+            severity=current_alert.severity if current_alert else "info",
+            delivery_channel_id=current_channel.id,
+        )
+        await session.commit()
+        current_rule: AlertRule | None = None
         try:
             config = json.loads(cipher.decrypt(current_channel.encrypted_config))
             current_rule = (
@@ -1115,35 +1290,160 @@ async def process_notification_jobs(
             )
             attempt.status = "delivered"
             attempt.attempted_at = datetime.now(UTC)
+            attempt.completed_at = attempt.attempted_at
+            attempt.response_summary = "Accepted"
+            attempt.safe_error_code = None
+            attempt.safe_error_summary = None
             attempt.next_attempt_at = None
             delivered += 1
-        except Exception as exc:
+            event_name = "delivery_succeeded"
+            logger.info(
+                "notification.delivery_succeeded",
+                notification_id=current_alert.id
+                if current_alert
+                else f"delivery-test:{attempt.id}",
+                delivery_channel_id=current_channel.id,
+                site_id=current_alert.site_id if current_alert else None,
+                state=attempt.status,
+            )
+        except Exception as exc:  # noqa: BLE001 - delivery providers expose varied failures
             attempt.status = "failed"
             attempt.attempted_at = datetime.now(UTC)
-            attempt.response_summary = f"delivery failed ({type(exc).__name__})"
+            attempt.completed_at = attempt.attempted_at
+            if isinstance(exc, NotificationDeliveryError):
+                attempt.safe_error_code = exc.code
+                attempt.safe_error_summary = exc.summary
+            else:
+                attempt.safe_error_code = f"delivery_{type(exc).__name__.lower()}"
+                attempt.safe_error_summary = f"Delivery failed during connection or submission ({type(exc).__name__})"
+            attempt.response_summary = attempt.safe_error_summary
             attempt.next_attempt_at = None
             failed += 1
+            event_name = "delivery_failed"
+            logger.warning(
+                "notification.delivery_failed",
+                notification_id=current_alert.id
+                if current_alert
+                else f"delivery-test:{attempt.id}",
+                delivery_channel_id=current_channel.id,
+                site_id=current_alert.site_id if current_alert else None,
+                state=attempt.status,
+                safe_error_code=attempt.safe_error_code,
+            )
             if attempt.attempt_number < 4:
                 delays = (60, 300, 900, 3600, 14400)
+                retry_at = now + timedelta(seconds=delays[attempt.attempt_number])
                 session.add(
                     NotificationAttempt(
                         alert_instance_id=attempt.alert_instance_id,
                         channel_id=attempt.channel_id,
                         attempted_at=now,
+                        queued_at=now,
                         status="queued",
                         attempt_number=attempt.attempt_number + 1,
                         response_summary=None,
-                        next_attempt_at=now
-                        + timedelta(seconds=delays[attempt.attempt_number]),
+                        next_attempt_at=retry_at,
                         is_test=attempt.is_test,
                     )
                 )
+                session.add(
+                    NotificationEvent(
+                        notification_id=current_alert.id
+                        if current_alert
+                        else f"delivery-test:{attempt.id}",
+                        event_type="delivery_retry_scheduled",
+                        occurred_at=attempt.completed_at,
+                        actor_id=None,
+                        site_id=current_alert.site_id if current_alert else None,
+                        category="delivery",
+                        severity=current_alert.severity if current_alert else "info",
+                        resource_type="notification_channel",
+                        resource_id=current_channel.id,
+                        details={
+                            "attempt_number": attempt.attempt_number + 1,
+                            "retry_at": retry_at.isoformat(),
+                            "safe_error_code": attempt.safe_error_code,
+                        },
+                    )
+                )
+                logger.info(
+                    "notification.delivery_retry_scheduled",
+                    notification_id=current_alert.id
+                    if current_alert
+                    else f"delivery-test:{attempt.id}",
+                    delivery_channel_id=current_channel.id,
+                    retry_at=retry_at,
+                    safe_error_code=attempt.safe_error_code,
+                )
+        current_rule_type = current_rule.rule_type if current_rule else "delivery_test"
+        entry = catalog_entry(current_rule_type)
+        session.add(
+            NotificationEvent(
+                notification_id=current_alert.id
+                if current_alert
+                else f"delivery-test:{attempt.id}",
+                event_type=event_name,
+                occurred_at=attempt.completed_at or datetime.now(UTC),
+                actor_id=None,
+                site_id=current_alert.site_id if current_alert else None,
+                category="delivery" if attempt.is_test else entry.category,
+                severity=current_alert.severity if current_alert else "info",
+                resource_type="notification_channel",
+                resource_id=current_channel.id,
+                details={
+                    "attempt_number": attempt.attempt_number,
+                    "outcome": attempt.status,
+                    "safe_error_code": attempt.safe_error_code,
+                    "safe_error_summary": attempt.safe_error_summary,
+                },
+            )
+        )
     await session.commit()
     return {"delivered": delivered, "failed": failed, "processed": len(attempts)}
 
 
 async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str, int]:
     now = datetime.now(UTC)
+    expired_silences = list(
+        await session.scalars(
+            select(AlertInstance).where(
+                AlertInstance.silenced_until.is_not(None),
+                AlertInstance.silenced_until <= now,
+                AlertInstance.status.in_(["active", "acknowledged", "resolving"]),
+            )
+        )
+    )
+    for expired in expired_silences:
+        rule = await session.get(AlertRule, expired.rule_id)
+        entry = catalog_entry(rule.rule_type if rule else "unknown", expired.severity)
+        expired.silenced_until = None
+        expired.silenced_at = None
+        expired.silenced_by = None
+        expired.silence_note = None
+        session.add(
+            NotificationEvent(
+                notification_id=expired.id,
+                event_type="silence_expired",
+                occurred_at=now,
+                actor_id=None,
+                site_id=expired.site_id,
+                category=entry.category,
+                severity=expired.severity,
+                resource_type="sensor" if expired.device_id else "server",
+                resource_id=expired.device_id or expired.site_id,
+                details={},
+            )
+        )
+        logger.info(
+            "notification.silence_expired",
+            notification_id=expired.id,
+            rule_type=rule.rule_type if rule else "unknown",
+            category=entry.category,
+            resource_id=expired.device_id or expired.site_id,
+            site_id=expired.site_id,
+            state=expired.status,
+            severity=expired.severity,
+        )
     devices = list(
         await session.scalars(select(Device).where(Device.revoked_at.is_(None)))
     )
@@ -1154,6 +1454,55 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
         rules.setdefault(rule.rule_type, []).append(rule)
     opened = 0
     resolved = 0
+
+    def record_transition(
+        instance: AlertInstance,
+        rule: AlertRule,
+        event_type: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        entry = catalog_entry(rule.rule_type, instance.severity)
+        session.add(
+            NotificationEvent(
+                notification_id=instance.id,
+                event_type=event_type,
+                occurred_at=now,
+                actor_id=None,
+                site_id=instance.site_id,
+                category=entry.category,
+                severity=instance.severity,
+                resource_type="sensor" if instance.device_id else "server",
+                resource_id=instance.device_id or instance.site_id,
+                details=details or {},
+            )
+        )
+        logger.info(
+            f"notification.{event_type}",
+            notification_id=instance.id,
+            rule_type=rule.rule_type,
+            category=entry.category,
+            resource_type="sensor" if instance.device_id else "server",
+            resource_id=instance.device_id or instance.site_id,
+            site_id=instance.site_id,
+            state=instance.status,
+            severity=instance.severity,
+        )
+
+    def update_observation(instance: AlertInstance, evidence: dict[str, Any]) -> None:
+        preserved = {
+            key: value
+            for key, value in instance.evidence.items()
+            if key
+            in {"acknowledgement_note", "resolve_observed_at", "status_before_resolve"}
+        }
+        if evidence != {
+            key: value
+            for key, value in instance.evidence.items()
+            if key not in preserved
+        }:
+            instance.occurrence_count = max(1, instance.occurrence_count or 1) + 1
+            instance.evidence = {**evidence, **preserved}
+        instance.last_seen_at = now
 
     async def set_condition(
         device: Device, rule: AlertRule, active: bool, evidence: dict[str, Any]
@@ -1169,34 +1518,38 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
             )
         )
         if active and instance is None:
-            session.add(
-                AlertInstance(
-                    rule_id=rule.id,
-                    device_id=device.id,
-                    site_id=device.site_id,
-                    status="debouncing" if rule.debounce_seconds else "active",
-                    severity=rule.severity,
-                    opened_at=now,
-                    evidence=evidence,
-                )
+            instance = AlertInstance(
+                id=new_uuid(),
+                rule_id=rule.id,
+                device_id=device.id,
+                site_id=device.site_id,
+                status="debouncing" if rule.debounce_seconds else "active",
+                severity=rule.severity,
+                opened_at=now,
+                last_seen_at=now,
+                occurrence_count=1,
+                evidence=evidence,
             )
+            session.add(instance)
             if not rule.debounce_seconds:
                 opened += 1
+                record_transition(instance, rule, "opened")
         elif active and instance is not None:
+            update_observation(instance, evidence)
             if instance.status == "debouncing":
                 opened_at = instance.opened_at
                 if opened_at.tzinfo is None:
                     opened_at = opened_at.replace(tzinfo=UTC)
                 if opened_at <= now - timedelta(seconds=rule.debounce_seconds):
                     instance.status = "active"
-                    instance.evidence = evidence
                     opened += 1
+                    record_transition(instance, rule, "opened")
             elif instance.status == "resolving":
                 prior = instance.evidence.get("status_before_resolve", "active")
                 instance.status = (
                     str(prior) if prior in {"active", "acknowledged"} else "active"
                 )
-                instance.evidence = evidence
+                record_transition(instance, rule, "reopened")
         elif not active and instance is not None:
             if instance.status == "debouncing":
                 await session.delete(instance)
@@ -1204,6 +1557,7 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
                 instance.status = "resolved"
                 instance.resolved_at = now
                 resolved += 1
+                record_transition(instance, rule, "resolved")
             elif instance.status != "resolving":
                 instance.evidence = {
                     **instance.evidence,
@@ -1218,6 +1572,7 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
                     instance.status = "resolved"
                     instance.resolved_at = now
                     resolved += 1
+                    record_transition(instance, rule, "resolved")
 
     async def set_system_condition(
         rule: AlertRule, active: bool, evidence: dict[str, Any]
@@ -1235,34 +1590,38 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
             )
         )
         if active and instance is None:
-            session.add(
-                AlertInstance(
-                    rule_id=rule.id,
-                    device_id=None,
-                    site_id=rule.site_id,
-                    status="debouncing" if rule.debounce_seconds else "active",
-                    severity=rule.severity,
-                    opened_at=now,
-                    evidence=evidence,
-                )
+            instance = AlertInstance(
+                id=new_uuid(),
+                rule_id=rule.id,
+                device_id=None,
+                site_id=rule.site_id,
+                status="debouncing" if rule.debounce_seconds else "active",
+                severity=rule.severity,
+                opened_at=now,
+                last_seen_at=now,
+                occurrence_count=1,
+                evidence=evidence,
             )
+            session.add(instance)
             if not rule.debounce_seconds:
                 opened += 1
+                record_transition(instance, rule, "opened")
         elif active and instance is not None:
+            update_observation(instance, evidence)
             if instance.status == "debouncing":
                 opened_at = instance.opened_at
                 if opened_at.tzinfo is None:
                     opened_at = opened_at.replace(tzinfo=UTC)
                 if opened_at <= now - timedelta(seconds=rule.debounce_seconds):
                     instance.status = "active"
-                    instance.evidence = evidence
                     opened += 1
+                    record_transition(instance, rule, "opened")
             elif instance.status == "resolving":
                 prior = instance.evidence.get("status_before_resolve", "active")
                 instance.status = (
                     str(prior) if prior in {"active", "acknowledged"} else "active"
                 )
-                instance.evidence = evidence
+                record_transition(instance, rule, "reopened")
         elif not active and instance is not None:
             if instance.status == "debouncing":
                 await session.delete(instance)
@@ -1270,6 +1629,7 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
                 instance.status = "resolved"
                 instance.resolved_at = now
                 resolved += 1
+                record_transition(instance, rule, "resolved")
             elif instance.status != "resolving":
                 instance.evidence = {
                     **instance.evidence,
@@ -1285,6 +1645,7 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
                     instance.status = "resolved"
                     instance.resolved_at = now
                     resolved += 1
+                    record_transition(instance, rule, "resolved")
 
     def matching_rules(device: Device, rule_type: str) -> list[AlertRule]:
         return [

@@ -931,3 +931,13 @@ fallback are exercised together.
 ## Hardware boundary
 
 No live mains equipment was connected. Remaining hardware validation is limited to an isolated, electrician-approved ESP32-S3/PZEM-004T V4 installation: CT orientation and rating, split-phase topology, SD removal/full/corruption, Wi-Fi/VLAN behavior, power loss, multi-hour offline backfill, OTA success/rollback, and comparison against an independent reference meter.
+
+## Detailed notification regression coverage
+
+`backend/tests/test_detailed_notifications.py` verifies the authoritative catalog, detailed
+resource/evidence contract, secret filtering, distinct delivery failures, permission-aware
+SMTP recommendations, durable suppression/restore/audit behavior, protected operational
+alerts, and idempotent acknowledge/silence lifecycle semantics. Frontend adapter and drawer
+coverage is in `frontend-next/tests/adapters.test.ts` and
+`frontend-next/tests/notifications.test.tsx`. The browser matrix validates the responsive
+notification center and Settings notification surfaces in Chromium, Firefox, and WebKit.

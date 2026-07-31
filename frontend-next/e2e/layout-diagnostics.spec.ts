@@ -169,7 +169,7 @@ async function mockLayoutServer(page: Page) {
         has_energy_data: false,
         has_cost_data: false,
       },
-      '/api/v1/alerts': [],
+      '/api/v1/notifications': { items: [], page: 1, page_size: 200, total: 0 },
       '/api/v1/admin/utility-bill-imports': [bill],
       '/api/v1/rates/plans': { plans },
       '/api/v1/rates/assignments/conflicts': {

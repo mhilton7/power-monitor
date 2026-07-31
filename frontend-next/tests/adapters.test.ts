@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  adaptAlerts,
   adaptBillDetail,
   adaptConfigurationStatus,
   adaptCurrentRateAssignment,
@@ -8,6 +9,8 @@ import {
   adaptFamilyRoles,
   adaptHistory,
   adaptHomeSummary,
+  adaptNotificationHistory,
+  adaptNotificationSuppressions,
   adaptPermissions,
   adaptRateAssignments,
   adaptRateAdjustments,
@@ -27,6 +30,58 @@ import {
 } from '../src/api/adapters'
 
 describe('typed homeowner adapters', () => {
+  it('validates detailed notification, suppression, and history contracts', () => {
+    const alerts = adaptAlerts([{
+      id: 'alert-1',
+      code: 'heartbeat_stale',
+      kind: 'operational_alert',
+      category: 'connectivity',
+      severity: 'error',
+      state: 'open',
+      title: 'Indoor-AC stopped reporting',
+      summary: 'No signed heartbeat arrived within 60 seconds.',
+      affected_resource: { type: 'sensor', id: 'sensor-1', name: 'Indoor-AC' },
+      first_seen_at: '2026-07-31T16:00:00Z',
+      last_seen_at: '2026-07-31T16:01:32Z',
+      occurrence_count: 3,
+      duration_seconds: 92,
+      observed: { label: 'Last signed heartbeat', value: '92', unit: 'seconds' },
+      expected: { label: 'Heartbeat interval', operator: 'within', value: '60', unit: 'seconds' },
+      cause: { code: 'heartbeat_stale', explanation: 'The signed heartbeat window expired.' },
+      evidence: [{ label: 'Last known power', value: '842.6 W', status: 'warning' }],
+      impact: 'Live values may be stale.',
+      remediation: {
+        summary: 'Check sensor power and network access.',
+        steps: ['Confirm the sensor has power.'],
+        automatic_recovery: 'The sensor retries after connectivity returns.',
+        action: { label: 'Open sensor details', target: '/settings/sensors', required_permissions: ['devices.view'] },
+      },
+      delivery: { attempted: true, channel_name: 'Home email', last_outcome: 'retry_scheduled', safe_error_code: 'smtp_starttls_failed', safe_error_summary: 'STARTTLS negotiation failed' },
+      suppression: { dismissible: false, permanently_suppressible: false, currently_suppressed: false, allowed_scopes: [] },
+    }])
+    expect(alerts[0]).toMatchObject({
+      title: 'Indoor-AC stopped reporting',
+      affectedResource: { type: 'sensor', name: 'Indoor-AC' },
+      occurrenceCount: 3,
+      observed: { value: '92', unit: 'seconds' },
+      expected: { value: '60', unit: 'seconds' },
+      delivery: { safeErrorCode: 'smtp_starttls_failed' },
+      suppression: { permanentlySuppressible: false },
+    })
+
+    expect(() => adaptAlerts([{ ...alerts[0], kind: 'mystery' }])).toThrow()
+    expect(adaptNotificationSuppressions([{
+      id: 'suppression-1', suppression_key: 'recommendation.smtp_not_configured',
+      category: 'delivery', scope_type: 'home', scope_name: 'Home', created_by: 'Owner',
+      created_at: '2026-07-31T16:00:00Z', source_notification_id: 'recommendation:1',
+      active: true, revision: 1,
+    }])[0]).toMatchObject({ scopeType: 'home', active: true })
+    expect(adaptNotificationHistory({ total: 1, items: [{
+      id: 'event-1', notification_id: 'alert-1', event_type: 'acknowledged',
+      occurred_at: '2026-07-31T16:02:00Z', category: 'connectivity', severity: 'error',
+    }] })).toMatchObject({ total: 1, items: [{ eventType: 'acknowledged' }] })
+  })
+
   it('keeps live sensor measurements consistent and distinguishes zero from missing', () => {
     const sensors = adaptSensors([{
       id: 'sensor-1',

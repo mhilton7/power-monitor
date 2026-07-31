@@ -50,6 +50,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const testMode = useTestMode()
   const location = useLocation()
   const [alertsOpen, setAlertsOpen] = useState(new URLSearchParams(location.search).get('alerts') === '1')
+  const activeAlertCount = alerts.filter((item) => item.kind === 'operational_alert' && item.status !== 'resolved' && item.status !== 'silenced').length
   const navigate = useNavigate()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const liveState = summary?.hasLiveData ? 'live' : summary?.totalSensors ? 'waiting' : 'attention'
@@ -110,12 +111,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button
             type="button"
             className="icon-button alert-button"
-            aria-label={`${alerts.length} active alerts`}
+            aria-label={`${activeAlertCount} active operational alerts`}
             aria-expanded={alertsOpen}
             onClick={() => { setAlertsOpen(true); }}
           >
             <Bell />
-            {alerts.length > 0 && <span>{alerts.length}</span>}
+            {activeAlertCount > 0 && <span>{activeAlertCount}</span>}
           </button>
           <div className="user-menu">
             <DropdownMenu

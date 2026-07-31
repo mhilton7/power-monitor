@@ -77,7 +77,7 @@ test('Viewer receives the three read-only workspaces without private or mutating
         has_energy_data: false,
         has_cost_data: false,
       },
-      '/api/v1/alerts': [],
+      '/api/v1/notifications': { items: [], page: 1, page_size: 200, total: 0 },
       '/api/v1/rates/plans': { plans: [] },
       '/api/v1/history/query': {
         source: { bucket: '1 hour' },

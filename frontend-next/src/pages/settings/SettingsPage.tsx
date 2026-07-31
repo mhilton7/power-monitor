@@ -36,6 +36,8 @@ import {
   adaptCircuits,
   adaptFamily,
   adaptFamilyRoles,
+  adaptNotificationHistory,
+  adaptNotificationSuppressions,
   adaptPermissions,
   adaptSystemHealth,
   adaptTestModeHistory,
@@ -62,7 +64,7 @@ import type {
   SystemHealthStatus,
   TestLoadProfile,
 } from '../../types/models'
-import { energy, fileSize, money, power, relativeTime } from '../../utils/format'
+import { dateTime, energy, fileSize, money, power, relativeTime, statusLabel } from '../../utils/format'
 import { AdvancedRateSettings } from '../../features/rates/AdvancedRateSettings'
 
 type Section = 'home' | 'sensors' | 'family' | 'notifications' | 'appearance' | 'data' | 'advanced'
@@ -382,6 +384,7 @@ function InviteFamily({ roles, onClose, onSaved }: { roles: FamilyRoleOption[]; 
 function NotificationSettings() {
   const client = useQueryClient()
   const { session } = useAuth()
+  const { alerts } = useLiveHome()
   const { resolution } = useSingleHome()
   const homeId = resolution?.state === 'ready' ? resolution.home.id : undefined
   const canManageRules = session ? hasPermission(session, 'alerts.manage_rules') : false
@@ -393,10 +396,38 @@ function NotificationSettings() {
     queryFn: () => request<AlertRule[]>('/api/v1/alert-rules'),
     enabled: canViewAlerts || canManageRules,
   })
+  const suppressions = useQuery({
+    queryKey: ['notification-suppressions'],
+    queryFn: () => request('/api/v1/notification-suppressions', {}, adaptNotificationSuppressions),
+    enabled: canManageDelivery,
+  })
+  const [historyState, setHistoryState] = useState('')
+  const [historySeverity, setHistorySeverity] = useState('')
+  const [historyCategory, setHistoryCategory] = useState('')
+  const historyQuery = new URLSearchParams({ page_size: '25' })
+  if (historyState) historyQuery.set('state', historyState)
+  if (historySeverity) historyQuery.set('severity', historySeverity)
+  if (historyCategory) historyQuery.set('category', historyCategory)
+  const history = useQuery({
+    queryKey: ['notification-history', historyState, historySeverity, historyCategory],
+    queryFn: () => request(`/api/v1/notification-history?${historyQuery.toString()}`, {}, adaptNotificationHistory),
+    enabled: canViewAlerts,
+  })
+  const attempts = useQuery({
+    queryKey: ['notification-attempts'],
+    queryFn: () => request<Array<Record<string, unknown>>>('/api/v1/notification-attempts?limit=50'),
+    enabled: canManageDelivery,
+    refetchInterval: 5_000,
+  })
   const [advanced, setAdvanced] = useState(false)
+  const [ignoreOpen, setIgnoreOpen] = useState(false)
+  const [ignoreConfirmed, setIgnoreConfirmed] = useState(false)
+  const [ignoreReason, setIgnoreReason] = useState('')
+  const [ignoreScope, setIgnoreScope] = useState<'user' | 'home'>('home')
+  const [editingChannelId, setEditingChannelId] = useState<string>()
   const [form, setForm] = useState({ host: '', port: '587', from: '', recipients: '', username: '', password: '' })
   const save = useMutation({
-    mutationFn: () => request('/api/v1/notification-channels', json('POST', {
+    mutationFn: () => request(editingChannelId ? `/api/v1/notification-channels/${editingChannelId}` : '/api/v1/notification-channels', json(editingChannelId ? 'PUT' : 'POST', {
       name: 'Home email',
       channel_type: 'smtp',
       enabled: true,
@@ -411,8 +442,34 @@ function NotificationSettings() {
         event_types: ['power_surge', 'heartbeat_stale', 'sd_failure', 'server_failure'],
       },
     })),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ['notification-channels'] }),
+    onSuccess: async () => {
+      setAdvanced(false)
+      setEditingChannelId(undefined)
+      setForm({ host: '', port: '587', from: '', recipients: '', username: '', password: '' })
+      await client.invalidateQueries({ queryKey: ['notification-channels'] })
+      await client.invalidateQueries({ queryKey: ['alerts'] })
+    },
   })
+  const disableChannel = useMutation({
+    mutationFn: (channelId: string) => request(`/api/v1/notification-channels/${channelId}`, { method: 'DELETE' }),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['notification-channels'] })
+      await client.invalidateQueries({ queryKey: ['alerts'] })
+    },
+  })
+  const editChannel = (channel: Record<string, unknown>) => {
+    const target = channel.target && typeof channel.target === 'object' && !Array.isArray(channel.target) ? channel.target as Record<string, unknown> : {}
+    setEditingChannelId(displayUnknown(channel.id, ''))
+    setForm({
+      host: displayUnknown(target.host, ''),
+      port: displayUnknown(target.port, '587'),
+      from: displayUnknown(target.from, ''),
+      recipients: '',
+      username: '',
+      password: '',
+    })
+    setAdvanced(true)
+  }
   const saveRule = useMutation({
     mutationFn: ({ definition, enabled }: { definition: AlertRuleDefinition; enabled: boolean }) => {
       const selectedSite = definition.siteScoped ? homeId : null
@@ -435,16 +492,44 @@ function NotificationSettings() {
     },
     onSuccess: () => void client.invalidateQueries({ queryKey: ['alert-rules'] }),
   })
+  const recommendation = alerts.find((item) => item.code === 'recommendation.smtp_not_configured')
+  const suppress = useMutation({
+    mutationFn: () => request(`/api/v1/notifications/${encodeURIComponent(recommendation?.id ?? '')}/suppress`, json('POST', { scope: ignoreScope, reason: ignoreReason, confirmed: ignoreConfirmed })),
+    onSuccess: async () => {
+      setIgnoreOpen(false)
+      setIgnoreConfirmed(false)
+      await client.invalidateQueries({ queryKey: ['alerts'] })
+      await client.invalidateQueries({ queryKey: ['notification-suppressions'] })
+    },
+  })
+  const restore = useMutation({
+    mutationFn: ({ id, revision }: { id: string; revision: number }) => request(`/api/v1/notification-suppressions/${id}?expected_revision=${revision}`, { method: 'DELETE' }),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['alerts'] })
+      await client.invalidateQueries({ queryKey: ['notification-suppressions'] })
+    },
+  })
+  const testChannel = useMutation({
+    mutationFn: (channelId: string) => request<{ attempt_id: string }>(`/api/v1/notification-channels/${channelId}/test`, { method: 'POST' }),
+    onSuccess: async () => client.invalidateQueries({ queryKey: ['notification-attempts'] }),
+  })
   return (
     <>
-      <Surface title="Notifications" subtitle="Choose when this home should get your attention.">
+      <header className="section-heading">
+        <div>
+          <small>Alerts and delivery</small>
+          <h2>Notifications</h2>
+          <p>Review alert rules, optional delivery channels, ignored recommendations, and lifecycle history.</p>
+        </div>
+      </header>
+      <Surface title="Alert rules" subtitle="Choose which authoritative conditions open dashboard alerts and configured deliveries.">
         {rules.isLoading && <LoadingState />}
         {ALERT_RULES.map((definition) => {
           const selectedSite = definition.siteScoped ? homeId : null
           const rule = rules.data?.find((item) => item.rule_type === definition.type && item.site_id === selectedSite)
           return (
             <label className="toggle-row" key={definition.type}>
-              <span><strong>{definition.label}</strong><small>{definition.description}</small></span>
+              <span><strong>{definition.label}</strong><small>{definition.description}</small><small>Wait before opening: {definition.debounce}s · Resolve after: {definition.resolve}s healthy · Applies to: {definition.siteScoped ? 'this Home' : 'server'} · Delivery: dashboard and configured channels</small></span>
               <input
                 type="checkbox"
                 checked={rule?.enabled ?? false}
@@ -462,12 +547,39 @@ function NotificationSettings() {
         {saveRule.isSuccess && <InlineNotice tone="success">Notification preference saved.</InlineNotice>}
         {saveRule.error && <InlineNotice tone="danger">{saveRule.error.message}</InlineNotice>}
       </Surface>
-      {canManageDelivery && <Surface title="Email delivery" subtitle="SMTP credentials are encrypted on the server and never returned to the browser." action={<button className="button secondary" type="button" onClick={() => { setAdvanced(!advanced); }}>{advanced ? 'Hide setup' : 'Set up email'}</button>}>
-        {channels.data?.map((channel) => <div className="list-row" key={String(channel.id)}><Mail /><span><strong>{String(channel.name)}</strong><small>{String(channel.channel_type)} · secrets redacted</small></span><span className="pill success">Configured</span></div>)}
-        {advanced && <form className="form-grid" onSubmit={(event) => { event.preventDefault(); save.mutate() }}><label>SMTP host<input required value={form.host} onChange={(event) => { setForm({ ...form, host: event.target.value }); }} /></label><label>Port<input type="number" value={form.port} onChange={(event) => { setForm({ ...form, port: event.target.value }); }} /></label><label>From address<input type="email" required value={form.from} onChange={(event) => { setForm({ ...form, from: event.target.value }); }} /></label><label>Recipients<input required value={form.recipients} onChange={(event) => { setForm({ ...form, recipients: event.target.value }); }} placeholder="you@example.com" /></label><label>Username<input autoComplete="off" value={form.username} onChange={(event) => { setForm({ ...form, username: event.target.value }); }} /></label><label>Password<input type="password" autoComplete="new-password" value={form.password} onChange={(event) => { setForm({ ...form, password: event.target.value }); }} /></label><div className="form-actions"><button className="button primary">Save email delivery</button></div></form>}
+      {canManageDelivery && <Surface title="Delivery" subtitle="SMTP is optional. Dashboard alerts continue even when email delivery is off. Stored credentials are never returned to the browser." action={<button className="button secondary" type="button" onClick={() => { setAdvanced(!advanced); }}>{advanced ? 'Hide setup' : channels.data?.length ? 'Add channel' : 'Set up email'}</button>}>
+        {!channels.isLoading && !channels.data?.length && <div className="optional-delivery-card"><Mail aria-hidden="true" /><div><strong>Email delivery is off</strong><p>Power Monitor continues showing alerts in this dashboard. Email setup is optional.</p><div className="inline-actions"><button type="button" className="button primary" onClick={() => { setAdvanced(true); }}>Set up email</button>{recommendation && <button type="button" className="button secondary" onClick={() => { setIgnoreOpen(true); }}>Do not remind me again</button>}</div></div></div>}
+        {channels.data?.map((channel) => <NotificationChannelRow key={String(channel.id)} channel={channel} attempts={attempts.data ?? []} testing={testChannel.isPending} mutating={disableChannel.isPending} onTest={(id) => { testChannel.mutate(id); }} onEdit={() => { editChannel(channel); }} onDisable={(id) => { disableChannel.mutate(id); }} />)}
+        {testChannel.isPending && <InlineNotice>Test queued: connecting, negotiating TLS, authenticating, and submitting the message.</InlineNotice>}
+        {testChannel.isSuccess && <InlineNotice tone="success">Test queued. Delivery progress and the safe final result update above.</InlineNotice>}
+        {testChannel.error && <InlineNotice tone="danger">{testChannel.error.message}</InlineNotice>}
+        {advanced && <form className="form-grid" onSubmit={(event) => { event.preventDefault(); save.mutate() }}><label>SMTP host<input required value={form.host} onChange={(event) => { setForm({ ...form, host: event.target.value }); }} /></label><label>Port<input type="number" value={form.port} onChange={(event) => { setForm({ ...form, port: event.target.value }); }} /></label><label>From address<input type="email" required value={form.from} onChange={(event) => { setForm({ ...form, from: event.target.value }); }} /></label><label>Recipients<input required value={form.recipients} onChange={(event) => { setForm({ ...form, recipients: event.target.value }); }} placeholder={editingChannelId ? 'Re-enter recipients to confirm this update' : 'you@example.com'} /></label><label>Username<input autoComplete="off" value={form.username} onChange={(event) => { setForm({ ...form, username: event.target.value }); }} placeholder={editingChannelId ? 'Leave blank to preserve' : ''} /></label><label>Password<input type="password" autoComplete="new-password" value={form.password} onChange={(event) => { setForm({ ...form, password: event.target.value }); }} placeholder={editingChannelId ? 'Leave blank to preserve' : ''} /></label><div className="form-actions">{editingChannelId && <button type="button" className="button secondary" onClick={() => { setEditingChannelId(undefined); setAdvanced(false); }}>Cancel edit</button>}<button className="button primary">{editingChannelId ? 'Save channel changes' : 'Save email delivery'}</button></div></form>}
       </Surface>}
+      {canManageDelivery && <Surface title="Ignored recommendations" subtitle="Optional reminders hidden for your account or this Home remain audited and reversible.">
+        {suppressions.isLoading ? <LoadingState /> : suppressions.error ? <ErrorState error={suppressions.error} retry={() => void suppressions.refetch()} /> : suppressions.data?.length ? <div className="stack-list">{suppressions.data.map((item) => <div className="list-row" key={item.id}><Bell /><span><strong>{item.suppressionKey === 'recommendation.smtp_not_configured' ? 'Email notifications are not configured' : statusLabel(item.suppressionKey)}</strong><small>{statusLabel(item.scopeType)}: {item.scopeName} · Ignored by {item.createdBy} on {dateTime(item.createdAt)}{item.reason ? ` · ${item.reason}` : ''}</small></span><button type="button" className="button secondary" disabled={restore.isPending} onClick={() => { restore.mutate({ id: item.id, revision: item.revision }); }}>Restore reminder</button></div>)}</div> : <EmptyState title="No ignored recommendations" message="Optional reminders you permanently ignore will remain manageable here." />}
+      </Surface>}
+      {canViewAlerts && <Surface title="Notification history" subtitle="Immutable lifecycle and delivery events. The newest 25 records are shown.">
+        <div className="notification-history-filters" aria-label="Notification history filters">
+          <label>State<select value={historyState} onChange={(event) => { setHistoryState(event.target.value) }}><option value="">All states</option><option value="opened">Opened</option><option value="acknowledged">Acknowledged</option><option value="silenced">Silenced</option><option value="silence_expired">Silence expired</option><option value="resolved">Resolved</option><option value="reopened">Reopened</option><option value="delivery_failed">Delivery failed</option><option value="permanently_suppressed">Suppressed</option></select></label>
+          <label>Severity<select value={historySeverity} onChange={(event) => { setHistorySeverity(event.target.value) }}><option value="">All severities</option><option value="critical">Critical</option><option value="error">Error</option><option value="warning">Warning</option><option value="info">Info</option></select></label>
+          <label>Category<input value={historyCategory} onChange={(event) => { setHistoryCategory(event.target.value) }} placeholder="All categories" /></label>
+        </div>
+        {history.isLoading ? <LoadingState /> : history.error ? <ErrorState error={history.error} retry={() => void history.refetch()} /> : history.data?.items.length ? <div className="notification-history-list" role="table" aria-label="Notification history">{history.data.items.map((item) => <div className="list-row" role="row" key={item.id}><Clock3 /><span><strong>{statusLabel(item.eventType)}</strong><small>{statusLabel(item.category)} · {statusLabel(item.severity)} · {dateTime(item.occurredAt)}{item.actorName ? ` · ${item.actorName}` : ''}</small></span></div>)}</div> : <EmptyState title="No notification history yet" message="Open, acknowledge, silence, resolution, suppression, and delivery events will appear here." />}
+        {history.data && history.data.total > history.data.items.length && <small>Showing {history.data.items.length} of {history.data.total} matching immutable events.</small>}
+      </Surface>}
+      {ignoreOpen && recommendation && <div className="modal-backdrop"><form className="modal-card small-modal" role="dialog" aria-modal="true" aria-labelledby="settings-ignore-title" onSubmit={(event) => { event.preventDefault(); suppress.mutate(); }}><header><div><small>Optional recommendation</small><h2 id="settings-ignore-title">Stop email setup reminders?</h2></div></header><div className="setup-body form-grid single"><p>Dashboard alerts continue normally. No email will be sent until a delivery channel is configured. You can restore this reminder here later.</p><fieldset><legend>Scope</legend><label><input type="radio" name="ignore-scope" checked={ignoreScope === 'home'} onChange={() => { setIgnoreScope('home'); }} /> Do not remind this home again</label><label><input type="radio" name="ignore-scope" checked={ignoreScope === 'user'} onChange={() => { setIgnoreScope('user'); }} /> Dismiss for me</label></fieldset><label>Reason (optional)<textarea value={ignoreReason} onChange={(event) => { setIgnoreReason(event.target.value); }} /></label><label className="check-row"><input type="checkbox" checked={ignoreConfirmed} onChange={(event) => { setIgnoreConfirmed(event.target.checked); }} /> I understand dashboard alerts continue and this reminder can be restored.</label>{suppress.error && <InlineNotice tone="danger">{suppress.error.message}</InlineNotice>}</div><footer><button type="button" className="button secondary" onClick={() => { setIgnoreOpen(false); }}>Cancel</button><button type="submit" className="button primary" disabled={!ignoreConfirmed || suppress.isPending}>Do not remind me again</button></footer></form></div>}
     </>
   )
+}
+
+function NotificationChannelRow({ channel, attempts, testing, mutating, onTest, onEdit, onDisable }: { channel: Record<string, unknown>; attempts: Array<Record<string, unknown>>; testing: boolean; mutating: boolean; onTest: (id: string) => void; onEdit: () => void; onDisable: (id: string) => void }) {
+  const target = channel.target && typeof channel.target === 'object' && !Array.isArray(channel.target) ? channel.target as Record<string, unknown> : {}
+  const lastAttempt = attempts.find((attempt) => String(attempt.channel_id) === String(channel.id))
+  return <div className="notification-channel-row"><Mail /><span><strong>{displayUnknown(channel.name, 'Notification channel')}</strong><small>{displayUnknown(target.host, 'SMTP host')}:{displayUnknown(target.port, 'default')} · {target.starttls ? 'STARTTLS' : target.implicit_tls ? 'Implicit TLS' : 'TLS off'} · {displayUnknown(target.from, 'sender unavailable')} · {displayUnknown(target.recipient_count, '0')} recipients · secrets redacted</small>{lastAttempt && <small>Last result: {statusLabel(displayUnknown(lastAttempt.status, 'unknown'))}{lastAttempt.response_summary ? ` · ${displayUnknown(lastAttempt.response_summary, 'Processing')}` : ''}{lastAttempt.safe_error_summary ? ` · ${displayUnknown(lastAttempt.safe_error_summary, 'Delivery failed')}` : ''}{lastAttempt.next_attempt_at ? ` · retry ${dateTime(displayUnknown(lastAttempt.next_attempt_at, ''))}` : ''}</small>}</span><div className="inline-actions"><span className={`pill ${channel.enabled ? 'success' : ''}`}>{channel.enabled ? 'Enabled' : 'Disabled'}</span><button type="button" className="button secondary compact" onClick={onEdit}>Edit</button>{Boolean(channel.enabled) && <button type="button" className="button secondary compact" disabled={mutating} onClick={() => { onDisable(displayUnknown(channel.id, '')); }}>Disable</button>}<button type="button" className="button secondary compact" disabled={testing || !channel.enabled} onClick={() => { onTest(displayUnknown(channel.id, '')); }}>Test email</button></div></div>
+}
+
+function displayUnknown(value: unknown, fallback: string): string {
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : fallback
 }
 
 interface AlertRule {

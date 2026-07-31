@@ -1208,6 +1208,168 @@ class AlertAcknowledge(ApiModel):
     note: str = Field(default="", max_length=500)
 
 
+class NotificationMetric(ApiModel):
+    label: str
+    value: str
+    unit: str | None = None
+    recorded_at: datetime | None = None
+
+
+class NotificationExpected(ApiModel):
+    label: str
+    operator: str | None = None
+    value: str
+    unit: str | None = None
+
+
+class NotificationEvidence(ApiModel):
+    label: str
+    value: str
+    status: Literal["normal", "warning", "error"] | None = None
+
+
+class NotificationResource(ApiModel):
+    type: Literal[
+        "sensor",
+        "home",
+        "server",
+        "backup",
+        "rate_source",
+        "notification_channel",
+        "firmware",
+        "billing",
+        "storage",
+    ]
+    id: str | None = None
+    name: str
+
+
+class NotificationCause(ApiModel):
+    code: str
+    explanation: str
+
+
+class NotificationAction(ApiModel):
+    label: str
+    target: str
+    required_permissions: list[str] = Field(default_factory=list)
+
+
+class NotificationRemediation(ApiModel):
+    summary: str
+    steps: list[str] = Field(default_factory=list)
+    automatic_recovery: str | None = None
+    action: NotificationAction | None = None
+
+
+class NotificationAcknowledgement(ApiModel):
+    acknowledged_at: datetime
+    acknowledged_by: str
+    note: str | None = None
+
+
+class NotificationSilenceView(ApiModel):
+    silenced_until: datetime
+    silenced_by: str
+    note: str | None = None
+
+
+class NotificationDelivery(ApiModel):
+    attempted: bool
+    channel_name: str | None = None
+    last_attempt_at: datetime | None = None
+    last_outcome: str | None = None
+    retry_at: datetime | None = None
+    safe_error_code: str | None = None
+    safe_error_summary: str | None = None
+
+
+class NotificationSuppressionView(ApiModel):
+    dismissible: bool
+    permanently_suppressible: bool
+    suppression_key: str | None = None
+    currently_suppressed: bool = False
+    allowed_scopes: list[Literal["user", "home"]] = Field(default_factory=list)
+
+
+class NotificationView(ApiModel):
+    id: str
+    code: str
+    kind: Literal["operational_alert", "setup_recommendation", "delivery_issue"]
+    category: str
+    severity: Literal["info", "warning", "error", "critical"]
+    state: Literal["open", "acknowledged", "silenced", "resolved", "dismissed", "suppressed"]
+    title: str
+    summary: str
+    affected_resource: NotificationResource | None = None
+    first_seen_at: datetime
+    last_seen_at: datetime
+    resolved_at: datetime | None = None
+    occurrence_count: int = Field(ge=1)
+    duration_seconds: int | None = Field(default=None, ge=0)
+    observed: NotificationMetric | None = None
+    expected: NotificationExpected | None = None
+    cause: NotificationCause | None = None
+    evidence: list[NotificationEvidence] = Field(default_factory=list)
+    impact: str
+    remediation: NotificationRemediation
+    acknowledgement: NotificationAcknowledgement | None = None
+    silence: NotificationSilenceView | None = None
+    delivery: NotificationDelivery | None = None
+    suppression: NotificationSuppressionView
+
+
+class NotificationPage(ApiModel):
+    items: list[NotificationView]
+    page: int
+    page_size: int
+    total: int
+
+
+class NotificationSuppressRequest(ApiModel):
+    scope: Literal["user", "home"]
+    reason: str = Field(default="", max_length=500)
+    confirmed: bool
+    expected_revision: int | None = Field(default=None, ge=1)
+
+
+class NotificationSuppressionItem(ApiModel):
+    id: str
+    suppression_key: str
+    category: str
+    scope_type: Literal["user", "home"]
+    scope_name: str
+    created_by: str
+    created_at: datetime
+    reason: str | None = None
+    source_notification_id: str
+    active: bool
+    restored_by: str | None = None
+    restored_at: datetime | None = None
+    revision: int
+
+
+class NotificationHistoryItem(ApiModel):
+    id: str
+    notification_id: str
+    event_type: str
+    occurred_at: datetime
+    actor_name: str | None = None
+    site_id: str | None = None
+    category: str
+    severity: str
+    resource_type: str | None = None
+    resource_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class NotificationHistoryPage(ApiModel):
+    items: list[NotificationHistoryItem]
+    page: int
+    page_size: int
+    total: int
+
+
 class UserCreate(ApiModel):
     email: EmailStr
     display_name: str = Field(min_length=1, max_length=120)

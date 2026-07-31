@@ -1,5 +1,21 @@
 # Power Monitor Server 1.0.0
 
+## Detailed actionable notifications
+
+- Replaces vague alert rows with a typed notification contract containing affected resource,
+  first/last observations, occurrence count, observed/expected evidence, impact, recovery,
+  remediation, acknowledgement, silence, and safe delivery state.
+- Adds distinct operational, optional setup, and delivery-failure kinds backed by one
+  authoritative catalog and the existing alert pipeline.
+- Adds reversible, audited user/Home suppression for the optional SMTP recommendation while
+  explicitly rejecting permanent suppression of operational, security, meter, storage,
+  history, backup, firmware, and server faults.
+- Adds immutable paginated lifecycle/delivery history, detailed delivery attempt stages and
+  safe SMTP error codes, effective-permission actions, accessible responsive drawer sections,
+  and organized Notification settings.
+- Adds append-only Alembic revision `20260731_0023`, regenerated OpenAPI, backend lifecycle
+  tests, frontend runtime-contract tests, and notification-center interaction coverage.
+
 ## Sensor-authoritative billing and simplified rate import
 
 - Treats uploaded utility bills as reviewed tariff evidence only: plan identity,

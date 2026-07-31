@@ -58,6 +58,8 @@ def test_initial_migration_is_frozen_and_covers_metadata() -> None:
         "utility_bill_cycle_drafts",
         "device_site_assignments",
         "utility_account_site_assignments",
+        "notification_suppressions",
+        "notification_events",
     }
     assert "CREATE UNIQUE INDEX" in schema
     assert "ix_raw_site_time" in schema
@@ -142,6 +144,20 @@ def test_strict_viewer_permission_migration_revokes_stale_access() -> None:
     assert "UPDATE sessions SET revoked_at" in revision
     assert "role.builtin_migrated" in revision
     assert "DROP TABLE" not in revision
+
+
+def test_detailed_notifications_migration_is_additive_and_audited() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260731_0023_detailed_notifications.py"
+    ).read_text()
+    assert 'down_revision = "20260731_0022"' in revision
+    assert '"notification_suppressions"' in revision
+    assert '"notification_events"' in revision
+    assert '"occurrence_count"' in revision
+    assert '"safe_error_code"' in revision
+    assert "uq_notification_suppression_active_user" in revision
+    assert "uq_notification_suppression_active_home" in revision
 
 
 def test_dashboard_information_architecture_migration_preserves_layout_history() -> None:

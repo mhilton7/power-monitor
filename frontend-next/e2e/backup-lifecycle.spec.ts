@@ -142,7 +142,7 @@ async function mockSettings(page: Page, writes: Array<{ method: string; path: st
         has_energy_data: false,
         has_cost_data: false,
       },
-      '/api/v1/alerts': [],
+      '/api/v1/notifications': { items: [], page: 1, page_size: 200, total: 0 },
       '/api/v1/test-mode': {
         enabled: false,
         remaining_seconds: 0,

@@ -6,6 +6,13 @@ Browser routes use an opaque `pm_session` cookie and `X-CSRF-Token` on mutations
 
 Key groups are `/api/v1/auth`, `/sites`, `/utility-accounts`, `/circuits`, `/aggregate-sets`, `/devices`, `/readings/history`, `/history/query`, `/history/export`, `/rates`, `/billing`, `/alerts`, `/exports`, `/firmware-*`, `/reports`, `/backups`, `/audit-events`, `/system/info`, and `/events/stream`. Administrator log discovery and export use `/api/v1/admin/logs/availability`, `POST /api/v1/admin/logs/exports`, export status, and the short-lived authorized download route. Safe sensor removal uses `POST /api/v1/admin/devices/{device_id}/unclaim`; it requires CSRF, an administrator, and exact name-or-ID confirmation. Health endpoints are outside `/api/v1`. Metrics are authenticated.
 
+Detailed notifications use `GET /api/v1/notifications`, `GET
+/api/v1/notifications/{id}`, acknowledge/silence/end-silence mutations, optional
+recommendation dismiss/suppress mutations, `GET /api/v1/notification-suppressions`, the
+revision-checked restore route, and paginated `/api/v1/notification-history`.
+`/api/v1/alerts` remains compatible and returns the same structured representation. See
+[Notifications](NOTIFICATIONS.md).
+
 Single Home current-rate state is server authoritative. `GET
 /api/v1/electric-services/default/current-rate-assignment` returns the exact
 effective assignment, plan, and version or an explicit null assignment. `POST

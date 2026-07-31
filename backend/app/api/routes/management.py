@@ -50,6 +50,8 @@ from app.db.models import (
     NormalizedInterval,
     NotificationAttempt,
     NotificationChannel,
+    NotificationEvent,
+    NotificationSuppression,
     RawReading,
     ReportDefinition,
     SequenceGap,
@@ -66,6 +68,7 @@ from app.history import MAX_HISTORY_BUCKETS, history_csv, query_history
 from app.home_aggregate import resolve_home_aggregate_devices
 from app.live_measurements import load_latest_measurements, log_measurement_decision
 from app.network_policy import ensure_site_policies, policy_cidrs, policy_for_site, policy_summary
+from app.notifications import NOTIFICATION_CATALOG, catalog_entry, load_notification_views
 from app.problem import ProblemError
 from app.schemas import (
     AggregateSetCreate,
@@ -94,6 +97,11 @@ from app.schemas import (
     HistoryResponse,
     MaintenanceWindow,
     NotificationChannelWrite,
+    NotificationHistoryPage,
+    NotificationPage,
+    NotificationSuppressionItem,
+    NotificationSuppressRequest,
+    NotificationView,
     PasswordReset,
     ReportDefinitionWrite,
     SiteCreate,
@@ -2231,18 +2239,33 @@ async def fleet_summary(
 
 @router.get("/alerts")
 async def list_alerts(
-    principal: Viewer, session: DbSession, status: str | None = None
+    principal: Principal,
+    session: DbSession,
+    status: str | None = None,
+    site_id: str | None = None,
 ) -> list[dict[str, Any]]:
     _permission(principal, "alerts.view")
+    if site_id:
+        _site_allowed(principal, site_id)
     query = select(AlertInstance).order_by(AlertInstance.opened_at.desc()).limit(1000)
-    if not principal.all_sites:
+    if site_id:
+        query = query.where(AlertInstance.site_id == site_id)
+    elif not principal.all_sites:
         query = query.where(
             or_(AlertInstance.site_id.is_(None), AlertInstance.site_id.in_(principal.site_ids))
         )
     if status:
-        query = query.where(AlertInstance.status == status)
+        query = query.where(AlertInstance.status == ("active" if status == "open" else status))
     alerts = list(await session.scalars(query))
-    rules = {rule.id: rule for rule in await session.scalars(select(AlertRule))}
+    rule_ids = {item.rule_id for item in alerts}
+    rules = (
+        {
+            rule.id: rule
+            for rule in await session.scalars(select(AlertRule).where(AlertRule.id.in_(rule_ids)))
+        }
+        if rule_ids
+        else {}
+    )
     return [
         {
             "id": alert.id,
@@ -2259,6 +2282,63 @@ async def list_alerts(
         }
         for alert in alerts
     ]
+
+
+@router.get("/notifications", response_model=NotificationPage)
+async def list_notifications(
+    principal: Principal,
+    session: DbSession,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    state: str | None = None,
+    severity: str | None = None,
+    category: str | None = None,
+    site_id: str | None = None,
+) -> NotificationPage:
+    _permission(principal, "alerts.view")
+    if site_id:
+        _site_allowed(principal, site_id)
+    views = await load_notification_views(
+        session,
+        user_id=principal.user.id,
+        permissions=set(principal.permissions),
+        all_sites=principal.all_sites,
+        site_ids=set(principal.site_ids),
+        requested_site_id=site_id,
+    )
+    if state:
+        views = [item for item in views if item.state == state]
+    if severity:
+        views = [item for item in views if item.severity == severity]
+    if category:
+        views = [item for item in views if item.category == category]
+    total = len(views)
+    start = (page - 1) * page_size
+    return NotificationPage(
+        items=views[start : start + page_size], page=page, page_size=page_size, total=total
+    )
+
+
+@router.get("/notifications/{notification_id}", response_model=NotificationView)
+async def get_notification(
+    notification_id: str,
+    principal: Principal,
+    session: DbSession,
+) -> NotificationView:
+    _permission(principal, "alerts.view")
+    views = await load_notification_views(
+        session,
+        user_id=principal.user.id,
+        permissions=set(principal.permissions),
+        all_sites=principal.all_sites,
+        site_ids=set(principal.site_ids),
+    )
+    selected = next((item for item in views if item.id == notification_id), None)
+    if selected is None:
+        raise ProblemError(
+            404, "Notification not found", "Notification does not exist", "notification_missing"
+        )
+    return selected
 
 
 @router.get("/alert-rules")
@@ -2435,6 +2515,7 @@ async def delete_alert_rule(
     return Response(status_code=204)
 
 
+@router.post("/notifications/{alert_id}/acknowledge")
 @router.post("/alerts/{alert_id}/acknowledge")
 async def acknowledge_alert(
     alert_id: str,
@@ -2449,10 +2530,34 @@ async def acknowledge_alert(
         raise ProblemError(404, "Alert not found", "Alert does not exist", "alert_missing")
     if alert.site_id:
         _site_allowed(principal, alert.site_id)
-    alert.status = "acknowledged"
-    alert.acknowledged_at = datetime.now(UTC)
-    alert.acknowledged_by = principal.user.id
-    alert.evidence = {**alert.evidence, "acknowledgement_note": payload.note}
+    if alert.resolved_at or alert.status == "resolved":
+        raise ProblemError(
+            409,
+            "Notification resolved",
+            "Resolved notifications cannot be acknowledged",
+            "notification_state_conflict",
+        )
+    rule = await session.get(AlertRule, alert.rule_id)
+    if alert.acknowledged_at is None:
+        now = datetime.now(UTC)
+        alert.status = "acknowledged"
+        alert.acknowledged_at = now
+        alert.acknowledged_by = principal.user.id
+        alert.evidence = {**alert.evidence, "acknowledgement_note": payload.note}
+        session.add(
+            NotificationEvent(
+                notification_id=alert.id,
+                event_type="acknowledged",
+                occurred_at=now,
+                actor_id=principal.user.id,
+                site_id=alert.site_id,
+                category=catalog_entry(rule.rule_type if rule else "unknown").category,
+                severity=alert.severity,
+                resource_type="sensor" if alert.device_id else "server",
+                resource_id=alert.device_id or alert.site_id,
+                details={"note": payload.note},
+            )
+        )
     session.add(
         audit_event(
             action="alert.acknowledged",
@@ -2467,6 +2572,7 @@ async def acknowledge_alert(
     return {"status": alert.status}
 
 
+@router.post("/notifications/{alert_id}/silence")
 @router.post("/alerts/{alert_id}/silence")
 async def silence_alert(
     alert_id: str,
@@ -2485,8 +2591,33 @@ async def silence_alert(
         raise ProblemError(404, "Alert not found", "Alert does not exist", "alert_missing")
     if alert.site_id:
         _site_allowed(principal, alert.site_id)
+    if alert.resolved_at or alert.status == "resolved":
+        raise ProblemError(
+            409,
+            "Notification resolved",
+            "Resolved notifications cannot be silenced",
+            "notification_state_conflict",
+        )
+    now = datetime.now(UTC)
     alert.silenced_until = payload.until
-    alert.evidence = {**alert.evidence, "silence_note": payload.note}
+    alert.silenced_at = now
+    alert.silenced_by = principal.user.id
+    alert.silence_note = payload.note
+    rule = await session.get(AlertRule, alert.rule_id)
+    session.add(
+        NotificationEvent(
+            notification_id=alert.id,
+            event_type="silenced",
+            occurred_at=now,
+            actor_id=principal.user.id,
+            site_id=alert.site_id,
+            category=catalog_entry(rule.rule_type if rule else "unknown").category,
+            severity=alert.severity,
+            resource_type="sensor" if alert.device_id else "server",
+            resource_id=alert.device_id or alert.site_id,
+            details={"until": payload.until.isoformat(), "note": payload.note},
+        )
+    )
     session.add(
         audit_event(
             action="alert.silenced",
@@ -2500,6 +2631,432 @@ async def silence_alert(
     )
     await session.commit()
     return {"id": alert.id, "silenced_until": alert.silenced_until}
+
+
+@router.delete("/notifications/{alert_id}/silence", status_code=204, response_class=Response)
+async def end_notification_silence(
+    alert_id: str,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> Response:
+    _permission(principal, "alerts.acknowledge")
+    alert = await session.get(AlertInstance, alert_id)
+    if alert is None:
+        raise ProblemError(
+            404, "Notification not found", "Notification does not exist", "notification_missing"
+        )
+    if alert.site_id:
+        _site_allowed(principal, alert.site_id)
+    if alert.silenced_until is None:
+        return Response(status_code=204)
+    now = datetime.now(UTC)
+    alert.silenced_until = None
+    alert.silenced_at = None
+    alert.silenced_by = None
+    alert.silence_note = None
+    rule = await session.get(AlertRule, alert.rule_id)
+    session.add(
+        NotificationEvent(
+            notification_id=alert.id,
+            event_type="silence_ended",
+            occurred_at=now,
+            actor_id=principal.user.id,
+            site_id=alert.site_id,
+            category=catalog_entry(rule.rule_type if rule else "unknown").category,
+            severity=alert.severity,
+            resource_type="sensor" if alert.device_id else "server",
+            resource_id=alert.device_id or alert.site_id,
+            details={},
+        )
+    )
+    session.add(
+        audit_event(
+            action="notification.silence_ended",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="notification",
+            object_id=alert.id,
+        )
+    )
+    await session.commit()
+    return Response(status_code=204)
+
+
+def _recommendation_identity(notification_id: str) -> tuple[str, str]:
+    prefix, separator, remainder = notification_id.partition(":")
+    key, site_separator, site_id = remainder.rpartition(":")
+    if prefix != "recommendation" or not separator or not site_separator:
+        raise ProblemError(
+            409,
+            "Notification cannot be permanently ignored",
+            "Operational and delivery failures may be acknowledged or temporarily "
+            "silenced, but they cannot be permanently hidden",
+            "notification_not_suppressible",
+        )
+    entry = NOTIFICATION_CATALOG.get(key)
+    if entry is None or not entry.permanently_suppressible:
+        raise ProblemError(
+            409,
+            "Recommendation cannot be permanently ignored",
+            "This recommendation is not eligible for permanent suppression",
+            "notification_not_suppressible",
+        )
+    return key, site_id
+
+
+async def _suppress_recommendation(
+    notification_id: str,
+    payload: NotificationSuppressRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+    *,
+    event_type: str = "permanently_suppressed",
+) -> NotificationSuppression:
+    _permission(principal, "alerts.manage_delivery")
+    if not payload.confirmed:
+        raise ProblemError(
+            422,
+            "Confirmation required",
+            "Confirm that dashboard alerts continue while optional external delivery remains off",
+            "suppression_confirmation_required",
+        )
+    key, site_id = _recommendation_identity(notification_id)
+    _site_allowed(principal, site_id)
+    site = await session.get(Site, site_id)
+    if site is None or site.lifecycle_state != "active":
+        raise ProblemError(404, "Home not found", "Home does not exist", "site_missing")
+    filters = [
+        NotificationSuppression.suppression_key == key,
+        NotificationSuppression.active.is_(True),
+    ]
+    if payload.scope == "user":
+        filters.append(NotificationSuppression.user_id == principal.user.id)
+    else:
+        filters.append(NotificationSuppression.site_id == site_id)
+    existing = await session.scalar(select(NotificationSuppression).where(*filters))
+    if existing:
+        return existing
+    now = datetime.now(UTC)
+    suppression = NotificationSuppression(
+        suppression_key=key,
+        category=NOTIFICATION_CATALOG[key].category,
+        scope_type=payload.scope,
+        user_id=principal.user.id if payload.scope == "user" else None,
+        site_id=site_id if payload.scope == "home" else None,
+        created_by=principal.user.id,
+        created_at=now,
+        reason=payload.reason or None,
+        source_notification_id=notification_id,
+        active=True,
+        revision=1,
+    )
+    session.add(suppression)
+    session.add(
+        NotificationEvent(
+            notification_id=notification_id,
+            event_type=event_type,
+            occurred_at=now,
+            actor_id=principal.user.id,
+            site_id=site_id,
+            category=NOTIFICATION_CATALOG[key].category,
+            severity=NOTIFICATION_CATALOG[key].severity,
+            resource_type="home",
+            resource_id=site_id,
+            details={"scope": payload.scope, "reason": payload.reason},
+        )
+    )
+    session.add(
+        audit_event(
+            action=f"recommendation.{event_type}",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="notification_suppression",
+            object_id=suppression.id,
+            details={"suppression_key": key, "scope": payload.scope, "site_id": site_id},
+        )
+    )
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing = await session.scalar(select(NotificationSuppression).where(*filters))
+        if existing is None:
+            raise
+        return existing
+    structlog.get_logger(__name__).info(
+        f"recommendation.{event_type}",
+        notification_id=notification_id,
+        category=suppression.category,
+        site_id=site_id,
+        actor_id=principal.user.id,
+        scope=payload.scope,
+    )
+    return suppression
+
+
+@router.post("/notifications/{notification_id}/suppress", status_code=201)
+async def suppress_notification(
+    notification_id: str,
+    payload: NotificationSuppressRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    suppression = await _suppress_recommendation(
+        notification_id, payload, request, principal, session
+    )
+    return {"id": suppression.id, "active": suppression.active, "revision": suppression.revision}
+
+
+@router.post("/notifications/{notification_id}/dismiss", status_code=201)
+async def dismiss_notification(
+    notification_id: str,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    suppression = await _suppress_recommendation(
+        notification_id,
+        NotificationSuppressRequest(
+            scope="user",
+            reason="Dismissed current optional recommendation",
+            confirmed=True,
+        ),
+        request,
+        principal,
+        session,
+        event_type="dismissed",
+    )
+    return {"id": suppression.id, "active": suppression.active, "revision": suppression.revision}
+
+
+@router.get("/notification-suppressions", response_model=list[NotificationSuppressionItem])
+async def list_notification_suppressions(
+    principal: Principal,
+    session: DbSession,
+    active_only: bool = True,
+) -> list[NotificationSuppressionItem]:
+    _permission(principal, "alerts.manage_delivery")
+    query = select(NotificationSuppression).order_by(NotificationSuppression.created_at.desc())
+    if active_only:
+        query = query.where(NotificationSuppression.active.is_(True))
+    scope = [NotificationSuppression.user_id == principal.user.id]
+    if principal.all_sites:
+        scope.append(NotificationSuppression.site_id.is_not(None))
+    elif principal.site_ids:
+        scope.append(NotificationSuppression.site_id.in_(principal.site_ids))
+    records = list(await session.scalars(query.where(or_(*scope)).limit(1000)))
+    actor_ids = {
+        actor for item in records for actor in (item.created_by, item.restored_by) if actor
+    }
+    user_names = (
+        {
+            item.id: item.display_name
+            for item in await session.scalars(select(User).where(User.id.in_(actor_ids)))
+        }
+        if actor_ids
+        else {}
+    )
+    suppression_site_ids = {item.site_id for item in records if item.site_id}
+    site_names = (
+        {
+            item.id: item.name
+            for item in await session.scalars(select(Site).where(Site.id.in_(suppression_site_ids)))
+        }
+        if suppression_site_ids
+        else {}
+    )
+    return [
+        NotificationSuppressionItem(
+            id=item.id,
+            suppression_key=item.suppression_key,
+            category=item.category,
+            scope_type=item.scope_type,  # type: ignore[arg-type]
+            scope_name=(
+                user_names.get(item.user_id, "Your account")
+                if item.user_id
+                else "Your account"
+                if item.scope_type == "user"
+                else site_names.get(item.site_id, "Home")
+                if item.site_id
+                else "Home"
+            ),
+            created_by=user_names.get(item.created_by, "Authorized user"),
+            created_at=item.created_at,
+            reason=item.reason,
+            source_notification_id=item.source_notification_id,
+            active=item.active,
+            restored_by=user_names.get(item.restored_by) if item.restored_by else None,
+            restored_at=item.restored_at,
+            revision=item.revision,
+        )
+        for item in records
+    ]
+
+
+@router.delete(
+    "/notification-suppressions/{suppression_id}",
+    status_code=204,
+    response_class=Response,
+)
+async def restore_notification_suppression(
+    suppression_id: str,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+    expected_revision: int | None = Query(default=None, ge=1),
+) -> Response:
+    _permission(principal, "alerts.manage_delivery")
+    suppression = await session.get(NotificationSuppression, suppression_id)
+    if suppression is None:
+        raise ProblemError(
+            404,
+            "Ignored recommendation not found",
+            "Suppression does not exist",
+            "suppression_missing",
+        )
+    if suppression.scope_type == "user" and suppression.user_id != principal.user.id:
+        raise ProblemError(
+            404,
+            "Ignored recommendation not found",
+            "Suppression does not exist",
+            "suppression_missing",
+        )
+    if suppression.site_id:
+        _site_allowed(principal, suppression.site_id)
+    if expected_revision is not None and suppression.revision != expected_revision:
+        raise ProblemError(
+            409,
+            "Suppression changed",
+            "Refresh Ignored recommendations and try again",
+            "revision_conflict",
+        )
+    if not suppression.active:
+        return Response(status_code=204)
+    now = datetime.now(UTC)
+    suppression.active = False
+    suppression.restored_by = principal.user.id
+    suppression.restored_at = now
+    suppression.revision += 1
+    session.add(
+        NotificationEvent(
+            notification_id=suppression.source_notification_id,
+            event_type="suppression_restored",
+            occurred_at=now,
+            actor_id=principal.user.id,
+            site_id=suppression.site_id,
+            category=suppression.category,
+            severity="info",
+            resource_type="home" if suppression.site_id else None,
+            resource_id=suppression.site_id,
+            details={"scope": suppression.scope_type},
+        )
+    )
+    session.add(
+        audit_event(
+            action="recommendation.suppression_restored",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="notification_suppression",
+            object_id=suppression.id,
+            details={"suppression_key": suppression.suppression_key},
+        )
+    )
+    await session.commit()
+    structlog.get_logger(__name__).info(
+        "recommendation.suppression_restored",
+        notification_id=suppression.source_notification_id,
+        category=suppression.category,
+        site_id=suppression.site_id,
+        actor_id=principal.user.id,
+    )
+    return Response(status_code=204)
+
+
+@router.get("/notification-history", response_model=NotificationHistoryPage)
+async def list_notification_history(
+    principal: Principal,
+    session: DbSession,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    state: str | None = None,
+    severity: str | None = None,
+    category: str | None = None,
+    resource_id: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> NotificationHistoryPage:
+    _permission(principal, "alerts.view")
+    filters: list[Any] = []
+    if not principal.all_sites:
+        filters.append(
+            or_(
+                NotificationEvent.site_id.is_(None),
+                NotificationEvent.site_id.in_(principal.site_ids),
+            )
+        )
+    if state:
+        filters.append(NotificationEvent.event_type == state)
+    if severity:
+        filters.append(NotificationEvent.severity == severity)
+    if category:
+        filters.append(NotificationEvent.category == category)
+    if resource_id:
+        filters.append(NotificationEvent.resource_id == resource_id)
+    if date_from:
+        filters.append(NotificationEvent.occurred_at >= date_from)
+    if date_to:
+        filters.append(NotificationEvent.occurred_at <= date_to)
+    total = int(
+        await session.scalar(select(func.count()).select_from(NotificationEvent).where(*filters))
+        or 0
+    )
+    events = list(
+        await session.scalars(
+            select(NotificationEvent)
+            .where(*filters)
+            .order_by(NotificationEvent.occurred_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    )
+    actors = {item.actor_id for item in events if item.actor_id}
+    actor_names = (
+        {
+            item.id: item.display_name
+            for item in await session.scalars(select(User).where(User.id.in_(actors)))
+        }
+        if actors
+        else {}
+    )
+    return NotificationHistoryPage.model_validate(
+        {
+            "items": [
+                {
+                    "id": item.id,
+                    "notification_id": item.notification_id,
+                    "event_type": item.event_type,
+                    "occurred_at": item.occurred_at,
+                    "actor_name": actor_names.get(item.actor_id) if item.actor_id else None,
+                    "site_id": item.site_id,
+                    "category": item.category,
+                    "severity": item.severity,
+                    "resource_type": item.resource_type,
+                    "resource_id": item.resource_id,
+                    "details": item.details,
+                }
+                for item in events
+            ],
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+        }
+    )
 
 
 def _valid_notification_address(value: Any) -> bool:
@@ -2813,6 +3370,7 @@ async def test_notification_channel(
         alert_instance_id=None,
         channel_id=channel.id,
         attempted_at=datetime.now(UTC),
+        queued_at=datetime.now(UTC),
         status="queued",
         attempt_number=0,
         response_summary=None,
@@ -2854,9 +3412,14 @@ async def list_notification_attempts(
             "alert_instance_id": item.alert_instance_id,
             "channel_id": item.channel_id,
             "attempted_at": item.attempted_at,
+            "queued_at": item.queued_at,
+            "started_at": item.started_at,
+            "completed_at": item.completed_at,
             "status": item.status,
             "attempt_number": item.attempt_number,
             "response_summary": item.response_summary,
+            "safe_error_code": item.safe_error_code,
+            "safe_error_summary": item.safe_error_summary,
             "next_attempt_at": item.next_attempt_at,
             "is_test": item.is_test,
         }

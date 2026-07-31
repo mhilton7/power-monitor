@@ -1019,6 +1019,51 @@ tbody th { font-weight: 700; }
 .onboarding-content > :not(header):not(footer):not(.inline-notice) { flex: 1; margin-inline: 2.5rem; }
 .onboarding-content > footer { display: flex; justify-content: flex-end; gap: .7rem; padding: 1.25rem 2.5rem; border-top: 1px solid var(--line); }
 
-.alert-drawer { position: fixed; z-index: 90; inset: 0 0 0 auto; width: min(440px, 100%); border-left: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); padding: 1.3rem; overflow-y: auto; }
+.alert-drawer { position: fixed; z-index: 90; inset: 0 0 0 auto; width: min(580px, 100%); border-left: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); padding: 1.3rem; overflow-y: auto; }
 .alert-drawer header { display: flex; justify-content: space-between; align-items: center; }
-.alert-drawer-backdrop { position: fixed; z-index: 89; inset: 0; background: rgb(0 0 0 / 45%); }
+.alert-drawer-backdrop, .drawer-backdrop { position: fixed; z-index: 89; inset: 0; background: rgb(0 0 0 / 45%); border: 0; }
+.notification-center > header { position: sticky; z-index: 2; top: -1.3rem; margin: -1.3rem -1.3rem 0; padding: 1.3rem; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 96%, transparent); backdrop-filter: blur(12px); }
+.notification-center > header > div { display: flex; align-items: center; gap: .8rem; }
+.notification-center h2, .notification-center h3, .notification-center h4, .notification-center p { margin-top: 0; }
+.drawer-content { padding-top: 1rem; }
+.notification-section + .notification-section { margin-top: 1.3rem; }
+.notification-section > h3 { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; }
+.notification-section > h3 span { display: inline-grid; min-width: 1.6rem; min-height: 1.6rem; place-items: center; border-radius: 999px; background: var(--panel-2); color: var(--text); }
+.alert-list { display: grid; gap: .7rem; margin: 0; padding: 0; list-style: none; }
+.notification-row { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel-2); }
+.notification-row.severity-critical { border-color: color-mix(in srgb, var(--danger) 60%, var(--line)); }
+.notification-row.severity-error { border-color: color-mix(in srgb, var(--danger) 38%, var(--line)); }
+.notification-row.setup_recommendation { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.notification-summary { display: grid; width: 100%; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: .7rem; border: 0; padding: 1rem; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.notification-summary:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.notification-summary-copy { display: grid; min-width: 0; gap: .25rem; }
+.notification-summary-copy > span { overflow-wrap: anywhere; color: var(--muted); line-height: 1.45; }
+.notification-summary-copy small { color: var(--muted); }
+.severity { display: inline-flex; align-items: center; min-height: 1.55rem; padding: 0 .5rem; border: 1px solid var(--line); border-radius: 999px; font-size: .65rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.severity.critical, .severity.error { border-color: color-mix(in srgb, var(--danger) 60%, transparent); color: var(--danger); }
+.severity.warning { color: var(--warning); }
+.severity.info { color: var(--accent); }
+.observed-summary { color: var(--text) !important; font-weight: 700; }
+.notification-details { display: grid; gap: 1rem; border-top: 1px solid var(--line); padding: 1rem; }
+.notification-detail-section { display: grid; gap: .35rem; }
+.notification-detail-section h4 { font-size: .76rem; color: var(--accent); letter-spacing: .08em; text-transform: uppercase; }
+.notification-detail-section p, .notification-detail-section ol { margin-bottom: 0; color: var(--muted); line-height: 1.55; }
+.notification-facts, .notification-evidence { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--line); }
+.notification-facts > div, .notification-evidence > div { min-width: 0; padding: .7rem; background: var(--panel); }
+.notification-facts dt, .notification-evidence dt { color: var(--muted); font-size: .72rem; }
+.notification-facts dd, .notification-evidence dd { margin: .2rem 0 0; overflow-wrap: anywhere; font-weight: 700; }
+.notification-evidence dd.error { color: var(--danger); }
+.notification-evidence dd.warning { color: var(--warning); }
+.notification-actions { display: flex; flex-wrap: wrap; gap: .55rem; padding-top: .25rem; }
+.notification-details details { border-top: 1px solid var(--line); padding-top: .7rem; }
+.notification-details summary { cursor: pointer; color: var(--muted); }
+.optional-delivery-card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 1rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: var(--radius-md); background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.optional-delivery-card > svg { color: var(--accent); }
+.optional-delivery-card p { margin: .3rem 0 .8rem; color: var(--muted); }
+.notification-channel-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .8rem; padding: .9rem 0; border-bottom: 1px solid var(--line); }
+.notification-channel-row > span { display: grid; gap: .2rem; min-width: 0; }
+.notification-channel-row small { color: var(--muted); overflow-wrap: anywhere; }
+.notification-history-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; margin-bottom: 1rem; }
+.notification-history-filters label { min-width: 0; }
+.notification-rule-row span { display: grid; gap: .2rem; }
+.notification-rule-row span small + small { font-size: .72rem; color: color-mix(in srgb, var(--muted) 85%, transparent); }

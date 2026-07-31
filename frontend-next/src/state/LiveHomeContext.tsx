@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
 import {
-  adaptAlerts,
+  adaptNotificationPage,
   adaptBillingCycle,
   adaptConfigurationStatus,
   adaptCurrentRateAssignment,
@@ -101,7 +101,7 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
   })
   const alerts = useQuery({
     queryKey: ['alerts', boundary, 'active'],
-    queryFn: () => request('/api/v1/alerts?status=active', {}, adaptAlerts),
+    queryFn: () => request(`/api/v1/notifications?page_size=200&site_id=${encodeURIComponent(homeId ?? '')}`, {}, adaptNotificationPage),
     enabled: Boolean(homeId && canViewAlerts),
     refetchInterval: 30_000,
   })
@@ -154,7 +154,7 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
   const value: LiveHomeValue = {
     summary,
     sensors: sensors.data ?? [],
-    alerts: alerts.data ?? [],
+    alerts: alerts.data?.items ?? [],
     services: services.data ?? [],
     cycle: cycle.data,
     configuration: configuration.data,

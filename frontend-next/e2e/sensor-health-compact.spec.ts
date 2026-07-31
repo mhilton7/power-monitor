@@ -92,7 +92,7 @@ async function mockHome(
         has_cost_data: false,
         ...fleetOverrides,
       },
-      '/api/v1/alerts': [],
+      '/api/v1/notifications': { items: [], page: 1, page_size: 200, total: 0 },
       '/api/v1/test-mode': {
         enabled: false,
         remaining_seconds: 0,

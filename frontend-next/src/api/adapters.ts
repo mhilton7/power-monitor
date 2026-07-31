@@ -1,6 +1,8 @@
 import type {
   AdvancedHealthSummary,
   AlertSummary,
+  NotificationHistorySummary,
+  NotificationSuppressionSummary,
   BackupSummary,
   BillImportDetail,
   BillFieldEvidence,
@@ -372,15 +374,126 @@ export function adaptUsageAuthority(value: unknown): UsageAuthority {
 }
 
 export function adaptAlerts(value: unknown): AlertSummary[] {
-  return records(value, 'alerts').map((source) => ({
-    id: stringValue(source.id),
-    title: stringValue(source.title, stringValue(source.rule_name, 'Home alert')),
-    message: stringValue(source.message, stringValue(source.summary, 'Review this alert.')),
-    severity: stringValue(source.severity, 'info'),
-    status: stringValue(source.status, 'active'),
-    openedAt: optionalString(source.opened_at),
-    sensorId: optionalString(source.device_id),
-  }))
+  return records(value, 'alerts').map((source) => {
+    const resource = source.affected_resource ? record(source.affected_resource, 'notification resource') : undefined
+    const observed = source.observed ? record(source.observed, 'notification observed value') : undefined
+    const expected = source.expected ? record(source.expected, 'notification expected value') : undefined
+    const cause = source.cause ? record(source.cause, 'notification cause') : undefined
+    const remediation = record(source.remediation, 'notification remediation')
+    const action = remediation.action ? record(remediation.action, 'notification action') : undefined
+    const acknowledgement = source.acknowledgement ? record(source.acknowledgement, 'notification acknowledgement') : undefined
+    const silence = source.silence ? record(source.silence, 'notification silence') : undefined
+    const delivery = source.delivery ? record(source.delivery, 'notification delivery') : undefined
+    const suppression = record(source.suppression, 'notification suppression')
+    const kind = stringValue(source.kind)
+    const severity = stringValue(source.severity)
+    const state = stringValue(source.state)
+    const resourceType = resource ? stringValue(resource.type) : undefined
+    const allowedResourceTypes = ['sensor', 'home', 'server', 'backup', 'rate_source', 'notification_channel', 'firmware', 'billing', 'storage']
+    if (!['operational_alert', 'setup_recommendation', 'delivery_issue'].includes(kind)) throw new Error('Notification returned an unknown kind')
+    if (!['info', 'warning', 'error', 'critical'].includes(severity)) throw new Error('Notification returned an unknown severity')
+    if (!['open', 'acknowledged', 'silenced', 'resolved', 'dismissed', 'suppressed'].includes(state)) throw new Error('Notification returned an unknown state')
+    if (resourceType && !allowedResourceTypes.includes(resourceType)) throw new Error('Notification returned an unknown resource type')
+    const evidence = objectList(source.evidence).map((item) => {
+      const evidenceStatus = optionalString(item.status)
+      if (evidenceStatus && !['normal', 'warning', 'error'].includes(evidenceStatus)) throw new Error('Notification returned an unknown evidence status')
+      return { label: stringValue(item.label), value: stringValue(item.value), status: evidenceStatus as 'normal' | 'warning' | 'error' | undefined }
+    })
+    return {
+      id: stringValue(source.id),
+      code: stringValue(source.code),
+      kind: kind as AlertSummary['kind'],
+      category: stringValue(source.category),
+      title: stringValue(source.title, 'Power Monitor notification'),
+      message: stringValue(source.summary, 'Review this notification.'),
+      severity: severity as AlertSummary['severity'],
+      status: state as AlertSummary['status'],
+      openedAt: optionalString(source.first_seen_at),
+      lastSeenAt: optionalString(source.last_seen_at),
+      resolvedAt: optionalString(source.resolved_at),
+      sensorId: resourceType === 'sensor' ? optionalString(resource?.id) : undefined,
+      occurrenceCount: numberValue(source.occurrence_count, 1),
+      durationSeconds: typeof source.duration_seconds === 'number' ? source.duration_seconds : undefined,
+      affectedResource: resource ? { type: resourceType as NonNullable<AlertSummary['affectedResource']>['type'], id: optionalString(resource.id), name: stringValue(resource.name) } : undefined,
+      observed: observed ? { label: stringValue(observed.label), value: stringValue(observed.value), unit: optionalString(observed.unit), recordedAt: optionalString(observed.recorded_at) } : undefined,
+      expected: expected ? { label: stringValue(expected.label), operator: optionalString(expected.operator), value: stringValue(expected.value), unit: optionalString(expected.unit) } : undefined,
+      cause: cause ? { code: stringValue(cause.code), explanation: stringValue(cause.explanation) } : undefined,
+      evidence,
+      impact: stringValue(source.impact),
+      remediation: {
+        summary: stringValue(remediation.summary),
+        steps: stringList(remediation.steps),
+        automaticRecovery: optionalString(remediation.automatic_recovery),
+        action: action ? { label: stringValue(action.label), target: stringValue(action.target), requiredPermissions: stringList(action.required_permissions) } : undefined,
+      },
+      acknowledgement: acknowledgement ? { acknowledgedAt: stringValue(acknowledgement.acknowledged_at), acknowledgedBy: stringValue(acknowledgement.acknowledged_by), note: optionalString(acknowledgement.note) } : undefined,
+      silence: silence ? { silencedUntil: stringValue(silence.silenced_until), silencedBy: stringValue(silence.silenced_by), note: optionalString(silence.note) } : undefined,
+      delivery: delivery ? {
+        attempted: booleanValue(delivery.attempted),
+        channelName: optionalString(delivery.channel_name),
+        lastAttemptAt: optionalString(delivery.last_attempt_at),
+        lastOutcome: optionalString(delivery.last_outcome),
+        retryAt: optionalString(delivery.retry_at),
+        safeErrorCode: optionalString(delivery.safe_error_code),
+        safeErrorSummary: optionalString(delivery.safe_error_summary),
+      } : undefined,
+      suppression: {
+        dismissible: booleanValue(suppression.dismissible),
+        permanentlySuppressible: booleanValue(suppression.permanently_suppressible),
+        suppressionKey: optionalString(suppression.suppression_key),
+        currentlySuppressed: booleanValue(suppression.currently_suppressed),
+        allowedScopes: stringList(suppression.allowed_scopes).filter((scope): scope is 'user' | 'home' => scope === 'user' || scope === 'home'),
+      },
+    }
+  })
+}
+
+export function adaptNotificationPage(value: unknown): { items: AlertSummary[]; total: number } {
+  const source = record(value, 'notification page')
+  return {
+    items: adaptAlerts(source.items),
+    total: numberValue(source.total),
+  }
+}
+
+export function adaptNotificationSuppressions(value: unknown): NotificationSuppressionSummary[] {
+  return records(value, 'notification suppressions').map((source) => {
+    const scopeType = stringValue(source.scope_type)
+    if (!['user', 'home'].includes(scopeType)) throw new Error('Notification suppression returned an unknown scope')
+    return {
+      id: stringValue(source.id),
+      suppressionKey: stringValue(source.suppression_key),
+      category: stringValue(source.category),
+      scopeType: scopeType as 'user' | 'home',
+      scopeName: stringValue(source.scope_name),
+      createdBy: stringValue(source.created_by),
+      createdAt: stringValue(source.created_at),
+      reason: optionalString(source.reason),
+      sourceNotificationId: stringValue(source.source_notification_id),
+      active: booleanValue(source.active),
+      restoredBy: optionalString(source.restored_by),
+      restoredAt: optionalString(source.restored_at),
+      revision: numberValue(source.revision, 1),
+    }
+  })
+}
+
+export function adaptNotificationHistory(value: unknown): { items: NotificationHistorySummary[]; total: number } {
+  const source = record(value, 'notification history')
+  return {
+    total: numberValue(source.total),
+    items: objectList(source.items).map((item) => ({
+      id: stringValue(item.id),
+      notificationId: stringValue(item.notification_id),
+      eventType: stringValue(item.event_type),
+      occurredAt: stringValue(item.occurred_at),
+      actorName: optionalString(item.actor_name),
+      category: stringValue(item.category),
+      severity: stringValue(item.severity),
+      resourceType: optionalString(item.resource_type),
+      resourceId: optionalString(item.resource_id),
+    })),
+  }
 }
 
 export function adaptElectricServices(value: unknown): ElectricService[] {

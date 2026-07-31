@@ -136,12 +136,81 @@ export interface UsageAuthority {
 
 export interface AlertSummary {
   id: string
+  code: string
+  kind: 'operational_alert' | 'setup_recommendation' | 'delivery_issue'
+  category: string
   title: string
   message: string
-  severity: string
-  status: string
+  severity: 'info' | 'warning' | 'error' | 'critical'
+  status: 'open' | 'acknowledged' | 'silenced' | 'resolved' | 'dismissed' | 'suppressed'
   openedAt?: string
+  lastSeenAt?: string
+  resolvedAt?: string
   sensorId?: string
+  occurrenceCount: number
+  durationSeconds?: number
+  affectedResource?: {
+    type: 'sensor' | 'home' | 'server' | 'backup' | 'rate_source' | 'notification_channel' | 'firmware' | 'billing' | 'storage'
+    id?: string
+    name: string
+  }
+  observed?: { label: string; value: string; unit?: string; recordedAt?: string }
+  expected?: { label: string; operator?: string; value: string; unit?: string }
+  cause?: { code: string; explanation: string }
+  evidence: Array<{ label: string; value: string; status?: 'normal' | 'warning' | 'error' }>
+  impact: string
+  remediation: {
+    summary: string
+    steps: string[]
+    automaticRecovery?: string
+    action?: { label: string; target: string; requiredPermissions: string[] }
+  }
+  acknowledgement?: { acknowledgedAt: string; acknowledgedBy: string; note?: string }
+  silence?: { silencedUntil: string; silencedBy: string; note?: string }
+  delivery?: {
+    attempted: boolean
+    channelName?: string
+    lastAttemptAt?: string
+    lastOutcome?: string
+    retryAt?: string
+    safeErrorCode?: string
+    safeErrorSummary?: string
+  }
+  suppression: {
+    dismissible: boolean
+    permanentlySuppressible: boolean
+    suppressionKey?: string
+    currentlySuppressed: boolean
+    allowedScopes: Array<'user' | 'home'>
+  }
+}
+
+export interface NotificationSuppressionSummary {
+  id: string
+  suppressionKey: string
+  category: string
+  scopeType: 'user' | 'home'
+  scopeName: string
+  createdBy: string
+  createdAt: string
+  reason?: string
+  sourceNotificationId: string
+  active: boolean
+  restoredBy?: string
+  restoredAt?: string
+  revision: number
+}
+
+export interface NotificationHistorySummary {
+  id: string
+  notificationId: string
+  eventType: string
+  occurredAt: string
+  actorName?: string
+  category: string
+  severity: string
+  resourceType?: string
+  resourceId?: string
 }
 
 export interface ElectricService {

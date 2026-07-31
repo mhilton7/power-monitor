@@ -113,7 +113,7 @@ function payload(path: string): unknown {
       assignment: null,
     }
   }
-  if (path.startsWith('/api/v1/alerts?')) return []
+  if (path.startsWith('/api/v1/notifications?')) return { items: [], page: 1, page_size: 200, total: 0 }
   throw new Error(`Unexpected request: ${path}`)
 }
 

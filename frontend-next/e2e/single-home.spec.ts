@@ -80,7 +80,7 @@ async function mockServer(page: Page) {
         has_energy_data: false,
         has_cost_data: false,
       },
-      '/api/v1/alerts': [],
+      '/api/v1/notifications': { items: [], page: 1, page_size: 200, total: 0 },
       '/api/v1/admin/utility-bill-imports': [],
       '/api/v1/rates/plans': [],
       '/api/v1/admin/users': { users: [] },
@@ -106,6 +106,9 @@ async function mockServer(page: Page) {
         }],
       },
       '/api/v1/notification-channels': [],
+      '/api/v1/notification-attempts': [],
+      '/api/v1/notification-suppressions': [],
+      '/api/v1/notification-history': { items: [], total: 0, page: 1, page_size: 25 },
       '/api/v1/backups': [],
       '/api/v1/exports': [],
       '/api/v1/system/health': {
