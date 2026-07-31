@@ -176,6 +176,27 @@ test.beforeEach(async ({ page }, testInfo) => {
   }, testInfo.project.name.includes('light'))
 })
 
+test('authenticated shell top bar is flush with the viewport', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'One Chromium desktop geometry check covers the shared shell primitive.')
+  await page.goto('/home')
+  await expect(page.locator('.top-bar')).toBeVisible()
+
+  const geometry = await page.evaluate(() => {
+    const topBar = document.querySelector<HTMLElement>('.top-bar')
+    const root = document.querySelector<HTMLElement>('#root')
+    const skipLink = document.querySelector<HTMLElement>('.skip-link')
+    return {
+      topBarTop: topBar?.getBoundingClientRect().top,
+      rootTop: root?.getBoundingClientRect().top,
+      skipLinkPosition: skipLink ? getComputedStyle(skipLink).position : undefined,
+    }
+  })
+
+  expect(geometry.topBarTop).toBe(0)
+  expect(geometry.rootTop).toBe(0)
+  expect(geometry.skipLinkPosition).toBe('fixed')
+})
+
 test('normal production routes use only the four-workspace shell', async ({ page }, testInfo) => {
   await page.goto('/home')
   const compactNavigation = testInfo.project.name === 'mobile' || testInfo.project.name === 'tablet'

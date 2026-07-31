@@ -332,7 +332,7 @@ async def test_acknowledge_and_silence_preserve_active_condition(
 
 
 @pytest.mark.asyncio
-async def test_remove_hides_one_users_notification_until_the_condition_updates(
+async def test_remove_hides_one_users_notification_until_the_condition_reopens(
     api_client: Any,
     session_factory_fixture: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -397,5 +397,53 @@ async def test_remove_hides_one_users_notification_until_the_condition_updates(
         stored.last_seen_at = datetime.now(UTC) + timedelta(seconds=1)
         await session.commit()
 
+    still_removed = (await client.get(f"/api/v1/notifications?site_id={site_id}")).json()["items"]
+    assert all(entry["id"] != alert_id for entry in still_removed)
+
+    async with session_factory_fixture() as session:
+        session.add(
+            NotificationEvent(
+                notification_id=alert_id,
+                event_type="reopened",
+                occurred_at=datetime.now(UTC) + timedelta(seconds=2),
+                actor_id=None,
+                site_id=site_id,
+                category="connectivity",
+                severity="warning",
+                resource_type="home",
+                resource_id=site_id,
+                details={},
+            )
+        )
+        await session.commit()
+
     returned = (await client.get(f"/api/v1/notifications?site_id={site_id}")).json()["items"]
     assert any(entry["id"] == alert_id for entry in returned)
+
+
+@pytest.mark.asyncio
+async def test_remove_setup_recommendation_stays_removed_across_refreshes(
+    api_client: Any,
+) -> None:
+    client: httpx.AsyncClient = api_client
+    await client.post(
+        "/api/v1/auth/bootstrap",
+        json={
+            "bootstrap_secret": "test-bootstrap-secret-with-at-least-16",
+            "email": "remove-recommendation@example.com",
+            "display_name": "Notification Owner",
+            "password": "Long-Production-Password-42!",
+        },
+    )
+    before = (await client.get("/api/v1/notifications")).json()["items"]
+    recommendation = next(item for item in before if item["kind"] == "setup_recommendation")
+
+    removed = await client.post(
+        f"/api/v1/notifications/{recommendation['id']}/dismiss",
+        headers=csrf(client),
+    )
+    assert removed.status_code == 201, removed.text
+
+    for _ in range(2):
+        refreshed = (await client.get("/api/v1/notifications")).json()["items"]
+        assert all(item["id"] != recommendation["id"] for item in refreshed)

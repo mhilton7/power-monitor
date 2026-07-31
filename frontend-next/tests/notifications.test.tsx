@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -78,6 +78,24 @@ function renderDrawer(alerts = [heartbeat, recommendation]) {
   )
 }
 
+function QueryBackedDrawer({ alerts }: { alerts: AlertSummary[] }) {
+  const query = useQuery({
+    queryKey: ['alerts', 'owner', 'active'],
+    queryFn: () => Promise.resolve({ items: alerts, total: alerts.length }),
+    initialData: { items: alerts, total: alerts.length },
+    enabled: false,
+  })
+  return <AlertDrawer open alerts={query.data.items} onClose={vi.fn()} />
+}
+
+function renderQueryBackedDrawer(alerts = [heartbeat]) {
+  return render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
+      <QueryBackedDrawer alerts={alerts} />
+    </QueryClientProvider>,
+  )
+}
+
 describe('detailed notification center', () => {
   beforeEach(() => {
     permissions = ['alerts.view', 'alerts.acknowledge', 'alerts.manage_delivery', 'devices.view']
@@ -120,6 +138,19 @@ describe('detailed notification center', () => {
     await user.click(screen.getByRole('button', { name: /Indoor-AC stopped reporting/ }))
     expect(screen.queryByRole('button', { name: /Acknowledge/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Silence/ })).not.toBeInTheDocument()
+  })
+
+  it('shows acknowledgement immediately while the server request is pending', async () => {
+    requestMock.mockImplementationOnce(() => new Promise(() => undefined))
+    const user = userEvent.setup()
+    renderQueryBackedDrawer()
+    await user.click(screen.getByRole('button', { name: /Indoor-AC stopped reporting/ }))
+    await user.click(screen.getByRole('button', { name: 'Acknowledge' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/Indoor-AC · Acknowledged/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Acknowledge' })).not.toBeInTheDocument()
+    })
   })
 
   it('requires confirmation before removing a notification while preserving monitoring', async () => {

@@ -22,6 +22,7 @@ import { EmptyState, ErrorState, LoadingState } from '../../components/feedback/
 import { Page, PageHeader, StatGrid } from '../../components/layout/Layout'
 import { historyPayload } from '../../features/history/historyQuery'
 import { ConfigurationStatusChip } from '../../features/configuration/ConfigurationStatusSurface'
+import { isCurrentAttentionNotification } from '../../features/alerts/notificationSelectors'
 import { SensorHealthEntry } from '../../features/sensors/SensorHealthEntry'
 import { useAppearance } from '../../state/AppearanceContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
@@ -50,6 +51,7 @@ export function HomePage() {
   const canManageBills = hasPermission(session, 'utility_bills.manage')
   const testMode = useTestMode()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
+  const attentionAlerts = alerts.filter(isCurrentAttentionNotification)
   const dailyHistory = useQuery({
     queryKey: ['history', 'home-daily', home?.id],
     queryFn: () => {
@@ -205,10 +207,10 @@ export function HomePage() {
         )}
       </Surface>}
 
-      {alerts.length > 0 && (
+      {attentionAlerts.length > 0 && (
         <Surface title="Needs attention" subtitle="Active household alerts">
           <ul className="actionable-alerts">
-            {alerts.slice(0, 4).map((alert) => (
+            {attentionAlerts.slice(0, 4).map((alert) => (
               <li key={alert.id}><AlertTriangle /><div><strong>{alert.title}</strong><span>{alert.message}</span></div></li>
             ))}
           </ul>

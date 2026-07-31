@@ -8,6 +8,7 @@ import { EmptyState } from '../../components/feedback/States'
 import { useAuth } from '../../state/AuthContext'
 import type { AlertSummary } from '../../types/models'
 import { dateTime, relativeTime, statusLabel } from '../../utils/format'
+import { groupNotifications, updateCachedNotification, type NotificationPageCache } from './notificationSelectors'
 
 export function AlertDrawer({ open, alerts, onClose }: { open: boolean; alerts: AlertSummary[]; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -27,11 +28,7 @@ export function AlertDrawer({ open, alerts, onClose }: { open: boolean; alerts: 
     return () => { document.removeEventListener('keydown', onKeyDown) }
   }, [onClose, open])
 
-  const groups = useMemo(() => ({
-    active: alerts.filter((item) => item.kind !== 'setup_recommendation' && item.status !== 'resolved'),
-    recommendations: alerts.filter((item) => item.kind === 'setup_recommendation' && item.status !== 'suppressed'),
-    resolved: alerts.filter((item) => item.status === 'resolved').slice(0, 10),
-  }), [alerts])
+  const groups = useMemo(() => groupNotifications(alerts), [alerts])
 
   if (!open) return null
   return (
@@ -86,7 +83,26 @@ function NotificationRow({ item, open, onToggle, canAcknowledge, canManageDelive
 }) {
   const client = useQueryClient()
   const navigate = useNavigate()
-  const acknowledge = useMutation({ mutationFn: () => request(`/api/v1/notifications/${encodeURIComponent(item.id)}/acknowledge`, { method: 'POST', body: JSON.stringify({ note: 'Acknowledged from notification center' }) }), onSuccess: async () => client.invalidateQueries({ queryKey: ['alerts'] }) })
+  const acknowledge = useMutation({
+    mutationFn: () => request(`/api/v1/notifications/${encodeURIComponent(item.id)}/acknowledge`, { method: 'POST', body: JSON.stringify({ note: 'Acknowledged from notification center' }) }),
+    onMutate: async () => {
+      await client.cancelQueries({ queryKey: ['alerts'] })
+      const previous = client.getQueriesData<NotificationPageCache>({ queryKey: ['alerts'] })
+      client.setQueriesData<NotificationPageCache>({ queryKey: ['alerts'] }, (current) => (
+        updateCachedNotification(current, item.id, (notification) => ({
+          ...notification,
+          status: 'acknowledged',
+        }))
+      ))
+      return { previous }
+    },
+    onError: (_error, _variables, context) => {
+      context?.previous.forEach(([queryKey, value]) => {
+        client.setQueryData(queryKey, value)
+      })
+    },
+    onSettled: async () => client.invalidateQueries({ queryKey: ['alerts'] }),
+  })
   const endSilence = useMutation({ mutationFn: () => request(`/api/v1/notifications/${encodeURIComponent(item.id)}/silence`, { method: 'DELETE' }), onSuccess: async () => client.invalidateQueries({ queryKey: ['alerts'] }) })
   const observed = item.observed ? `${item.observed.value}${item.observed.unit ? ` ${item.observed.unit}` : ''}` : undefined
   const expected = item.expected ? `${item.expected.operator ? `${item.expected.operator} ` : ''}${item.expected.value}${item.expected.unit ? ` ${item.expected.unit}` : ''}` : undefined
@@ -154,6 +170,11 @@ function RemoveNotificationDialog({ notification, onClose }: { notification: Ale
   const remove = useMutation({
     mutationFn: () => request(`/api/v1/notifications/${encodeURIComponent(notification.id)}/dismiss`, { method: 'POST' }),
     onSuccess: async () => {
+      client.setQueriesData<{ items: AlertSummary[]; total: number }>({ queryKey: ['alerts'] }, (current) => {
+        if (!current) return current
+        const items = current.items.filter((item) => item.id !== notification.id)
+        return { ...current, items, total: Math.max(0, current.total - (current.items.length - items.length)) }
+      })
       await client.invalidateQueries({ queryKey: ['alerts'] })
       onClose()
     },

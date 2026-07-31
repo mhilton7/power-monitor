@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -581,20 +581,6 @@ async def load_notification_views(
     if not include_resolved:
         alert_query = alert_query.where(AlertInstance.status != "resolved")
     alerts = list(await session.scalars(alert_query))
-    dismissed_events = list(
-        await session.scalars(
-            select(NotificationEvent)
-            .where(
-                NotificationEvent.actor_id == user_id,
-                NotificationEvent.event_type == "dismissed",
-            )
-            .order_by(NotificationEvent.occurred_at.desc())
-            .limit(2000)
-        )
-    )
-    dismissed_at: dict[str, datetime] = {}
-    for event in dismissed_events:
-        dismissed_at.setdefault(event.notification_id, _aware(event.occurred_at))
     rule_ids = {item.rule_id for item in alerts}
     device_ids = {item.device_id for item in alerts if item.device_id}
     site_id_values = {item.site_id for item in alerts if item.site_id}
@@ -957,12 +943,45 @@ async def load_notification_views(
                         )
                     )
 
-    if not include_dismissed:
+    if not include_dismissed and output:
+        notification_ids = {item.id for item in output}
+        lifecycle_events = (
+            await session.execute(
+                select(
+                    NotificationEvent.notification_id,
+                    NotificationEvent.event_type,
+                    func.max(NotificationEvent.occurred_at),
+                )
+                .where(
+                    NotificationEvent.notification_id.in_(notification_ids),
+                    or_(
+                        and_(
+                            NotificationEvent.actor_id == user_id,
+                            NotificationEvent.event_type == "dismissed",
+                        ),
+                        NotificationEvent.event_type.in_(("opened", "reopened")),
+                    ),
+                )
+                .group_by(NotificationEvent.notification_id, NotificationEvent.event_type)
+            )
+        ).all()
+        dismissed_at: dict[str, datetime] = {}
+        occurrence_started_at: dict[str, datetime] = {
+            item.id: _aware(item.first_seen_at) for item in output
+        }
+        for notification_id, event_type, latest_occurred_at in lifecycle_events:
+            occurred_at = _aware(latest_occurred_at)
+            if event_type == "dismissed":
+                dismissed_at[notification_id] = occurred_at
+            elif event_type in {"opened", "reopened"}:
+                current = occurrence_started_at.get(notification_id)
+                if current is None or occurred_at > current:
+                    occurrence_started_at[notification_id] = occurred_at
         output = [
             item
             for item in output
             if dismissed_at.get(item.id) is None
-            or dismissed_at[item.id] < _aware(item.last_seen_at)
+            or dismissed_at[item.id] < occurrence_started_at[item.id]
         ]
 
     severity_order = {"critical": 4, "error": 3, "warning": 2, "info": 1}

@@ -2945,13 +2945,27 @@ async def dismiss_notification(
     )
     _permission(principal, required_permission)
     now = datetime.now(UTC)
+    latest_reactivation = await session.scalar(
+        select(NotificationEvent.occurred_at)
+        .where(
+            NotificationEvent.notification_id == notification_id,
+            NotificationEvent.event_type.in_(("opened", "reopened")),
+        )
+        .order_by(NotificationEvent.occurred_at.desc())
+        .limit(1)
+    )
+    occurrence_started_at = selected.first_seen_at
+    if latest_reactivation and latest_reactivation.tzinfo is None:
+        latest_reactivation = latest_reactivation.replace(tzinfo=UTC)
+    if latest_reactivation and latest_reactivation > occurrence_started_at:
+        occurrence_started_at = latest_reactivation
     existing = await session.scalar(
         select(NotificationEvent)
         .where(
             NotificationEvent.notification_id == notification_id,
             NotificationEvent.event_type == "dismissed",
             NotificationEvent.actor_id == principal.user.id,
-            NotificationEvent.occurred_at >= selected.last_seen_at,
+            NotificationEvent.occurred_at >= occurrence_started_at,
         )
         .order_by(NotificationEvent.occurred_at.desc())
         .limit(1)
@@ -2973,6 +2987,7 @@ async def dismiss_notification(
         details={
             "reason": "Removed from the notification center",
             "last_seen_at": selected.last_seen_at.isoformat(),
+            "occurrence_started_at": occurrence_started_at.isoformat(),
             "monitoring_preserved": True,
         },
     )

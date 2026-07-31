@@ -23,9 +23,10 @@ resolve action.
 
 Any dismissible notification can also be removed from one user's notification
 center. Removal appends a `dismissed` event and preserves the alert, monitoring,
-delivery evidence, and audit history. It is not a technical-health resolve. If
-the authoritative condition is observed again after removal, the updated
-notification returns automatically.
+delivery evidence, and audit history. It is not a technical-health resolve.
+Routine evaluations of the same continuous occurrence do not make the item
+reappear. If the condition resolves and later reopens, the new occurrence
+returns automatically.
 
 ## Detailed contract
 
