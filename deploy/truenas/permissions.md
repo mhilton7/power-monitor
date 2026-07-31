@@ -14,8 +14,8 @@ also enforced by `tools/validate-truenas-compose.py`.
 ## Configure ACLs in the TrueNAS web interface
 
 Perform these steps before installing the App, while every dataset is empty.
-All datasets in the matrix below are children of
-`/mnt/Apps/Power/power-monitor/`.
+The `postgres` dataset is `/mnt/Apps/Power/postgres`; all other datasets in the
+matrix below are children of `/mnt/Apps/Power/power-monitor/`.
 
 1. Open **Datasets**, select the child dataset, and choose **Permissions > Edit ACL**.
 2. Use an NFSv4 ACL. Remove broad `Everyone@` write access. Keep the mandatory
@@ -58,7 +58,7 @@ not selected. Empty `tls.crt` and `tls.key` placeholders are expected for
 internal-CA and public-ACME modes.
 
 If PostgreSQL reports `Permission denied`, stop the App in **Apps**, correct UID
-999 on the empty/new dataset, and restart it from the UI. PostgreSQL must be
+999 on `/mnt/Apps/Power/postgres`, and restart it from the UI. PostgreSQL must be
 able to apply its owner-only mode bits, so use a POSIX owner/group of `999:999`
 for the `postgres` child dataset rather than an NFSv4 ACL that blocks `chmod`.
 Do not make a database dataset world-writable.

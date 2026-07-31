@@ -64,7 +64,9 @@ IMAGE_PATTERN = re.compile(
 OFFICIAL_IMAGE_PATTERN = re.compile(
     r"^[a-z0-9._/-]+:(?!latest(?:@|$))[^@]+@sha256:([0-9a-f]{64})$"
 )
-DATASET_PATTERN = re.compile(r"^/mnt/([^/]+)/Power/power-monitor/([^:]+)")
+DATASET_PATTERN = re.compile(
+    r"^/mnt/([^/]+)/Power/(?:power-monitor/([^:]+)|(postgres))$"
+)
 SENSITIVE_ENVIRONMENT = re.compile(
     r"(?:PASSWORD|SECRET|PEPPER|MASTER_KEY|SETUP_TOKEN)$"
 )
@@ -270,9 +272,18 @@ def validate_compose(
                         f"{service_name}: invalid TrueNAS dataset path {source}"
                     )
                     continue
-                pool, suffix = match.groups()
+                pool, application_suffix, postgres_suffix = match.groups()
+                suffix = application_suffix or postgres_suffix
+                assert suffix is not None
                 discovered_pools.add(pool)
                 discovered_suffixes.add(suffix.split("/", 1)[0])
+                if service_name == "postgres" and "/var/lib/postgresql/data" in volume:
+                    expected_postgres_source = f"/mnt/{pool}/Power/postgres"
+                    if source != expected_postgres_source:
+                        errors.append(
+                            "postgres: data volume must use the dedicated "
+                            f"{expected_postgres_source} dataset"
+                        )
                 if deployment and pool == "POOL":
                     errors.append(f"{service_name}: POOL placeholder is unresolved")
                 if expected_pool is not None and pool != expected_pool:

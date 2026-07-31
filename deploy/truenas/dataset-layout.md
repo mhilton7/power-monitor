@@ -1,15 +1,17 @@
 # TrueNAS dataset layout
 
-This deployment uses the existing TrueNAS pool named `Apps`, with every bind
-mount rooted at `/mnt/Apps/Power/power-monitor/`. The checked-in Compose template
-keeps `POOL` as a fail-closed placeholder; render it with `--pool Apps` instead
-of editing individual paths.
+This deployment uses the existing TrueNAS pool named `Apps`. Application bind
+mounts are rooted at `/mnt/Apps/Power/power-monitor/`, while PostgreSQL uses the
+dedicated existing dataset `/mnt/Apps/Power/postgres`. The checked-in Compose
+template keeps `POOL` as a fail-closed placeholder; render it with `--pool Apps`
+instead of editing individual paths.
 
-Create a parent dataset and nine child datasets in **Datasets > Add Dataset**:
+Create `Power/power-monitor`, its application child datasets, and the dedicated
+`Power/postgres` sibling dataset in **Datasets > Add Dataset**:
 
 | Dataset | Absolute host path | Container use | Snapshot policy |
 |---|---|---|---|
-| `Power/power-monitor/postgres` | `/mnt/Apps/Power/power-monitor/postgres` | PostgreSQL data | frequent, application-consistent snapshot before upgrades |
+| `Power/postgres` | `/mnt/Apps/Power/postgres` | PostgreSQL data | frequent, application-consistent snapshot before upgrades |
 | `Power/power-monitor/backups` | `/mnt/Apps/Power/power-monitor/backups` | encrypted logical backups and checksums | daily; replicate off-system |
 | `Power/power-monitor/firmware` | `/mnt/Apps/Power/power-monitor/firmware` | uploaded firmware artifacts | daily or on change |
 | `Power/power-monitor/logs` | `/mnt/Apps/Power/power-monitor/logs` | daily structured application and backup logs | daily; retain at least the application-managed 90-day window |

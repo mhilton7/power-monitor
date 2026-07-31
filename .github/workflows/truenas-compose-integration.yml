@@ -43,15 +43,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes acl
-          sudo mkdir -p /mnt/pmci/Power/power-monitor/{postgres,backups,firmware,logs,config/reports,secrets,caddy-data,caddy-config}
+          sudo mkdir -p /mnt/pmci/Power/postgres /mnt/pmci/Power/power-monitor/{backups,firmware,logs,config/reports,secrets,caddy-data,caddy-config}
           python tools/generate-secrets.py --output /tmp/power-monitor-secrets
           sudo cp /tmp/power-monitor-secrets/* /mnt/pmci/Power/power-monitor/secrets/
           sudo cp deploy/truenas/Caddyfile /mnt/pmci/Power/power-monitor/config/Caddyfile
-          sudo chown -R 999:999 /mnt/pmci/Power/power-monitor/postgres
+          sudo chown -R 999:999 /mnt/pmci/Power/postgres
           sudo chown -R 10003:10003 /mnt/pmci/Power/power-monitor/backups
           sudo chown -R 10001:10001 /mnt/pmci/Power/power-monitor/firmware /mnt/pmci/Power/power-monitor/config /mnt/pmci/Power/power-monitor/logs
           sudo chown -R 10002:10002 /mnt/pmci/Power/power-monitor/caddy-data /mnt/pmci/Power/power-monitor/caddy-config
-          sudo chmod 0750 /mnt/pmci/Power/power-monitor/{postgres,backups,firmware,logs,config,secrets,caddy-data,caddy-config}
+          sudo chmod 0750 /mnt/pmci/Power/postgres /mnt/pmci/Power/power-monitor/{backups,firmware,logs,config,secrets,caddy-data,caddy-config}
           sudo setfacl -m u:10001:rX,u:10002:rX,u:10003:rX /mnt/pmci/Power/power-monitor/secrets
           sudo setfacl -m u:999:r /mnt/pmci/Power/power-monitor/secrets/postgres_password
           sudo setfacl -m u:10003:r /mnt/pmci/Power/power-monitor/secrets/postgres_password /mnt/pmci/Power/power-monitor/secrets/backup_encryption_key

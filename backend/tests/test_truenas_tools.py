@@ -98,13 +98,21 @@ def test_renderer_creates_a_deployment_valid_document() -> None:
     )
 
     expected_root = "/mnt/Apps/Power/power-monitor/"
-    host_paths = [
+    volume_paths = [
         volume.split(":", 1)[0]
         for service in rendered["services"].values()
         for volume in service.get("volumes", [])
-    ] + [secret["file"] for secret in rendered["secrets"].values()]
+    ]
+    secret_paths = [secret["file"] for secret in rendered["secrets"].values()]
+    host_paths = volume_paths + secret_paths
     assert host_paths
-    assert all(path.startswith(expected_root) for path in host_paths)
+    assert all(
+        path.startswith(expected_root) or path == "/mnt/Apps/Power/postgres" for path in host_paths
+    )
+    assert rendered["services"]["postgres"]["volumes"] == [
+        "/mnt/Apps/Power/postgres:/var/lib/postgresql/data"
+    ]
+    assert all(path.startswith(expected_root) for path in secret_paths)
     assert rendered["services"]["api"]["environment"]["POWER_MONITOR_VERSION"] == "1.0.0"
     assert rendered["services"]["worker"]["environment"]["POWER_MONITOR_VERSION"] == "1.0.0"
 

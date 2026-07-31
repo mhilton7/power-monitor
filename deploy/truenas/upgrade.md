@@ -10,6 +10,9 @@ the registry, use `latest`, or deploy a tag without its content digest.
    `/mnt/Apps/Power/power-monitor/rate-source-artifacts` before editing the App. In **Permissions >
    Edit ACL**, add inherited numeric user ACEs for UID 10001 and UID 10003 with
    Modify, traverse, and inherit access. Do not grant `Everyone@` write access.
+   Confirm the existing PostgreSQL dataset remains `/mnt/Apps/Power/postgres`
+   with owner/group `999:999`; do not create a second empty database under the
+   application dataset root.
 2. In **Apps > Installed > power-monitor**, record the current complete image
    references and save a protected copy of the current YAML.
 3. Trigger and verify a fresh logical backup without using the TrueNAS shell:

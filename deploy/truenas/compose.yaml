@@ -61,7 +61,7 @@ services:
       POSTGRES_INITDB_ARGS: --data-checksums
     secrets: [postgres_password]
     volumes:
-      - /mnt/POOL/Power/power-monitor/postgres:/var/lib/postgresql/data
+      - /mnt/POOL/Power/postgres:/var/lib/postgresql/data
     tmpfs:
       - /tmp:size=64m,uid=999,gid=999,mode=1777
       - /var/run/postgresql:size=16m,uid=999,gid=999,mode=0775

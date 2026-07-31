@@ -15,6 +15,7 @@ import yaml
 
 POOL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 DATASET_RELATIVE_ROOT = "Power/power-monitor"
+POSTGRES_RELATIVE_ROOT = "Power/postgres"
 
 
 def _image_tag(image: str) -> str:
@@ -62,9 +63,13 @@ def render(
         services[service_name]["environment"]["POWER_MONITOR_VERSION"] = release_version
     template_root = f"/mnt/POOL/{DATASET_RELATIVE_ROOT}/"
     deployment_root = f"/mnt/{pool}/{DATASET_RELATIVE_ROOT}/"
+    template_postgres_root = f"/mnt/POOL/{POSTGRES_RELATIVE_ROOT}"
+    deployment_postgres_root = f"/mnt/{pool}/{POSTGRES_RELATIVE_ROOT}"
     for service in services.values():
         service["volumes"] = [
-            volume.replace(template_root, deployment_root)
+            volume.replace(template_postgres_root, deployment_postgres_root).replace(
+                template_root, deployment_root
+            )
             for volume in service.get("volumes", [])
         ]
     for definition in template["secrets"].values():
