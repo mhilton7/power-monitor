@@ -1029,8 +1029,10 @@ tbody th { font-weight: 700; }
 .notification-center h2, .notification-center h3, .notification-center h4, .notification-center p { margin-top: 0; }
 .drawer-content { padding-top: 1rem; }
 .notification-section + .notification-section { margin-top: 1.3rem; }
-.notification-section > h3 { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; }
-.notification-section > h3 span { display: inline-grid; min-width: 1.6rem; min-height: 1.6rem; place-items: center; border-radius: 999px; background: var(--panel-2); color: var(--text); }
+.notification-section-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .75rem; }
+.notification-section-heading > h3 { display: flex; min-width: 0; flex: 1; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: 0; color: var(--muted); font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; }
+.notification-section-heading > h3 span { display: inline-grid; min-width: 1.6rem; min-height: 1.6rem; place-items: center; border-radius: 999px; background: var(--panel-2); color: var(--text); }
+.notification-section-heading .button { flex: none; }
 .alert-list { display: grid; gap: .7rem; margin: 0; padding: 0; list-style: none; }
 .notification-row { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel-2); }
 .notification-row.severity-critical { border-color: color-mix(in srgb, var(--danger) 60%, var(--line)); }

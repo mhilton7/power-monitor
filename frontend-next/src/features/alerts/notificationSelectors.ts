@@ -39,12 +39,14 @@ export function isCurrentAttentionNotification(notification: AlertSummary): bool
 }
 
 export function groupNotifications(notifications: AlertSummary[]) {
+  const resolvedAll = notifications.filter((notification) => notification.status === 'resolved')
   return {
     active: notifications.filter(isCurrentAttentionNotification),
     recommendations: notifications.filter(
       (notification) => notification.kind === 'setup_recommendation'
         && !terminalStates.has(notification.status),
     ),
-    resolved: notifications.filter((notification) => notification.status === 'resolved').slice(0, 10),
+    resolved: resolvedAll.slice(0, 10),
+    resolvedAll,
   }
 }

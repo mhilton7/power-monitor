@@ -82,6 +82,21 @@ describe('notification selectors', () => {
     ])
     expect(grouped.recommendations.map((item) => item.id)).toEqual(['recommendation'])
     expect(grouped.resolved.map((item) => item.id)).toEqual(['resolved'])
+    expect(grouped.resolvedAll.map((item) => item.id)).toEqual(['resolved'])
     expect(grouped.active.every(isCurrentAttentionNotification)).toBe(true)
+  })
+
+  it('limits the resolved preview without losing notifications selected by clear all', () => {
+    const resolved = Array.from({ length: 12 }, (_, index) => ({
+      ...base,
+      id: `resolved-${index + 1}`,
+      status: 'resolved' as const,
+    }))
+
+    const grouped = groupNotifications(resolved)
+
+    expect(grouped.resolved).toHaveLength(10)
+    expect(grouped.resolvedAll).toHaveLength(12)
+    expect(grouped.resolvedAll.at(-1)?.id).toBe('resolved-12')
   })
 })

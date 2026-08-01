@@ -19,6 +19,7 @@ export function AlertDrawer({ open, alerts, onClose }: { open: boolean; alerts: 
   const [silencing, setSilencing] = useState<AlertSummary>()
   const [suppressing, setSuppressing] = useState<AlertSummary>()
   const [removing, setRemoving] = useState<AlertSummary>()
+  const [clearingResolved, setClearingResolved] = useState<AlertSummary[]>()
 
   useEffect(() => {
     if (!open) return
@@ -43,20 +44,22 @@ export function AlertDrawer({ open, alerts, onClose }: { open: boolean; alerts: 
           {alerts.length === 0 ? <EmptyState title="Everything looks calm" message="There are no active issues or recommendations for your home." /> : <>
             <NotificationSection title="Active issues" items={groups.active} expanded={expanded} setExpanded={setExpanded} canAcknowledge={canAcknowledge} canManageDelivery={canManageDelivery} onSilence={setSilencing} onSuppress={setSuppressing} onRemove={setRemoving} onClose={onClose} />
             <NotificationSection title="Recommendations" items={groups.recommendations} expanded={expanded} setExpanded={setExpanded} canAcknowledge={canAcknowledge} canManageDelivery={canManageDelivery} onSilence={setSilencing} onSuppress={setSuppressing} onRemove={setRemoving} onClose={onClose} />
-            <NotificationSection title="Recently resolved" items={groups.resolved} expanded={expanded} setExpanded={setExpanded} canAcknowledge={false} canManageDelivery={false} onSilence={setSilencing} onSuppress={setSuppressing} onRemove={setRemoving} onClose={onClose} />
+            <NotificationSection title="Recently resolved" items={groups.resolved} total={groups.resolvedAll.length} expanded={expanded} setExpanded={setExpanded} canAcknowledge={false} canManageDelivery={false} onSilence={setSilencing} onSuppress={setSuppressing} onRemove={setRemoving} onClearAll={() => { setClearingResolved(groups.resolvedAll) }} onClose={onClose} />
           </>}
         </div>
       </aside>
       {silencing && <SilenceDialog notification={silencing} onClose={() => { setSilencing(undefined) }} />}
       {suppressing && <SuppressDialog notification={suppressing} onClose={() => { setSuppressing(undefined) }} />}
       {removing && <RemoveNotificationDialog notification={removing} onClose={() => { setRemoving(undefined) }} />}
+      {clearingResolved && <ClearResolvedNotificationsDialog notifications={clearingResolved} onClose={() => { setClearingResolved(undefined) }} />}
     </>
   )
 }
 
-function NotificationSection({ title, items, expanded, setExpanded, canAcknowledge, canManageDelivery, onSilence, onSuppress, onRemove, onClose }: {
+function NotificationSection({ title, items, total, expanded, setExpanded, canAcknowledge, canManageDelivery, onSilence, onSuppress, onRemove, onClearAll, onClose }: {
   title: string
   items: AlertSummary[]
+  total?: number
   expanded?: string
   setExpanded: (id?: string) => void
   canAcknowledge: boolean
@@ -64,10 +67,12 @@ function NotificationSection({ title, items, expanded, setExpanded, canAcknowled
   onSilence: (notification: AlertSummary) => void
   onSuppress: (notification: AlertSummary) => void
   onRemove: (notification: AlertSummary) => void
+  onClearAll?: () => void
   onClose: () => void
 }) {
   if (!items.length) return null
-  return <section className="notification-section" aria-labelledby={`notification-${title.replaceAll(' ', '-').toLowerCase()}`}><h3 id={`notification-${title.replaceAll(' ', '-').toLowerCase()}`}>{title}<span>{items.length}</span></h3><ul className="alert-list">{items.map((item) => <NotificationRow key={item.id} item={item} open={expanded === item.id} onToggle={() => { setExpanded(expanded === item.id ? undefined : item.id) }} canAcknowledge={canAcknowledge} canManageDelivery={canManageDelivery} onSilence={() => { onSilence(item) }} onSuppress={() => { onSuppress(item) }} onRemove={() => { onRemove(item) }} onClose={onClose} />)}</ul></section>
+  const headingId = `notification-${title.replaceAll(' ', '-').toLowerCase()}`
+  return <section className="notification-section" aria-labelledby={headingId}><div className="notification-section-heading"><h3 id={headingId}>{title}<span>{total ?? items.length}</span></h3>{onClearAll && <button type="button" className="button ghost compact" onClick={onClearAll}>Clear all</button>}</div><ul className="alert-list">{items.map((item) => <NotificationRow key={item.id} item={item} open={expanded === item.id} onToggle={() => { setExpanded(expanded === item.id ? undefined : item.id) }} canAcknowledge={canAcknowledge} canManageDelivery={canManageDelivery} onSilence={() => { onSilence(item) }} onSuppress={() => { onSuppress(item) }} onRemove={() => { onRemove(item) }} onClose={onClose} />)}</ul></section>
 }
 
 function NotificationRow({ item, open, onToggle, canAcknowledge, canManageDelivery, onSilence, onSuppress, onRemove, onClose }: {
@@ -189,4 +194,39 @@ function RemoveNotificationDialog({ notification, onClose }: { notification: Ale
     onSettled: async () => client.invalidateQueries({ queryKey: ['alerts'] }),
   })
   return <div className="modal-backdrop"><div className="modal-card small-modal" role="dialog" aria-modal="true" aria-labelledby="remove-notification-title"><header><div><small>Notification center</small><h2 id="remove-notification-title">{resolved ? 'Clear this resolved notification?' : 'Remove this notification?'}</h2></div><button type="button" className="icon-button" aria-label="Close remove dialog" onClick={onClose}><X /></button></header><div className="setup-body form-grid single"><p><strong>{notification.title}</strong> will be {resolved ? 'cleared from Recently resolved' : 'removed from your notification center'}.</p><p>Monitoring, alert rules, delivery history, and the audit record remain active. If the condition changes or happens again, a new update will appear.</p>{remove.error && <p className="error-text">{remove.error.message}</p>}</div><footer><button ref={firstRef} type="button" className="button secondary" onClick={onClose}>Cancel</button><button type="button" className="button danger" disabled={remove.isPending} onClick={() => { remove.mutate() }}><Trash2 size={15} /> {remove.isPending ? (resolved ? 'Clearing…' : 'Removing…') : (resolved ? 'Clear notification' : 'Remove notification')}</button></footer></div></div>
+}
+
+function ClearResolvedNotificationsDialog({ notifications, onClose }: { notifications: AlertSummary[]; onClose: () => void }) {
+  const client = useQueryClient()
+  const firstRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => { firstRef.current?.focus() }, [])
+  const clear = useMutation({
+    mutationFn: async () => {
+      for (let start = 0; start < notifications.length; start += 10) {
+        const batch = notifications.slice(start, start + 10)
+        await Promise.all(batch.map((notification) => (
+          request(`/api/v1/notifications/${encodeURIComponent(notification.id)}/dismiss`, { method: 'POST' })
+        )))
+      }
+    },
+    onMutate: async () => {
+      await client.cancelQueries({ queryKey: ['alerts'] })
+      const previous = client.getQueriesData<NotificationPageCache>({ queryKey: ['alerts'] })
+      client.setQueriesData<NotificationPageCache>({ queryKey: ['alerts'] }, (current) => (
+        notifications.reduce(
+          (page, notification) => removeCachedNotification(page, notification.id),
+          current,
+        )
+      ))
+      return { previous }
+    },
+    onError: (_error, _variables, context) => {
+      context?.previous.forEach(([queryKey, value]) => {
+        client.setQueryData(queryKey, value)
+      })
+    },
+    onSuccess: onClose,
+    onSettled: async () => client.invalidateQueries({ queryKey: ['alerts'] }),
+  })
+  return <div className="modal-backdrop"><div className="modal-card small-modal" role="dialog" aria-modal="true" aria-labelledby="clear-resolved-title"><header><div><small>Notification center</small><h2 id="clear-resolved-title">Clear all resolved notifications?</h2></div><button type="button" className="icon-button" aria-label="Close clear resolved dialog" onClick={onClose}><X /></button></header><div className="setup-body form-grid single"><p>This clears <strong>{notifications.length}</strong> resolved {notifications.length === 1 ? 'notification' : 'notifications'} from your notification center.</p><p>Monitoring, delivery history, and audit records remain intact. A genuinely new occurrence will appear normally.</p>{clear.error && <p className="error-text">{clear.error.message}</p>}</div><footer><button ref={firstRef} type="button" className="button secondary" onClick={onClose}>Cancel</button><button type="button" className="button danger" disabled={clear.isPending} onClick={() => { clear.mutate() }}><Trash2 size={15} /> {clear.isPending ? 'Clearing…' : 'Clear all resolved'}</button></footer></div></div>
 }

@@ -187,4 +187,26 @@ describe('detailed notification center', () => {
     })
     expect(requestMock).toHaveBeenCalledWith('/api/v1/notifications/resolved-alert-1/dismiss', { method: 'POST' })
   })
+
+  it('clears every resolved occurrence with one confirmed action', async () => {
+    const secondResolved = {
+      ...resolvedHeartbeat,
+      id: 'resolved-alert-2',
+      lastSeenAt: '2026-07-31T15:02:00Z',
+    }
+    const user = userEvent.setup()
+    renderQueryBackedDrawer([resolvedHeartbeat, secondResolved])
+
+    expect(screen.getByRole('heading', { name: /Recently resolved 2/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Clear all' }))
+    const dialog = screen.getByRole('dialog', { name: /Clear all resolved notifications/ })
+    expect(within(dialog).getByText(/This clears/)).toHaveTextContent('This clears 2 resolved notifications')
+    await user.click(within(dialog).getByRole('button', { name: 'Clear all resolved' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: /Recently resolved/ })).not.toBeInTheDocument()
+    })
+    expect(requestMock).toHaveBeenCalledWith('/api/v1/notifications/resolved-alert-1/dismiss', { method: 'POST' })
+    expect(requestMock).toHaveBeenCalledWith('/api/v1/notifications/resolved-alert-2/dismiss', { method: 'POST' })
+  })
 })
