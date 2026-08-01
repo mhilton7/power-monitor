@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { energyChartSeries, energyChartTooltipLines } from '../src/components/charts/EnergyChart'
+import { energyChartPointRadii, energyChartSeries, energyChartTooltipLines } from '../src/components/charts/EnergyChart'
 import { chartAvailabilityMessage, chartAxisValue, chartIntervalLabel, chartTickLabel, chartTickTimestamps, colorWithAlpha } from '../src/components/charts/chartUtils'
 import { chartColorContrast, normalizeChartColor } from '../src/state/AppearanceContext'
 import type { HistoryPoint } from '../src/types/models'
@@ -55,6 +55,17 @@ describe('energy chart tooltip formatting', () => {
     expect(series[0]?.y).toBe(0.25)
     expect(Number.isNaN(series[1]?.y)).toBe(true)
     expect(series[2]?.y).toBe(0.30)
+  })
+
+  it('keeps a persistent marker on the in-progress interval without marking completed or missing intervals', () => {
+    const points: HistoryPoint[] = [
+      { start: '2026-07-31T19:45:00Z', end: '2026-07-31T20:00:00Z', label: '12:45 PM', energyKwh: '0.001', coveragePercent: '100', missing: false },
+      { start: '2026-07-31T20:00:00Z', end: '2026-07-31T20:15:00Z', label: '1:00 PM', energyKwh: '0.0004', coveragePercent: '90.83', missing: false },
+      { start: '2026-07-31T20:15:00Z', end: '2026-07-31T20:30:00Z', label: '1:15 PM', coveragePercent: '0', missing: true },
+    ]
+
+    expect(energyChartPointRadii(points, Date.parse('2026-07-31T20:08:00Z'))).toEqual([0, 4, 0])
+    expect(energyChartPointRadii(points, Date.parse('2026-07-31T20:16:00Z'))).toEqual([0, 0, 0])
   })
 
   it('formats exact intervals and bucket-aware ticks in the account timezone', () => {

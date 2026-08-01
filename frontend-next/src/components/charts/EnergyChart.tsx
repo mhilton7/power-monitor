@@ -30,6 +30,14 @@ export function energyChartSeries(
   })
 }
 
+export function energyChartPointRadii(points: HistoryPoint[], now = Date.now()): number[] {
+  return points.map((point) => {
+    const start = Date.parse(point.start)
+    const end = Date.parse(point.end)
+    return !point.missing && Number.isFinite(start) && Number.isFinite(end) && start <= now && now < end ? 4 : 0
+  })
+}
+
 export function EnergyChart({ points, mode, currency, title, timezone = 'UTC', bucket = '15m', rangeStart, rangeEnd }: {
   points: HistoryPoint[]
   mode: 'power' | 'energy' | 'cost' | 'energy_cost'
@@ -44,11 +52,14 @@ export function EnergyChart({ points, mode, currency, title, timezone = 'UTC', b
   const invalidCount = points.filter((point) => !Number.isFinite(Date.parse(point.start)) || !Number.isFinite(Date.parse(point.end))).length
   const ordered = points.filter((point) => Number.isFinite(Date.parse(point.start)) && Number.isFinite(Date.parse(point.end))).sort((left, right) => Date.parse(left.start) - Date.parse(right.start))
   const series = (field: 'powerW' | 'energyKwh' | 'cost'): ChartDatum[] => energyChartSeries(ordered, field)
+  const pointRadii = energyChartPointRadii(ordered)
+  const pointHoverRadii = pointRadii.map((radius) => radius > 0 ? 6 : 4)
+  const pointBorderWidths = pointRadii.map((radius) => radius > 0 ? 2 : 1)
   const datasets: ChartDataset<'line', ChartDatum[]>[] = mode === 'power'
-    ? [{ label: 'Power (W)', data: series('powerW'), borderColor: chartColors.power, backgroundColor: colorWithAlpha(chartColors.power, .12), fill: true, tension: .2, spanGaps: false, pointRadius: 0, yAxisID: 'power' }]
+    ? [{ label: 'Power (W)', data: series('powerW'), borderColor: chartColors.power, backgroundColor: colorWithAlpha(chartColors.power, .12), fill: true, tension: .2, spanGaps: false, pointRadius: pointRadii, pointHoverRadius: pointHoverRadii, pointBorderWidth: pointBorderWidths, pointBackgroundColor: chartColors.power, pointBorderColor: '#071A14', yAxisID: 'power' }]
     : [
-        ...(mode !== 'cost' ? [{ label: 'Energy (kWh)', data: series('energyKwh'), borderColor: chartColors.energy, backgroundColor: colorWithAlpha(chartColors.energy, .12), fill: true, tension: .2, spanGaps: false, pointRadius: 0, yAxisID: 'energy' } satisfies ChartDataset<'line', ChartDatum[]>] : []),
-        ...(mode !== 'energy' ? [{ label: `Cost (${currency})`, data: series('cost'), borderColor: chartColors.cost, backgroundColor: colorWithAlpha(chartColors.cost, .08), borderDash: [7, 5], fill: false, tension: .2, spanGaps: false, pointRadius: 0, yAxisID: 'cost' } satisfies ChartDataset<'line', ChartDatum[]>] : []),
+        ...(mode !== 'cost' ? [{ label: 'Energy (kWh)', data: series('energyKwh'), borderColor: chartColors.energy, backgroundColor: colorWithAlpha(chartColors.energy, .12), fill: true, tension: .2, spanGaps: false, pointRadius: pointRadii, pointHoverRadius: pointHoverRadii, pointBorderWidth: pointBorderWidths, pointBackgroundColor: chartColors.energy, pointBorderColor: '#071A14', yAxisID: 'energy' } satisfies ChartDataset<'line', ChartDatum[]>] : []),
+        ...(mode !== 'energy' ? [{ label: `Cost (${currency})`, data: series('cost'), borderColor: chartColors.cost, backgroundColor: colorWithAlpha(chartColors.cost, .08), borderDash: [7, 5], fill: false, tension: .2, spanGaps: false, pointRadius: pointRadii, pointHoverRadius: pointHoverRadii, pointBorderWidth: pointBorderWidths, pointBackgroundColor: chartColors.cost, pointBorderColor: '#071A14', yAxisID: 'cost' } satisfies ChartDataset<'line', ChartDatum[]>] : []),
       ]
   const data: ChartData<'line', ChartDatum[]> = { datasets }
   const min = rangeStart ? Date.parse(rangeStart) : Date.parse(ordered[0]?.start ?? '')
