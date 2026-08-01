@@ -728,12 +728,26 @@ class DeviceEvent(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
     event_id: Mapped[str] = mapped_column(String(80))
+    event_sequence: Mapped[int | None] = mapped_column(Integer, index=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     category: Mapped[str] = mapped_column(String(64), index=True)
     severity: Mapped[str] = mapped_column(String(16))
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    __table_args__ = (UniqueConstraint("device_id", "event_id", name="uq_device_event"),)
+    __table_args__ = (
+        UniqueConstraint("device_id", "event_id", name="uq_device_event"),
+        UniqueConstraint("device_id", "event_sequence", name="uq_device_event_sequence"),
+    )
+
+
+class DeviceEventSyncCursor(Base):
+    __tablename__ = "device_event_sync_cursors"
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True
+    )
+    highest_contiguous_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    maximum_seen_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class EnrollmentToken(Base):

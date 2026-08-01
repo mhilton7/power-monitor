@@ -112,6 +112,77 @@ export interface SensorSummary {
     measurementRole: string
 }
 
+export interface SensorStoragePolicy {
+  retentionMode: 'disabled' | 'strict_age' | 'continuous_protected'
+  retentionDays: number
+  minimumLocalHistoryDays: number
+  noticePercent: number
+  warningPercent: number
+  criticalPercent: number
+  emergencyPercent: number
+  emergencyReserveBytes: number
+  cleanupTargetPercent: number
+  cleanupTargetBytes: number
+  eventRetentionDays: number
+}
+
+export interface SensorStorageStatus {
+  schemaVersion: 'sensor-storage/1.0'
+  deviceId: string
+  deviceName: string
+  observedAt?: string
+  available: boolean
+  healthy: boolean
+  status: string
+  pressureState: string
+  pressureReason?: string
+  cardType?: string
+  capacityBytes?: number
+  usedBytes?: number
+  freeBytes?: number
+  freePercent?: number
+  storageFull: boolean
+  preparedForRemoval: boolean
+  oldestStoredSequence?: number
+  newestStoredSequence?: number
+  serverAckSequence?: number
+  oldestEventSequence?: number
+  newestEventSequence?: number
+  serverEventAckSequence?: number
+  unsynchronizedCount?: number
+  eligibleReclaimableBytes?: number
+  blockedUnacknowledgedBytes?: number
+  protectedBytes?: number
+  segmentCount?: number
+  eligibleSegmentCount?: number
+  protectedSegmentCount?: number
+  openSegmentCount?: number
+  closedSegmentCount?: number
+  untrustedSegmentCount?: number
+  eventSegmentCount?: number
+  exportCount?: number
+  repairArtifactCount?: number
+  temporaryArtifactCount?: number
+  cleanupInProgress: boolean
+  cleanupRecoveryRequired: boolean
+  lastCleanupAt?: string
+  lastCleanupBytes?: number
+  lastCleanupResult?: string
+  lastCleanupReason?: string
+  droppedIntervalCount?: number
+  firstDroppedIntervalAt?: string
+  lastDroppedIntervalAt?: string
+  estimatedBytesPerDay?: number
+  estimatedDaysRemaining?: number
+  growthState?: string
+  lastError?: string
+  desiredPolicy: SensorStoragePolicy
+  effectivePolicy: SensorStoragePolicy
+  desiredConfigVersion: number
+  effectiveConfigVersion: number
+  policyPending: boolean
+}
+
 export interface CircuitSummary {
   id: string
   homeId: string

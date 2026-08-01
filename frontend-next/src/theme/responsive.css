@@ -177,6 +177,8 @@
   .list-row, .sensor-row { align-items: flex-start; flex-wrap: wrap; }
   .list-row > span:nth-of-type(1):not(.avatar), .sensor-row > span:nth-of-type(2) { flex-basis: calc(100% - 60px); }
   .list-row small, .sensor-row small { white-space: normal; }
+  .storage-metric-grid, .storage-actions { grid-template-columns: 1fr; }
+  .storage-status-heading, .storage-policy > summary { align-items: flex-start; flex-direction: column; }
   .inline-actions { width: 100%; }
   .inline-actions .button { flex: 1; }
   .stepper { display: flex; overflow-x: auto; }

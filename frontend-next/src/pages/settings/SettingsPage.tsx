@@ -6,6 +6,7 @@ import {
   DatabaseBackup,
   FlaskConical,
   Gauge,
+  HardDrive,
   Home,
   FileText,
   KeyRound,
@@ -22,6 +23,7 @@ import {
   Users,
   Wifi,
   Wrench,
+  X,
 } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useLocation, useNavigate } from '../../app/router'
@@ -39,6 +41,7 @@ import {
   adaptNotificationHistory,
   adaptNotificationSuppressions,
   adaptPermissions,
+  adaptSensorStorage,
   adaptSystemHealth,
   adaptTestModeHistory,
   adaptTestModeSensors,
@@ -61,6 +64,8 @@ import type {
   PermissionOption,
   BackupSummary,
   SensorSummary,
+  SensorStoragePolicy,
+  SensorStorageStatus,
   SystemHealthStatus,
   TestLoadProfile,
 } from '../../types/models'
@@ -182,6 +187,7 @@ function SensorSettings() {
   })
   const [adding, setAdding] = useState(canEnroll && new URLSearchParams(location.search).get('action') === 'add')
   const [assignmentSensor, setAssignmentSensor] = useState<SensorSummary>()
+  const [storageSensor, setStorageSensor] = useState<SensorSummary>()
   const assignmentRequested = new URLSearchParams(location.search).get('configuration') === 'measurement-assignment'
   const requestedSensor = assignmentRequested && !assignmentSensor
     ? sensors.find((sensor) => !sensor.circuitId || !sensor.utilityAccountId)
@@ -230,6 +236,7 @@ function SensorSettings() {
             <span className={`pill ${sensor.online ? 'success' : 'warning'}`}>{sensor.online ? 'Online' : 'Needs attention'}</span>
             <DropdownMenu label={`Manage ${sensor.name}`} triggerClassName="icon-button" menuClassName="row-menu" trigger={<MoreHorizontal />}>
               {canManageTopology && <DropdownMenuItem onSelect={() => { setAssignmentSensor(sensor) }}><Rows3 /> Assign circuit and electric service</DropdownMenuItem>}
+              {hasPermission(session, 'storage.view') && <DropdownMenuItem onSelect={() => { setStorageSensor(sensor) }}><HardDrive /> Storage</DropdownMenuItem>}
               {canManageDevices && <DropdownMenuItem onSelect={() => { configure.mutate({ id: sensor.id, currentName: sensor.name, currentCt: sensor.ctRatingAmps }); }}><Gauge /> Edit name and CT rating</DropdownMenuItem>}
               {canManageDevices && <DropdownMenuItem onSelect={() => { maintenance.mutate({ id: sensor.id, enabled: true }); }}><Wrench /> Start maintenance test</DropdownMenuItem>}
               {canManageDevices && <DropdownMenuItem onSelect={() => { void request(`/api/v1/devices/${sensor.id}/credential-rotation`, json('POST', { overlap_seconds: 3600 })); }}><KeyRound /> Rotate credentials</DropdownMenuItem>}
@@ -270,6 +277,13 @@ function SensorSettings() {
         </Surface>
       )}
       {home && canEnroll && adding && <SensorSetupFlow home={home} onClose={() => { setAdding(false); }} />}
+      {storageSensor && (
+        <SensorStorageDialog
+          sensor={storageSensor}
+          canManage={hasPermission(session, 'storage.manage')}
+          onClose={() => { setStorageSensor(undefined) }}
+        />
+      )}
       {home && activeAssignmentSensor && (
         <ModalLayer onRequestClose={closeAssignment}>
           <MeasurementAssignmentDialog
@@ -295,6 +309,147 @@ function SensorSettings() {
   function navigateToTestMode() {
     navigate('/settings/advanced/sensor-test-mode')
   }
+}
+
+function storageEstimate(status: SensorStorageStatus): string {
+  if (status.growthState === 'shrinking_after_cleanup') return 'Storage shrinking after cleanup'
+  const days = status.estimatedDaysRemaining
+  if (days === undefined) return 'Not enough data'
+  if (days >= 365 * 5) return 'Over 5 years'
+  if (days >= 365) return `Approximately ${Math.round(days / 30)} months`
+  if (days < 7) return 'Less than 7 days'
+  return `Approximately ${Math.round(days)} days`
+}
+
+function SensorStorageDialog({
+  sensor,
+  canManage,
+  onClose,
+}: {
+  sensor: SensorSummary
+  canManage: boolean
+  onClose: () => void
+}) {
+  const storage = useQuery({
+    queryKey: ['sensor-storage', sensor.id],
+    queryFn: () => request(`/api/v1/devices/${sensor.id}/storage`, {}, adaptSensorStorage),
+    refetchInterval: 15_000,
+  })
+  return (
+    <div className="modal-backdrop">
+      <section className="modal-card storage-dialog" role="dialog" aria-modal="true" aria-labelledby="sensor-storage-title">
+        <header>
+          <div><small>Protected local history</small><h2 id="sensor-storage-title">{sensor.name} storage</h2></div>
+          <button type="button" className="icon-button" aria-label="Close storage settings" onClick={onClose}><X /></button>
+        </header>
+        <div className="setup-body storage-dialog-body">
+          {storage.isLoading ? <LoadingState label="Loading storage evidence…" /> : storage.error ? <ErrorState error={storage.error} retry={() => { void storage.refetch() }} /> : storage.data ? (
+            <SensorStorageContent status={storage.data} canManage={canManage} refresh={() => storage.refetch()} />
+          ) : null}
+        </div>
+        <footer><button type="button" className="button secondary" onClick={onClose}>Close</button></footer>
+      </section>
+    </div>
+  )
+}
+
+export function SensorStorageContent({
+  status,
+  canManage,
+  refresh,
+}: {
+  status: SensorStorageStatus
+  canManage: boolean
+  refresh: () => Promise<unknown>
+}) {
+  const [policy, setPolicy] = useState<SensorStoragePolicy>(status.desiredPolicy)
+  const [reason, setReason] = useState('Administrator reviewed protected storage retention')
+  const [cleanupReason, setCleanupReason] = useState('Administrator requested acknowledgement-aware safe cleanup')
+  const [confirmation, setConfirmation] = useState('')
+  const policyMutation = useMutation({
+    mutationFn: () => request(`/api/v1/devices/${status.deviceId}/storage/policy`, json('PUT', {
+      retention_mode: policy.retentionMode,
+      retention_days: policy.retentionDays,
+      minimum_local_history_days: policy.minimumLocalHistoryDays,
+      storage_notice_percent: policy.noticePercent,
+      storage_warning_percent: policy.warningPercent,
+      storage_critical_percent: policy.criticalPercent,
+      storage_emergency_percent: policy.emergencyPercent,
+      storage_emergency_reserve_bytes: policy.emergencyReserveBytes,
+      storage_cleanup_target_percent: policy.cleanupTargetPercent,
+      storage_cleanup_target_bytes: policy.cleanupTargetBytes,
+      event_retention_days: policy.eventRetentionDays,
+      reason,
+    })),
+    onSuccess: refresh,
+  })
+  const cleanup = useMutation({
+    mutationFn: () => request(`/api/v1/devices/${status.deviceId}/storage/cleanup`, json('POST', { reason: cleanupReason })),
+    onSuccess: refresh,
+  })
+  const prepare = useMutation({
+    mutationFn: () => request(`/api/v1/devices/${status.deviceId}/storage/prepare-removal`, json('POST', {
+      reason: 'Administrator initiated the safe microSD replacement workflow',
+      confirmation,
+    })),
+    onSuccess: refresh,
+  })
+  const mutationError = policyMutation.error ?? cleanup.error ?? prepare.error
+  return (
+    <>
+      {!status.available && <InlineNotice tone="warning">Waiting for a signed sensor heartbeat. No storage values are assumed.</InlineNotice>}
+      {status.preparedForRemoval && <InlineNotice tone="success">Card prepared. The sensor has unmounted the microSD card; remove it only after safely powering down the sensor.</InlineNotice>}
+      <div className="storage-status-heading">
+        <span className={`pill ${status.healthy ? 'success' : 'warning'}`}>{statusLabel(status.pressureState)}</span>
+        <span>{status.policyPending ? `Policy pending on sensor · desired v${status.desiredConfigVersion}` : `Policy effective · v${status.effectiveConfigVersion}`}</span>
+      </div>
+      <div className="storage-metric-grid">
+        <div><small>Card</small><strong>{status.cardType ?? 'Unknown card'} · {fileSize(status.capacityBytes)}</strong></div>
+        <div><small>Used</small><strong>{fileSize(status.usedBytes)}{status.freePercent !== undefined ? ` · ${Math.max(0, 100 - status.freePercent).toFixed(1)}%` : ''}</strong></div>
+        <div><small>Free</small><strong>{fileSize(status.freeBytes)}{status.freePercent !== undefined ? ` · ${status.freePercent.toFixed(1)}%` : ''}</strong></div>
+        <div><small>Estimated remaining</small><strong>{storageEstimate(status)}</strong></div>
+        <div><small>Reading acknowledgement</small><strong>{status.serverAckSequence ?? 'Unavailable'} / {status.newestStoredSequence ?? 'Unavailable'}</strong></div>
+        <div><small>Unsynchronized readings</small><strong>{status.unsynchronizedCount ?? 'Unavailable'}</strong></div>
+        <div><small>Safely reclaimable</small><strong>{fileSize(status.eligibleReclaimableBytes)}</strong></div>
+        <div><small>Protected, unacknowledged</small><strong>{fileSize(status.blockedUnacknowledgedBytes)}</strong></div>
+        <div><small>Segments</small><strong>{status.eligibleSegmentCount ?? 0} eligible · {status.protectedSegmentCount ?? 0} protected</strong></div>
+        <div><small>Event segments</small><strong>{status.eventSegmentCount ?? 0}</strong></div>
+        <div><small>Temporary artifacts</small><strong>{status.temporaryArtifactCount ?? 0} temporary · {status.exportCount ?? 0} exports · {status.repairArtifactCount ?? 0} repair</strong></div>
+        <div><small>Last cleanup</small><strong>{status.lastCleanupAt ? relativeTime(status.lastCleanupAt) : 'Not run'} · {status.lastCleanupResult ?? 'No result'}</strong></div>
+        <div><small>Dropped durable intervals</small><strong>{status.droppedIntervalCount ?? 0}</strong></div>
+      </div>
+      {status.cleanupRecoveryRequired && <InlineNotice tone="danger">Cleanup recovery is blocked. The sensor preserves all ambiguous files and remains read-only until the journal is safely repaired.</InlineNotice>}
+      {status.cleanupInProgress && <InlineNotice tone="info">Acknowledgement-aware cleanup is running on the sensor StorageTask.</InlineNotice>}
+      {(status.droppedIntervalCount ?? 0) > 0 ? (
+        <InlineNotice tone="danger">
+          <strong>History has an explicit storage gap.</strong>
+          <span>
+            {status.droppedIntervalCount} interval{status.droppedIntervalCount === 1 ? '' : 's'} could not be durably queued
+            {status.firstDroppedIntervalAt ? ` beginning ${relativeTime(status.firstDroppedIntervalAt)}` : ''}.
+          </span>
+        </InlineNotice>
+      ) : null}
+      {status.lastError && <InlineNotice tone="danger">Last storage error: {statusLabel(status.lastError)}</InlineNotice>}
+      <details className="storage-policy" open>
+        <summary><strong>Retention and full-card protection</strong><span>Only verified, closed, server-acknowledged segments are eligible.</span></summary>
+        <form className="form-grid" onSubmit={(event) => { event.preventDefault(); policyMutation.mutate() }}>
+          <label>Mode<select disabled={!canManage} value={policy.retentionMode} onChange={(event) => { setPolicy({ ...policy, retentionMode: event.target.value as SensorStoragePolicy['retentionMode'] }) }}><option value="continuous_protected">Continuous, protected (recommended)</option><option value="strict_age">Strict age, acknowledged only</option><option value="disabled">No automatic retention</option></select></label>
+          <label>Retain history (days)<input disabled={!canManage} type="number" min={1} max={3650} value={policy.retentionDays} onChange={(event) => { setPolicy({ ...policy, retentionDays: Number(event.target.value) }) }} /></label>
+          <label>Minimum local history (days)<input disabled={!canManage} type="number" min={1} max={3650} value={policy.minimumLocalHistoryDays} onChange={(event) => { setPolicy({ ...policy, minimumLocalHistoryDays: Number(event.target.value) }) }} /></label>
+          <label>Event evidence retention (days)<input disabled={!canManage} type="number" min={1} max={3650} value={policy.eventRetentionDays} onChange={(event) => { setPolicy({ ...policy, eventRetentionDays: Number(event.target.value) }) }} /></label>
+          <label>Notice / warning (%)<span className="paired-inputs"><input aria-label="Notice percent" disabled={!canManage} type="number" value={policy.noticePercent} onChange={(event) => { setPolicy({ ...policy, noticePercent: Number(event.target.value) }) }} /><input aria-label="Warning percent" disabled={!canManage} type="number" value={policy.warningPercent} onChange={(event) => { setPolicy({ ...policy, warningPercent: Number(event.target.value) }) }} /></span></label>
+          <label>Critical / emergency (%)<span className="paired-inputs"><input aria-label="Critical percent" disabled={!canManage} type="number" value={policy.criticalPercent} onChange={(event) => { setPolicy({ ...policy, criticalPercent: Number(event.target.value) }) }} /><input aria-label="Emergency percent" disabled={!canManage} type="number" value={policy.emergencyPercent} onChange={(event) => { setPolicy({ ...policy, emergencyPercent: Number(event.target.value) }) }} /></span></label>
+          {canManage && <><label className="span-all">Change reason<input minLength={8} required value={reason} onChange={(event) => { setReason(event.target.value) }} /></label><div className="form-actions"><button className="button primary" disabled={policyMutation.isPending}>Apply storage policy</button></div></>}
+        </form>
+      </details>
+      {canManage && <section className="storage-actions">
+        <div><h3>Safe cleanup</h3><p>Queues cleanup on StorageTask. Active, corrupt, unacknowledged, untrusted, and too-recent segments remain protected.</p><label>Reason<input minLength={8} value={cleanupReason} onChange={(event) => { setCleanupReason(event.target.value) }} /></label><button type="button" className="button secondary" disabled={cleanup.isPending || cleanupReason.length < 8} onClick={() => { cleanup.mutate() }}>Run safe cleanup</button></div>
+        <div><h3>Prepare card for removal</h3><p>Unmounts the card without formatting, resetting, or changing enrollment. Power down before physically removing it.</p><label>Type {status.deviceName}<input value={confirmation} onChange={(event) => { setConfirmation(event.target.value) }} /></label><button type="button" className="button danger" disabled={prepare.isPending || confirmation !== status.deviceName} onClick={() => { prepare.mutate() }}>Prepare for removal</button></div>
+      </section>}
+      {mutationError && <InlineNotice tone="danger">{mutationError.message}</InlineNotice>}
+      {(policyMutation.isSuccess || cleanup.isSuccess || prepare.isSuccess) && <InlineNotice tone="success">Request saved and queued for signed sensor delivery.</InlineNotice>}
+    </>
+  )
 }
 
 function FamilySettings() {

@@ -61,6 +61,7 @@ def test_initial_migration_is_frozen_and_covers_metadata() -> None:
         "notification_suppressions",
         "notification_events",
         "dashboard_appearance",
+        "device_event_sync_cursors",
     }
     assert "CREATE UNIQUE INDEX" in schema
     assert "ix_raw_site_time" in schema

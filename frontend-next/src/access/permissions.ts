@@ -55,6 +55,8 @@ export const PERMISSION_CODES = [
   'sites.view_audit',
   'status_indicators.manage',
   'status_indicators.view',
+  'storage.manage',
+  'storage.view',
   'topology.manage',
   'topology.view',
   'usage.view',
@@ -87,7 +89,7 @@ export const ROUTE_POLICIES = {
 
 export const SETTINGS_SECTION_POLICIES = {
   home: { anyOf: ['sites.edit', 'settings.manage'] },
-  sensors: { anyOf: ['devices.manage', 'devices.remove', 'topology.manage', 'enrollment.manage', 'firmware.manage'] },
+  sensors: { anyOf: ['devices.manage', 'devices.remove', 'topology.manage', 'enrollment.manage', 'firmware.manage', 'storage.view', 'storage.manage'] },
   family: { allOf: ['users.view'] },
   notifications: { anyOf: ['alerts.manage_rules', 'alerts.manage_delivery'] },
   appearance: { anyOf: ['settings.view', 'settings.manage'] },

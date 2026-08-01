@@ -22,6 +22,7 @@ import {
   adaptRateSources,
   adaptRateVersions,
   adaptSensors,
+  adaptSensorStorage,
   adaptSystemHealth,
   adaptTestMode,
   adaptTestModeHistory,
@@ -30,6 +31,55 @@ import {
 } from '../src/api/adapters'
 
 describe('typed homeowner adapters', () => {
+  it('normalizes bounded storage evidence without inventing missing values', () => {
+    const storage = adaptSensorStorage({
+      schema_version: 'sensor-storage/1.0',
+      device_id: 'sensor-1',
+      device_name: 'Outdoor-AC',
+      observed_at: '2026-07-31T20:00:00Z',
+      available: true,
+      healthy: true,
+      status: 'warning',
+      details: {
+        pressure_state: 'warning',
+        capacity_bytes: 34359738368,
+        free_bytes: 3221225472,
+        free_percent: 9,
+        server_ack_sequence: 120,
+        newest_stored_sequence: 150,
+        server_event_ack_sequence: 42,
+        unsynchronized_count: 30,
+        eligible_reclaimable_bytes: 536870912,
+        blocked_unacknowledged_bytes: 134217728,
+        estimated_days_remaining: 45,
+        event_segment_count: 4,
+        temporary_artifact_count: 1,
+        cleanup_recovery_required: true,
+      },
+      desired_policy: {
+        retention_mode: 'continuous_protected', retention_days: 730,
+        minimum_local_history_days: 30, storage_notice_percent: 20,
+        storage_warning_percent: 10, storage_critical_percent: 5,
+        storage_emergency_percent: 2, storage_emergency_reserve_bytes: 536870912,
+        storage_cleanup_target_percent: 10, storage_cleanup_target_bytes: 1073741824,
+        event_retention_days: 730,
+      },
+      effective_policy: {},
+      desired_config_version: 8,
+      effective_config_version: 7,
+      policy_pending: true,
+    })
+    expect(storage).toMatchObject({
+      deviceName: 'Outdoor-AC', pressureState: 'warning', freePercent: 9,
+      serverAckSequence: 120, newestStoredSequence: 150,
+      unsynchronizedCount: 30, estimatedDaysRemaining: 45, policyPending: true,
+      eventSegmentCount: 4, temporaryArtifactCount: 1, cleanupRecoveryRequired: true,
+      desiredPolicy: { retentionMode: 'continuous_protected', retentionDays: 730 },
+    })
+    expect(storage.lastCleanupBytes).toBeUndefined()
+    expect(() => adaptSensorStorage({ schema_version: 'future/2.0' })).toThrow()
+  })
+
   it('validates detailed notification, suppression, and history contracts', () => {
     const alerts = adaptAlerts([{
       id: 'alert-1',

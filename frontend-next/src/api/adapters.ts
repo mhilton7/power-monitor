@@ -21,6 +21,8 @@ import type {
   HomeResolution,
   HomeSummary,
   SensorSummary,
+  SensorStoragePolicy,
+  SensorStorageStatus,
   SystemHealth,
   SystemHealthComponent,
   SystemHealthStatus,
@@ -326,6 +328,93 @@ export function adaptSensors(value: unknown): SensorSummary[] {
       measurementRole: stringValue(source.measurement_role, 'submeter'),
     }
   })
+}
+
+function adaptStoragePolicy(value: unknown): SensorStoragePolicy {
+  const source = record(value, 'storage policy')
+  const mode = stringValue(source.retention_mode, 'continuous_protected')
+  if (!['disabled', 'strict_age', 'continuous_protected'].includes(mode)) {
+    throw new TypeError('sensor storage returned an unknown retention mode')
+  }
+  return {
+    retentionMode: mode as SensorStoragePolicy['retentionMode'],
+    retentionDays: numberValue(source.retention_days, 730),
+    minimumLocalHistoryDays: numberValue(source.minimum_local_history_days, 30),
+    noticePercent: numberValue(source.storage_notice_percent, 20),
+    warningPercent: numberValue(source.storage_warning_percent, 10),
+    criticalPercent: numberValue(source.storage_critical_percent, 5),
+    emergencyPercent: numberValue(source.storage_emergency_percent, 2),
+    emergencyReserveBytes: numberValue(source.storage_emergency_reserve_bytes, 512 * 1024 ** 2),
+    cleanupTargetPercent: numberValue(source.storage_cleanup_target_percent, 10),
+    cleanupTargetBytes: numberValue(source.storage_cleanup_target_bytes, 1024 ** 3),
+    eventRetentionDays: numberValue(source.event_retention_days, 730),
+  }
+}
+
+export function adaptSensorStorage(value: unknown): SensorStorageStatus {
+  const source = record(value, 'sensor storage')
+  const schemaVersion = stringValue(source.schema_version)
+  if (schemaVersion !== 'sensor-storage/1.0') {
+    throw new TypeError('The frontend and sensor-storage API use incompatible schemas')
+  }
+  const details = source.details ? record(source.details, 'sensor storage details') : {}
+  const optionalDetailNumber = (key: string): number | undefined => optionalNumber(details[key])
+  return {
+    schemaVersion,
+    deviceId: stringValue(source.device_id),
+    deviceName: stringValue(source.device_name, 'Sensor'),
+    observedAt: optionalString(source.observed_at),
+    available: booleanValue(source.available),
+    healthy: booleanValue(source.healthy),
+    status: stringValue(source.status, 'waiting_for_heartbeat'),
+    pressureState: stringValue(details.pressure_state, 'unknown'),
+    pressureReason: optionalString(details.pressure_reason),
+    cardType: optionalString(details.card_type),
+    capacityBytes: optionalDetailNumber('capacity_bytes'),
+    usedBytes: optionalDetailNumber('used_bytes'),
+    freeBytes: optionalDetailNumber('free_bytes'),
+    freePercent: optionalDetailNumber('free_percent'),
+    storageFull: booleanValue(details.storage_full),
+    preparedForRemoval: booleanValue(details.prepared_for_removal),
+    oldestStoredSequence: optionalDetailNumber('oldest_stored_sequence'),
+    newestStoredSequence: optionalDetailNumber('newest_stored_sequence'),
+    serverAckSequence: optionalDetailNumber('server_ack_sequence'),
+    oldestEventSequence: optionalDetailNumber('oldest_event_sequence'),
+    newestEventSequence: optionalDetailNumber('newest_event_sequence'),
+    serverEventAckSequence: optionalDetailNumber('server_event_ack_sequence'),
+    unsynchronizedCount: optionalDetailNumber('unsynchronized_count'),
+    eligibleReclaimableBytes: optionalDetailNumber('eligible_reclaimable_bytes'),
+    blockedUnacknowledgedBytes: optionalDetailNumber('blocked_unacknowledged_bytes'),
+    protectedBytes: optionalDetailNumber('protected_bytes'),
+    segmentCount: optionalDetailNumber('segment_count'),
+    eligibleSegmentCount: optionalDetailNumber('eligible_segment_count'),
+    protectedSegmentCount: optionalDetailNumber('protected_segment_count'),
+    openSegmentCount: optionalDetailNumber('open_segment_count'),
+    closedSegmentCount: optionalDetailNumber('closed_segment_count'),
+    untrustedSegmentCount: optionalDetailNumber('untrusted_segment_count'),
+    eventSegmentCount: optionalDetailNumber('event_segment_count'),
+    exportCount: optionalDetailNumber('export_count'),
+    repairArtifactCount: optionalDetailNumber('repair_artifact_count'),
+    temporaryArtifactCount: optionalDetailNumber('temporary_artifact_count'),
+    cleanupInProgress: booleanValue(details.cleanup_in_progress),
+    cleanupRecoveryRequired: booleanValue(details.cleanup_recovery_required),
+    lastCleanupAt: optionalString(details.last_cleanup_at),
+    lastCleanupBytes: optionalDetailNumber('last_cleanup_bytes'),
+    lastCleanupResult: optionalString(details.last_cleanup_result),
+    lastCleanupReason: optionalString(details.last_cleanup_reason),
+    droppedIntervalCount: optionalDetailNumber('dropped_interval_count'),
+    firstDroppedIntervalAt: optionalString(details.first_dropped_interval_at),
+    lastDroppedIntervalAt: optionalString(details.last_dropped_interval_at),
+    estimatedBytesPerDay: optionalDetailNumber('estimated_bytes_per_day'),
+    estimatedDaysRemaining: optionalDetailNumber('estimated_days_remaining'),
+    growthState: optionalString(details.growth_state),
+    lastError: optionalString(details.last_error),
+    desiredPolicy: adaptStoragePolicy(source.desired_policy),
+    effectivePolicy: adaptStoragePolicy(source.effective_policy),
+    desiredConfigVersion: numberValue(source.desired_config_version),
+    effectiveConfigVersion: numberValue(source.effective_config_version),
+    policyPending: booleanValue(source.policy_pending),
+  }
 }
 
 export function adaptCircuits(value: unknown): CircuitSummary[] {

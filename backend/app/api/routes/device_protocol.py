@@ -20,6 +20,7 @@ from app.db.models import (
     DeviceConfigVersion,
     DeviceCredential,
     DeviceEvent,
+    DeviceEventSyncCursor,
     DeviceHeartbeat,
     DeviceLifecycleEvent,
     DeviceSiteAssignment,
@@ -635,21 +636,50 @@ async def event_batch(
     _assert_device_id(payload.device_id, verified.device.id)
     accepted: list[str] = []
     duplicates: list[str] = []
+    event_sequences: list[int] = []
     now = datetime.now(UTC)
-    for event in payload.events:
-        existing = await session.scalar(
-            select(DeviceEvent.id).where(
+    existing_events = {
+        item.event_id: item
+        for item in await session.scalars(
+            select(DeviceEvent).where(
                 DeviceEvent.device_id == verified.device.id,
-                DeviceEvent.event_id == event.event_id,
+                DeviceEvent.event_id.in_([event.event_id for event in payload.events]),
             )
         )
+    }
+    sequence_owners: dict[int, str] = {}
+    for event in payload.events:
+        event_sequence = event.evidence.get("event_sequence")
+        if isinstance(event_sequence, int) and event_sequence > 0:
+            prior_owner = sequence_owners.get(event_sequence)
+            if prior_owner is not None and prior_owner != event.event_id:
+                raise ProblemError(
+                    422,
+                    "Event sequence conflict",
+                    "One event sequence cannot identify multiple events",
+                    "event_sequence_conflict",
+                )
+            sequence_owners[event_sequence] = event.event_id
+            event_sequences.append(event_sequence)
+        existing = existing_events.get(event.event_id)
         if existing:
+            if (
+                existing.event_sequence is None
+                and isinstance(event_sequence, int)
+                and event_sequence > 0
+            ):
+                existing.event_sequence = event_sequence
             duplicates.append(event.event_id)
             continue
         session.add(
             DeviceEvent(
                 device_id=verified.device.id,
                 event_id=event.event_id,
+                event_sequence=(
+                    event_sequence
+                    if isinstance(event_sequence, int) and event_sequence > 0
+                    else None
+                ),
                 occurred_at=event.occurred_at,
                 received_at=now,
                 category=event.category,
@@ -658,8 +688,60 @@ async def event_batch(
             )
         )
         accepted.append(event.event_id)
+    ordered_sequences = sorted(set(event_sequences))
+    complete_sequence_evidence = bool(ordered_sequences) and len(ordered_sequences) == len(
+        payload.events
+    )
+    explicit_retained_boundary = (
+        complete_sequence_evidence
+        and payload.first_stored_event_sequence is not None
+        and payload.first_stored_event_sequence == ordered_sequences[0]
+    )
+    await session.flush()
+    cursor = await session.get(
+        DeviceEventSyncCursor,
+        verified.device.id,
+        with_for_update=True,
+    )
+    if cursor is None:
+        cursor = DeviceEventSyncCursor(
+            device_id=verified.device.id,
+            # Never infer a deletion boundary from arrival order. The signed
+            # device payload must explicitly identify its oldest retained event.
+            highest_contiguous_sequence=(
+                ordered_sequences[0] - 1 if explicit_retained_boundary else 0
+            ),
+            maximum_seen_sequence=0,
+            updated_at=now,
+        )
+        session.add(cursor)
+    if complete_sequence_evidence:
+        cursor.maximum_seen_sequence = max(cursor.maximum_seen_sequence, ordered_sequences[-1])
+        persisted_sequences = set(
+            await session.scalars(
+                select(DeviceEvent.event_sequence).where(
+                    DeviceEvent.device_id == verified.device.id,
+                    DeviceEvent.event_sequence.is_not(None),
+                    DeviceEvent.event_sequence > cursor.highest_contiguous_sequence,
+                    DeviceEvent.event_sequence <= cursor.maximum_seen_sequence,
+                )
+            )
+        )
+        while cursor.highest_contiguous_sequence + 1 in persisted_sequences:
+            cursor.highest_contiguous_sequence += 1
+        cursor.updated_at = now
     await session.commit()
-    return {"accepted": accepted, "duplicates": duplicates}
+    highest_contiguous_event_sequence = (
+        cursor.highest_contiguous_sequence if complete_sequence_evidence else 0
+    )
+    return {
+        "accepted": accepted,
+        "duplicates": duplicates,
+        # The firmware persists this cursor before local event evidence is
+        # eligible for retention. Existing clients can ignore the additive
+        # field without changing pm-protocol/1.0.0.
+        "highest_contiguous_event_sequence": highest_contiguous_event_sequence,
+    }
 
 
 @router.get("/device-config/effective")

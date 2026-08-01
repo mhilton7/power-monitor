@@ -190,6 +190,19 @@ PERMISSION_DEFINITIONS = (
         True,
     ),
     _permission(
+        "storage.view",
+        "Sites and devices",
+        "View sensor storage",
+        "View card capacity, pressure, acknowledgement, retention, and cleanup evidence.",
+    ),
+    _permission(
+        "storage.manage",
+        "Sites and devices",
+        "Manage sensor storage",
+        "Change protected retention, request cleanup, and prepare a card for removal.",
+        True,
+    ),
+    _permission(
         "enrollment.view", "Sites and devices", "View enrollment", "View sensor enrollment state."
     ),
     _permission(
@@ -396,6 +409,7 @@ VIEWER_PERMISSIONS = frozenset(
         "utility_accounts.view",
         "topology.view",
         "devices.view",
+        "storage.view",
         "rates.view",
         "alerts.view",
         "status_indicators.view",
@@ -404,6 +418,7 @@ VIEWER_PERMISSIONS = frozenset(
 OPERATOR_PERMISSIONS = VIEWER_PERMISSIONS | {
     "topology.manage",
     "devices.manage",
+    "storage.manage",
     "enrollment.view",
     "enrollment.manage",
     "firmware.view",
@@ -474,6 +489,8 @@ PERMISSION_DEPENDENCIES: dict[str, frozenset[str]] = {
     "topology.manage": frozenset({"topology.view"}),
     "devices.manage": frozenset({"devices.view"}),
     "devices.remove": frozenset({"devices.manage", "devices.view"}),
+    "storage.view": frozenset({"devices.view"}),
+    "storage.manage": frozenset({"storage.view", "devices.manage", "devices.view"}),
     "enrollment.manage": frozenset({"enrollment.view"}),
     "firmware.manage": frozenset({"firmware.view"}),
     "alerts.acknowledge": frozenset({"alerts.view"}),

@@ -736,6 +736,13 @@ class AlertRuleWrite(ApiModel):
         "pzem_failure",
         "no_valid_reading",
         "sd_failure",
+        "storage_pressure_notice",
+        "storage_pressure_warning",
+        "storage_pressure_critical",
+        "storage_pressure_emergency",
+        "storage_cleanup_blocked",
+        "storage_write_reserve_unavailable",
+        "storage_interval_dropped",
         "sync_backlog",
         "sequence_gap",
         "time_untrusted",
@@ -1128,6 +1135,7 @@ class DeviceEventInput(DeviceProtocolModel):
 class DeviceEventBatch(DeviceProtocolModel):
     protocol_version: str
     device_id: str
+    first_stored_event_sequence: int | None = Field(default=None, gt=0)
     events: list[DeviceEventInput] = Field(min_length=1, max_length=500)
 
 
@@ -1144,6 +1152,53 @@ class DeviceConfigCreate(ApiModel):
     settings: dict[str, Any]
     acknowledge_ct_rating_change: bool = False
     network_rollback_seconds: int = Field(default=300, ge=60, le=3600)
+
+
+class StoragePolicyWrite(ApiModel):
+    retention_mode: Literal["disabled", "strict_age", "continuous_protected"] = (
+        "continuous_protected"
+    )
+    retention_days: int = Field(default=730, ge=1, le=3650)
+    minimum_local_history_days: int = Field(default=30, ge=1, le=3650)
+    storage_notice_percent: int = Field(default=20, ge=2, le=50)
+    storage_warning_percent: int = Field(default=10, ge=2, le=49)
+    storage_critical_percent: int = Field(default=5, ge=2, le=48)
+    storage_emergency_percent: int = Field(default=2, ge=1, le=47)
+    storage_emergency_reserve_bytes: int = Field(
+        default=512 * 1024 * 1024, ge=64 * 1024 * 1024, le=64 * 1024**3
+    )
+    storage_cleanup_target_percent: int = Field(default=10, ge=2, le=50)
+    storage_cleanup_target_bytes: int = Field(
+        default=1024 * 1024 * 1024, ge=64 * 1024 * 1024, le=64 * 1024**3
+    )
+    event_retention_days: int = Field(default=730, ge=1, le=3650)
+    reason: str = Field(min_length=8, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_storage_thresholds(self) -> StoragePolicyWrite:
+        if not (
+            self.storage_notice_percent
+            > self.storage_warning_percent
+            > self.storage_critical_percent
+            > self.storage_emergency_percent
+        ):
+            raise ValueError("storage thresholds must decrease from notice to emergency")
+        if self.minimum_local_history_days > self.retention_days:
+            raise ValueError("minimum local history cannot exceed retention")
+        if not (
+            self.storage_warning_percent
+            <= self.storage_cleanup_target_percent
+            <= self.storage_notice_percent
+        ):
+            raise ValueError("cleanup target percent must be between warning and notice")
+        if self.storage_cleanup_target_bytes < self.storage_emergency_reserve_bytes:
+            raise ValueError("cleanup target bytes must cover the emergency reserve")
+        return self
+
+
+class StorageActionRequest(ApiModel):
+    reason: str = Field(min_length=8, max_length=500)
+    confirmation: str | None = Field(default=None, max_length=200)
 
 
 class RatePeriodInput(ApiModel):

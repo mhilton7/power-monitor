@@ -7,7 +7,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
@@ -109,6 +109,8 @@ from app.schemas import (
     ReportDefinitionWrite,
     SiteCreate,
     SiteView,
+    StorageActionRequest,
+    StoragePolicyWrite,
     UserCreate,
 )
 from app.security.browser import hash_password, password_is_strong
@@ -1860,6 +1862,252 @@ async def create_device_config(
     )
     await session.commit()
     return {"id": version.id, "version": version.version, "status": version.status}
+
+
+async def _queue_storage_configuration(
+    *,
+    device: Device,
+    settings: dict[str, Any],
+    action: str,
+    reason: str,
+    request: Request,
+    principal: Principal,
+    session: DbSession,
+) -> DeviceConfigVersion:
+    versions = list(
+        await session.scalars(
+            select(DeviceConfigVersion)
+            .where(DeviceConfigVersion.device_id == device.id)
+            .order_by(DeviceConfigVersion.version.asc())
+        )
+    )
+    merged: dict[str, Any] = {}
+    for existing in versions:
+        if isinstance(existing.desired_config, dict):
+            merged.update(existing.desired_config)
+    merged.update(settings)
+    device.desired_config_version += 1
+    canonical = json.dumps(merged, sort_keys=True, separators=(",", ":"), default=str)
+    version = DeviceConfigVersion(
+        device_id=device.id,
+        version=device.desired_config_version,
+        desired_config=merged,
+        config_hash=hashlib.sha256(canonical.encode()).hexdigest(),
+        status="pending",
+        created_by=principal.user.id,
+        created_at=datetime.now(UTC),
+    )
+    session.add(version)
+    session.add(
+        audit_event(
+            action=action,
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="device_storage",
+            object_id=device.id,
+            details={
+                "reason": reason,
+                "version": version.version,
+                "keys": sorted(settings),
+            },
+        )
+    )
+    await session.commit()
+    return version
+
+
+@router.get("/devices/{device_id}/storage")
+async def device_storage_status(
+    device_id: str,
+    principal: Viewer,
+    session: DbSession,
+) -> dict[str, Any]:
+    _permission(principal, "storage.view")
+    device = await session.get(Device, device_id)
+    if device is None or device.revoked_at:
+        raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
+    heartbeat = await session.scalar(
+        select(DeviceHeartbeat)
+        .where(DeviceHeartbeat.device_id == device.id)
+        .order_by(DeviceHeartbeat.received_at.desc())
+        .limit(1)
+    )
+    latest_config = await session.scalar(
+        select(DeviceConfigVersion)
+        .where(DeviceConfigVersion.device_id == device.id)
+        .order_by(DeviceConfigVersion.version.desc())
+        .limit(1)
+    )
+    effective_config = await session.scalar(
+        select(DeviceConfigVersion).where(
+            DeviceConfigVersion.device_id == device.id,
+            DeviceConfigVersion.version == device.effective_config_version,
+        )
+    )
+    payload = (
+        cast(dict[str, Any], heartbeat.payload)
+        if heartbeat and isinstance(heartbeat.payload, dict)
+        else {}
+    )
+    raw_subsystem = payload.get("sd")
+    subsystem = cast(dict[str, Any], raw_subsystem) if isinstance(raw_subsystem, dict) else {}
+    raw_details = subsystem.get("details")
+    details = cast(dict[str, Any], raw_details) if isinstance(raw_details, dict) else {}
+    policy_keys = (
+        "retention_mode",
+        "retention_days",
+        "minimum_local_history_days",
+        "storage_notice_percent",
+        "storage_warning_percent",
+        "storage_critical_percent",
+        "storage_emergency_percent",
+        "storage_emergency_reserve_bytes",
+        "storage_cleanup_target_percent",
+        "storage_cleanup_target_bytes",
+        "event_retention_days",
+    )
+    heartbeat_effective = {key: details[key] for key in policy_keys if key in details}
+    effective = dict(heartbeat_effective)
+    if effective_config and isinstance(effective_config.desired_config, dict):
+        effective.update(effective_config.desired_config)
+    desired = dict(effective)
+    if latest_config and isinstance(latest_config.desired_config, dict):
+        desired.update(latest_config.desired_config)
+
+    def detail_count(key: str) -> int:
+        value = details.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+    normalized_details = {
+        **details,
+        "oldest_stored_sequence": details.get("oldest_record_sequence"),
+        "newest_stored_sequence": details.get("newest_record_sequence"),
+        "server_event_ack_sequence": details.get("event_ack_sequence"),
+        "unsynchronized_count": details.get("unacknowledged_record_count"),
+        "eligible_reclaimable_bytes": details.get("reclaimable_bytes"),
+        "blocked_unacknowledged_bytes": details.get("protected_unacknowledged_bytes"),
+        "protected_bytes": detail_count("protected_unacknowledged_bytes")
+        + detail_count("protected_untrusted_bytes"),
+        "last_cleanup_bytes": details.get("last_cleanup_reclaimed_bytes"),
+        "estimated_bytes_per_day": details.get("growth_bytes_per_day"),
+        "dropped_interval_count": details.get("dropped_interval_count"),
+        "first_dropped_interval_at": details.get("first_dropped_interval_at"),
+        "last_dropped_interval_at": details.get("last_dropped_interval_at"),
+    }
+    return {
+        "schema_version": "sensor-storage/1.0",
+        "device_id": device.id,
+        "device_name": device.name,
+        "observed_at": heartbeat.received_at if heartbeat else None,
+        "available": bool(heartbeat),
+        "healthy": bool(subsystem.get("ok", False)),
+        "status": subsystem.get("status", "waiting_for_heartbeat"),
+        "details": normalized_details,
+        "desired_policy": {key: desired[key] for key in policy_keys if key in desired},
+        "effective_policy": {key: effective[key] for key in policy_keys if key in effective},
+        "desired_config_version": device.desired_config_version,
+        "effective_config_version": device.effective_config_version,
+        "policy_pending": device.desired_config_version > device.effective_config_version,
+    }
+
+
+@router.put("/devices/{device_id}/storage/policy", status_code=202)
+async def update_device_storage_policy(
+    device_id: str,
+    payload: StoragePolicyWrite,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _permission(principal, "storage.manage")
+    device = await session.get(Device, device_id)
+    if device is None or device.revoked_at:
+        raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
+    version = await _queue_storage_configuration(
+        device=device,
+        settings=payload.model_dump(exclude={"reason"}),
+        action="device.storage_policy_requested",
+        reason=payload.reason,
+        request=request,
+        principal=principal,
+        session=session,
+    )
+    return {"device_id": device.id, "version": version.version, "status": "pending"}
+
+
+@router.post("/devices/{device_id}/storage/cleanup", status_code=202)
+async def request_device_storage_cleanup(
+    device_id: str,
+    payload: StorageActionRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _permission(principal, "storage.manage")
+    device = await session.get(Device, device_id)
+    if device is None or device.revoked_at:
+        raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
+    request_id = new_uuid()
+    version = await _queue_storage_configuration(
+        device=device,
+        settings={
+            "storage_cleanup_request_id": request_id,
+            "storage_cleanup_reason": payload.reason,
+        },
+        action="device.storage_cleanup_requested",
+        reason=payload.reason,
+        request=request,
+        principal=principal,
+        session=session,
+    )
+    return {
+        "device_id": device.id,
+        "request_id": request_id,
+        "version": version.version,
+        "status": "pending_delivery",
+    }
+
+
+@router.post("/devices/{device_id}/storage/prepare-removal", status_code=202)
+async def request_device_storage_prepare_removal(
+    device_id: str,
+    payload: StorageActionRequest,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _permission(principal, "storage.manage")
+    device = await session.get(Device, device_id)
+    if device is None or device.revoked_at:
+        raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
+    if payload.confirmation not in {device.name, device.id}:
+        raise ProblemError(
+            409,
+            "Confirmation does not match",
+            "Type the exact sensor name or immutable device ID",
+            "storage_prepare_confirmation_mismatch",
+        )
+    request_id = new_uuid()
+    version = await _queue_storage_configuration(
+        device=device,
+        settings={"storage_prepare_removal_request_id": request_id},
+        action="device.storage_prepare_removal_requested",
+        reason=payload.reason,
+        request=request,
+        principal=principal,
+        session=session,
+    )
+    return {
+        "device_id": device.id,
+        "request_id": request_id,
+        "version": version.version,
+        "status": "pending_delivery",
+    }
 
 
 @router.get("/readings/history", response_model=HistoryResponse)

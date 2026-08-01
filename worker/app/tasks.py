@@ -10,7 +10,7 @@ import ssl
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from email.message import EmailMessage
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
@@ -1728,6 +1728,85 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
         if stale and device.status not in {"maintenance", "revoked"}:
             device.status = "offline_last_known"
         if heartbeat:
+            heartbeat_payload = (
+                cast(dict[str, Any], heartbeat.payload)
+                if isinstance(heartbeat.payload, dict)
+                else {}
+            )
+            raw_storage_subsystem = heartbeat_payload.get("sd")
+            storage_subsystem = (
+                cast(dict[str, Any], raw_storage_subsystem)
+                if isinstance(raw_storage_subsystem, dict)
+                else {}
+            )
+            raw_storage_details = storage_subsystem.get("details")
+            storage_details = (
+                cast(dict[str, Any], raw_storage_details)
+                if isinstance(raw_storage_details, dict)
+                else {}
+            )
+            pressure_state = str(storage_details.get("pressure_state", "normal"))
+            pressure_evidence = {
+                "heartbeat_id": heartbeat.id,
+                "pressure_state": pressure_state,
+                "pressure_reason": storage_details.get("pressure_reason"),
+                "capacity_bytes": storage_details.get("capacity_bytes"),
+                "used_bytes": storage_details.get("used_bytes"),
+                "free_bytes": storage_details.get("free_bytes"),
+                "free_percent": storage_details.get("free_percent"),
+                "estimated_days_remaining": storage_details.get(
+                    "estimated_days_remaining"
+                ),
+                "retention_mode": storage_details.get("retention_mode"),
+                "server_ack_sequence": storage_details.get("server_ack_sequence"),
+                "unsynchronized_count": storage_details.get(
+                    "unacknowledged_record_count"
+                ),
+                "eligible_reclaimable_bytes": storage_details.get("reclaimable_bytes"),
+                "blocked_unacknowledged_bytes": storage_details.get(
+                    "protected_unacknowledged_bytes"
+                ),
+                "last_cleanup_at": storage_details.get("last_cleanup_at"),
+                "last_cleanup_result": storage_details.get("last_cleanup_result"),
+                "dropped_interval_count": storage_details.get("dropped_interval_count"),
+                "first_dropped_interval_at": storage_details.get(
+                    "first_dropped_interval_at"
+                ),
+                "last_dropped_interval_at": storage_details.get(
+                    "last_dropped_interval_at"
+                ),
+                "last_error": storage_details.get("last_error"),
+            }
+            for rule_type, active in (
+                ("storage_pressure_notice", pressure_state == "notice"),
+                ("storage_pressure_warning", pressure_state == "warning"),
+                ("storage_pressure_critical", pressure_state == "critical"),
+                (
+                    "storage_pressure_emergency",
+                    pressure_state in {"emergency", "full"},
+                ),
+                (
+                    "storage_cleanup_blocked",
+                    str(storage_details.get("last_cleanup_result", "")).startswith(
+                        "blocked"
+                    ),
+                ),
+                (
+                    "storage_write_reserve_unavailable",
+                    storage_details.get("last_error")
+                    in {
+                        "storage_write_reserve_unavailable",
+                        "storage_gap_journal_reserve_unavailable",
+                    },
+                ),
+                (
+                    "storage_interval_dropped",
+                    isinstance(storage_details.get("dropped_interval_count"), int)
+                    and storage_details.get("dropped_interval_count", 0) > 0,
+                ),
+            ):
+                for rule in matching_rules(device, rule_type):
+                    await set_condition(device, rule, active, pressure_evidence)
             for rule in matching_rules(device, "power_surge"):
                 threshold_watts = Decimal(str(rule.configuration["threshold_watts"]))
                 await set_condition(
