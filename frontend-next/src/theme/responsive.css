@@ -15,7 +15,7 @@
   .detail-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-onboarding-grid, .home-main-grid { grid-template-columns: 1fr; }
   .home-setup-card { min-height: auto; }
-  .home-side-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; }
+  .home-side-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-rows: max-content; align-items: start; }
   .user-button span,
   .user-button > svg:last-child { display: none; }
   .user-button > svg:first-child { width: 30px; }
@@ -162,7 +162,8 @@
   .period-summary { align-items: flex-start; flex-direction: column; }
   .tier-list span:last-child,
   .period-summary span:last-child { text-align: left; }
-  .chart-canvas { min-height: 280px; }
+  .chart-canvas.home-chart { block-size: 17rem; }
+  .chart-canvas.history-chart { block-size: 18rem; }
   .chart-color-row { grid-template-columns: auto minmax(0, 1fr) auto; }
   .chart-color-row > span { grid-column: 1 / -1; }
   .advanced-disclosure > summary,
@@ -200,7 +201,7 @@
   .home-side-stack { grid-template-columns: 1fr; }
   .sensor-electrical-strip { gap: .28rem .65rem; }
   .sensor-electrical-metric { flex: 0 1 auto; }
-  .power-reading { justify-content: flex-start; min-height: 11rem; }
+  .power-reading { justify-content: flex-start; min-block-size: 10rem; }
   .rate-editor-heading, .rate-editor-footer { align-items: stretch; flex-direction: column; }
   .rate-editor-shell > .subnav { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-inline: var(--space-2); }
   .rate-editor-panel { min-height: 0; padding: var(--space-4); }

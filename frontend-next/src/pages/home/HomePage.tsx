@@ -167,7 +167,7 @@ export function HomePage() {
               ))}
             </div>
           </Surface>}
-          <Surface title="Current pricing" subtitle={summary.currentPlan ?? 'No active rate plan'}>
+          <Surface className="current-pricing-card" title="Current pricing" subtitle={summary.currentPlan ?? 'No active rate plan'}>
             {summary.currentPlan ? (
               <div className="rate-now">
                 <span className="icon-tile"><BatteryCharging /></span>
@@ -202,7 +202,7 @@ export function HomePage() {
         action={<Link className="text-link" to="/history">Explore History <ArrowRight /></Link>}
       >
         {dailyHistory.isLoading ? <LoadingState label="Loading today’s readings…" /> : dailyHistory.error ? <ErrorState error={dailyHistory.error} retry={() => void dailyHistory.refetch()} /> : dailyHistory.data?.points.length ? (
-          <EnergyChart points={dailyHistory.data.points} mode="energy" currency={home.currency} title="Today’s whole-home energy" timezone={dailyHistory.data.timezone} bucket={dailyHistory.data.bucket} rangeStart={dailyHistory.data.rangeStart} rangeEnd={dailyHistory.data.rangeEnd} />
+          <EnergyChart points={dailyHistory.data.points} mode="energy" currency={home.currency} title="Today’s whole-home energy" timezone={dailyHistory.data.timezone} bucket={dailyHistory.data.bucket} rangeStart={dailyHistory.data.rangeStart} rangeEnd={dailyHistory.data.rangeEnd} variant="home" />
         ) : (
           <EmptyState compact title="Waiting for today’s history" message="Intervals appear after synchronized sensor readings are stored." />
         )}

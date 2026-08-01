@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { energyChartPointRadii, energyChartSeries, energyChartTooltipLines } from '../src/components/charts/EnergyChart'
+import { chartTickLimitForWidth, energyChartPointRadii, energyChartSeries, energyChartTooltipLines } from '../src/components/charts/EnergyChart'
 import { chartAvailabilityMessage, chartAxisValue, chartIntervalLabel, chartTickLabel, chartTickTimestamps, colorWithAlpha } from '../src/components/charts/chartUtils'
 import { chartColorContrast, normalizeChartColor } from '../src/state/AppearanceContext'
 import type { HistoryPoint } from '../src/types/models'
@@ -114,5 +114,13 @@ describe('energy chart tooltip formatting', () => {
   it('keeps useful precision for small interval energy and cost axis values', () => {
     expect(chartAxisValue('0.00025', 'energy', 'USD')).toBe('0.00025 kWh')
     expect(chartAxisValue('0.0006', 'cost', 'USD')).toBe('$0.0006')
+  })
+
+  it('adapts x-axis tick density to the measured chart width', () => {
+    expect(chartTickLimitForWidth(390)).toBe(3)
+    expect(chartTickLimitForWidth(600)).toBe(6)
+    expect(chartTickLimitForWidth(900)).toBe(9)
+    expect(chartTickLimitForWidth(1200)).toBe(12)
+    expect(chartTickLimitForWidth(0)).toBe(6)
   })
 })

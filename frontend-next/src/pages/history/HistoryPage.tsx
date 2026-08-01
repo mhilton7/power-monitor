@@ -163,7 +163,7 @@ export function HistoryPage() {
           </Surface>
           <Surface title="Energy over time" subtitle="Tier and time-of-use context is available in each interval tooltip.">
             {history.data.points.length ? (
-              <EnergyChart points={history.data.points} mode={filters.metric} currency={home.currency} title={`${history.data.title} ${filters.metric} history`} timezone={history.data.timezone} bucket={history.data.bucket} rangeStart={history.data.rangeStart} rangeEnd={history.data.rangeEnd} />
+              <EnergyChart points={history.data.points} mode={filters.metric} currency={home.currency} title={`${history.data.title} ${filters.metric} history`} timezone={history.data.timezone} bucket={history.data.bucket} rangeStart={history.data.rangeStart} rangeEnd={history.data.rangeEnd} variant="history" />
             ) : (
               <EmptyState title="No readings in this range" message="Try a wider range or check the sensor’s connection." />
             )}
