@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   groupNotifications,
   isCurrentAttentionNotification,
+  removeCachedNotification,
   updateCachedNotification,
 } from '../src/features/alerts/notificationSelectors'
 import type { AlertSummary } from '../src/types/models'
@@ -42,6 +43,17 @@ describe('notification selectors', () => {
     expect(updated?.items[0]?.status).toBe('acknowledged')
     expect(updated?.items[1]?.status).toBe('open')
     expect(updated?.total).toBe(2)
+  })
+
+  it('removes one cached notification and updates the page total', () => {
+    const other = { ...base, id: 'other-alert' }
+    const updated = removeCachedNotification(
+      { items: [base, other], total: 2 },
+      base.id,
+    )
+
+    expect(updated?.items.map((item) => item.id)).toEqual(['other-alert'])
+    expect(updated?.total).toBe(1)
   })
 
   it('keeps the dashboard and notification drawer on the same current-alert rules', () => {

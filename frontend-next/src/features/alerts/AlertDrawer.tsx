@@ -8,7 +8,7 @@ import { EmptyState } from '../../components/feedback/States'
 import { useAuth } from '../../state/AuthContext'
 import type { AlertSummary } from '../../types/models'
 import { dateTime, relativeTime, statusLabel } from '../../utils/format'
-import { groupNotifications, updateCachedNotification, type NotificationPageCache } from './notificationSelectors'
+import { groupNotifications, removeCachedNotification, updateCachedNotification, type NotificationPageCache } from './notificationSelectors'
 
 export function AlertDrawer({ open, alerts, onClose }: { open: boolean; alerts: AlertSummary[]; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null)
@@ -127,7 +127,7 @@ function NotificationRow({ item, open, onToggle, canAcknowledge, canManageDelive
         {canAcknowledge && item.status === 'silenced' && <button type="button" className="button secondary compact" disabled={endSilence.isPending} onClick={() => { endSilence.mutate() }}>End silence</button>}
         {item.remediation.action && <button type="button" className="button primary compact" onClick={() => { onClose(); navigate(item.remediation.action?.target ?? '/') }}>{item.remediation.action.label}<ExternalLink size={14} /></button>}
         {canManageDelivery && item.suppression.permanentlySuppressible && <button type="button" className="button secondary compact" onClick={onSuppress}><EyeOff size={15} /> Do not remind me again</button>}
-        {item.suppression.dismissible && <button type="button" className="button danger compact" onClick={onRemove}><Trash2 size={15} /> Remove</button>}
+        {item.suppression.dismissible && <button type="button" className="button danger compact" onClick={onRemove}><Trash2 size={15} /> {item.status === 'resolved' ? 'Clear' : 'Remove'}</button>}
       </div>
     </div>}
   </li>
@@ -166,18 +166,27 @@ function SuppressDialog({ notification, onClose }: { notification: AlertSummary;
 function RemoveNotificationDialog({ notification, onClose }: { notification: AlertSummary; onClose: () => void }) {
   const client = useQueryClient()
   const firstRef = useRef<HTMLButtonElement>(null)
+  const resolved = notification.status === 'resolved'
   useEffect(() => { firstRef.current?.focus() }, [])
   const remove = useMutation({
     mutationFn: () => request(`/api/v1/notifications/${encodeURIComponent(notification.id)}/dismiss`, { method: 'POST' }),
-    onSuccess: async () => {
-      client.setQueriesData<{ items: AlertSummary[]; total: number }>({ queryKey: ['alerts'] }, (current) => {
-        if (!current) return current
-        const items = current.items.filter((item) => item.id !== notification.id)
-        return { ...current, items, total: Math.max(0, current.total - (current.items.length - items.length)) }
+    onMutate: async () => {
+      await client.cancelQueries({ queryKey: ['alerts'] })
+      const previous = client.getQueriesData<NotificationPageCache>({ queryKey: ['alerts'] })
+      client.setQueriesData<NotificationPageCache>({ queryKey: ['alerts'] }, (current) => (
+        removeCachedNotification(current, notification.id)
+      ))
+      return { previous }
+    },
+    onError: (_error, _variables, context) => {
+      context?.previous.forEach(([queryKey, value]) => {
+        client.setQueryData(queryKey, value)
       })
-      await client.invalidateQueries({ queryKey: ['alerts'] })
+    },
+    onSuccess: () => {
       onClose()
     },
+    onSettled: async () => client.invalidateQueries({ queryKey: ['alerts'] }),
   })
-  return <div className="modal-backdrop"><div className="modal-card small-modal" role="dialog" aria-modal="true" aria-labelledby="remove-notification-title"><header><div><small>Notification center</small><h2 id="remove-notification-title">Remove this notification?</h2></div><button type="button" className="icon-button" aria-label="Close remove dialog" onClick={onClose}><X /></button></header><div className="setup-body form-grid single"><p><strong>{notification.title}</strong> will be removed from your notification center.</p><p>Monitoring, alert rules, delivery history, and the audit record remain active. If the condition changes or happens again, a new update will appear.</p>{remove.error && <p className="error-text">{remove.error.message}</p>}</div><footer><button ref={firstRef} type="button" className="button secondary" onClick={onClose}>Cancel</button><button type="button" className="button danger" disabled={remove.isPending} onClick={() => { remove.mutate() }}><Trash2 size={15} /> {remove.isPending ? 'Removing…' : 'Remove notification'}</button></footer></div></div>
+  return <div className="modal-backdrop"><div className="modal-card small-modal" role="dialog" aria-modal="true" aria-labelledby="remove-notification-title"><header><div><small>Notification center</small><h2 id="remove-notification-title">{resolved ? 'Clear this resolved notification?' : 'Remove this notification?'}</h2></div><button type="button" className="icon-button" aria-label="Close remove dialog" onClick={onClose}><X /></button></header><div className="setup-body form-grid single"><p><strong>{notification.title}</strong> will be {resolved ? 'cleared from Recently resolved' : 'removed from your notification center'}.</p><p>Monitoring, alert rules, delivery history, and the audit record remain active. If the condition changes or happens again, a new update will appear.</p>{remove.error && <p className="error-text">{remove.error.message}</p>}</div><footer><button ref={firstRef} type="button" className="button secondary" onClick={onClose}>Cancel</button><button type="button" className="button danger" disabled={remove.isPending} onClick={() => { remove.mutate() }}><Trash2 size={15} /> {remove.isPending ? (resolved ? 'Clearing…' : 'Removing…') : (resolved ? 'Clear notification' : 'Remove notification')}</button></footer></div></div>
 }

@@ -422,6 +422,66 @@ async def test_remove_hides_one_users_notification_until_the_condition_reopens(
 
 
 @pytest.mark.asyncio
+async def test_clear_resolved_notification_stays_cleared_for_one_user(
+    api_client: Any,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+) -> None:
+    client: httpx.AsyncClient = api_client
+    await client.post(
+        "/api/v1/auth/bootstrap",
+        json={
+            "bootstrap_secret": "test-bootstrap-secret-with-at-least-16",
+            "email": "clear-resolved@example.com",
+            "display_name": "Notification Owner",
+            "password": "Long-Production-Password-42!",
+        },
+    )
+    async with session_factory_fixture() as session:
+        site = await session.scalar(select(Site).where(Site.is_default.is_(True)))
+        assert site
+        rule = AlertRule(
+            name="Resolved sensor warning",
+            rule_type="heartbeat_stale",
+            severity="warning",
+            site_id=site.id,
+            configuration={"stale_after_seconds": 60},
+        )
+        session.add(rule)
+        await session.flush()
+        resolved_at = datetime.now(UTC) - timedelta(minutes=5)
+        alert = AlertInstance(
+            rule_id=rule.id,
+            site_id=site.id,
+            status="resolved",
+            severity="warning",
+            opened_at=resolved_at - timedelta(minutes=10),
+            last_seen_at=resolved_at,
+            resolved_at=resolved_at,
+            evidence={"stale_after_seconds": 60},
+        )
+        session.add(alert)
+        await session.commit()
+        alert_id = alert.id
+        site_id = site.id
+
+    before = (await client.get(f"/api/v1/notifications?site_id={site_id}")).json()["items"]
+    resolved = next(entry for entry in before if entry["id"] == alert_id)
+    assert resolved["state"] == "resolved"
+    assert resolved["suppression"]["dismissible"] is True
+
+    cleared = await client.post(
+        f"/api/v1/notifications/{alert_id}/dismiss",
+        headers=csrf(client),
+    )
+    assert cleared.status_code == 201, cleared.text
+    assert cleared.json()["dismissed"] is True
+
+    for _ in range(2):
+        after = (await client.get(f"/api/v1/notifications?site_id={site_id}")).json()["items"]
+        assert all(entry["id"] != alert_id for entry in after)
+
+
+@pytest.mark.asyncio
 async def test_remove_setup_recommendation_stays_removed_across_refreshes(
     api_client: Any,
 ) -> None:

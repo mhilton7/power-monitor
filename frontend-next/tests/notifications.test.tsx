@@ -70,6 +70,13 @@ const recommendation: AlertSummary = {
   suppression: { dismissible: true, permanentlySuppressible: true, suppressionKey: 'recommendation.smtp_not_configured', currentlySuppressed: false, allowedScopes: ['user', 'home'] },
 }
 
+const resolvedHeartbeat: AlertSummary = {
+  ...heartbeat,
+  id: 'resolved-alert-1',
+  status: 'resolved',
+  resolvedAt: '2026-07-31T16:02:00Z',
+}
+
 function renderDrawer(alerts = [heartbeat, recommendation]) {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}>
@@ -164,5 +171,20 @@ describe('detailed notification center', () => {
     await waitFor(() => {
       expect(requestMock).toHaveBeenCalledWith('/api/v1/notifications/alert-1/dismiss', { method: 'POST' })
     })
+  })
+
+  it('clears a recently resolved notification immediately while preserving rollback state', async () => {
+    requestMock.mockImplementationOnce(() => new Promise(() => undefined))
+    const user = userEvent.setup()
+    renderQueryBackedDrawer([resolvedHeartbeat])
+    await user.click(screen.getByRole('button', { name: /Indoor-AC stopped reporting/ }))
+    await user.click(screen.getByRole('button', { name: 'Clear' }))
+    const dialog = screen.getByRole('dialog', { name: /Clear this resolved notification/ })
+    await user.click(within(dialog).getByRole('button', { name: 'Clear notification' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Indoor-AC stopped reporting/ })).not.toBeInTheDocument()
+    })
+    expect(requestMock).toHaveBeenCalledWith('/api/v1/notifications/resolved-alert-1/dismiss', { method: 'POST' })
   })
 })

@@ -21,6 +21,19 @@ export function updateCachedNotification(
   }
 }
 
+export function removeCachedNotification(
+  page: NotificationPageCache | undefined,
+  notificationId: string,
+): NotificationPageCache | undefined {
+  if (!page) return page
+  const items = page.items.filter((notification) => notification.id !== notificationId)
+  return {
+    ...page,
+    items,
+    total: Math.max(0, page.total - (page.items.length - items.length)),
+  }
+}
+
 export function isCurrentAttentionNotification(notification: AlertSummary): boolean {
   return notification.kind !== 'setup_recommendation' && !terminalStates.has(notification.status)
 }
