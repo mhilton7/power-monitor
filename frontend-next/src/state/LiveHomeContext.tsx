@@ -112,10 +112,13 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     const refreshLive = () => {
       void client.invalidateQueries({ queryKey: ['home-summary'] })
       void client.invalidateQueries({ queryKey: ['sensors'] })
+    }
+    const refreshHistory = () => {
+      refreshLive()
       void client.invalidateQueries({ queryKey: ['history'] })
     }
     source.addEventListener('heartbeat', refreshLive)
-    source.addEventListener('reading', refreshLive)
+    source.addEventListener('reading', refreshHistory)
     source.addEventListener('device_status', refreshLive)
     source.addEventListener('fleet', refreshLive)
     source.addEventListener('alert', () => {

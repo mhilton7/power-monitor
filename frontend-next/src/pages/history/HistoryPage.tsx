@@ -1,13 +1,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CalendarRange, Download, FlaskConical, Gauge, Layers3 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { adaptHistory, adaptTestModeHistory } from '../../api/adapters'
 import { download, errorMessage, json, request, saveBlob } from '../../api/client'
 import { EnergyChart } from '../../components/charts/EnergyChart'
 import { Metric, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
 import { Page, PageHeader, SegmentedControl, StatGrid } from '../../components/layout/Layout'
-import { historyPayload } from '../../features/history/historyQuery'
+import { HISTORY_REFETCH_INTERVAL_MS, historyPayload } from '../../features/history/historyQuery'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
 import { useTestMode } from '../../state/TestModeContext'
@@ -44,16 +44,17 @@ export function HistoryPage() {
     metric: canViewCosts ? 'energy_cost' : 'energy',
     scope: 'home',
   })
-  const payload = useMemo(
-    () => home ? historyPayload(filters, home, cycle?.startsAt, cycle?.endsAt) : undefined,
-    [cycle?.endsAt, cycle?.startsAt, filters, home],
-  )
   const validScope = filters.scope === 'home' || Boolean(filters.sensorId)
   const history = useQuery({
-    queryKey: ['history', payload],
-    queryFn: () => request('/api/v1/history/query', json('POST', payload), adaptHistory),
-    enabled: Boolean(payload && validScope),
+    queryKey: ['history', 'page', home?.id, filters, cycle?.startsAt, cycle?.endsAt],
+    queryFn: () => {
+      if (!home) throw new Error('The default home is unavailable.')
+      const currentPayload = historyPayload(filters, home, cycle?.startsAt, cycle?.endsAt)
+      return request('/api/v1/history/query', json('POST', currentPayload), adaptHistory)
+    },
+    enabled: Boolean(home && validScope),
     placeholderData: (previous) => previous,
+    refetchInterval: HISTORY_REFETCH_INTERVAL_MS,
   })
   const testHistory = useQuery({
     queryKey: ['sensor-test-mode-history'],
@@ -63,7 +64,9 @@ export function HistoryPage() {
   })
   const exportHistory = useMutation({
     mutationFn: async () => {
-      const blob = await download('/api/v1/history/export', json('POST', payload))
+      if (!home) throw new Error('The default home is unavailable.')
+      const currentPayload = historyPayload(filters, home, cycle?.startsAt, cycle?.endsAt)
+      const blob = await download('/api/v1/history/export', json('POST', currentPayload))
       saveBlob(blob, `power-monitor-${filters.range}-history.csv`)
     },
   })
@@ -75,7 +78,7 @@ export function HistoryPage() {
       <PageHeader
         title="History"
         description="See how your home used energy and what it cost over time."
-        action={canExport && <button type="button" className="button secondary" disabled={!payload || exportHistory.isPending} onClick={() => { exportHistory.mutate(); }}>
+        action={canExport && <button type="button" className="button secondary" disabled={!validScope || exportHistory.isPending} onClick={() => { exportHistory.mutate(); }}>
           <Download size={17} /> {exportHistory.isPending ? 'Preparing…' : 'Export'}
         </button>}
       />

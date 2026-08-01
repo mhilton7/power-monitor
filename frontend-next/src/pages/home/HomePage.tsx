@@ -20,7 +20,7 @@ import { EnergyChart } from '../../components/charts/EnergyChart'
 import { Metric, StatusDot, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, LoadingState } from '../../components/feedback/States'
 import { Page, PageHeader, StatGrid } from '../../components/layout/Layout'
-import { historyPayload } from '../../features/history/historyQuery'
+import { HISTORY_REFETCH_INTERVAL_MS, historyPayload } from '../../features/history/historyQuery'
 import { ConfigurationStatusChip } from '../../features/configuration/ConfigurationStatusSurface'
 import { isCurrentAttentionNotification } from '../../features/alerts/notificationSelectors'
 import { SensorHealthEntry } from '../../features/sensors/SensorHealthEntry'
@@ -60,6 +60,7 @@ export function HomePage() {
     },
     enabled: Boolean(home && sensors.length),
     retry: 1,
+    refetchInterval: HISTORY_REFETCH_INTERVAL_MS,
   })
 
   if (loading && !summary) return <LoadingState label="Preparing your home…" />

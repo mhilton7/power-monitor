@@ -1,5 +1,10 @@
 import type { HistoryFilters, Home } from '../../types/models'
 
+// SSE provides the low-latency path. This bounded poll keeps charts moving
+// when a browser, proxy, or network transition leaves the event stream open
+// but no longer delivering reading events.
+export const HISTORY_REFETCH_INTERVAL_MS = 60_000
+
 export interface HistoryWindow {
   start: Date
   end: Date

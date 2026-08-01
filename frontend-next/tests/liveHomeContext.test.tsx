@@ -179,7 +179,7 @@ describe('Live Home SSE refresh', () => {
     ).length
     const invalidationSpy = vi.spyOn(testClient, 'invalidateQueries')
     act(() => {
-      source.emit('reading')
+      source.emit('heartbeat')
     })
     await waitFor(() => {
       expect(requestMock.mock.calls.filter(
@@ -188,6 +188,25 @@ describe('Live Home SSE refresh', () => {
       expect(requestMock.mock.calls.filter(
         ([path]) => String(path).startsWith('/api/v1/fleet/summary?'),
       ).length).toBeGreaterThan(initialFleetRequests)
+    })
+    expect(invalidationSpy).not.toHaveBeenCalledWith({ queryKey: ['history'] })
+
+    const deviceRequestsAfterHeartbeat = requestMock.mock.calls.filter(
+      ([path]) => String(path).startsWith('/api/v1/devices?'),
+    ).length
+    const fleetRequestsAfterHeartbeat = requestMock.mock.calls.filter(
+      ([path]) => String(path).startsWith('/api/v1/fleet/summary?'),
+    ).length
+    act(() => {
+      source.emit('reading')
+    })
+    await waitFor(() => {
+      expect(requestMock.mock.calls.filter(
+        ([path]) => String(path).startsWith('/api/v1/devices?'),
+      ).length).toBeGreaterThan(deviceRequestsAfterHeartbeat)
+      expect(requestMock.mock.calls.filter(
+        ([path]) => String(path).startsWith('/api/v1/fleet/summary?'),
+      ).length).toBeGreaterThan(fleetRequestsAfterHeartbeat)
       expect(invalidationSpy).toHaveBeenCalledWith({ queryKey: ['history'] })
     })
 
