@@ -736,6 +736,9 @@ class AlertRuleWrite(ApiModel):
         "pzem_failure",
         "no_valid_reading",
         "sd_failure",
+        "storage_sequence_reconciling",
+        "storage_sequence_continuity_restored",
+        "storage_cursor_regression",
         "storage_pressure_notice",
         "storage_pressure_warning",
         "storage_pressure_critical",
@@ -1006,9 +1009,16 @@ class Heartbeat(DeviceProtocolModel):
         return self
 
 
+class SequenceCursorResponse(ApiModel):
+    highest_contiguous_accepted_sequence: int = Field(ge=0)
+    maximum_seen_sequence: int = Field(ge=0)
+    next_sequence_floor: int = Field(ge=1)
+
+
 class HeartbeatResponse(ApiModel):
     server_receive_time: datetime
     highest_contiguous_accepted_sequence: int
+    sequence_cursor: SequenceCursorResponse
     gap_ranges: list[tuple[int, int]]
     desired_configuration_version: int
     firmware_release_available: bool

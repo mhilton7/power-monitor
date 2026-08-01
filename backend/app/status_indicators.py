@@ -1958,6 +1958,8 @@ async def status_values(
         "online_push_only",
         "api_healthy_meter_failed",
         "api_healthy_storage_failed",
+        "online_storage_reconciling",
+        "online_storage_degraded",
         "time_unsynchronized",
     }
     online = sum(item.status in online_states for item in devices)

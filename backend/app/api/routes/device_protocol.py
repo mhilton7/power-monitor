@@ -44,6 +44,7 @@ from app.schemas import (
     HeartbeatResponse,
     ReadingBatch,
     ReadingBatchResponse,
+    SequenceCursorResponse,
 )
 from app.security.protocol import PROTOCOL, SecretCipher
 
@@ -384,7 +385,11 @@ def _status_from_heartbeat(payload: Heartbeat) -> str:
     if not payload.pzem.ok:
         return "api_healthy_meter_failed"
     if not payload.sd.ok:
-        return "api_healthy_storage_failed"
+        if payload.sd.status == "sequence_reconciling" or payload.sd.details.get(
+            "sequence_reconciliation_in_progress"
+        ):
+            return "online_storage_reconciling"
+        return "online_storage_degraded"
     if payload.backlog_estimate > 0:
         return "online_with_backlog"
     if payload.connection_mode == "push":
@@ -530,6 +535,77 @@ async def heartbeat(
             updated_at=now,
         )
         session.add(cursor)
+    server_maximum_seen = max(
+        cursor.highest_contiguous_sequence,
+        cursor.maximum_seen_sequence,
+    )
+    server_next_floor = server_maximum_seen + 1
+    local_floor_raw = payload.sd.details.get("sequence_floor")
+    local_floor = (
+        local_floor_raw
+        if isinstance(local_floor_raw, int)
+        and not isinstance(local_floor_raw, bool)
+        and local_floor_raw >= 0
+        else None
+    )
+    local_record_count_raw = payload.sd.details.get("local_record_count")
+    local_record_count = (
+        local_record_count_raw
+        if isinstance(local_record_count_raw, int)
+        and not isinstance(local_record_count_raw, bool)
+        and local_record_count_raw >= 0
+        else None
+    )
+    card_empty = payload.newest_stored_sequence == 0 and local_record_count in {None, 0}
+    card_generation_raw = payload.sd.details.get("card_generation")
+    card_generation = card_generation_raw if isinstance(card_generation_raw, int | str) else None
+    logger.info(
+        "device.sequence_cursor_reported",
+        device_id=device.id,
+        highest_contiguous=cursor.highest_contiguous_sequence,
+        maximum_seen=server_maximum_seen,
+        next_floor=server_next_floor,
+        sensor_local_newest=payload.newest_stored_sequence,
+        sensor_local_floor=local_floor,
+        card_empty=card_empty,
+        card_generation=card_generation,
+    )
+    if card_empty and payload.sd.details.get("card_replaced_or_initialized"):
+        logger.info(
+            "device.card_replacement_detected",
+            device_id=device.id,
+            card_generation=card_generation,
+            server_maximum_seen=server_maximum_seen,
+        )
+    if payload.server_ack_sequence > server_maximum_seen:
+        logger.warning(
+            "device.sequence_cursor_regression",
+            device_id=device.id,
+            sensor_persisted_ack=payload.server_ack_sequence,
+            server_highest_contiguous=cursor.highest_contiguous_sequence,
+            server_maximum_seen=server_maximum_seen,
+            action="sensor_must_preserve_higher_local_floor",
+        )
+    if local_floor is None or local_floor < server_maximum_seen:
+        logger.info(
+            "device.sequence_floor_requested",
+            device_id=device.id,
+            current_floor=local_floor,
+            required_floor=server_maximum_seen,
+            next_sequence=server_next_floor,
+        )
+    if (
+        local_floor is not None
+        and local_floor >= server_maximum_seen
+        and payload.sd.details.get("sequence_floor_ready") is True
+    ):
+        logger.info(
+            "device.sequence_continuity_restored",
+            device_id=device.id,
+            local_floor=local_floor,
+            next_sequence=payload.sd.details.get("next_sequence"),
+            card_empty=card_empty,
+        )
     logger.info(
         "HEARTBEAT_ACCEPTED",
         device_id=device.id,
@@ -573,6 +649,11 @@ async def heartbeat(
     return HeartbeatResponse(
         server_receive_time=now,
         highest_contiguous_accepted_sequence=cursor.highest_contiguous_sequence,
+        sequence_cursor=SequenceCursorResponse(
+            highest_contiguous_accepted_sequence=cursor.highest_contiguous_sequence,
+            maximum_seen_sequence=server_maximum_seen,
+            next_sequence_floor=server_next_floor,
+        ),
         gap_ranges=[(gap.start_sequence, gap.end_sequence) for gap in gaps],
         desired_configuration_version=device.desired_config_version,
         firmware_release_available=release_available,

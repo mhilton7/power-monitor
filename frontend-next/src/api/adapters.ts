@@ -275,6 +275,8 @@ export function adaptSensors(value: unknown): SensorSummary[] {
     'online_push_only',
     'api_healthy_meter_failed',
     'api_healthy_storage_failed',
+    'online_storage_reconciling',
+    'online_storage_degraded',
     'time_unsynchronized',
   ])
   const freshnessStates = new Set([

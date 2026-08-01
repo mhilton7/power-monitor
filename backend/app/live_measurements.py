@@ -33,6 +33,8 @@ ONLINE_DEVICE_STATES = frozenset(
         "online_push_only",
         "api_healthy_meter_failed",
         "api_healthy_storage_failed",
+        "online_storage_reconciling",
+        "online_storage_degraded",
         "time_unsynchronized",
     }
 )

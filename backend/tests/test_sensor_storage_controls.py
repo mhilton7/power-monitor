@@ -88,6 +88,44 @@ async def signed_post(
 
 
 @pytest.mark.asyncio
+async def test_storage_reconciliation_does_not_mark_heartbeat_offline(api_client: Any) -> None:
+    client: httpx.AsyncClient = api_client
+    device_id, secret = await enroll(client)
+    heartbeat = {
+        "protocol_version": PROTOCOL,
+        "schema_version": "heartbeat/1.0.0",
+        "device_id": device_id,
+        "boot_id": "123e4567-e89b-12d3-a456-426614174101",
+        "firmware_version": "1.0.9",
+        "firmware_build_hash": "sequence-reconciliation-test",
+        "uptime_seconds": 30,
+        "reboot_reason": "power_on",
+        "connection_mode": "push",
+        "latest": None,
+        "pzem": {"ok": True, "status": "healthy"},
+        "sd": {
+            "ok": False,
+            "status": "sequence_reconciling",
+            "details": {
+                "sequence_reconciliation_in_progress": True,
+                "sequence_floor": 0,
+                "next_sequence": 1,
+            },
+        },
+        "oldest_stored_sequence": 0,
+        "newest_stored_sequence": 0,
+        "server_ack_sequence": 785,
+        "backlog_estimate": 0,
+        "configuration_version": 1,
+        "time": {"trusted": True, "source": "sntp"},
+    }
+    response = await signed_post(client, "/api/v1/device-heartbeats", heartbeat, device_id, secret)
+    assert response.status_code == 200, response.text
+    devices = (await client.get("/api/v1/devices")).json()
+    assert devices[0]["status"] == "online_storage_reconciling"
+
+
+@pytest.mark.asyncio
 async def test_storage_status_policy_cleanup_and_safe_removal(api_client: Any) -> None:
     client: httpx.AsyncClient = api_client
     device_id, secret = await enroll(client)

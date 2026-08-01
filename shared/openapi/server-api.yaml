@@ -13141,6 +13141,9 @@ components:
           - pzem_failure
           - no_valid_reading
           - sd_failure
+          - storage_sequence_reconciling
+          - storage_sequence_continuity_restored
+          - storage_cursor_regression
           - storage_pressure_notice
           - storage_pressure_warning
           - storage_pressure_critical
@@ -15375,6 +15378,8 @@ components:
         highest_contiguous_accepted_sequence:
           type: integer
           title: Highest Contiguous Accepted Sequence
+        sequence_cursor:
+          $ref: '#/components/schemas/SequenceCursorResponse'
         gap_ranges:
           items:
             prefixItems:
@@ -15402,6 +15407,7 @@ components:
       required:
       - server_receive_time
       - highest_contiguous_accepted_sequence
+      - sequence_cursor
       - gap_ranges
       - desired_configuration_version
       - firmware_release_available
@@ -18864,6 +18870,27 @@ components:
       required:
       - idempotency_key
       title: SensorTestModeWrite
+    SequenceCursorResponse:
+      properties:
+        highest_contiguous_accepted_sequence:
+          type: integer
+          minimum: 0.0
+          title: Highest Contiguous Accepted Sequence
+        maximum_seen_sequence:
+          type: integer
+          minimum: 0.0
+          title: Maximum Seen Sequence
+        next_sequence_floor:
+          type: integer
+          minimum: 1.0
+          title: Next Sequence Floor
+      additionalProperties: false
+      type: object
+      required:
+      - highest_contiguous_accepted_sequence
+      - maximum_seen_sequence
+      - next_sequence_floor
+      title: SequenceCursorResponse
     SessionView:
       properties:
         authenticated:

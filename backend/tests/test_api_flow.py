@@ -120,6 +120,74 @@ async def test_bootstrap_enrollment_heartbeat_and_push(api_client: Any) -> None:
     )
     assert response.status_code == 200, response.text
     assert response.json()["immediate_sync_requested"] is True
+    assert response.json()["sequence_cursor"] == {
+        "highest_contiguous_accepted_sequence": 0,
+        "maximum_seen_sequence": 0,
+        "next_sequence_floor": 1,
+    }
+    sparse_batch = {
+        "protocol_version": PROTOCOL,
+        "schema_version": "reading-batch/1.0.0",
+        "device_id": device_id,
+        "readings": [
+            {
+                "sequence": 790,
+                "boot_id": heartbeat_payload["boot_id"],
+                "interval_start": "2026-07-20T11:59:00Z",
+                "interval_end": "2026-07-20T12:00:00Z",
+                "time_trusted": True,
+                "voltage_avg": "120",
+                "current_avg": "5",
+                "power_avg": "600",
+                "power_factor": "1",
+                "frequency_hz": "60",
+                "interval_energy_wh": "10",
+                "energy_method": "power_integration",
+                "ct_rating_amps": "100",
+                "quality_flags": [],
+                "firmware_version": "1.0.9",
+            }
+        ],
+    }
+    sparse_body = json.dumps(sparse_batch, separators=(",", ":")).encode()
+    sparse = await client.post(
+        "/api/v1/device-readings/batch",
+        content=sparse_body,
+        headers={
+            **sign_headers(
+                secret=secret,
+                device_id=device_id,
+                direction="device-to-server",
+                method="POST",
+                target="/api/v1/device-readings/batch",
+                body=sparse_body,
+            ),
+            "Content-Type": "application/json",
+        },
+    )
+    assert sparse.status_code == 200, sparse.text
+    assert sparse.json()["highest_contiguous_accepted_sequence"] == 0
+    reconciled = await client.post(
+        "/api/v1/device-heartbeats",
+        content=body,
+        headers={
+            **sign_headers(
+                secret=secret,
+                device_id=device_id,
+                direction="device-to-server",
+                method="POST",
+                target="/api/v1/device-heartbeats",
+                body=body,
+            ),
+            "Content-Type": "application/json",
+        },
+    )
+    assert reconciled.status_code == 200, reconciled.text
+    assert reconciled.json()["sequence_cursor"] == {
+        "highest_contiguous_accepted_sequence": 0,
+        "maximum_seen_sequence": 790,
+        "next_sequence_floor": 791,
+    }
     devices = (await client.get("/api/v1/devices")).json()
     assert devices[0]["name"] == "Garage HVAC"
     assert devices[0]["status"] == "online_with_backlog"

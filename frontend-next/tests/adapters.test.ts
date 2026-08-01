@@ -168,6 +168,17 @@ describe('typed homeowner adapters', () => {
       measurementFreshness: 'live',
       measurementSource: 'heartbeat_live',
     })
+    const reconciling = adaptSensors([{
+      id: 'sensor-2',
+      name: 'Outdoor-AC',
+      status: 'online_storage_reconciling',
+      measurement_freshness: 'waiting',
+    }])[0]
+    expect(reconciling).toMatchObject({
+      online: true,
+      deviceStatus: 'online_storage_reconciling',
+      measurementFreshness: 'waiting',
+    })
     expect(live).toMatchObject({
       currentPowerW: '0.8',
       reportingSensors: 1,

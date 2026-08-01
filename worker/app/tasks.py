@@ -1777,6 +1777,40 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
                 ),
                 "last_error": storage_details.get("last_error"),
             }
+            continuity_evidence = {
+                "heartbeat_id": heartbeat.id,
+                "server_ack_sequence": storage_details.get("server_ack_sequence"),
+                "server_maximum_seen_sequence": storage_details.get(
+                    "server_maximum_seen_sequence"
+                ),
+                "local_record_count": storage_details.get("local_record_count"),
+                "local_sequence_floor": storage_details.get("sequence_floor"),
+                "required_next_sequence": storage_details.get("next_sequence"),
+                "card_generation": storage_details.get("card_generation"),
+                "card_empty": storage_details.get("card_empty"),
+                "last_error": storage_details.get("last_error"),
+            }
+            for rule_type, active in (
+                (
+                    "storage_sequence_reconciling",
+                    storage_subsystem.get("status") == "sequence_reconciling"
+                    or storage_details.get("sequence_reconciliation_in_progress")
+                    is True,
+                ),
+                (
+                    "storage_sequence_continuity_restored",
+                    storage_details.get("card_replaced_or_initialized") is True
+                    and storage_details.get("card_empty") is True
+                    and storage_details.get("sequence_floor_ready") is True,
+                ),
+                (
+                    "storage_cursor_regression",
+                    storage_details.get("sequence_conflict") is True
+                    or storage_details.get("sequence_cursor_conflict") is True,
+                ),
+            ):
+                for rule in matching_rules(device, rule_type):
+                    await set_condition(device, rule, active, continuity_evidence)
             for rule_type, active in (
                 ("storage_pressure_notice", pressure_state == "notice"),
                 ("storage_pressure_warning", pressure_state == "warning"),
@@ -1825,7 +1859,12 @@ async def evaluate_alerts(session: AsyncSession, settings: Settings) -> dict[str
                 )
             for rule_type, active, evidence in (
                 ("pzem_failure", not heartbeat.pzem_ok, {"heartbeat_id": heartbeat.id}),
-                ("sd_failure", not heartbeat.sd_ok, {"heartbeat_id": heartbeat.id}),
+                (
+                    "sd_failure",
+                    not heartbeat.sd_ok
+                    and storage_subsystem.get("status") != "sequence_reconciling",
+                    {"heartbeat_id": heartbeat.id},
+                ),
                 (
                     "time_untrusted",
                     not heartbeat.time_trusted,

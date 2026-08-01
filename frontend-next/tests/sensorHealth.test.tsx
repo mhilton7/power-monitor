@@ -106,4 +106,16 @@ describe('Sensor Health compact electrical measurements', () => {
       /\.sensor-electrical-strip\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/,
     )
   })
+
+  it('keeps accepted heartbeats online while storage reconciles or is degraded', () => {
+    const { rerender } = render(<SensorHealthEntry sensor={summary({
+      deviceStatus: 'online_storage_reconciling',
+    })} />)
+    expect(screen.getByText('Online · Storage reconciling')).toBeVisible()
+
+    rerender(<SensorHealthEntry sensor={summary({
+      deviceStatus: 'online_storage_degraded',
+    })} />)
+    expect(screen.getByText('Online · Storage degraded')).toBeVisible()
+  })
 })

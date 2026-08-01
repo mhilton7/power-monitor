@@ -11,7 +11,7 @@ export function SensorHealthEntry({
   sensor: SensorSummary
   serverNow?: string
 }) {
-  const stateLabel = sensorStateLabel(sensor.measurementFreshness)
+  const stateLabel = sensorOperationalLabel(sensor)
   return (
     <article
       aria-label={`${sensor.name} sensor, ${stateLabel.toLowerCase()}`}
@@ -58,6 +58,19 @@ function sensorStateLabel(state: SensorSummary['measurementFreshness']): string 
     invalid: 'Invalid',
     needs_attention: 'Needs attention',
   }[state]
+}
+
+function sensorOperationalLabel(sensor: SensorSummary): string {
+  if (sensor.deviceStatus === 'online_storage_reconciling') {
+    return 'Online · Storage reconciling'
+  }
+  if (
+    sensor.deviceStatus === 'online_storage_degraded'
+    || sensor.deviceStatus === 'api_healthy_storage_failed'
+  ) {
+    return 'Online · Storage degraded'
+  }
+  return sensorStateLabel(sensor.measurementFreshness)
 }
 
 function sensorStateDetail(state: SensorSummary['measurementFreshness']): string {
