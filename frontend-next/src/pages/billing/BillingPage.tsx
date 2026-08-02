@@ -26,6 +26,7 @@ import {
 } from '../../api/adapters'
 import { errorMessage, json, request } from '../../api/client'
 import { objectList, record, stringValue } from '../../api/validation'
+import { coverageSummary } from '../../components/data-display/CoverageExplanation'
 import { Metric, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
 import { MetadataItem, MetadataList, Page, PageHeader, StatGrid } from '../../components/layout/Layout'
@@ -40,7 +41,7 @@ import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
 import { useTestMode } from '../../state/TestModeContext'
 import type { BillSummary, ElectricService, RateAssignmentResult } from '../../types/models'
-import { dateRange, dateTime, energy, money, percentage, rate, statusLabel } from '../../utils/format'
+import { dateRange, dateTime, energy, money, rate, statusLabel } from '../../utils/format'
 import { hasAnyPermission, hasPermission } from '../../access/permissions'
 
 interface LibraryPlan {
@@ -290,7 +291,7 @@ export function BillingPage() {
               {bills.data?.[0] ? <LatestBill bill={bills.data[0]} currency={home.currency} /> : <EmptyState title="No imported bill" message="Upload a PDF to prepare reviewed rate rules." />}
             </Surface>}
             <Surface title="Estimate confidence">
-              <div className="confidence-card"><span>{cycle?.confidence ? statusLabel(cycle.confidence) : 'Waiting for history'}</span><p>Coverage {percentage(cycle?.coveragePercent)}. Estimates improve as synchronized readings fill the cycle.</p></div>
+              <div className="confidence-card"><span>{cycle?.confidence ? statusLabel(cycle.confidence) : 'Waiting for history'}</span><p>{coverageSummary(cycle?.coveragePercent)} Estimates improve as missing readings are synchronized.</p></div>
             </Surface>
           </aside>
         </div>

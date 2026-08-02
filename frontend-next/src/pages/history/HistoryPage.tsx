@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { adaptHistory, adaptTestModeHistory } from '../../api/adapters'
 import { download, errorMessage, json, request, saveBlob } from '../../api/client'
 import { EnergyChart } from '../../components/charts/EnergyChart'
+import { CoverageExplanation, coverageSummary } from '../../components/data-display/CoverageExplanation'
 import { Metric, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
 import { Page, PageHeader, SegmentedControl, StatGrid } from '../../components/layout/Layout'
@@ -148,7 +149,7 @@ export function HistoryPage() {
           {Number(history.data.coveragePercent) < 99 && (
             <InlineNotice tone="warning">
               <AlertTriangle size={17} />
-              Coverage is {percentage(history.data.coveragePercent)}. Missing readings remain gaps and are not replaced with zero.
+              <span><strong>Some stored readings are missing.</strong> {coverageSummary(history.data.coveragePercent)} Totals and estimates may be incomplete.</span>
             </InlineNotice>
           )}
           {history.data.warnings.map((warning) => <InlineNotice key={warning} tone="warning">{warning}</InlineNotice>)}
@@ -158,8 +159,9 @@ export function HistoryPage() {
               {canViewCosts && <Metric label="Estimated cost" value={money(history.data.cost, home.currency)} identity="history.cost" detail="Interval energy charges" />}
               {canViewCosts && <Metric label="Blended rate" value={rate(history.data.blendedRate, home.currency)} identity="history.blended_rate" />}
               <Metric label="Peak power" value={power(history.data.peakPowerW)} identity="history.peak_power" />
-              <Metric label="Coverage" value={percentage(history.data.coveragePercent)} identity="data.coverage" />
+              <Metric label="Stored reading coverage" value={percentage(history.data.coveragePercent)} identity="data.coverage" detail="Expected history received" />
             </StatGrid>
+            <CoverageExplanation value={history.data.coveragePercent} combined={filters.scope === 'home'} />
           </Surface>
           <Surface title="Energy over time" subtitle="Tier and time-of-use context is available in each interval tooltip.">
             {history.data.points.length ? (

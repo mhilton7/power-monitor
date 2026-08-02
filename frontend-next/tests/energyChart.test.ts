@@ -22,7 +22,7 @@ describe('energy chart tooltip formatting', () => {
       'Period: Tier 1',
       'Tier: Tier 1',
       'Rate: $0.30863/kWh',
-      'Coverage: 60.34%',
+      'Stored readings: 60.34%',
     ])
   })
 
@@ -36,7 +36,7 @@ describe('energy chart tooltip formatting', () => {
     }
 
     expect(energyChartTooltipLines(point, 'USD')).toEqual([
-      'Coverage: 100%',
+      'Stored readings: 100%',
     ])
   })
 

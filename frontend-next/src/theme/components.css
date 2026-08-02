@@ -668,6 +668,24 @@ tbody th { font-weight: 700; }
 .history-filter-row label { min-width: 0; }
 .history-filter-row label > span { display: flex; align-items: center; gap: .4rem; }
 .history-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.coverage-explanation {
+  border-top: 1px solid var(--line-subtle);
+  padding-top: var(--space-3);
+  color: var(--muted);
+  font-size: .84rem;
+}
+.coverage-explanation summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem .8rem;
+  width: fit-content;
+  cursor: pointer;
+  color: var(--text);
+}
+.coverage-explanation summary span { color: var(--accent); font-weight: 700; }
+.coverage-explanation > div { display: grid; gap: .35rem; max-width: 76ch; padding-top: .65rem; }
+.coverage-explanation p { margin: 0; }
 .history-provenance {
   margin: calc(-1 * var(--space-2)) 0 0;
   color: var(--muted);

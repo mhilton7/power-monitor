@@ -11,7 +11,7 @@ import { ResponsiveChartFrame } from './ResponsiveChartFrame'
 ChartJS.register(LinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
 
 export function energyChartTooltipLines(point: HistoryPoint, currency: string): string[] {
-  return [point.period ? `Period: ${point.period}` : '', point.tier ? `Tier: ${point.tier}` : '', point.rate ? `Rate: ${rate(point.rate, currency)}` : '', `Coverage: ${percentage(point.coveragePercent)}`].filter(Boolean)
+  return [point.period ? `Period: ${point.period}` : '', point.tier ? `Tier: ${point.tier}` : '', point.rate ? `Rate: ${rate(point.rate, currency)}` : '', `Stored readings: ${percentage(point.coveragePercent)}`].filter(Boolean)
 }
 
 type ChartDatum = ScatterDataPoint
@@ -115,7 +115,7 @@ export function EnergyChart({ points, mode, currency, title, timezone = 'UTC', b
       <Line ref={chartRef} data={data} options={options} />
     </ResponsiveChartFrame>
     <details className="chart-table"><summary>View accessible data table</summary><div className="table-scroll"><table>
-      <thead><tr><th>Exact interval ({timezone})</th><th>Power</th><th>Energy</th><th>Cost</th><th>Rate period</th><th>Coverage</th></tr></thead>
+      <thead><tr><th>Exact interval ({timezone})</th><th>Power</th><th>Energy</th><th>Cost</th><th>Rate period</th><th>Stored readings</th></tr></thead>
       <tbody>{ordered.map((point) => <tr key={`${point.start}-${point.end}`}><th scope="row">{chartIntervalLabel(point.start, point.end, timezone)}</th><td>{point.missing ? 'Missing' : power(point.powerW)}</td><td>{point.missing ? 'Missing' : energy(point.energyKwh)}</td><td>{point.missing ? 'Missing' : money(point.cost, currency)}</td><td>{[point.tier, point.period].filter(Boolean).join(' · ') || 'Not available'}</td><td>{percentage(point.coveragePercent)}</td></tr>)}</tbody>
     </table></div></details>
   </div>

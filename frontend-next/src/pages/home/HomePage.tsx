@@ -17,6 +17,7 @@ import { hasAnyPermission, hasPermission } from '../../access/permissions'
 import { adaptHistory } from '../../api/adapters'
 import { json, request } from '../../api/client'
 import { EnergyChart } from '../../components/charts/EnergyChart'
+import { CoverageExplanation } from '../../components/data-display/CoverageExplanation'
 import { Metric, StatusDot, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, LoadingState } from '../../components/feedback/States'
 import { Page, PageHeader, StatGrid } from '../../components/layout/Layout'
@@ -198,11 +199,14 @@ export function HomePage() {
 
       {appearance.showDailyChart && <Surface
         title="Today’s energy"
-        subtitle="Whole-home intervals; missing readings remain visible gaps."
+        subtitle="Energy calculated from readings stored by your sensors."
         action={<Link className="text-link" to="/history">Explore History <ArrowRight /></Link>}
       >
         {dailyHistory.isLoading ? <LoadingState label="Loading today’s readings…" /> : dailyHistory.error ? <ErrorState error={dailyHistory.error} retry={() => void dailyHistory.refetch()} /> : dailyHistory.data?.points.length ? (
-          <EnergyChart points={dailyHistory.data.points} mode="energy" currency={home.currency} title="Today’s whole-home energy" timezone={dailyHistory.data.timezone} bucket={dailyHistory.data.bucket} rangeStart={dailyHistory.data.rangeStart} rangeEnd={dailyHistory.data.rangeEnd} variant="home" />
+          <>
+            <CoverageExplanation value={dailyHistory.data.coveragePercent} combined />
+            <EnergyChart points={dailyHistory.data.points} mode="energy" currency={home.currency} title="Today’s whole-home energy" timezone={dailyHistory.data.timezone} bucket={dailyHistory.data.bucket} rangeStart={dailyHistory.data.rangeStart} rangeEnd={dailyHistory.data.rangeEnd} variant="home" />
+          </>
         ) : (
           <EmptyState compact title="Waiting for today’s history" message="Intervals appear after synchronized sensor readings are stored." />
         )}
