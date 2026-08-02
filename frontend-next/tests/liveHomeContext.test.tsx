@@ -92,6 +92,7 @@ function payload(path: string): unknown {
       reporting_devices: 1,
       has_live_data: true,
       latest_data_at: '2026-07-29T21:55:00Z',
+      active_alerts: 2,
     }
   }
   if (path === '/api/v1/utility-accounts') return []
@@ -128,6 +129,8 @@ function Result() {
       {live.summary?.currentPowerW ?? 'missing'}
       {' · '}
       {live.sensors[0]?.voltageVolts ?? 'missing'}
+      {' · '}
+      {live.summary?.activeAlerts ?? 'missing'}
     </output>
   )
 }
@@ -168,7 +171,7 @@ describe('Live Home SSE refresh', () => {
   it('uses one site-scoped stream and refreshes both live queries on reading events', async () => {
     const testClient = createTestClient()
     const view = render(<Providers client={testClient}><Result /></Providers>)
-    await screen.findByText('Connected · 1.0 · 120.4')
+    await screen.findByText('Connected · 1.0 · 120.4 · 0')
     expect(FakeEventSource.instances).toHaveLength(1)
     const source = FakeEventSource.instances[0] as FakeEventSource
     expect(source.url).toBe('/api/v1/events/stream?site_id=home-1')

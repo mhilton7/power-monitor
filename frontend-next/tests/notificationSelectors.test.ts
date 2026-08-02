@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  countCurrentAttentionNotifications,
   groupNotifications,
   isCurrentAttentionNotification,
   removeCachedNotification,
@@ -84,6 +85,14 @@ describe('notification selectors', () => {
     expect(grouped.resolved.map((item) => item.id)).toEqual(['resolved'])
     expect(grouped.resolvedAll.map((item) => item.id)).toEqual(['resolved'])
     expect(grouped.active.every(isCurrentAttentionNotification)).toBe(true)
+    expect(countCurrentAttentionNotifications([
+      base,
+      acknowledged,
+      silenced,
+      resolved,
+      dismissed,
+      recommendation,
+    ])).toBe(3)
   })
 
   it('limits the resolved preview without losing notifications selected by clear all', () => {

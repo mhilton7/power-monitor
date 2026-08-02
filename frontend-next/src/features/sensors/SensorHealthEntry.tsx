@@ -22,7 +22,13 @@ export function SensorHealthEntry({
           <StatusDot state={sensorDotState(sensor.measurementFreshness)} label={sensor.name} />
           <small>
             {sensor.measurementReceivedAt
-              ? <>Received <ElapsedTime timestamp={sensor.measurementReceivedAt} serverNow={serverNow} /></>
+              ? <>
+                  Received <ElapsedTime
+                    timestamp={sensor.measurementReceivedAt}
+                    serverNow={serverNow}
+                    serverReceipt
+                  />
+                </>
               : sensor.latestMeasurementAt
                 ? sensorMeasurementTime(
                     sensor.latestMeasurementAt,

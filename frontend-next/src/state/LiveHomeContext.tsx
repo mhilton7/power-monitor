@@ -22,6 +22,7 @@ import type {
 import { useSingleHome } from './SingleHomeContext'
 import { useAuth } from './AuthContext'
 import { hasAnyPermission, hasPermission } from '../access/permissions'
+import { countCurrentAttentionNotifications } from '../features/alerts/notificationSelectors'
 
 interface LiveHomeValue {
   summary?: HomeSummary
@@ -132,12 +133,18 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     }
   }, [boundary, canViewOverview, client, homeId])
 
-  const summary = useMemo(
-    () => fleet.data
-      ? adaptHomeSummary(fleet.data, sensors.data ?? [], activeService, cycle.data)
-      : undefined,
-    [activeService, cycle.data, fleet.data, sensors.data],
-  )
+  const summary = useMemo(() => {
+    if (!fleet.data) return undefined
+    const adapted = adaptHomeSummary(fleet.data, sensors.data ?? [], activeService, cycle.data)
+    if (!canViewAlerts || !alerts.data) return adapted
+    return {
+      ...adapted,
+      // Notification dismissal is scoped to the current user. The fleet response
+      // intentionally remains a site-level operational count, so user-facing Home
+      // surfaces must use the same filtered notification page as the drawer.
+      activeAlerts: countCurrentAttentionNotifications(alerts.data.items),
+    }
+  }, [activeService, alerts.data, canViewAlerts, cycle.data, fleet.data, sensors.data])
   useEffect(() => {
     if (import.meta.env.VITE_LIVE_PIPELINE_DEBUG !== 'true' || !homeId || !summary) return
     console.debug('[power-monitor:live-home]', {

@@ -48,4 +48,43 @@ describe('shared local second clock', () => {
     )
     expect(screen.getByText('Just now')).toBeVisible()
   })
+
+  it('does not reject a server receipt while the independently fetched server clock catches up', () => {
+    const view = render(
+      <SecondClockProvider>
+        <ElapsedTime
+          timestamp="2026-07-30T12:00:10Z"
+          serverNow="2026-07-30T12:00:00Z"
+          serverReceipt
+        />
+      </SecondClockProvider>,
+    )
+
+    expect(screen.getByText('Just now')).toBeVisible()
+    expect(screen.queryByText('Invalid timestamp')).not.toBeInTheDocument()
+
+    view.rerender(
+      <SecondClockProvider>
+        <ElapsedTime
+          timestamp="2026-07-30T12:00:10Z"
+          serverNow="2026-07-30T12:00:12Z"
+          serverReceipt
+        />
+      </SecondClockProvider>,
+    )
+    expect(screen.getByText('2s ago')).toBeVisible()
+  })
+
+  it('continues rejecting future non-receipt timestamps', () => {
+    render(
+      <SecondClockProvider>
+        <ElapsedTime
+          timestamp="2026-07-30T12:00:10Z"
+          serverNow="2026-07-30T12:00:00Z"
+        />
+      </SecondClockProvider>,
+    )
+
+    expect(screen.getByText('Invalid timestamp')).toBeVisible()
+  })
 })

@@ -38,6 +38,10 @@ export function isCurrentAttentionNotification(notification: AlertSummary): bool
   return notification.kind !== 'setup_recommendation' && !terminalStates.has(notification.status)
 }
 
+export function countCurrentAttentionNotifications(notifications: AlertSummary[]): number {
+  return notifications.filter(isCurrentAttentionNotification).length
+}
+
 export function groupNotifications(notifications: AlertSummary[]) {
   const resolvedAll = notifications.filter((notification) => notification.status === 'resolved')
   return {

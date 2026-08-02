@@ -28,6 +28,7 @@ import { StatusDot } from '../components/data-display/Surface'
 import { DropdownMenu, DropdownMenuItem } from '../components/overlays/DropdownMenu'
 import { ConfigurationStatusChip } from '../features/configuration/ConfigurationStatusSurface'
 import { useTestMode } from '../state/TestModeContext'
+import { countCurrentAttentionNotifications } from '../features/alerts/notificationSelectors'
 import {
   canAccessSettings,
   roleLabel,
@@ -50,7 +51,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const testMode = useTestMode()
   const location = useLocation()
   const [alertsOpen, setAlertsOpen] = useState(new URLSearchParams(location.search).get('alerts') === '1')
-  const activeAlertCount = alerts.filter((item) => item.kind === 'operational_alert' && item.status !== 'resolved' && item.status !== 'silenced').length
+  const activeAlertCount = countCurrentAttentionNotifications(alerts)
   const navigate = useNavigate()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const liveState = summary?.hasLiveData ? 'live' : summary?.totalSensors ? 'waiting' : 'attention'
