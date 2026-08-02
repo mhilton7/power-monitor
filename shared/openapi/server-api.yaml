@@ -14652,6 +14652,34 @@ components:
             type: string
           type: array
           title: Measurement Invalid Metrics
+        heartbeat_received_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Heartbeat Received At
+        heartbeat_age_seconds:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Heartbeat Age Seconds
+        heartbeat_freshness:
+          type: string
+          enum:
+          - never_received
+          - online
+          - offline
+          title: Heartbeat Freshness
+        offline_after_seconds:
+          type: integer
+          minimum: 1.0
+          title: Offline After Seconds
+        previous_outage_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Previous Outage Reason
         rssi_dbm:
           anyOf:
           - type: integer
@@ -14713,6 +14741,10 @@ components:
       - measurement_sequence
       - measurement_source
       - measurement_freshness
+      - heartbeat_received_at
+      - heartbeat_freshness
+      - offline_after_seconds
+      - previous_outage_reason
       - rssi_dbm
       - pzem_ok
       - sd_ok

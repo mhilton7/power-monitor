@@ -889,6 +889,11 @@ class DeviceListItem(ApiModel):
         "needs_attention",
     ]
     measurement_invalid_metrics: list[str] = Field(default_factory=list)
+    heartbeat_received_at: datetime | None
+    heartbeat_age_seconds: int | None = Field(default=None, ge=0)
+    heartbeat_freshness: Literal["never_received", "online", "offline"]
+    offline_after_seconds: int = Field(ge=1)
+    previous_outage_reason: str | None
     rssi_dbm: int | None
     pzem_ok: bool | None
     sd_ok: bool | None

@@ -110,8 +110,8 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     if (!homeId || !canViewOverview || typeof EventSource === 'undefined') return
     const source = new EventSource(`/api/v1/events/stream?site_id=${encodeURIComponent(homeId)}`)
     const refreshLive = () => {
-      void client.invalidateQueries({ queryKey: ['home-summary'] })
-      void client.invalidateQueries({ queryKey: ['sensors'] })
+      void client.invalidateQueries({ queryKey: ['home-summary', boundary, homeId] })
+      void client.invalidateQueries({ queryKey: ['sensors', boundary, homeId] })
     }
     const refreshHistory = () => {
       refreshLive()
@@ -130,7 +130,7 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     return () => {
       source.close()
     }
-  }, [canViewOverview, client, homeId])
+  }, [boundary, canViewOverview, client, homeId])
 
   const summary = useMemo(
     () => fleet.data

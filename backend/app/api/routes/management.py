@@ -1017,8 +1017,6 @@ async def list_devices(
         query = query.where(Device.site_id == site_id)
     elif not principal.all_sites:
         query = query.where(Device.site_id.in_(principal.site_ids))
-    if status:
-        query = query.where(Device.status == status)
     devices = list(await session.scalars(query))
     device_ids = [device.id for device in devices]
     measurements, heartbeats, _readings = await load_latest_measurements(session, devices, settings)
@@ -1096,6 +1094,17 @@ async def list_devices(
         )
         removed_by = removed_users.get(device.decommissioned_by or "")
         log_measurement_decision(measurement)
+        response_status = (
+            "decommissioned"
+            if device.lifecycle_status == "decommissioned"
+            else "revoked"
+            if device.revoked_at
+            else "offline"
+            if measurement.heartbeat_freshness == "offline"
+            else device.status
+        )
+        if status and response_status != status:
+            continue
         output.append(
             {
                 "id": device.id,
@@ -1110,13 +1119,7 @@ async def list_devices(
                 "cost_scope": device.cost_scope,
                 "included_in_default": device.include_in_default_site_total,
                 "ct_rating_amps": device.ct_rating_amps,
-                "status": (
-                    "decommissioned"
-                    if device.lifecycle_status == "decommissioned"
-                    else "revoked"
-                    if device.revoked_at
-                    else device.status
-                ),
+                "status": response_status,
                 "lifecycle_status": device.lifecycle_status,
                 "decommissioned_at": device.decommissioned_at,
                 "decommissioned_by": device.decommissioned_by,
@@ -1140,6 +1143,11 @@ async def list_devices(
                 "measurement_source": measurement.source,
                 "measurement_freshness": measurement.freshness_state,
                 "measurement_invalid_metrics": list(measurement.invalid_metrics),
+                "heartbeat_received_at": measurement.heartbeat_received_at,
+                "heartbeat_age_seconds": measurement.heartbeat_age_seconds,
+                "heartbeat_freshness": measurement.heartbeat_freshness,
+                "offline_after_seconds": measurement.offline_after_seconds,
+                "previous_outage_reason": measurement.previous_outage_reason,
                 "rssi_dbm": heartbeat.rssi_dbm if heartbeat else None,
                 "pzem_ok": heartbeat.pzem_ok if heartbeat else None,
                 "sd_ok": heartbeat.sd_ok if heartbeat else None,
@@ -2512,18 +2520,14 @@ async def fleet_summary(
             or_(AlertInstance.site_id.is_(None), AlertInstance.site_id.in_(principal.site_ids))
         )
     alerts = await session.scalar(alert_query)
-    online_states = {
-        "online_synchronized",
-        "online_with_backlog",
-        "online_push_only",
-        "api_healthy_meter_failed",
-        "api_healthy_storage_failed",
-        "online_storage_reconciling",
-        "online_storage_degraded",
-        "time_unsynchronized",
-    }
-    online = sum(device.status in online_states for device in devices)
-    synchronized = sum(device.status == "online_synchronized" for device in devices)
+    online = sum(
+        measurement.heartbeat_freshness == "online" for measurement in measurements.values()
+    )
+    synchronized = sum(
+        device.status == "online_synchronized"
+        and measurements[device.id].heartbeat_freshness == "online"
+        for device in devices
+    )
     has_energy_data = energy_wh is not None
     kwh = Decimal(str(energy_wh or 0)) / Decimal("1000")
     coverage_percent = (

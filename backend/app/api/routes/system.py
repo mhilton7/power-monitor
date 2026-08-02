@@ -673,19 +673,35 @@ async def _sse_stream(
             compact = [
                 {
                     "id": device.id,
-                    "status": device.status,
+                    "status": (
+                        "offline"
+                        if measurements[device.id].heartbeat_freshness == "offline"
+                        else device.status
+                    ),
                     "last_seen_at": device.last_seen_at.isoformat()
                     if device.last_seen_at
                     else None,
                     "firmware_version": device.firmware_version,
                     "latest_measurement_at": _iso_or_none(measurements[device.id].measured_at),
                     "measurement_freshness": measurements[device.id].freshness_state,
+                    "heartbeat_received_at": _iso_or_none(
+                        measurements[device.id].heartbeat_received_at
+                    ),
+                    "heartbeat_age_seconds": measurements[device.id].heartbeat_age_seconds,
+                    "heartbeat_freshness": measurements[device.id].heartbeat_freshness,
+                    "offline_after_seconds": measurements[device.id].offline_after_seconds,
                 }
                 for device in devices
             ]
             heartbeat_ids = {key: item.id for key, item in heartbeats.items()}
             reading_sequences = {key: item.sequence for key, item in readings.items()}
-            statuses = {device.id: device.status for device in devices}
+            statuses = {
+                device.id: (
+                    f"{device.status}:{measurements[device.id].heartbeat_freshness}:"
+                    f"{measurements[device.id].freshness_state}"
+                )
+                for device in devices
+            }
         emitted = False
         if heartbeat_ids != last_heartbeat_ids:
             payload = json.dumps(

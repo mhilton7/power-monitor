@@ -890,6 +890,8 @@ tbody th { font-weight: 700; }
 .sensor-health-row .pill.offline,
 .sensor-health-row .pill.invalid,
 .sensor-health-row .pill.needs_attention { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.sensor-previous-outage { margin: 0; color: var(--muted); font-size: .72rem; line-height: 1.35; }
+.sensor-previous-outage strong { color: var(--text-soft); }
 .sensor-electrical-strip { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .75rem; min-width: 0; margin: 0; padding-top: .55rem; border-top: 1px solid var(--line-subtle); }
 .sensor-electrical-metric { display: inline-flex; flex: 0 0 auto; align-items: baseline; gap: .28rem; min-width: 0; white-space: nowrap; }
 .sensor-electrical-metric dt { color: var(--muted); font-size: .62rem; font-weight: 780; letter-spacing: .055em; line-height: 1.2; text-transform: uppercase; }

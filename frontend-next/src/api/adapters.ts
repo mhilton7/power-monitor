@@ -296,6 +296,16 @@ export function adaptSensors(value: unknown): SensorSummary[] {
       : onlineStates.has(deviceStatus)
         ? 'waiting'
         : 'offline'
+    const rawHeartbeatFreshness = stringValue(source.heartbeat_freshness)
+    const heartbeatFreshness = ['never_received', 'online', 'offline'].includes(
+      rawHeartbeatFreshness,
+    )
+      ? rawHeartbeatFreshness as SensorSummary['heartbeatFreshness']
+      : measurementFreshness === 'offline'
+        ? 'offline'
+        : onlineStates.has(deviceStatus)
+          ? 'online'
+          : 'never_received'
     return {
       id: stringValue(source.id),
       name: stringValue(source.name, 'Unnamed sensor'),
@@ -304,7 +314,7 @@ export function adaptSensors(value: unknown): SensorSummary[] {
       utilityAccountId: optionalString(source.utility_account_id),
       state: measurementFreshness,
       deviceStatus,
-      online: onlineStates.has(deviceStatus),
+      online: heartbeatFreshness === 'online',
       currentPowerW: optionalString(source.current_watts),
       voltageVolts: optionalString(source.voltage_volts),
       currentAmps: optionalString(source.current_amps),
@@ -318,6 +328,11 @@ export function adaptSensors(value: unknown): SensorSummary[] {
         ? source.measurement_source
         : undefined,
       measurementFreshness,
+      heartbeatReceivedAt: optionalString(source.heartbeat_received_at),
+      heartbeatAgeSeconds: optionalNumber(source.heartbeat_age_seconds),
+      heartbeatFreshness,
+      offlineAfterSeconds: numberValue(source.offline_after_seconds, 30),
+      previousOutageReason: optionalString(source.previous_outage_reason),
       invalidMetrics: stringList(source.measurement_invalid_metrics),
       lastSeenAt: optionalString(source.last_seen_at),
       storageHealthy: typeof source.sd_ok === 'boolean' ? source.sd_ok : undefined,

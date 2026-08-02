@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     csrf_cookie_name: str = "pm_csrf"
     session_hours: int = 12
     heartbeat_expectation_seconds: int = 15
+    device_offline_after_seconds: int = 30
     max_device_clock_skew_seconds: int = 300
     max_reading_batch_records: int = 500
     max_reading_batch_bytes: int = 2_000_000
@@ -98,6 +99,13 @@ class Settings(BaseSettings):
     trusted_proxy_cidrs: str = "172.16.0.0/12"
     allowed_poll_ports: tuple[int, ...] = (80, 443, 8080, 8443)
     log_level: str = "INFO"
+
+    @field_validator("device_offline_after_seconds")
+    @classmethod
+    def fixed_device_offline_boundary(cls, value: int) -> int:
+        if value != 30:
+            raise ValueError("DEVICE_OFFLINE_AFTER_SECONDS must remain 30")
+        return value
 
     @field_validator("log_retention_days")
     @classmethod

@@ -146,6 +146,11 @@ describe('typed homeowner adapters', () => {
       measurement_received_at: '2026-07-29T21:55:02Z',
       last_seen_at: '2026-07-29T21:55:02Z',
       measurement_freshness: 'live',
+      heartbeat_received_at: '2026-07-29T21:55:02Z',
+      heartbeat_age_seconds: 1,
+      heartbeat_freshness: 'online',
+      offline_after_seconds: 30,
+      previous_outage_reason: 'Sensor previously deferred synchronization because internal heap was fragmented.',
       measurement_source: 'heartbeat_live',
       measurement_invalid_metrics: [],
     }])
@@ -167,17 +172,37 @@ describe('typed homeowner adapters', () => {
       powerFactor: '0.83',
       measurementFreshness: 'live',
       measurementSource: 'heartbeat_live',
+      heartbeatFreshness: 'online',
+      online: true,
+      previousOutageReason: 'Sensor previously deferred synchronization because internal heap was fragmented.',
     })
     const reconciling = adaptSensors([{
       id: 'sensor-2',
       name: 'Outdoor-AC',
       status: 'online_storage_reconciling',
       measurement_freshness: 'waiting',
+      heartbeat_freshness: 'online',
+      offline_after_seconds: 30,
     }])[0]
     expect(reconciling).toMatchObject({
       online: true,
       deviceStatus: 'online_storage_reconciling',
       measurementFreshness: 'waiting',
+    })
+    const staleStoredStatus = adaptSensors([{
+      id: 'sensor-3',
+      name: 'Stale stored status',
+      status: 'online_synchronized',
+      measurement_freshness: 'offline',
+      heartbeat_freshness: 'offline',
+      heartbeat_age_seconds: 31,
+      offline_after_seconds: 30,
+    }])[0]
+    expect(staleStoredStatus).toMatchObject({
+      deviceStatus: 'online_synchronized',
+      heartbeatFreshness: 'offline',
+      measurementFreshness: 'offline',
+      online: false,
     })
     expect(live).toMatchObject({
       currentPowerW: '0.8',

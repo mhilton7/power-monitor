@@ -100,6 +100,11 @@ export interface SensorSummary {
     | 'unavailable'
     | 'invalid'
     | 'needs_attention'
+  heartbeatReceivedAt?: string
+  heartbeatAgeSeconds?: number
+  heartbeatFreshness: 'never_received' | 'online' | 'offline'
+  offlineAfterSeconds: number
+  previousOutageReason?: string
   invalidMetrics: string[]
   lastSeenAt?: string
   storageHealthy?: boolean

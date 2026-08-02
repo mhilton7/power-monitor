@@ -58,6 +58,8 @@ const sensor: SensorSummary = {
   deviceStatus: 'online_waiting',
   online: true,
   measurementFreshness: 'waiting',
+  heartbeatFreshness: 'online',
+  offlineAfterSeconds: 30,
   invalidMetrics: [],
   monitoredCircuit: 'Unassigned',
   includedInDefault: false,

@@ -31,6 +31,8 @@ function summary(
     ctRatingAmps: '100',
     measurementRole: 'energy_only',
     ...overrides,
+    heartbeatFreshness: overrides.heartbeatFreshness ?? 'online',
+    offlineAfterSeconds: overrides.offlineAfterSeconds ?? 30,
   }
 }
 
@@ -117,5 +119,16 @@ describe('Sensor Health compact electrical measurements', () => {
       deviceStatus: 'online_storage_degraded',
     })} />)
     expect(screen.getByText('Online · Storage degraded')).toBeVisible()
+  })
+
+  it('does not let a stored online health label override server heartbeat freshness', () => {
+    render(<SensorHealthEntry sensor={summary({
+      deviceStatus: 'online_storage_degraded',
+      online: false,
+      measurementFreshness: 'offline',
+      heartbeatFreshness: 'offline',
+    })} />)
+    expect(screen.getByText('Offline')).toBeVisible()
+    expect(screen.queryByText(/Storage degraded/)).not.toBeInTheDocument()
   })
 })

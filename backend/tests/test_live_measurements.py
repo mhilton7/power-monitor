@@ -9,7 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db.models import Device, DeviceHeartbeat, RawReading, Site
-from app.live_measurements import load_latest_measurements
+from app.live_measurements import (
+    evaluate_heartbeat_freshness,
+    load_latest_measurements,
+    previous_outage_reason_from_heartbeat,
+)
 
 
 def heartbeat(
@@ -129,6 +133,116 @@ async def test_live_heartbeat_metrics_and_legitimate_zero_are_preserved(
     assert latest.frequency_hz == Decimal("60.0")
     assert latest.power_factor == Decimal("0.83")
     assert latest.source == "heartbeat_live"
+
+
+def test_server_received_heartbeat_has_explicit_thirty_second_boundary(
+    test_settings: Settings,
+) -> None:
+    received_at = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+    sensor = Device(
+        site_id="site-1",
+        hardware_id="freshness-boundary",
+        name="Boundary",
+        status="online_push_only",
+    )
+    item = heartbeat(sensor, now=received_at, power="1")
+
+    assert test_settings.device_offline_after_seconds == 30
+    assert (
+        evaluate_heartbeat_freshness(
+            item,
+            test_settings,
+            now=received_at + timedelta(seconds=29),
+        ).state
+        == "online"
+    )
+    at_boundary = evaluate_heartbeat_freshness(
+        item,
+        test_settings,
+        now=received_at + timedelta(seconds=30),
+    )
+    assert at_boundary.state == "online"
+    assert at_boundary.age_seconds == 30
+    assert (
+        evaluate_heartbeat_freshness(
+            item,
+            test_settings,
+            now=received_at + timedelta(seconds=31),
+        ).state
+        == "offline"
+    )
+    with pytest.raises(ValueError, match="must remain 30"):
+        Settings(device_offline_after_seconds=31)
+
+
+def test_previous_outage_reason_requires_received_allowlisted_evidence() -> None:
+    now = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+    sensor = Device(
+        site_id="site-1",
+        hardware_id="outage-evidence",
+        name="Outdoor-AC",
+        status="online_push_only",
+    )
+    item = heartbeat(sensor, now=now, power="1")
+    assert previous_outage_reason_from_heartbeat(item) is None
+
+    item.payload["resources"] = {"last_local_deferral_reason": "untrusted_sensor_text"}
+    assert previous_outage_reason_from_heartbeat(item) is None
+
+    item.payload["resources"] = {
+        "synchronization": {"last_local_deferral_reason": "internal_heap_fragmented"}
+    }
+    assert previous_outage_reason_from_heartbeat(item) == (
+        "Sensor previously deferred synchronization because internal heap was fragmented."
+    )
+
+
+@pytest.mark.asyncio
+async def test_latest_received_heartbeat_is_authoritative_over_denormalized_device_status(
+    session: AsyncSession,
+    test_settings: Settings,
+) -> None:
+    now = datetime.now(UTC)
+    site = Site(name="Receipt authority", timezone="America/Los_Angeles")
+    session.add(site)
+    await session.flush()
+    recently_received = await device_for(
+        session,
+        site,
+        hardware_id="receipt-recent",
+        name="Recent",
+        now=now - timedelta(minutes=10),
+    )
+    recently_received.status = "waiting_for_heartbeat"
+    stale_receipt = await device_for(
+        session,
+        site,
+        hardware_id="receipt-stale",
+        name="Stale",
+        now=now,
+    )
+    session.add_all(
+        [
+            heartbeat(recently_received, now=now, power="2"),
+            heartbeat(
+                stale_receipt,
+                now=now - timedelta(seconds=31),
+                power="3",
+            ),
+        ]
+    )
+    await session.commit()
+
+    measurements, _, _ = await load_latest_measurements(
+        session,
+        [recently_received, stale_receipt],
+        test_settings,
+        now=now,
+    )
+    assert measurements[recently_received.id].heartbeat_freshness == "online"
+    assert measurements[recently_received.id].freshness_state == "live"
+    assert measurements[stale_receipt.id].heartbeat_freshness == "offline"
+    assert measurements[stale_receipt.id].freshness_state == "offline"
 
 
 @pytest.mark.asyncio

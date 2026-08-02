@@ -80,6 +80,8 @@ function payload(path: string): unknown {
       power_factor: '0.83',
       latest_measurement_at: '2026-07-29T21:55:00Z',
       measurement_freshness: 'live',
+      heartbeat_freshness: 'online',
+      offline_after_seconds: 30,
       measurement_source: 'heartbeat_live',
       measurement_invalid_metrics: [],
     }]
@@ -190,6 +192,12 @@ describe('Live Home SSE refresh', () => {
       ).length).toBeGreaterThan(initialFleetRequests)
     })
     expect(invalidationSpy).not.toHaveBeenCalledWith({ queryKey: ['history'] })
+    expect(invalidationSpy).toHaveBeenCalledWith({
+      queryKey: ['home-summary', 'viewer-1:1', 'home-1'],
+    })
+    expect(invalidationSpy).toHaveBeenCalledWith({
+      queryKey: ['sensors', 'viewer-1:1', 'home-1'],
+    })
 
     const deviceRequestsAfterHeartbeat = requestMock.mock.calls.filter(
       ([path]) => String(path).startsWith('/api/v1/devices?'),
@@ -208,6 +216,18 @@ describe('Live Home SSE refresh', () => {
         ([path]) => String(path).startsWith('/api/v1/fleet/summary?'),
       ).length).toBeGreaterThan(fleetRequestsAfterHeartbeat)
       expect(invalidationSpy).toHaveBeenCalledWith({ queryKey: ['history'] })
+    })
+
+    const devicesAfterReading = requestMock.mock.calls.filter(
+      ([path]) => String(path).startsWith('/api/v1/devices?'),
+    ).length
+    act(() => {
+      source.emit('device_status')
+    })
+    await waitFor(() => {
+      expect(requestMock.mock.calls.filter(
+        ([path]) => String(path).startsWith('/api/v1/devices?'),
+      ).length).toBeGreaterThan(devicesAfterReading)
     })
 
     act(() => {

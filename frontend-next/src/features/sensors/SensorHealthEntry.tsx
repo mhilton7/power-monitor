@@ -36,6 +36,11 @@ export function SensorHealthEntry({
         </span>
       </header>
       <SensorElectricalStrip sensor={sensor} />
+      {sensor.online && sensor.previousOutageReason && (
+        <p className="sensor-previous-outage">
+          <strong>Previous outage:</strong> {sensor.previousOutageReason}
+        </p>
+      )}
     </article>
   )
 }
@@ -61,6 +66,9 @@ function sensorStateLabel(state: SensorSummary['measurementFreshness']): string 
 }
 
 function sensorOperationalLabel(sensor: SensorSummary): string {
+  if (sensor.heartbeatFreshness !== 'online') {
+    return sensorStateLabel(sensor.measurementFreshness)
+  }
   if (sensor.deviceStatus === 'online_storage_reconciling') {
     return 'Online · Storage reconciling'
   }

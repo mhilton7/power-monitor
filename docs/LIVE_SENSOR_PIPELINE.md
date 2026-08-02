@@ -56,10 +56,27 @@ replace a newer committed reading. Future, untrusted durable, non-finite,
 out-of-range, or missing-power candidates do not contribute to live power.
 Missing is represented as null; a legitimate measured zero remains zero.
 
-The online deadline is twice the configured heartbeat expectation. The live
-measurement deadline is four times that expectation. The shared states are
-`live`, `waiting`, `stale`, `offline`, `unavailable`, `invalid`, and
-`needs_attention`.
+Connectivity is evaluated from the newest `DeviceHeartbeat.received_at`
+timestamp actually written by this server. The denormalized `Device.status`
+and `Device.last_seen_at` fields are supporting metadata, not freshness
+authority. The explicit server-offline boundary is 30 seconds; it is exposed
+as `offline_after_seconds` and guarded by configuration validation so a
+deployment cannot lengthen it to hide synchronization failures. The live
+measurement deadline remains four times the 15-second heartbeat expectation.
+The shared measurement states are `live`, `waiting`, `stale`, `offline`,
+`unavailable`, `invalid`, and `needs_attention`.
+
+The devices response also includes the server-derived heartbeat receipt time,
+age, and `never_received`/`online`/`offline` state. Fleet online counts use that
+same result. The SSE device-status signature includes derived heartbeat and
+measurement freshness, so crossing the offline boundary or accepting a new
+heartbeat invalidates both active Home-summary and sensor queries. Polling
+remains a fallback.
+
+The server cannot observe a local pre-TLS deferral while the sensor is unable
+to contact it. `previous_outage_reason` is therefore absent during an unseen
+outage and is populated only after a later signed heartbeat reports a known,
+allowlisted local-deferral reason. Unknown sensor text is never echoed.
 
 `reporting_devices` counts fresh valid measurements. The Home aggregate uses
 only sensors explicitly included by the topology. A sole active sensor is

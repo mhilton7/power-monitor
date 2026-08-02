@@ -16,6 +16,7 @@ from app.db.models import Device, DeviceHeartbeat, RawReading
 logger = structlog.get_logger(__name__)
 
 MeasurementSource = Literal["heartbeat_live", "committed_reading"]
+HeartbeatFreshnessState = Literal["never_received", "online", "offline"]
 FreshnessState = Literal[
     "live",
     "waiting",
@@ -25,19 +26,6 @@ FreshnessState = Literal[
     "invalid",
     "needs_attention",
 ]
-
-ONLINE_DEVICE_STATES = frozenset(
-    {
-        "online_synchronized",
-        "online_with_backlog",
-        "online_push_only",
-        "api_healthy_meter_failed",
-        "api_healthy_storage_failed",
-        "online_storage_reconciling",
-        "online_storage_degraded",
-        "time_unsynchronized",
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -58,6 +46,11 @@ class LatestMeasurement:
     freshness_state: FreshnessState
     invalid_metrics: tuple[str, ...] = ()
     validation_reason: str | None = None
+    heartbeat_received_at: datetime | None = None
+    heartbeat_age_seconds: int | None = None
+    heartbeat_freshness: HeartbeatFreshnessState = "never_received"
+    offline_after_seconds: int = 30
+    previous_outage_reason: str | None = None
 
     @property
     def is_reporting(self) -> bool:
@@ -83,10 +76,79 @@ class _Candidate:
         return self.power_watts is not None and self.validation_reason is None
 
 
+@dataclass(frozen=True)
+class HeartbeatFreshness:
+    received_at: datetime | None
+    age_seconds: int | None
+    state: HeartbeatFreshnessState
+    offline_after_seconds: int
+
+    @property
+    def online(self) -> bool:
+        return self.state == "online"
+
+
 def _as_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def evaluate_heartbeat_freshness(
+    heartbeat: DeviceHeartbeat | None,
+    settings: Settings,
+    *,
+    now: datetime,
+) -> HeartbeatFreshness:
+    """Evaluate connectivity only from a heartbeat actually received by this server."""
+
+    received_at = _as_utc(heartbeat.received_at) if heartbeat is not None else None
+    if received_at is None:
+        return HeartbeatFreshness(
+            received_at=None,
+            age_seconds=None,
+            state="never_received",
+            offline_after_seconds=settings.device_offline_after_seconds,
+        )
+    elapsed = max(timedelta(0), now - received_at)
+    age_seconds = int(elapsed.total_seconds())
+    return HeartbeatFreshness(
+        received_at=received_at,
+        age_seconds=age_seconds,
+        state=(
+            "online"
+            if elapsed <= timedelta(seconds=settings.device_offline_after_seconds)
+            else "offline"
+        ),
+        offline_after_seconds=settings.device_offline_after_seconds,
+    )
+
+
+def previous_outage_reason_from_heartbeat(heartbeat: DeviceHeartbeat | None) -> str | None:
+    """Return an allowlisted explanation only after the sensor reports evidence.
+
+    The server cannot observe a local pre-TLS deferral while the sensor is unable to
+    contact it, so absence of this additive evidence always produces ``None``.
+    """
+
+    if heartbeat is None or not isinstance(heartbeat.payload, dict):
+        return None
+    resources = heartbeat.payload.get("resources")
+    if not isinstance(resources, dict):
+        return None
+    synchronization = resources.get("synchronization")
+    nested = synchronization if isinstance(synchronization, dict) else {}
+    reason = resources.get("last_local_deferral_reason") or nested.get("last_local_deferral_reason")
+    if reason in {
+        "internal_heap_fragmented",
+        "internal_heap_reserve_low",
+        "tls_internal_heap_fragmented",
+        "PM-TLS-006",
+    }:
+        return "Sensor previously deferred synchronization because internal heap was fragmented."
+    if reason in {"tls_stack_margin_low", "internal_stack_reserve_low"}:
+        return "Sensor previously deferred synchronization to preserve task stack safety."
+    return None
 
 
 def _decimal(
@@ -291,13 +353,15 @@ def _measurement_for_device(
     ]
     valid_candidates = [item for item in candidates if item.valid_for_live_power]
     candidate = max(valid_candidates or candidates, key=lambda item: item.measured_at, default=None)
-    last_seen = _as_utc(device.last_seen_at)
-    online_deadline = now - timedelta(seconds=settings.heartbeat_expectation_seconds * 2)
+    heartbeat_freshness = evaluate_heartbeat_freshness(
+        heartbeat,
+        settings,
+        now=now,
+    )
     freshness_deadline = now - timedelta(seconds=settings.heartbeat_expectation_seconds * 4)
-    heartbeat_is_recent = (
-        device.status in ONLINE_DEVICE_STATES
-        and last_seen is not None
-        and last_seen >= online_deadline
+    heartbeat_is_recent = heartbeat_freshness.online
+    previous_outage_reason = (
+        previous_outage_reason_from_heartbeat(heartbeat) if heartbeat_is_recent else None
     )
 
     if candidate is None:
@@ -320,6 +384,11 @@ def _measurement_for_device(
             source=None,
             freshness_state=state,
             validation_reason="no_valid_measurement",
+            heartbeat_received_at=heartbeat_freshness.received_at,
+            heartbeat_age_seconds=heartbeat_freshness.age_seconds,
+            heartbeat_freshness=heartbeat_freshness.state,
+            offline_after_seconds=heartbeat_freshness.offline_after_seconds,
+            previous_outage_reason=previous_outage_reason,
         )
 
     if not candidate.valid_for_live_power:
@@ -349,6 +418,11 @@ def _measurement_for_device(
         freshness_state=state,
         invalid_metrics=candidate.invalid_metrics,
         validation_reason=candidate.validation_reason,
+        heartbeat_received_at=heartbeat_freshness.received_at,
+        heartbeat_age_seconds=heartbeat_freshness.age_seconds,
+        heartbeat_freshness=heartbeat_freshness.state,
+        offline_after_seconds=heartbeat_freshness.offline_after_seconds,
+        previous_outage_reason=previous_outage_reason,
     )
 
 

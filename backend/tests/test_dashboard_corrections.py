@@ -22,6 +22,7 @@ from app.db.models import (
     AuditEvent,
     Device,
     DeviceCredential,
+    DeviceHeartbeat,
     DeviceLifecycleEvent,
     LogExportJob,
     RawReading,
@@ -581,6 +582,118 @@ async def test_live_measurement_is_consistent_between_devices_and_fleet(
     assert status_event.startswith("event: device_status\n")
     assert device_id in heartbeat_event
     assert '"measurement_freshness":"live"' in heartbeat_event
+
+
+@pytest.mark.asyncio
+async def test_server_receipt_freshness_drives_offline_and_immediate_recovery(
+    api_client: Any,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    test_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client: httpx.AsyncClient = api_client
+    await bootstrap(client, "heartbeat-freshness@example.com")
+    device_id, secret = await _enroll_sensor(client, "esp32-heartbeat-freshness")
+
+    async def send_evidenced_heartbeat() -> httpx.Response:
+        payload = _heartbeat(device_id)
+        payload["resources"] = {
+            "synchronization": {
+                "last_local_deferral_reason": "internal_heap_fragmented",
+            }
+        }
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        return await client.post(
+            "/api/v1/device-heartbeats",
+            content=body,
+            headers={
+                **sign_headers(
+                    secret=secret,
+                    device_id=device_id,
+                    direction="device-to-server",
+                    method="POST",
+                    target="/api/v1/device-heartbeats",
+                    body=body,
+                ),
+                "Content-Type": "application/json",
+            },
+        )
+
+    accepted = await send_evidenced_heartbeat()
+    assert accepted.status_code == 200, accepted.text
+    fresh = next(
+        item for item in (await client.get("/api/v1/devices")).json() if item["id"] == device_id
+    )
+    assert fresh["heartbeat_freshness"] == "online"
+    assert fresh["heartbeat_age_seconds"] <= 1
+    assert fresh["offline_after_seconds"] == 30
+    assert fresh["previous_outage_reason"] == (
+        "Sensor previously deferred synchronization because internal heap was fragmented."
+    )
+
+    async with session_factory_fixture() as session:
+        stored_heartbeat = await session.scalar(
+            select(DeviceHeartbeat)
+            .where(DeviceHeartbeat.device_id == device_id)
+            .order_by(DeviceHeartbeat.received_at.desc())
+            .limit(1)
+        )
+        stored_device = await session.get(Device, device_id)
+        assert stored_heartbeat is not None and stored_device is not None
+        stored_heartbeat.received_at = datetime.now(UTC) - timedelta(seconds=31)
+        # Contradict the receipt row: the denormalized label must not be authority.
+        stored_device.last_seen_at = datetime.now(UTC)
+        stored_device.status = "online_synchronized"
+        await session.commit()
+
+    stale = next(
+        item for item in (await client.get("/api/v1/devices")).json() if item["id"] == device_id
+    )
+    stale_fleet = (await client.get("/api/v1/fleet/summary")).json()
+    assert stale["status"] == "offline"
+    assert stale["heartbeat_freshness"] == "offline"
+    assert stale["measurement_freshness"] == "offline"
+    assert stale["previous_outage_reason"] is None
+    assert stale_fleet["online_devices"] == 0
+    assert stale_fleet["reporting_devices"] == 0
+    assert stale_fleet["has_live_data"] is False
+    offline_filter = (await client.get("/api/v1/devices?status=offline")).json()
+    assert [item["id"] for item in offline_filter] == [device_id]
+
+    monkeypatch.setattr(
+        "app.api.routes.system.session_factory",
+        lambda: session_factory_fixture,
+    )
+
+    async def no_wait(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.api.routes.system.asyncio.sleep", no_wait)
+    event_stream = _sse_stream(fresh["site_id"], None, test_settings)
+    stale_heartbeat_event = await anext(event_stream)
+    stale_status_event = await anext(event_stream)
+    assert stale_heartbeat_event.startswith("event: heartbeat\n")
+    assert stale_status_event.startswith("event: device_status\n")
+    assert '"heartbeat_freshness":"offline"' in stale_status_event
+
+    recovered = await send_evidenced_heartbeat()
+    assert recovered.status_code == 200, recovered.text
+    recovered_heartbeat_event = await anext(event_stream)
+    recovered_status_event = await anext(event_stream)
+    await event_stream.aclose()
+    assert recovered_heartbeat_event.startswith("event: heartbeat\n")
+    assert recovered_status_event.startswith("event: device_status\n")
+    assert '"heartbeat_freshness":"online"' in recovered_status_event
+    live = next(
+        item for item in (await client.get("/api/v1/devices")).json() if item["id"] == device_id
+    )
+    live_fleet = (await client.get("/api/v1/fleet/summary")).json()
+    assert live["heartbeat_freshness"] == "online"
+    assert live["measurement_freshness"] == "live"
+    assert live_fleet["online_devices"] == 1
+    assert live_fleet["reporting_devices"] == 1
+    assert live_fleet["has_live_data"] is True
+    assert (await client.get("/api/v1/devices?status=offline")).json() == []
 
 
 @pytest.mark.asyncio
