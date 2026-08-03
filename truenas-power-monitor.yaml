@@ -90,7 +90,7 @@ services:
     read_only: true
     cap_drop: *id001
     security_opt: *id002
-    image: ghcr.io/mhilton7/power-monitor-api:1.0.28@sha256:892c9066d058f1943442debc8ea2f75aa07dbe24be051f64626b3a9aa7e998db
+    image: ghcr.io/mhilton7/power-monitor-api:1.0.29@sha256:9a36ed85a5fc98aae13d1aba076b38afcacaf3522d2b939faf8a7cfd8889018b
     platform: linux/amd64
     user: 10001:10001
     restart: 'no'
@@ -121,12 +121,12 @@ services:
     read_only: true
     cap_drop: *id001
     security_opt: *id002
-    image: ghcr.io/mhilton7/power-monitor-api:1.0.28@sha256:892c9066d058f1943442debc8ea2f75aa07dbe24be051f64626b3a9aa7e998db
+    image: ghcr.io/mhilton7/power-monitor-api:1.0.29@sha256:9a36ed85a5fc98aae13d1aba076b38afcacaf3522d2b939faf8a7cfd8889018b
     platform: linux/amd64
     user: 10001:10001
     restart: unless-stopped
     environment:
-      POWER_MONITOR_VERSION: 1.0.28
+      POWER_MONITOR_VERSION: 1.0.29
       PROTOCOL_VERSION: pm-protocol/1.0.0
       DATABASE_URL_FILE: /run/secrets/database_url
       APP_MASTER_KEY_FILE: /run/secrets/app_master_key
@@ -210,7 +210,7 @@ services:
     read_only: true
     cap_drop: *id001
     security_opt: *id002
-    image: ghcr.io/mhilton7/power-monitor-api:1.0.28@sha256:892c9066d058f1943442debc8ea2f75aa07dbe24be051f64626b3a9aa7e998db
+    image: ghcr.io/mhilton7/power-monitor-api:1.0.29@sha256:9a36ed85a5fc98aae13d1aba076b38afcacaf3522d2b939faf8a7cfd8889018b
     platform: linux/amd64
     user: 10001:10001
     restart: unless-stopped
@@ -219,7 +219,7 @@ services:
     - -m
     - worker.app.main
     environment:
-      POWER_MONITOR_VERSION: 1.0.28
+      POWER_MONITOR_VERSION: 1.0.29
       PROTOCOL_VERSION: pm-protocol/1.0.0
       DATABASE_URL_FILE: /run/secrets/database_url
       APP_MASTER_KEY_FILE: /run/secrets/app_master_key
@@ -297,7 +297,7 @@ services:
     read_only: true
     cap_drop: *id001
     security_opt: *id002
-    image: ghcr.io/mhilton7/power-monitor-frontend:1.0.28@sha256:783ffda006fc2ff02b8a06f198091670414277ff9ea58e3dcc1ef94e1cb9a2fa
+    image: ghcr.io/mhilton7/power-monitor-frontend:1.0.29@sha256:f99b2a1fbf93698cc8d2b0b30fd344265e80a288105c6d33951b685ec6c0f102
     platform: linux/amd64
     user: 101:101
     restart: unless-stopped
@@ -381,7 +381,7 @@ services:
     read_only: true
     cap_drop: *id001
     security_opt: *id002
-    image: ghcr.io/mhilton7/power-monitor-backup:1.0.28@sha256:515a7726463bea795c99574defe0c0b73eae5e1e4932afda5cb6dd60b12a14db
+    image: ghcr.io/mhilton7/power-monitor-backup:1.0.29@sha256:7ded296d2196fb7e6fb7a05efe787e036da5b3ee358ef1dbd48387dc0d559c46
     platform: linux/amd64
     user: 10003:10003
     group_add:
