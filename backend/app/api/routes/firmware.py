@@ -30,6 +30,7 @@ from app.db.models import (
     AlertInstance,
     Device,
     DeviceCapability,
+    DeviceHeartbeat,
     FirmwareDeployment,
     FirmwareRelease,
     new_uuid,
@@ -207,6 +208,32 @@ def _release_payload(release: FirmwareRelease, *, duplicate: bool = False) -> di
 def _deployment_payload(
     deployment: FirmwareDeployment, release: FirmwareRelease | None = None
 ) -> dict[str, Any]:
+    determinate = bool(
+        release
+        and release.size_bytes > 0
+        and deployment.bytes_received > 0
+        and deployment.state
+        in {
+            "downloading",
+            "binary_verified",
+            "partition_written",
+            "rebooting",
+            "post_boot_validation",
+            "validated",
+            "awaiting_heartbeat",
+            "completed",
+        }
+    )
+    display_state = {
+        "waiting_canary": "waiting_for_canary",
+        "scheduled": "waiting_for_schedule",
+        "offered": "waiting_for_sensor",
+        "manifest_authenticated": "preparing_download",
+        "download_started": "starting_download",
+        "downloading": "downloading",
+        "failed": "failed",
+        "rolled_back": "rolled_back",
+    }.get(deployment.state, deployment.state)
     return {
         "id": deployment.id,
         "firmware_release_id": deployment.firmware_release_id,
@@ -217,6 +244,8 @@ def _deployment_payload(
         "attempt": deployment.attempt,
         "progress": deployment.progress,
         "bytes_received": deployment.bytes_received,
+        "progress_mode": "determinate" if determinate else "indeterminate",
+        "display_state": display_state,
         "scheduled_at": deployment.scheduled_at,
         "expires_at": deployment.expires_at,
         "allow_downgrade": deployment.allow_downgrade,
@@ -240,7 +269,61 @@ def _deployment_payload(
         "target_version": release.version if release else None,
         "target_sha256": release.sha256 if release else None,
         "target_build_hash": release.build_hash if release else None,
+        "source_version": deployment.source_version,
+        "source_build_hash": deployment.source_build_hash,
+        "source_boot_id": deployment.source_boot_id,
+        "interruption_evidence": deployment.interruption_evidence,
     }
+
+
+async def _reconcile_stale_deployments(session: DbSession, settings: Any, now: datetime) -> None:
+    cutoff = now - timedelta(seconds=settings.firmware_download_stale_seconds)
+    candidates = list(
+        await session.scalars(
+            select(FirmwareDeployment).where(
+                FirmwareDeployment.state.in_(
+                    [
+                        "manifest_authenticated",
+                        "download_started",
+                        "downloading",
+                        "binary_verified",
+                    ]
+                ),
+                FirmwareDeployment.scheduled_at < cutoff,
+            )
+        )
+    )
+    changed = False
+    for deployment in candidates:
+        last_activity = deployment.last_report_at or deployment.downloaded_at
+        if last_activity is not None and _aware(last_activity) >= cutoff:
+            continue
+        interrupted_state = deployment.state
+        deployment.state = deployment.status = "failed"
+        deployment.failure_code = "ota_update_timed_out"
+        deployment.failure_summary = (
+            "The sensor stopped reporting during the OTA download workflow; "
+            "the previous firmware remains authoritative until Retry is requested."
+        )
+        deployment.interruption_evidence = {
+            "reason": "authenticated_report_timeout",
+            "last_state": interrupted_state,
+            "last_report_at": last_activity.isoformat() if last_activity else None,
+        }
+        deployment.revision += 1
+        session.add(
+            audit_event(
+                action="firmware.deployment_timed_out",
+                actor_type="system",
+                actor_id=None,
+                object_type="firmware_deployment",
+                object_id=deployment.id,
+                details=deployment.interruption_evidence,
+            )
+        )
+        changed = True
+    if changed:
+        await session.commit()
 
 
 @router.get("/firmware-releases", response_model=list[FirmwareReleaseView])
@@ -614,6 +697,15 @@ async def create_deployments(
             scheduled_at=payload.scheduled_at,
             expires_at=expires_at,
             allow_downgrade=payload.allow_downgrade,
+            source_version=device.firmware_version,
+            source_build_hash=device.firmware_build_hash,
+            source_boot_id=await session.scalar(
+                select(DeviceHeartbeat.boot_id)
+                .where(DeviceHeartbeat.device_id == device.id)
+                .order_by(DeviceHeartbeat.received_at.desc())
+                .limit(1)
+            ),
+            interruption_evidence={},
             created_by=principal.user.id,
             created_at=now,
         )
@@ -651,9 +743,11 @@ async def create_deployments(
 async def list_deployments(
     principal: Viewer,
     session: DbSession,
+    settings: AppSettings,
     device_id: Annotated[str | None, Query()] = None,
 ) -> list[dict[str, Any]]:
     _operator(principal, "firmware.view")
+    await _reconcile_stale_deployments(session, settings, datetime.now(UTC))
     query = select(FirmwareDeployment)
     if device_id is not None:
         query = query.where(FirmwareDeployment.device_id == device_id)

@@ -1,4 +1,24 @@
-# Power Monitor Server 1.0.28
+# Power Monitor Server 1.0.29
+
+## OTA interruption recovery and protected permission changes
+
+- Reconciles interrupted, stale, post-boot, and rolled-back sensor firmware
+  deployments from authenticated heartbeat evidence instead of leaving a
+  deployment indefinitely at `Downloading 0%`.
+- Records source firmware/build/boot identity and bounded interruption evidence,
+  adds the append-only `20260803_0027` migration, and presents truthful
+  indeterminate download progress with elapsed and last-activity timestamps.
+- Integrates the sensor's allocation-stable OTA recovery ledger and bounded
+  milestone reporting while preserving `pm-protocol/1.0.0`, enrolled-device
+  credentials, existing CA trust, and historical deployment evidence.
+- Adds the complete protected-change confirmation flow for permission updates:
+  the interface prompts for the current password or MFA code, the server issues
+  and validates a short-lived confirmation, and invalid or cancelled
+  confirmation never changes permissions.
+- Releases server `1.0.29` alongside sensor firmware `1.0.15`. The physical
+  1.0.14 USB bootstrap passed Wi-Fi/enrollment/CA preservation and repeated TLS
+  heartbeat/config/manifest checks; managed-OTA and one-hour canary validation
+  remain explicit post-publication acceptance gates.
 
 ## Existing-trust OTA firmware updates
 

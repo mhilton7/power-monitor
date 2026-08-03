@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import httpx
+import pyotp
 import pytest
 
 from app.main import app
@@ -24,6 +25,17 @@ async def bootstrap_admin(client: httpx.AsyncClient) -> dict[str, object]:
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+async def enable_totp(client: httpx.AsyncClient) -> str:
+    setup = await client.post("/api/v1/auth/totp/setup", headers=csrf(client))
+    assert setup.status_code == 200, setup.text
+    code = pyotp.TOTP(setup.json()["secret"]).now()
+    verified = await client.post(
+        "/api/v1/auth/totp/verify", headers=csrf(client), params={"code": code}
+    )
+    assert verified.status_code == 200, verified.text
+    return setup.json()["secret"]
 
 
 @pytest.mark.asyncio
@@ -263,8 +275,14 @@ async def test_high_risk_role_requires_reauthentication(
         "display_name": "User manager",
         "description": "Delegated local user management",
         "permissions": ["users.view", "users.manage"],
-        "confirm_high_risk": True,
+        "confirm_high_risk": False,
     }
+    missing_confirmation = await api_client.post(
+        "/api/v1/admin/roles", headers=csrf(api_client), json=payload
+    )
+    assert missing_confirmation.status_code == 409
+    assert missing_confirmation.json()["code"] == "high_risk_confirmation_required"
+    payload["confirm_high_risk"] = True
     missing_reauth = await api_client.post(
         "/api/v1/admin/roles", headers=csrf(api_client), json=payload
     )
@@ -277,6 +295,92 @@ async def test_high_risk_role_requires_reauthentication(
     assert confirmed.status_code == 200
     created = await api_client.post("/api/v1/admin/roles", headers=csrf(api_client), json=payload)
     assert created.status_code == 201, created.text
+
+
+@pytest.mark.asyncio
+async def test_non_high_risk_role_save_does_not_require_reauthentication(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await bootstrap_admin(api_client)
+    created = await api_client.post(
+        "/api/v1/admin/roles",
+        headers=csrf(api_client),
+        json={
+            "display_name": "Overview reader",
+            "description": "Can view the household overview",
+            "permissions": ["overview.view"],
+            "confirm_high_risk": False,
+        },
+    )
+    assert created.status_code == 201, created.text
+
+
+@pytest.mark.asyncio
+async def test_high_risk_role_accepts_mfa_only_reauthentication(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await bootstrap_admin(api_client)
+    secret = await enable_totp(api_client)
+    session = await api_client.get("/api/v1/auth/session")
+    assert session.status_code == 200
+    assert session.json()["user"]["mfa_enabled"] is True
+    confirmed = await api_client.post(
+        "/api/v1/auth/reauthenticate",
+        headers=csrf(api_client),
+        json={"totp_code": pyotp.TOTP(secret).now()},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    created = await api_client.post(
+        "/api/v1/admin/roles",
+        headers=csrf(api_client),
+        json={
+            "display_name": "MFA user manager",
+            "description": "Delegated local user management after MFA step-up",
+            "permissions": ["users.view", "users.manage"],
+            "confirm_high_risk": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+
+
+@pytest.mark.asyncio
+async def test_mfa_enabled_account_accepts_password_only_reauthentication(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await bootstrap_admin(api_client)
+    await enable_totp(api_client)
+    confirmed = await api_client.post(
+        "/api/v1/auth/reauthenticate",
+        headers=csrf(api_client),
+        json={"password": "Production-Admin-Password-42!"},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+
+
+@pytest.mark.asyncio
+async def test_invalid_protected_confirmation_does_not_unlock_role_save(
+    api_client: httpx.AsyncClient,
+) -> None:
+    await bootstrap_admin(api_client)
+    rejected = await api_client.post(
+        "/api/v1/auth/reauthenticate",
+        headers=csrf(api_client),
+        json={"password": "not-the-current-password"},
+    )
+    assert rejected.status_code == 401
+    assert rejected.json()["code"] == "reauthentication_failed"
+    blocked = await api_client.post(
+        "/api/v1/admin/roles",
+        headers=csrf(api_client),
+        json={
+            "display_name": "Blocked user manager",
+            "description": "Must remain blocked after invalid confirmation",
+            "permissions": ["users.view", "users.manage"],
+            "confirm_high_risk": True,
+        },
+    )
+    assert blocked.status_code == 428
+    assert blocked.json()["code"] == "reauthentication_required"
 
 
 @pytest.mark.asyncio

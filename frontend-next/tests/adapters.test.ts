@@ -7,6 +7,7 @@ import {
   adaptElectricServices,
   adaptFamily,
   adaptFamilyRoles,
+  adaptFirmwareDeployments,
   adaptHistory,
   adaptHomeSummary,
   adaptNotificationHistory,
@@ -21,6 +22,7 @@ import {
   adaptRateSourceCheckRuns,
   adaptRateSources,
   adaptRateVersions,
+  adaptSession,
   adaptSensors,
   adaptSensorStorage,
   adaptSystemHealth,
@@ -31,6 +33,53 @@ import {
 } from '../src/api/adapters'
 
 describe('typed homeowner adapters', () => {
+  it('preserves indeterminate OTA startup instead of inventing zero-percent progress', () => {
+    const [deployment] = adaptFirmwareDeployments([{
+      id: 'deployment-1',
+      firmware_release_id: 'release-1',
+      device_id: 'sensor-1',
+      state: 'download_started',
+      revision: 2,
+      attempt: 1,
+      progress: 0,
+      bytes_received: 0,
+      progress_mode: 'indeterminate',
+      display_state: 'starting_download',
+      scheduled_at: '2026-08-03T19:59:00Z',
+      last_report_at: '2026-08-03T20:00:00Z',
+      verification_heartbeats: 0,
+      source_version: '1.0.11',
+      interruption_evidence: {},
+    }])
+
+    expect(deployment).toMatchObject({
+      state: 'download_started',
+      progress: 0,
+      bytesReceived: 0,
+      progressMode: 'indeterminate',
+      displayState: 'starting_download',
+      sourceVersion: '1.0.11',
+    })
+  })
+
+  it('exposes MFA state from the authenticated session contract', () => {
+    expect(adaptSession({
+      authenticated: true,
+      bootstrap_required: false,
+      user: {
+        id: 'owner-1',
+        email: 'owner@example.test',
+        display_name: 'Owner',
+        roles: ['admin'],
+        permissions: ['roles.manage'],
+        all_sites: true,
+        site_ids: [],
+        access_revision: 4,
+        mfa_enabled: true,
+      },
+    }).user?.mfaEnabled).toBe(true)
+  })
+
   it('normalizes bounded storage evidence without inventing missing values', () => {
     const storage = adaptSensorStorage({
       schema_version: 'sensor-storage/1.0',

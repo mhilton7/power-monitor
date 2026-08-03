@@ -216,6 +216,62 @@ def _report(
     }
 
 
+def _heartbeat(
+    *,
+    device_id: str,
+    firmware_version: str,
+    firmware_build_hash: str,
+    boot_id: str = BOOT_ID,
+    reboot_reason: str = "software_reset",
+    resources: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "protocol_version": PROTOCOL,
+        "schema_version": "heartbeat/1.0.0",
+        "device_id": device_id,
+        "boot_id": boot_id,
+        "firmware_version": firmware_version,
+        "firmware_build_hash": firmware_build_hash,
+        "uptime_seconds": 120,
+        "reboot_reason": reboot_reason,
+        "connection_mode": "push",
+        "pzem": {"ok": True, "status": "ok"},
+        "sd": {"ok": True, "status": "ok"},
+        "oldest_stored_sequence": 0,
+        "newest_stored_sequence": 0,
+        "server_ack_sequence": 0,
+        "backlog_estimate": 0,
+        "configuration_version": 1,
+        "time": {"trusted": True, "source": "sntp"},
+        "resources": resources or {},
+        "queue": {},
+        "ota": {
+            "supported": True,
+            "protocol_version": 2,
+            "authentication_mode": "existing_device_hmac",
+            "rollback_supported": True,
+            "partition_size_bytes": 6 * 1024 * 1024,
+        },
+    }
+
+
+async def _signed_heartbeat(
+    client: httpx.AsyncClient,
+    secret: bytes,
+    payload: dict[str, Any],
+) -> httpx.Response:
+    target = "/api/v1/device-heartbeats"
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    return await client.post(
+        target,
+        content=body,
+        headers={
+            **_signed_headers(secret, payload["device_id"], "POST", target, body),
+            "Content-Type": "application/json",
+        },
+    )
+
+
 @pytest.mark.parametrize(
     ("image", "code"),
     [
@@ -739,6 +795,208 @@ async def test_manifest_download_reports_retry_and_final_heartbeat_verification(
     assert history.status_code == 200
     assert history.json()[0]["state"] == "completed"
     assert history.json()[0]["verification_heartbeats"] == 11
+
+
+@pytest.mark.asyncio
+async def test_panic_during_zero_percent_download_reconciles_to_failed_with_evidence(
+    api_client: Any,
+    test_settings: Any,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    client: httpx.AsyncClient = api_client
+    test_settings.firmware_path = tmp_path / "firmware"
+    test_settings.firmware_interruption_grace_seconds = 0
+    site_id = await _bootstrap(client)
+    device_id, secret = await _enroll(client, site_id, "panic-at-zero")
+    source_version = "1.0.10"
+    source_hash = "source-build-10"
+    initial = await _signed_heartbeat(
+        client,
+        secret,
+        _heartbeat(
+            device_id=device_id,
+            firmware_version=source_version,
+            firmware_build_hash=source_hash,
+        ),
+    )
+    assert initial.status_code == 200, initial.text
+    release_response = await _upload(client, esp32s3_image(version="1.0.11"))
+    assert release_response.status_code == 201, release_response.text
+    release = release_response.json()
+    created = await client.post(
+        "/api/v1/firmware-deployments",
+        headers=_csrf(client),
+        json={
+            "firmware_release_id": release["id"],
+            "device_ids": [device_id],
+            "scheduled_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+        },
+    )
+    assert created.status_code == 201, created.text
+    deployment_id = created.json()["deployment_ids"][0]
+    async with session_factory_fixture() as session:
+        deployment = await session.get(FirmwareDeployment, deployment_id)
+        assert deployment is not None
+        deployment.state = deployment.status = "downloading"
+        deployment.progress = 0
+        deployment.bytes_received = 0
+        deployment.last_report_at = datetime.now(UTC) - timedelta(seconds=1)
+        await session.commit()
+
+    recovery = {
+        "ota_recovery": {
+            "previous_boot_stage": "streaming",
+            "previous_boot_bytes_received": 32768,
+            "previous_boot_update_open": True,
+            "previous_boot_reboot_expected": False,
+        }
+    }
+    rebooted = await _signed_heartbeat(
+        client,
+        secret,
+        _heartbeat(
+            device_id=device_id,
+            firmware_version=source_version,
+            firmware_build_hash=source_hash,
+            boot_id="223e4567-e89b-12d3-a456-426614174099",
+            reboot_reason="panic",
+            resources=recovery,
+        ),
+    )
+    assert rebooted.status_code == 200, rebooted.text
+    history = await client.get("/api/v1/firmware-deployments", params={"device_id": device_id})
+    assert history.status_code == 200, history.text
+    deployment = history.json()[0]
+    assert deployment["state"] == "failed"
+    assert deployment["failure_code"] == "ota_interrupted_before_install"
+    assert deployment["progress_mode"] == "indeterminate"
+    assert deployment["display_state"] == "failed"
+    assert deployment["source_version"] == source_version
+    assert deployment["interruption_evidence"]["ota_recovery"] == recovery["ota_recovery"]
+
+
+@pytest.mark.asyncio
+async def test_target_heartbeat_reconciles_lost_final_reports_after_install(
+    api_client: Any,
+    test_settings: Any,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    client: httpx.AsyncClient = api_client
+    test_settings.firmware_path = tmp_path / "firmware"
+    site_id = await _bootstrap(client)
+    device_id, secret = await _enroll(client, site_id, "target-reconcile")
+    initial = await _signed_heartbeat(
+        client,
+        secret,
+        _heartbeat(
+            device_id=device_id,
+            firmware_version="1.0.10",
+            firmware_build_hash="source-build-10",
+        ),
+    )
+    assert initial.status_code == 200, initial.text
+    release_response = await _upload(client, esp32s3_image(version="1.0.11"))
+    assert release_response.status_code == 201, release_response.text
+    release = release_response.json()
+    created = await client.post(
+        "/api/v1/firmware-deployments",
+        headers=_csrf(client),
+        json={
+            "firmware_release_id": release["id"],
+            "device_ids": [device_id],
+            "scheduled_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+        },
+    )
+    assert created.status_code == 201, created.text
+    deployment_id = created.json()["deployment_ids"][0]
+    async with session_factory_fixture() as session:
+        deployment = await session.get(FirmwareDeployment, deployment_id)
+        assert deployment is not None
+        deployment.state = deployment.status = "downloading"
+        deployment.progress = 0
+        deployment.bytes_received = 0
+        deployment.last_report_at = datetime.now(UTC)
+        await session.commit()
+
+    installed = await _signed_heartbeat(
+        client,
+        secret,
+        _heartbeat(
+            device_id=device_id,
+            firmware_version=release["version"],
+            firmware_build_hash=release["build_hash"],
+            boot_id="323e4567-e89b-12d3-a456-426614174099",
+            resources={
+                "ota_recovery": {
+                    "previous_boot_stage": "reboot_scheduled",
+                    "previous_boot_update_open": False,
+                    "previous_boot_reboot_expected": True,
+                }
+            },
+        ),
+    )
+    assert installed.status_code == 200, installed.text
+    history = await client.get("/api/v1/firmware-deployments", params={"device_id": device_id})
+    assert history.status_code == 200, history.text
+    deployment = history.json()[0]
+    assert deployment["state"] == "awaiting_heartbeat"
+    assert deployment["progress"] == 100
+    assert deployment["bytes_received"] == release["size_bytes"]
+    assert deployment["progress_mode"] == "determinate"
+    assert deployment["validated_version"] == release["version"]
+
+
+@pytest.mark.asyncio
+async def test_stale_zero_percent_download_is_failed_instead_of_stuck(
+    api_client: Any,
+    test_settings: Any,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    client: httpx.AsyncClient = api_client
+    test_settings.firmware_path = tmp_path / "firmware"
+    test_settings.firmware_download_stale_seconds = 30
+    site_id = await _bootstrap(client)
+    device_id, secret = await _enroll(client, site_id, "stale-download")
+    initial = await _signed_heartbeat(
+        client,
+        secret,
+        _heartbeat(
+            device_id=device_id,
+            firmware_version="1.0.10",
+            firmware_build_hash="source-build-10",
+        ),
+    )
+    assert initial.status_code == 200, initial.text
+    release_response = await _upload(client, esp32s3_image(version="1.0.11"))
+    release = release_response.json()
+    created = await client.post(
+        "/api/v1/firmware-deployments",
+        headers=_csrf(client),
+        json={
+            "firmware_release_id": release["id"],
+            "device_ids": [device_id],
+            "scheduled_at": (datetime.now(UTC) - timedelta(minutes=5)).isoformat(),
+        },
+    )
+    assert created.status_code == 201, created.text
+    deployment_id = created.json()["deployment_ids"][0]
+    async with session_factory_fixture() as session:
+        deployment = await session.get(FirmwareDeployment, deployment_id)
+        assert deployment is not None
+        deployment.state = deployment.status = "download_started"
+        deployment.progress = 0
+        deployment.bytes_received = 0
+        deployment.last_report_at = datetime.now(UTC) - timedelta(minutes=5)
+        await session.commit()
+    history = await client.get("/api/v1/firmware-deployments", params={"device_id": device_id})
+    assert history.status_code == 200, history.text
+    deployment = history.json()[0]
+    assert deployment["state"] == "failed"
+    assert deployment["failure_code"] == "ota_update_timed_out"
+    assert deployment["interruption_evidence"]["last_state"] == "download_started"
 
 
 @pytest.mark.asyncio

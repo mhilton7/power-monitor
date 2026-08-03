@@ -27,7 +27,7 @@ const stateLabels: Record<string, string> = {
   scheduled: 'Scheduled',
   offered: 'Waiting for sensor',
   manifest_authenticated: 'Manifest authenticated',
-  download_started: 'Downloading',
+  download_started: 'Starting download',
   downloading: 'Downloading',
   binary_verified: 'Verifying hash',
   partition_written: 'Writing firmware',
@@ -81,14 +81,20 @@ function DeploymentProgress({ deployment }: { deployment: FirmwareDeploymentSumm
   const failed = deployment.state === 'failed' || deployment.state === 'rolled_back'
   const complete = deployment.state === 'completed'
   const stopped = deployment.state === 'cancelled'
+  const determinate = deployment.progressMode === 'determinate'
+    || (deployment.progressMode === undefined && deployment.bytesReceived > 0)
+  const progress = Math.max(0, Math.min(100, deployment.progress))
+  const activityAt = deployment.lastReportAt ?? deployment.downloadedAt ?? deployment.scheduledAt
   return (
     <div className={`firmware-progress ${failed ? 'failed' : complete ? 'complete' : ''}`} aria-live="polite">
       <div className="firmware-progress-heading">
         <span>{complete ? <Check /> : failed ? <TriangleAlert /> : stopped ? <X /> : <RefreshCw className="spin" />}</span>
         <div><strong>{label}</strong><small>Attempt {deployment.attempt} · revision {deployment.revision}</small></div>
-        <span>{Math.max(0, Math.min(100, deployment.progress))}%</span>
+        <span>{determinate ? `${progress}%` : '…'}</span>
       </div>
-      <progress max={100} value={Math.max(0, Math.min(100, deployment.progress))} />
+      {determinate ? <progress max={100} value={progress} /> : <progress max={100} />}
+      {!determinate && <small>Waiting for the next authenticated sensor progress report.</small>}
+      {activityAt && <small>Last sensor activity {new Date(activityAt).toLocaleString()}</small>}
       {deployment.bytesReceived > 0 && <small>{bytes(deployment.bytesReceived)} received</small>}
       {failed && (
         <InlineNotice tone="danger">

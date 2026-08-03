@@ -164,7 +164,17 @@ export function FirmwareFleetWorkflow() {
         {deployments.isLoading ? <LoadingState /> : deployments.error ? <ErrorState error={deployments.error} retry={() => void deployments.refetch()} /> : deployments.data?.length ? deployments.data.map((item) => (
           <div className="list-row firmware-deployment-row" key={item.id}>
             <RefreshCw className={terminalStates.has(item.state) ? '' : 'spin'} />
-            <span><strong>{statusLabel(item.state)}</strong><small>{sensors.find((sensor) => sensor.id === item.deviceId)?.name ?? item.deviceId} · attempt {item.attempt} · {item.progress}% · {fileSize(item.bytesReceived)}{item.rolloutOrder !== undefined ? ` · rollout ${item.rolloutOrder + 1}` : ''}</small></span>
+            <span>
+              <strong>{statusLabel(item.displayState ?? item.state)}</strong>
+              <small>
+                {sensors.find((sensor) => sensor.id === item.deviceId)?.name ?? item.deviceId}
+                {' · '}attempt {item.attempt}
+                {' · '}{item.progressMode === 'determinate'
+                  ? `${item.progress}% · ${fileSize(item.bytesReceived)}`
+                  : 'Waiting for authenticated progress'}
+                {item.rolloutOrder !== undefined ? ` · rollout ${item.rolloutOrder + 1}` : ''}
+              </small>
+            </span>
             <span className={`pill ${item.state === 'completed' ? 'success' : item.state === 'failed' || item.state === 'rolled_back' ? 'danger' : ''}`}>{item.targetVersion ?? 'Pending'}</span>
             {canDeploy && <div className="inline-actions">
               {cancellableStates.has(item.state) && <button className="button secondary compact" type="button" disabled={action.isPending} onClick={() => { action.mutate({ id: item.id, verb: 'cancel' }) }}>Cancel</button>}

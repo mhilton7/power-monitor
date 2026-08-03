@@ -42,6 +42,7 @@ def _session_view(
     *,
     permissions: list[str],
     site_ids: list[str],
+    mfa_enabled: bool,
 ) -> SessionView:
     return SessionView(
         authenticated=True,
@@ -54,6 +55,7 @@ def _session_view(
             all_sites=user.all_sites,
             site_ids=site_ids,
             access_revision=user.access_revision,
+            mfa_enabled=mfa_enabled,
         ),
         expires_at=browser_session.expires_at,
         csrf_token=csrf,
@@ -162,6 +164,7 @@ async def bootstrap(
         created.csrf_token,
         permissions=sorted(ALL_PERMISSIONS),
         site_ids=[],
+        mfa_enabled=False,
     )
 
 
@@ -249,6 +252,7 @@ async def login(
         created.csrf_token,
         permissions=permissions,
         site_ids=site_ids,
+        mfa_enabled=bool(totp is not None and totp.confirmed),
     )
 
 
@@ -261,6 +265,7 @@ async def session_status(
     if token:
         principal = await authenticate_session(session, token, settings.session_pepper)
         if principal:
+            totp = await session.get(TotpCredential, principal.user.id)
             return _session_view(
                 principal.user,
                 sorted(principal.roles),
@@ -268,6 +273,7 @@ async def session_status(
                 csrf=None,
                 permissions=sorted(principal.permissions),
                 site_ids=sorted(principal.site_ids),
+                mfa_enabled=bool(totp is not None and totp.confirmed),
             )
     count = await session.scalar(select(func.count()).select_from(User))
     return SessionView(authenticated=False, bootstrap_required=not bool(count))
@@ -307,7 +313,15 @@ async def reauthenticate(
     session: DbSession,
     settings: AppSettings,
 ) -> dict[str, object]:
-    if not verify_password(principal.user.password_hash, payload.password):
+    password_accepted = bool(payload.password) and verify_password(
+        principal.user.password_hash, payload.password or ""
+    )
+    totp_accepted = False
+    totp = await session.get(TotpCredential, principal.user.id)
+    if payload.totp_code and totp is not None and totp.confirmed:
+        secret = SecretCipher(settings.app_master_key).decrypt(totp.encrypted_secret).decode()
+        totp_accepted = pyotp.TOTP(secret).verify(payload.totp_code, valid_window=1)
+    if not password_accepted and not totp_accepted:
         session.add(
             audit_event(
                 action="auth.reauthentication_failed",
@@ -324,23 +338,6 @@ async def reauthenticate(
             "The current password or MFA code was not accepted",
             "reauthentication_failed",
         )
-    totp = await session.get(TotpCredential, principal.user.id)
-    if totp is not None and totp.confirmed:
-        if payload.totp_code is None:
-            raise ProblemError(
-                401,
-                "TOTP required",
-                "Enter your six-digit code",
-                "totp_required",
-            )
-        secret = SecretCipher(settings.app_master_key).decrypt(totp.encrypted_secret).decode()
-        if not pyotp.TOTP(secret).verify(payload.totp_code, valid_window=1):
-            raise ProblemError(
-                401,
-                "Reauthentication failed",
-                "The current password or MFA code was not accepted",
-                "reauthentication_failed",
-            )
     principal.session.reauthenticated_at = datetime.now(UTC)
     session.add(
         audit_event(
@@ -350,6 +347,7 @@ async def reauthenticate(
             request=request,
             object_type="session",
             object_id=principal.session.id,
+            details={"method": "password" if password_accepted else "totp"},
         )
     )
     await session.commit()

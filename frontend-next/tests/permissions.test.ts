@@ -3,7 +3,7 @@ import { canAccessSettings, hasPermission, ROUTE_POLICIES, satisfiesPolicy } fro
 import type { UserSession } from '../src/types/models'
 
 function session(permissions: string[]): UserSession {
-  return { authenticated: true, bootstrapRequired: false, user: { id: 'viewer-1', email: 'viewer@example.test', name: 'Viewer', roles: ['viewer'], permissions, allHomes: true, homeIds: [], accessRevision: 2 } }
+  return { authenticated: true, bootstrapRequired: false, user: { id: 'viewer-1', email: 'viewer@example.test', name: 'Viewer', roles: ['viewer'], permissions, allHomes: true, homeIds: [], accessRevision: 2, mfaEnabled: false } }
 }
 
 describe('permission-driven navigation policies', () => {

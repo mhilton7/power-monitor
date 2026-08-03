@@ -1,8 +1,8 @@
 param(
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')]
-    [string]$ReleaseVersion = '1.0.28',
+    [string]$ReleaseVersion = '1.0.29',
     [ValidatePattern('^[0-9]{8}_[0-9]{4}$')]
-    [string]$MigrationRevision = '20260802_0026'
+    [string]$MigrationRevision = '20260803_0027'
 )
 
 $ErrorActionPreference = 'Stop'

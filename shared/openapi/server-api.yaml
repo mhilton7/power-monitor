@@ -15555,6 +15555,15 @@ components:
         bytes_received:
           type: integer
           title: Bytes Received
+        progress_mode:
+          type: string
+          enum:
+          - determinate
+          - indeterminate
+          title: Progress Mode
+        display_state:
+          type: string
+          title: Display State
         scheduled_at:
           type: string
           format: date-time
@@ -15670,6 +15679,25 @@ components:
           - type: string
           - type: 'null'
           title: Target Build Hash
+        source_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Version
+        source_build_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Build Hash
+        source_boot_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Boot Id
+        interruption_evidence:
+          additionalProperties: true
+          type: object
+          title: Interruption Evidence
       additionalProperties: false
       type: object
       required:
@@ -15682,6 +15710,8 @@ components:
       - attempt
       - progress
       - bytes_received
+      - progress_mode
+      - display_state
       - scheduled_at
       - expires_at
       - allow_downgrade
@@ -15705,6 +15735,10 @@ components:
       - target_version
       - target_sha256
       - target_build_hash
+      - source_version
+      - source_build_hash
+      - source_boot_id
+      - interruption_evidence
       title: FirmwareDeploymentView
     FirmwareOtaReadinessView:
       properties:
@@ -19290,8 +19324,10 @@ components:
     ReauthenticateRequest:
       properties:
         password:
-          type: string
-          maxLength: 1024
+          anyOf:
+          - type: string
+            maxLength: 1024
+          - type: 'null'
           title: Password
         totp_code:
           anyOf:
@@ -19301,8 +19337,6 @@ components:
           title: Totp Code
       additionalProperties: false
       type: object
-      required:
-      - password
       title: ReauthenticateRequest
     ReconciliationAdjustmentWrite:
       properties:
@@ -21208,6 +21242,10 @@ components:
           type: integer
           title: Access Revision
           default: 1
+        mfa_enabled:
+          type: boolean
+          title: Mfa Enabled
+          default: false
       additionalProperties: false
       type: object
       required:

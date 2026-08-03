@@ -62,6 +62,7 @@ class UserSummary(ApiModel):
     all_sites: bool = True
     site_ids: list[str] = Field(default_factory=list)
     access_revision: int = 1
+    mfa_enabled: bool = False
 
 
 class SessionView(ApiModel):
@@ -1497,8 +1498,14 @@ class UserCreate(ApiModel):
 
 
 class ReauthenticateRequest(ApiModel):
-    password: str = Field(max_length=1024)
+    password: str | None = Field(default=None, max_length=1024)
     totp_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+
+    @model_validator(mode="after")
+    def require_confirmation_method(self) -> ReauthenticateRequest:
+        if not self.password and not self.totp_code:
+            raise ValueError("enter the current password or a six-digit MFA code")
+        return self
 
 
 class UserAccessUpdate(ApiModel):
@@ -1868,6 +1875,8 @@ class FirmwareDeploymentView(ApiModel):
     attempt: int
     progress: int
     bytes_received: int
+    progress_mode: Literal["determinate", "indeterminate"]
+    display_state: str
     scheduled_at: datetime
     expires_at: datetime | None
     allow_downgrade: bool
@@ -1891,6 +1900,10 @@ class FirmwareDeploymentView(ApiModel):
     target_version: str | None
     target_sha256: str | None
     target_build_hash: str | None
+    source_version: str | None
+    source_build_hash: str | None
+    source_boot_id: str | None
+    interruption_evidence: dict[str, Any]
 
 
 class FirmwareDeploymentCreateResponse(ApiModel):

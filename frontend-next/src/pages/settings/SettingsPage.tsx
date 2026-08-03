@@ -55,6 +55,7 @@ import { SensorSetupFlow } from '../../features/sensors/SensorSetupFlow'
 import { MeasurementAssignmentDialog } from '../../features/sensors/MeasurementAssignmentDialog'
 import { FirmwareUpdateDialog } from '../../features/firmware/FirmwareUpdateDialog'
 import { FirmwareFleetWorkflow } from '../../features/firmware/FirmwareFleetWorkflow'
+import { ProtectedChangeDialog } from '../../components/security/ProtectedChangeDialog'
 import { chartColorContrast, DEFAULT_CHART_COLORS, useAppearance, type ChartColorKind } from '../../state/AppearanceContext'
 import { useAuth } from '../../state/AuthContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
@@ -1580,6 +1581,7 @@ function SecurityDetail() {
   const permissions = useQuery({ queryKey: ['permission-catalog'], queryFn: () => request('/api/v1/admin/permissions', {}, adaptPermissions) })
   const [editingRole, setEditingRole] = useState<FamilyRoleOption | 'new'>()
   const [cloneSource, setCloneSource] = useState<FamilyRoleOption>()
+  const [permissionSaved, setPermissionSaved] = useState(false)
   const canManageRoles = session ? hasPermission(session, 'roles.manage') : false
   const archive = useMutation({
     mutationFn: (role: FamilyRoleOption) => request(`/api/v1/admin/roles/${role.id}/archive`, json('POST', {
@@ -1609,6 +1611,7 @@ function SecurityDetail() {
             </div>}
           </div>)}</div>}
         {archive.error && <InlineNotice tone="danger">{archive.error.message}</InlineNotice>}
+        {permissionSaved && <InlineNotice tone="success">Permissions saved successfully.</InlineNotice>}
       </Surface>
       <Surface title="Audit log" subtitle="Recent access, configuration, and security events.">
         {audit.data?.map((event, index) => <div className="list-row" key={text(event.id, String(index))}><Shield /><span><strong>{text(event.action, 'Audit event')}</strong><small>{text(event.occurred_at)}</small></span></div>) ?? <LoadingState />}
@@ -1617,23 +1620,26 @@ function SecurityDetail() {
         source={editingRole === 'new' ? undefined : editingRole ?? cloneSource}
         mode={editingRole === 'new' ? 'create' : editingRole ? 'edit' : 'clone'}
         permissions={permissions.data}
+        mfaEnabled={Boolean(session?.user?.mfaEnabled)}
         onClose={() => { setEditingRole(undefined); setCloneSource(undefined); }}
-        onSaved={() => { void client.invalidateQueries({ queryKey: ['family-roles'] }); setEditingRole(undefined); setCloneSource(undefined); }}
+        onSaved={() => { setPermissionSaved(true); void client.invalidateQueries({ queryKey: ['family-roles'] }); setEditingRole(undefined); setCloneSource(undefined); }}
       />}
     </>
   )
 }
 
-function RoleEditor({
+export function RoleEditor({
   source,
   mode,
   permissions,
+  mfaEnabled,
   onClose,
   onSaved,
 }: {
   source?: FamilyRoleOption
   mode: 'create' | 'edit' | 'clone'
   permissions: PermissionOption[]
+  mfaEnabled: boolean
   onClose: () => void
   onSaved: () => void
 }) {
@@ -1641,11 +1647,17 @@ function RoleEditor({
   const [description, setDescription] = useState(source?.description ?? '')
   const [selected, setSelected] = useState<string[]>(source?.permissions ?? [])
   const [reason, setReason] = useState(mode === 'edit' ? 'Custom role revised' : 'Custom role created')
+  const [confirmingProtectedChange, setConfirmingProtectedChange] = useState(false)
   const groups = permissions.reduce<Record<string, PermissionOption[]>>((result, permission) => {
     result[permission.group] ??= []
     result[permission.group]?.push(permission)
     return result
   }, {})
+  const highRiskCodes = new Set(permissions.filter((permission) => permission.highRisk).map((permission) => permission.code))
+  const changedPermissions = mode === 'edit'
+    ? new Set([...selected.filter((code) => !source?.permissions.includes(code)), ...(source?.permissions ?? []).filter((code) => !selected.includes(code))])
+    : new Set(selected)
+  const protectedChange = [...changedPermissions].some((code) => highRiskCodes.has(code))
   const save = useMutation({
     mutationFn: () => {
       const payload = {
@@ -1654,7 +1666,7 @@ function RoleEditor({
         permissions: selected,
         expected_revision: mode === 'edit' ? source?.revision : undefined,
         reason,
-        confirm_high_risk: selected.some((code) => permissions.find((permission) => permission.code === code)?.highRisk),
+        confirm_high_risk: protectedChange,
       }
       const path = mode === 'edit'
         ? `/api/v1/admin/roles/${source?.id ?? ''}`
@@ -1664,10 +1676,15 @@ function RoleEditor({
       return request(path, json(mode === 'edit' ? 'PUT' : 'POST', payload))
     },
     onSuccess: onSaved,
+    onError: (error) => {
+      if (error instanceof ApiError && error.problem.code === 'reauthentication_required') setConfirmingProtectedChange(true)
+    },
   })
+  const protectedError = save.error instanceof ApiError && save.error.problem.code === 'reauthentication_required'
   return (
-    <div className="modal-backdrop">
-      <form className="modal-card role-editor" role="dialog" aria-modal="true" aria-labelledby="role-editor-title" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
+    <>
+    {!confirmingProtectedChange && <div className="modal-backdrop">
+      <form className="modal-card role-editor" role="dialog" aria-modal="true" aria-labelledby="role-editor-title" onSubmit={(event) => { event.preventDefault(); if (protectedChange) setConfirmingProtectedChange(true); else save.mutate() }}>
         <header><div><small>Advanced permissions</small><h2 id="role-editor-title">{mode === 'edit' ? 'Edit custom role' : mode === 'clone' ? 'Clone role' : 'New custom role'}</h2></div><button className="icon-button" type="button" aria-label="Close role editor" onClick={onClose}>×</button></header>
         <div className="setup-body">
           <div className="form-grid">
@@ -1678,10 +1695,12 @@ function RoleEditor({
             {Object.entries(groups).map(([group, items]) => <fieldset key={group}><legend>{group}</legend>{items.map((permission) => <label className="permission-option" key={permission.code}><input type="checkbox" checked={selected.includes(permission.code)} onChange={(event) => { setSelected(event.target.checked ? [...selected, permission.code] : selected.filter((code) => code !== permission.code)); }} /><span><strong>{permission.label}{permission.highRisk ? ' · High risk' : ''}</strong><small>{permission.description}</small></span></label>)}</fieldset>)}
           </div>
           <label>Audit reason<input value={reason} onChange={(event) => { setReason(event.target.value); }} /></label>
-          {save.error && <InlineNotice tone="danger">{save.error.message}</InlineNotice>}
+          {save.error && !protectedError && <InlineNotice tone="danger">{save.error.message}</InlineNotice>}
         </div>
         <footer><button className="button secondary" type="button" onClick={onClose}>Cancel</button><button className="button primary" type="submit" disabled={save.isPending || selected.length === 0}>{save.isPending ? 'Saving…' : 'Save role'}</button></footer>
       </form>
-    </div>
+    </div>}
+    {confirmingProtectedChange && <ProtectedChangeDialog mfaEnabled={mfaEnabled} onCancel={() => { setConfirmingProtectedChange(false) }} onConfirmed={() => { setConfirmingProtectedChange(false); save.mutate() }} />}
+    </>
   )
 }

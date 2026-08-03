@@ -142,27 +142,46 @@ export function adaptFirmwareRelease(value: unknown): FirmwareReleaseSummary {
 }
 
 export function adaptFirmwareDeployments(value: unknown): FirmwareDeploymentSummary[] {
-  return records(value, 'firmware deployments').map((source) => ({
-    id: stringValue(source.id),
-    firmwareReleaseId: stringValue(source.firmware_release_id),
-    deviceId: stringValue(source.device_id),
-    state: stringValue(source.state, stringValue(source.status, 'scheduled')),
-    revision: numberValue(source.revision, 1),
-    attempt: numberValue(source.attempt, 1),
-    progress: numberValue(source.progress),
-    bytesReceived: numberValue(source.bytes_received),
-    targetVersion: optionalString(source.target_version),
-    targetSha256: optionalString(source.target_sha256),
-    failureCode: optionalString(source.failure_code),
-    failureSummary: optionalString(source.failure_summary ?? source.failure_reason),
-    rollbackVersion: optionalString(source.rollback_version),
-    rollbackBuildHash: optionalString(source.rollback_build_hash),
-    lastReportAt: optionalString(source.last_report_at),
-    rolloutGroupId: optionalString(source.rollout_group_id),
-    rolloutOrder: optionalNumber(source.rollout_order),
-    verificationHeartbeats: numberValue(source.verification_heartbeats),
-    readingConfirmedAt: optionalString(source.reading_confirmed_at),
-  }))
+  return records(value, 'firmware deployments').map((source) => {
+    const state = stringValue(source.state, stringValue(source.status, 'scheduled'))
+    const bytesReceived = numberValue(source.bytes_received)
+    const progressMode = source.progress_mode === 'determinate'
+      ? 'determinate'
+      : source.progress_mode === 'indeterminate'
+        ? 'indeterminate'
+        : bytesReceived > 0 && !['scheduled', 'offered', 'manifest_authenticated', 'download_started'].includes(state)
+          ? 'determinate'
+          : 'indeterminate'
+    return {
+      id: stringValue(source.id),
+      firmwareReleaseId: stringValue(source.firmware_release_id),
+      deviceId: stringValue(source.device_id),
+      state,
+      revision: numberValue(source.revision, 1),
+      attempt: numberValue(source.attempt, 1),
+      progress: numberValue(source.progress),
+      bytesReceived,
+      progressMode,
+      displayState: stringValue(source.display_state, state),
+      scheduledAt: optionalString(source.scheduled_at),
+      downloadedAt: optionalString(source.downloaded_at),
+      targetVersion: optionalString(source.target_version),
+      targetSha256: optionalString(source.target_sha256),
+      failureCode: optionalString(source.failure_code),
+      failureSummary: optionalString(source.failure_summary ?? source.failure_reason),
+      rollbackVersion: optionalString(source.rollback_version),
+      rollbackBuildHash: optionalString(source.rollback_build_hash),
+      lastReportAt: optionalString(source.last_report_at),
+      rolloutGroupId: optionalString(source.rollout_group_id),
+      rolloutOrder: optionalNumber(source.rollout_order),
+      verificationHeartbeats: numberValue(source.verification_heartbeats),
+      readingConfirmedAt: optionalString(source.reading_confirmed_at),
+      sourceVersion: optionalString(source.source_version),
+      interruptionEvidence: source.interruption_evidence && typeof source.interruption_evidence === 'object'
+        ? source.interruption_evidence as Record<string, unknown>
+        : undefined,
+    }
+  })
 }
 
 function healthStatus(value: unknown): SystemHealthStatus {
@@ -209,6 +228,7 @@ export function adaptSession(value: unknown): UserSession {
           allHomes: booleanValue(user.all_sites),
           homeIds: stringList(user.site_ids),
           accessRevision: numberValue(user.access_revision, 1),
+          mfaEnabled: booleanValue(user.mfa_enabled),
         }
       : undefined,
   }

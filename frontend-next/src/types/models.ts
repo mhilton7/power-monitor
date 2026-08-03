@@ -19,6 +19,7 @@ export interface UserSession {
     allHomes: boolean
     homeIds: string[]
     accessRevision: number
+    mfaEnabled: boolean
   }
 }
 
@@ -186,6 +187,10 @@ export interface FirmwareDeploymentSummary {
   attempt: number
   progress: number
   bytesReceived: number
+  progressMode?: 'determinate' | 'indeterminate'
+  displayState?: string
+  scheduledAt?: string
+  downloadedAt?: string
   targetVersion?: string
   targetSha256?: string
   failureCode?: string
@@ -197,6 +202,8 @@ export interface FirmwareDeploymentSummary {
   rolloutOrder?: number
   verificationHeartbeats: number
   readingConfirmedAt?: string
+  sourceVersion?: string
+  interruptionEvidence?: Record<string, unknown>
 }
 
 export interface SensorStoragePolicy {

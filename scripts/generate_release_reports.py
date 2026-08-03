@@ -15,8 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE = ROOT / "release"
-DEFAULT_RELEASE_VERSION = "1.0.28"
-DEFAULT_MIGRATION_REVISION = "20260802_0026"
+DEFAULT_RELEASE_VERSION = "1.0.29"
+DEFAULT_MIGRATION_REVISION = "20260803_0027"
 SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 MIGRATION_PATTERN = re.compile(r"^[0-9]{8}_[0-9]{4}$")
 OTA_V2_ARTIFACTS = (

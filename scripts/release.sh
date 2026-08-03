@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 python_bin=${PYTHON_BIN:-.venv/bin/python}
-release_version=${RELEASE_VERSION:-1.0.28}
-migration_revision=${MIGRATION_REVISION:-20260802_0026}
+release_version=${RELEASE_VERSION:-1.0.29}
+migration_revision=${MIGRATION_REVISION:-20260803_0027}
 
 [[ "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
   echo "RELEASE_VERSION must be strict X.Y.Z semantic versioning" >&2

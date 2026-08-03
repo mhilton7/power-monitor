@@ -122,23 +122,168 @@ async def _reconcile_firmware_heartbeat(
         select(FirmwareDeployment)
         .where(
             FirmwareDeployment.device_id == payload.device_id,
-            FirmwareDeployment.state.in_(["validated", "awaiting_heartbeat"]),
+            FirmwareDeployment.state.in_(
+                [
+                    "manifest_authenticated",
+                    "download_started",
+                    "downloading",
+                    "binary_verified",
+                    "partition_written",
+                    "rebooting",
+                    "post_boot_validation",
+                    "validated",
+                    "awaiting_heartbeat",
+                ]
+            ),
         )
         .order_by(FirmwareDeployment.scheduled_at.desc())
         .limit(1)
+        .with_for_update()
     )
     if deployment is None:
         return
     release = await session.get(FirmwareRelease, deployment.firmware_release_id)
-    if (
-        release is None
-        or payload.firmware_version != release.version
-        or payload.firmware_build_hash != release.build_hash
-        or (deployment.last_boot_id is not None and payload.boot_id != deployment.last_boot_id)
-        or not payload.pzem.ok
-        or not payload.sd.ok
-        or not payload.time.trusted
-    ):
+    if release is None:
+        return
+    target_identity = (
+        payload.firmware_version == release.version
+        and payload.firmware_build_hash == release.build_hash
+    )
+    source_identity = (
+        payload.firmware_version == deployment.source_version
+        and payload.firmware_build_hash == deployment.source_build_hash
+    )
+    resources = payload.resources if isinstance(payload.resources, dict) else {}
+    recovery = resources.get("ota_recovery", {})
+    recovery = recovery if isinstance(recovery, dict) else {}
+
+    if not target_identity:
+        target_was_observed = bool(
+            deployment.installed_at
+            or deployment.validated_version
+            or deployment.state in {"post_boot_validation", "validated", "awaiting_heartbeat"}
+        )
+        if target_was_observed and source_identity:
+            deployment.state = deployment.status = "rolled_back"
+            deployment.rollback_at = now
+            deployment.rollback_version = payload.firmware_version
+            deployment.rollback_build_hash = payload.firmware_build_hash
+            deployment.failure_code = "ota_rollback_detected"
+            deployment.failure_summary = (
+                "The sensor returned to its previous firmware after the target image was observed."
+            )
+            deployment.interruption_evidence = {
+                "reason": "target_then_source_identity",
+                "boot_id_changed": payload.boot_id != deployment.last_boot_id,
+                "ota_recovery": recovery,
+            }
+            deployment.revision += 1
+            session.add(
+                audit_event(
+                    action="firmware.deployment_rollback_reconciled",
+                    actor_type="device",
+                    actor_id=payload.device_id,
+                    object_type="firmware_deployment",
+                    object_id=deployment.id,
+                    details=deployment.interruption_evidence,
+                )
+            )
+            return
+
+        preinstall_states = {
+            "manifest_authenticated",
+            "download_started",
+            "downloading",
+            "binary_verified",
+        }
+        boot_changed = bool(
+            deployment.source_boot_id and payload.boot_id != deployment.source_boot_id
+        )
+        previous_stage = str(recovery.get("previous_boot_stage") or "")
+        interrupted_stage = previous_stage in {
+            # 1.0.12+ retained ledger stage names.
+            "firmware_request",
+            "firmware_response_headers",
+            "image_metadata_received",
+            "image_metadata_validated",
+            "update_begin_completed",
+            "first_bytes_written",
+            "sha_finalized",
+            "protocol_marker_verified",
+            "http_transport_destroyed",
+            "update_end_beginning",
+            # Backward-compatible names emitted by early repair builds.
+            "download_request",
+            "image_metadata",
+            "update_begin",
+            "streaming",
+            "stream_complete",
+            "hash_verified",
+            "partition_finalizing",
+        }
+        last_activity = (
+            deployment.last_report_at or deployment.downloaded_at or deployment.scheduled_at
+        )
+        grace_elapsed = _aware(last_activity) <= now - timedelta(
+            seconds=settings.firmware_interruption_grace_seconds
+        )
+        if (
+            deployment.state in preinstall_states
+            and source_identity
+            and grace_elapsed
+            and (boot_changed or interrupted_stage or recovery.get("previous_boot_update_open"))
+        ):
+            interrupted_state = deployment.state
+            deployment.state = deployment.status = "failed"
+            deployment.failure_code = "ota_interrupted_before_install"
+            deployment.failure_summary = (
+                "The sensor rebooted during the download workflow and returned "
+                "on the previous firmware."
+            )
+            deployment.interruption_evidence = {
+                "reason": "source_identity_after_reboot",
+                "last_state": interrupted_state,
+                "source_boot_id": deployment.source_boot_id,
+                "observed_boot_id": payload.boot_id,
+                "ota_recovery": recovery,
+            }
+            deployment.last_boot_id = payload.boot_id
+            deployment.revision += 1
+            session.add(
+                audit_event(
+                    action="firmware.deployment_interrupted_reconciled",
+                    actor_type="device",
+                    actor_id=payload.device_id,
+                    object_type="firmware_deployment",
+                    object_id=deployment.id,
+                    details=deployment.interruption_evidence,
+                )
+            )
+        return
+
+    # A target identity is authoritative evidence that installation occurred,
+    # even if the final pre-reboot progress report was lost.
+    if deployment.state not in {"validated", "awaiting_heartbeat"}:
+        deployment.state = deployment.status = "awaiting_heartbeat"
+        deployment.progress = 100
+        deployment.bytes_received = max(deployment.bytes_received, release.size_bytes)
+        deployment.installed_at = deployment.installed_at or now
+        deployment.validated_version = payload.firmware_version
+        deployment.validated_build_hash = payload.firmware_build_hash
+        deployment.stabilization_started_at = deployment.stabilization_started_at or now
+        deployment.last_boot_id = payload.boot_id
+        deployment.revision += 1
+        session.add(
+            audit_event(
+                action="firmware.deployment_target_reconciled",
+                actor_type="device",
+                actor_id=payload.device_id,
+                object_type="firmware_deployment",
+                object_id=deployment.id,
+                details={"state": "awaiting_heartbeat", "ota_recovery": recovery},
+            )
+        )
+    if not payload.pzem.ok or not payload.sd.ok or not payload.time.trusted:
         return
     if deployment.state == "validated":
         deployment.state = deployment.status = "awaiting_heartbeat"

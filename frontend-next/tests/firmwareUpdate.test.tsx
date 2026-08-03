@@ -185,6 +185,23 @@ describe('existing-trust firmware workflow', () => {
     expect(screen.getByText('Choose firmware.bin')).toBeVisible()
   })
 
+  it('renders zero-byte download startup as indeterminate instead of stale zero percent', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([{
+      ...deployment('download_started'),
+      progress: 0,
+      bytes_received: 0,
+      progress_mode: 'indeterminate',
+      display_state: 'starting_download',
+      last_report_at: '2026-08-03T20:00:00Z',
+    }]), { status: 200, headers: jsonHeaders })))
+    view(sensor())
+
+    expect(await screen.findByText('Starting download')).toBeVisible()
+    expect(screen.getByText('Waiting for the next authenticated sensor progress report.')).toBeVisible()
+    expect(screen.queryByText('0%')).not.toBeInTheDocument()
+    expect(screen.getByRole('progressbar')).not.toHaveAttribute('value')
+  })
+
   it('offers a safe retry for failed deployments', async () => {
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input)

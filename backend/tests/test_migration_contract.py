@@ -329,3 +329,18 @@ def test_existing_trust_ota_migration_is_additive_and_reversible() -> None:
     assert '"firmware.deploy"' in upgrade
     assert "DROP TABLE" not in upgrade
     assert "def downgrade()" in revision
+
+
+def test_ota_reconciliation_migration_preserves_deployments_and_evidence() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (root / "alembic" / "versions" / "20260803_0027_ota_reconciliation.py").read_text()
+    upgrade = revision.split("def downgrade()", maxsplit=1)[0]
+    assert 'down_revision = "20260802_0026"' in revision
+    assert '"source_version"' in upgrade
+    assert '"source_build_hash"' in upgrade
+    assert '"source_boot_id"' in upgrade
+    assert '"interruption_evidence"' in upgrade
+    assert "UPDATE firmware_deployments" in upgrade
+    assert "DELETE FROM firmware_deployments" not in upgrade
+    assert "DROP TABLE" not in upgrade
+    assert "def downgrade()" in revision
