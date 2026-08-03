@@ -3321,5 +3321,469 @@ CREATE UNIQUE INDEX uq_background_jobs_backup_idempotency ON background_jobs (id
 
 UPDATE alembic_version SET version_num='20260730_0020' WHERE alembic_version.version_num = '20260730_0019';
 
-COMMIT;
+-- Running upgrade 20260730_0020 -> 20260730_0021
 
+ALTER TABLE utility_bill_extracted_fields ADD COLUMN calculation_role VARCHAR(32) DEFAULT 'reference_only' NOT NULL;
+
+UPDATE utility_bill_extracted_fields
+        SET calculation_role = CASE
+          WHEN field_key IN (
+            'baseline_allowance_kwh','daily_baseline_formula','threshold_interpretation'
+          ) THEN 'tariff_rule'
+          WHEN output_kind = 'rate_plan'
+            AND field_key NOT LIKE '%usage%'
+            AND field_key NOT LIKE '%energy_charge%'
+            AND field_key NOT LIKE '%subtotal%'
+            AND field_key NOT LIKE '%total%'
+            AND field_key NOT LIKE '%payment%'
+            AND field_key NOT LIKE '%credit%'
+            AND field_key NOT LIKE '%tax%'
+            AND field_key NOT LIKE '%adjustment%'
+            AND field_key NOT LIKE '%balance%'
+            AND field_key NOT LIKE '%service_voltage%'
+            THEN 'tariff_rule'
+          ELSE 'reference_only'
+        END;
+
+CREATE INDEX ix_utility_bill_extracted_fields_calculation_role ON utility_bill_extracted_fields (calculation_role);
+
+ALTER TABLE utility_bill_extracted_fields ADD CONSTRAINT ck_utility_bill_extracted_fields_utility_bill_field_cal_1c56 CHECK (calculation_role IN ('tariff_rule','reference_only'));
+
+ALTER TABLE utility_bill_cycle_drafts ADD COLUMN calculation_role VARCHAR(32) DEFAULT 'reference_only' NOT NULL;
+
+CREATE INDEX ix_utility_bill_cycle_drafts_calculation_role ON utility_bill_cycle_drafts (calculation_role);
+
+ALTER TABLE utility_bill_cycle_drafts ADD CONSTRAINT ck_utility_bill_cycle_drafts_utility_bill_cycle_draft_r_49ff CHECK (calculation_role = 'reference_only');
+
+ALTER TABLE account_usage_authorities ADD COLUMN calculation_role VARCHAR(40) DEFAULT 'sensor_measurements' NOT NULL;
+
+UPDATE account_usage_authorities
+        SET calculation_role = CASE
+          WHEN source_reference LIKE 'utility-bill:%'
+            OR source_reference LIKE 'urn:power-monitor:utility-bill:%'
+            THEN 'reference_only'
+          WHEN authority_type IN (
+            'complete_site_aggregate','service_leg_pair','whole_account_meter'
+          ) THEN 'sensor_measurements'
+          ELSE 'advanced_external_correction'
+        END;
+
+CREATE INDEX ix_account_usage_authorities_calculation_role ON account_usage_authorities (calculation_role);
+
+ALTER TABLE account_usage_authorities ADD CONSTRAINT ck_account_usage_authorities_account_usage_authority_ca_3e20 CHECK (calculation_role IN ('sensor_measurements','advanced_external_correction','reference_only'));
+
+ALTER TABLE manual_account_usage ADD COLUMN calculation_role VARCHAR(40) DEFAULT 'advanced_external_correction' NOT NULL;
+
+UPDATE manual_account_usage
+        SET calculation_role = 'reference_only'
+        WHERE evidence_reference LIKE 'utility-bill:%'
+           OR idempotency_key LIKE 'utility-bill-%';
+
+CREATE INDEX ix_manual_account_usage_calculation_role ON manual_account_usage (calculation_role);
+
+ALTER TABLE manual_account_usage ADD CONSTRAINT ck_manual_account_usage_manual_account_usage_calculation_role CHECK (calculation_role IN ('advanced_external_correction','reference_only'));
+
+ALTER TABLE utility_usage_imports ADD COLUMN calculation_role VARCHAR(40) DEFAULT 'advanced_external_correction' NOT NULL;
+
+UPDATE utility_usage_imports
+        SET calculation_role = 'reference_only'
+        WHERE source_name LIKE 'Private utility bill import %';
+
+CREATE INDEX ix_utility_usage_imports_calculation_role ON utility_usage_imports (calculation_role);
+
+ALTER TABLE utility_usage_imports ADD CONSTRAINT ck_utility_usage_imports_utility_usage_import_calculation_role CHECK (calculation_role IN ('advanced_external_correction','reference_only'));
+
+ALTER TABLE billing_cycles ADD COLUMN usage_source_type VARCHAR(40) DEFAULT 'sensor_measurements' NOT NULL;
+
+ALTER TABLE billing_cycles ADD COLUMN projection_source_type VARCHAR(40) DEFAULT 'sensor_trend' NOT NULL;
+
+ALTER TABLE billing_cycles ADD COLUMN tier_progress_source_type VARCHAR(40) DEFAULT 'sensor_measurements' NOT NULL;
+
+ALTER TABLE billing_cycles ADD COLUMN recalculation_required BOOLEAN DEFAULT false NOT NULL;
+
+ALTER TABLE billing_cycles ADD COLUMN legacy_bill_authority_review_required BOOLEAN DEFAULT false NOT NULL;
+
+UPDATE billing_cycles
+        SET legacy_bill_authority_review_required = TRUE
+        WHERE
+          EXISTS (
+            SELECT 1
+            FROM utility_bill_cycle_drafts draft
+            WHERE draft.billing_cycle_id = billing_cycles.id
+              AND draft.utility_usage_import_id IS NOT NULL
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM account_usage_authorities authority
+            WHERE authority.utility_account_id = billing_cycles.utility_account_id
+              AND authority.calculation_role = 'reference_only'
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM manual_account_usage manual
+            WHERE manual.billing_cycle_id = billing_cycles.id
+              AND manual.calculation_role = 'reference_only'
+          );
+
+UPDATE billing_cycles
+        SET status = 'recalculating',
+            recalculation_required = TRUE,
+            usage_source_type = 'sensor_measurements',
+            projection_source_type = 'sensor_trend',
+            tier_progress_source_type = 'sensor_measurements'
+        WHERE finalized_at IS NULL
+          AND legacy_bill_authority_review_required = TRUE;
+
+CREATE INDEX ix_billing_cycles_usage_source_type ON billing_cycles (usage_source_type);
+
+ALTER TABLE billing_cycles ADD CONSTRAINT ck_billing_cycles_billing_cycle_usage_source_type CHECK (usage_source_type IN ('sensor_measurements','advanced_external_correction','unavailable'));
+
+ALTER TABLE billing_cycles ADD CONSTRAINT ck_billing_cycles_billing_cycle_projection_source_type CHECK (projection_source_type IN ('sensor_trend','advanced_external_correction','unavailable'));
+
+ALTER TABLE billing_cycles ADD CONSTRAINT ck_billing_cycles_billing_cycle_tier_progress_source_type CHECK (tier_progress_source_type IN ('sensor_measurements','advanced_external_correction','unavailable'));
+
+UPDATE alembic_version SET version_num='20260730_0021' WHERE alembic_version.version_num = '20260730_0020';
+
+COMMIT;
+BEGIN;
+
+-- Running upgrade 20260730_0021 -> 20260731_0022
+-- Packaging compatibility rendering for the released data-dependent migration.
+
+DELETE FROM role_permissions
+WHERE role_name = 'viewer'
+AND permission_code IN ('history.export', 'costs.export');
+
+UPDATE roles SET revision = revision + 1, updated_at = CURRENT_TIMESTAMP
+WHERE name = 'viewer';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM roles WHERE name = 'viewer') THEN
+        RAISE EXCEPTION 'built-in viewer role is missing';
+    END IF;
+END $$;
+
+INSERT INTO role_revisions
+(id, role_name, revision, display_name, description, permissions,
+ created_by, created_at, reason)
+SELECT '38bfd5c6-b0c4-5e8f-aa97-b9f19577ad96', 'viewer', revision, display_name, description,
+       CAST('["alerts.view","costs.view","devices.view","history.view","overview.view","rates.view","sites.view","status_indicators.view","topology.view","usage.view","utility_accounts.view"]' AS JSON), NULL, CURRENT_TIMESTAMP,
+       'Built-in Viewer restricted to safe Home, History, and Billing reads'
+FROM roles WHERE name = 'viewer';
+
+UPDATE users SET access_revision = access_revision + 1
+WHERE id IN (SELECT user_id FROM user_roles WHERE role_name = 'viewer');
+
+UPDATE sessions SET revoked_at = CURRENT_TIMESTAMP
+WHERE revoked_at IS NULL
+AND user_id IN (SELECT user_id FROM user_roles WHERE role_name = 'viewer');
+
+INSERT INTO audit_events
+(id, occurred_at, actor_type, actor_id, action, object_type, object_id,
+ source_ip, outcome, correlation_id, details)
+VALUES ('93b0fe9d-5eff-5d18-8781-814b5353a50b', CURRENT_TIMESTAMP, 'system', NULL,
+        'role.builtin_migrated', 'role', 'viewer', NULL, 'success', NULL,
+        CAST('{"removed_permissions":["history.export","costs.export"],"sessions_revoked":true}' AS JSON));
+
+UPDATE alembic_version SET version_num='20260731_0022'
+WHERE alembic_version.version_num = '20260730_0021';
+
+COMMIT;
+BEGIN;
+
+-- Running upgrade 20260731_0022 -> 20260731_0023
+
+ALTER TABLE alert_instances ADD COLUMN last_seen_at TIMESTAMP WITH TIME ZONE;
+
+UPDATE alert_instances SET last_seen_at = opened_at WHERE last_seen_at IS NULL;
+
+ALTER TABLE alert_instances ALTER COLUMN last_seen_at SET NOT NULL;
+
+CREATE INDEX ix_alert_instances_last_seen_at ON alert_instances (last_seen_at);
+
+ALTER TABLE alert_instances ADD COLUMN occurrence_count INTEGER DEFAULT '1' NOT NULL;
+
+ALTER TABLE alert_instances ADD COLUMN silenced_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE alert_instances ADD COLUMN silenced_by VARCHAR(36);
+
+ALTER TABLE alert_instances ADD COLUMN silence_note VARCHAR(500);
+
+ALTER TABLE alert_instances ADD CONSTRAINT fk_alert_instances_silenced_by_users FOREIGN KEY(silenced_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE notification_attempts ADD COLUMN queued_at TIMESTAMP WITH TIME ZONE;
+
+UPDATE notification_attempts SET queued_at = attempted_at WHERE queued_at IS NULL;
+
+ALTER TABLE notification_attempts ALTER COLUMN queued_at SET NOT NULL;
+
+ALTER TABLE notification_attempts ADD COLUMN started_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE notification_attempts ADD COLUMN completed_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE notification_attempts ADD COLUMN safe_error_code VARCHAR(80);
+
+ALTER TABLE notification_attempts ADD COLUMN safe_error_summary VARCHAR(500);
+
+CREATE TABLE notification_suppressions (
+    id VARCHAR(36) NOT NULL,
+    suppression_key VARCHAR(160) NOT NULL,
+    category VARCHAR(80) NOT NULL,
+    scope_type VARCHAR(16) NOT NULL,
+    user_id VARCHAR(36),
+    site_id VARCHAR(36),
+    created_by VARCHAR(36) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    reason VARCHAR(500),
+    source_notification_id VARCHAR(200) NOT NULL,
+    active BOOLEAN DEFAULT true NOT NULL,
+    restored_by VARCHAR(36),
+    restored_at TIMESTAMP WITH TIME ZONE,
+    revision INTEGER DEFAULT '1' NOT NULL,
+    CONSTRAINT pk_notification_suppressions PRIMARY KEY (id),
+    CONSTRAINT ck_notification_suppressions_notification_suppression_scope CHECK (scope_type IN ('user','home')),
+    CONSTRAINT ck_notification_suppressions_notification_suppression_target CHECK ((scope_type = 'user' AND user_id IS NOT NULL AND site_id IS NULL) OR (scope_type = 'home' AND site_id IS NOT NULL AND user_id IS NULL)),
+    CONSTRAINT fk_notification_suppressions_user_id_users FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_notification_suppressions_site_id_sites FOREIGN KEY(site_id) REFERENCES sites (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_notification_suppressions_created_by_users FOREIGN KEY(created_by) REFERENCES users (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_notification_suppressions_restored_by_users FOREIGN KEY(restored_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_notification_suppressions_suppression_key ON notification_suppressions (suppression_key);
+
+CREATE INDEX ix_notification_suppressions_user_id ON notification_suppressions (user_id);
+
+CREATE INDEX ix_notification_suppressions_site_id ON notification_suppressions (site_id);
+
+CREATE INDEX ix_notification_suppressions_created_at ON notification_suppressions (created_at);
+
+CREATE INDEX ix_notification_suppressions_active ON notification_suppressions (active);
+
+CREATE UNIQUE INDEX uq_notification_suppression_active_user ON notification_suppressions (suppression_key, user_id) WHERE active AND user_id IS NOT NULL;
+
+CREATE UNIQUE INDEX uq_notification_suppression_active_home ON notification_suppressions (suppression_key, site_id) WHERE active AND site_id IS NOT NULL;
+
+CREATE TABLE notification_events (
+    id VARCHAR(36) NOT NULL,
+    notification_id VARCHAR(200) NOT NULL,
+    event_type VARCHAR(80) NOT NULL,
+    occurred_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    actor_id VARCHAR(36),
+    site_id VARCHAR(36),
+    category VARCHAR(80) NOT NULL,
+    severity VARCHAR(16) NOT NULL,
+    resource_type VARCHAR(40),
+    resource_id VARCHAR(80),
+    details JSON DEFAULT '{}' NOT NULL,
+    CONSTRAINT pk_notification_events PRIMARY KEY (id),
+    CONSTRAINT fk_notification_events_actor_id_users FOREIGN KEY(actor_id) REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT fk_notification_events_site_id_sites FOREIGN KEY(site_id) REFERENCES sites (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_notification_events_notification_id ON notification_events (notification_id);
+
+CREATE INDEX ix_notification_events_event_type ON notification_events (event_type);
+
+CREATE INDEX ix_notification_events_occurred_at ON notification_events (occurred_at);
+
+CREATE INDEX ix_notification_events_actor_id ON notification_events (actor_id);
+
+CREATE INDEX ix_notification_events_site_id ON notification_events (site_id);
+
+CREATE INDEX ix_notification_events_category ON notification_events (category);
+
+CREATE INDEX ix_notification_events_severity ON notification_events (severity);
+
+UPDATE alembic_version SET version_num='20260731_0023' WHERE alembic_version.version_num = '20260731_0022';
+
+-- Running upgrade 20260731_0023 -> 20260731_0024
+
+CREATE TABLE dashboard_appearance (
+    id VARCHAR(36) NOT NULL,
+    chart_power_color VARCHAR(7) NOT NULL,
+    chart_energy_color VARCHAR(7) NOT NULL,
+    chart_cost_color VARCHAR(7) NOT NULL,
+    revision INTEGER DEFAULT '1' NOT NULL,
+    updated_by VARCHAR(36),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_dashboard_appearance PRIMARY KEY (id),
+    CONSTRAINT fk_dashboard_appearance_updated_by_users FOREIGN KEY(updated_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_dashboard_appearance_updated_by ON dashboard_appearance (updated_by);
+
+INSERT INTO dashboard_appearance (id, chart_power_color, chart_energy_color, chart_cost_color, revision, updated_at) VALUES ('current', '#78DFBF', '#78DFBF', '#C9A7FF', 1, CURRENT_TIMESTAMP);
+
+UPDATE alembic_version SET version_num='20260731_0024' WHERE alembic_version.version_num = '20260731_0023';
+
+-- Running upgrade 20260731_0024 -> 20260731_0025
+
+ALTER TABLE device_events ADD COLUMN event_sequence INTEGER;
+
+CREATE INDEX ix_device_events_event_sequence ON device_events (event_sequence);
+
+ALTER TABLE device_events ADD CONSTRAINT uq_device_event_sequence UNIQUE (device_id, event_sequence);
+
+CREATE TABLE device_event_sync_cursors (
+    device_id VARCHAR(36) NOT NULL,
+    highest_contiguous_sequence INTEGER DEFAULT '0' NOT NULL,
+    maximum_seen_sequence INTEGER DEFAULT '0' NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_device_event_sync_cursors PRIMARY KEY (device_id),
+    CONSTRAINT fk_device_event_sync_cursors_device_id_devices FOREIGN KEY(device_id) REFERENCES devices (id) ON DELETE CASCADE
+);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('storage.view', 'Sites and devices', 'View sensor storage', 'View capacity, pressure, acknowledgement, retention, and cleanup evidence.', false);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('storage.manage', 'Sites and devices', 'Manage sensor storage', 'Change protected retention, request cleanup, and prepare cards for removal.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'storage.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'storage.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('rate-manager', 'storage.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('viewer', 'storage.view');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'storage.manage');
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('operator', 'storage.manage');
+
+INSERT INTO alert_rules (id, name, rule_type, severity, enabled, debounce_seconds, resolve_seconds, configuration, created_at, updated_at) VALUES (NULL, NULL, NULL, NULL, TRUE, 0, 0, CAST(NULL AS JSON), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+INSERT INTO alert_rules (id, name, rule_type, severity, enabled, debounce_seconds, resolve_seconds, configuration, created_at, updated_at) VALUES (NULL, NULL, NULL, NULL, TRUE, 0, 0, CAST(NULL AS JSON), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+INSERT INTO alert_rules (id, name, rule_type, severity, enabled, debounce_seconds, resolve_seconds, configuration, created_at, updated_at) VALUES (NULL, NULL, NULL, NULL, TRUE, 0, 0, CAST(NULL AS JSON), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+INSERT INTO alert_rules (id, name, rule_type, severity, enabled, debounce_seconds, resolve_seconds, configuration, created_at, updated_at) VALUES (NULL, NULL, NULL, NULL, TRUE, 0, 0, CAST(NULL AS JSON), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+INSERT INTO alert_rules (id, name, rule_type, severity, enabled, debounce_seconds, resolve_seconds, configuration, created_at, updated_at) VALUES (NULL, NULL, NULL, NULL, TRUE, 0, 0, CAST(NULL AS JSON), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+INSERT INTO alert_rules (id, name, rule_type, severity, enabled, debounce_seconds, resolve_seconds, configuration, created_at, updated_at) VALUES (NULL, NULL, NULL, NULL, TRUE, 0, 0, CAST(NULL AS JSON), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+INSERT INTO alert_rules (id, name, rule_type, severity, enabled, debounce_seconds, resolve_seconds, configuration, created_at, updated_at) VALUES (NULL, NULL, NULL, NULL, TRUE, 0, 0, CAST(NULL AS JSON), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+UPDATE alembic_version SET version_num='20260731_0025' WHERE alembic_version.version_num = '20260731_0024';
+
+-- Running upgrade 20260731_0025 -> 20260802_0026
+
+ALTER TABLE firmware_releases ADD COLUMN trust_mode VARCHAR(40) DEFAULT 'ed25519_legacy' NOT NULL;
+
+ALTER TABLE firmware_releases ADD COLUMN project_name VARCHAR(120);
+
+ALTER TABLE firmware_releases ADD COLUMN artifact_path VARCHAR(500);
+
+ALTER TABLE firmware_releases ADD COLUMN build_hash VARCHAR(128);
+
+ALTER TABLE firmware_releases ADD COLUMN git_commit VARCHAR(64);
+
+ALTER TABLE firmware_releases ADD COLUMN build_timestamp TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE firmware_releases ADD COLUMN original_filename VARCHAR(255);
+
+ALTER TABLE firmware_releases ADD COLUMN uploaded_by VARCHAR(36);
+
+ALTER TABLE firmware_releases ADD CONSTRAINT fk_firmware_releases_uploaded_by_users FOREIGN KEY(uploaded_by) REFERENCES users (id) ON DELETE SET NULL;
+
+ALTER TABLE firmware_releases ADD COLUMN verification_status VARCHAR(32) DEFAULT 'verified' NOT NULL;
+
+ALTER TABLE firmware_releases ADD COLUMN verification_evidence JSON DEFAULT '{}' NOT NULL;
+
+ALTER TABLE firmware_releases ADD COLUMN artifact_verified_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE firmware_releases ALTER COLUMN file_path DROP NOT NULL;
+
+ALTER TABLE firmware_releases ALTER COLUMN signature DROP NOT NULL;
+
+ALTER TABLE firmware_releases ALTER COLUMN signing_key_id DROP NOT NULL;
+
+CREATE INDEX ix_firmware_releases_uploaded_by ON firmware_releases (uploaded_by);
+
+CREATE UNIQUE INDEX uq_firmware_release_v2_version_target ON firmware_releases (version, hardware_target) WHERE trust_mode = 'existing_device_hmac';
+
+ALTER TABLE firmware_releases ADD CONSTRAINT ck_firmware_releases_firmware_release_trust_mode CHECK (trust_mode IN ('existing_device_hmac','ed25519_legacy'));
+
+ALTER TABLE firmware_releases ADD CONSTRAINT ck_firmware_releases_firmware_release_verification_status CHECK (verification_status IN ('verified','rejected','quarantined'));
+
+ALTER TABLE firmware_releases ADD CONSTRAINT ck_firmware_releases_firmware_release_size_positive CHECK (size_bytes > 0);
+
+ALTER TABLE firmware_deployments ADD COLUMN state VARCHAR(32) DEFAULT 'scheduled' NOT NULL;
+
+ALTER TABLE firmware_deployments ADD COLUMN idempotency_key VARCHAR(180);
+
+ALTER TABLE firmware_deployments ADD COLUMN rollout_group_id VARCHAR(36);
+
+ALTER TABLE firmware_deployments ADD COLUMN rollout_order INTEGER DEFAULT '0' NOT NULL;
+
+ALTER TABLE firmware_deployments ADD COLUMN promoted_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE firmware_deployments ADD COLUMN revision INTEGER DEFAULT '1' NOT NULL;
+
+ALTER TABLE firmware_deployments ADD COLUMN attempt INTEGER DEFAULT '1' NOT NULL;
+
+ALTER TABLE firmware_deployments ADD COLUMN progress INTEGER DEFAULT '0' NOT NULL;
+
+ALTER TABLE firmware_deployments ADD COLUMN bytes_received BIGINT DEFAULT '0' NOT NULL;
+
+ALTER TABLE firmware_deployments ADD COLUMN expires_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE firmware_deployments ADD COLUMN allow_downgrade BOOLEAN DEFAULT false NOT NULL;
+
+ALTER TABLE firmware_deployments ADD COLUMN failure_code VARCHAR(80);
+
+ALTER TABLE firmware_deployments ADD COLUMN failure_summary VARCHAR(500);
+
+ALTER TABLE firmware_deployments ADD COLUMN last_report_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE firmware_deployments ADD COLUMN last_report_payload JSON DEFAULT '{}' NOT NULL;
+
+ALTER TABLE firmware_deployments ADD COLUMN validated_version VARCHAR(80);
+
+ALTER TABLE firmware_deployments ADD COLUMN validated_build_hash VARCHAR(128);
+
+ALTER TABLE firmware_deployments ADD COLUMN rollback_version VARCHAR(80);
+
+ALTER TABLE firmware_deployments ADD COLUMN rollback_build_hash VARCHAR(128);
+
+ALTER TABLE firmware_deployments ADD COLUMN last_boot_id VARCHAR(80);
+
+ALTER TABLE firmware_deployments ADD COLUMN verification_heartbeats INTEGER DEFAULT '0' NOT NULL;
+
+ALTER TABLE firmware_deployments ADD COLUMN stabilization_started_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE firmware_deployments ADD COLUMN reading_confirmed_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE firmware_deployments ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL;
+
+UPDATE firmware_deployments SET state = CASE status WHEN 'available' THEN 'offered' WHEN 'downloaded' THEN 'binary_verified' WHEN 'installed' THEN 'awaiting_heartbeat' WHEN 'validated' THEN 'completed' WHEN 'failed' THEN 'failed' WHEN 'rolled_back' THEN 'rolled_back' ELSE 'scheduled' END;
+
+WITH ranked AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY scheduled_at DESC, id DESC) AS active_rank FROM firmware_deployments WHERE state NOT IN ('completed','failed','cancelled','rolled_back')) UPDATE firmware_deployments SET state = 'failed', status = 'failed', failure_code = 'migration_active_deployment_conflict', failure_summary = 'Superseded while enforcing one active deployment per sensor' WHERE id IN (SELECT id FROM ranked WHERE active_rank > 1);
+
+CREATE INDEX ix_firmware_deployments_state ON firmware_deployments (state);
+
+CREATE INDEX ix_firmware_deployments_rollout_group_id ON firmware_deployments (rollout_group_id);
+
+ALTER TABLE firmware_deployments ADD CONSTRAINT uq_firmware_deployment_device_idempotency UNIQUE (device_id, idempotency_key);
+
+CREATE UNIQUE INDEX uq_firmware_deployment_active_device ON firmware_deployments (device_id) WHERE state NOT IN ('completed','failed','cancelled','rolled_back');
+
+ALTER TABLE firmware_deployments ADD CONSTRAINT ck_firmware_deployments_firmware_deployment_state CHECK (state IN ('waiting_canary','scheduled','offered','manifest_authenticated','download_started','downloading','binary_verified','partition_written','rebooting','post_boot_validation','validated','awaiting_heartbeat','completed','failed','cancelled','rollback_detected','rolled_back'));
+
+ALTER TABLE firmware_deployments ADD CONSTRAINT ck_firmware_deployments_firmware_deployment_revision_positive CHECK (revision >= 1);
+
+ALTER TABLE firmware_deployments ADD CONSTRAINT ck_firmware_deployments_firmware_deployment_rollout_order CHECK (rollout_order >= 0);
+
+ALTER TABLE firmware_deployments ADD CONSTRAINT ck_firmware_deployments_firmware_deployment_attempt_positive CHECK (attempt >= 1);
+
+ALTER TABLE firmware_deployments ADD CONSTRAINT ck_firmware_deployments_firmware_deployment_progress CHECK (progress >= 0 AND progress <= 100);
+
+ALTER TABLE firmware_deployments ADD CONSTRAINT ck_firmware_deployments_firmware_deployment_bytes_nonnegative CHECK (bytes_received >= 0);
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) VALUES ('firmware.deploy', 'Sites and devices', 'Deploy firmware', 'Install, cancel, retry, and intentionally downgrade firmware.', true);
+
+INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'firmware.deploy');
+
+UPDATE alembic_version SET version_num='20260802_0026' WHERE alembic_version.version_num = '20260731_0025';
+
+COMMIT;

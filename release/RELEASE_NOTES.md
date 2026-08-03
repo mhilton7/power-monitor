@@ -1,4 +1,24 @@
-# Power Monitor Server 1.0.0
+# Power Monitor Server 1.0.28
+
+## Existing-trust OTA firmware updates
+
+- Adds owner-only ESP32-S3 firmware upload, validation, release, canary, batch,
+  retry, abort, recovery, and audit workflows without introducing a second
+  certificate authority or per-release signing-key ceremony.
+- Authenticates canonical `pm-ota-manifest/2` documents with a device-specific
+  HKDF-derived HMAC key while preserving the existing Caddy CA, HTTPS hostname
+  verification, enrolled device secret, and `pm-protocol/1.0.0` contract.
+- Validates ESP32-S3 application images before storage, including image format,
+  chip target, project, semantic version, protocol, checksum, and appended hash.
+- Adds append-only migration `20260802_0026`, firmware view/manage/deploy
+  capabilities, per-device deployment state, post-boot validation, explicit
+  rollback reporting, generated schemas/vectors, and production UI coverage.
+- Separates firmware low-total-memory faults from ordinary heap fragmentation,
+  adds operation-aware TLS admission and recovery grace periods, and keeps the
+  sensor Web UI and measurement/storage paths responsive during OTA work.
+- Releases sensor firmware `1.0.11` and server `1.0.28`; physical-device OTA and
+  rollback verification remain deployment acceptance steps, not simulated PASS
+  claims.
 
 ## Detailed actionable notifications
 

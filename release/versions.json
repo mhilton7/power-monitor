@@ -1,18 +1,50 @@
 {
   "product": "Power Monitor Server",
-  "version": "1.0.0",
+  "version": "1.0.28",
   "protocol": "pm-protocol/1.0.0",
-  "migration_revision": "20260730_0020",
+  "migration_revision": "20260802_0026",
+  "migration": {
+    "source": {
+      "path": "backend/alembic/versions/20260802_0026_existing_trust_ota.py",
+      "sha256": "04d961c762d75d94977766a53aa8979e4c51c42e6a08b74f81391623d2c63a70"
+    },
+    "offline_sql": {
+      "path": "release/migration-offline.sql",
+      "sha256": "1a9cbfc3866f3198d1b970e8364add48d5578eee37ff29f0f195cc25f33f5350"
+    }
+  },
   "python": "3.13.14",
-  "node": "v26.0.0",
+  "node": "v24.14.0",
   "npm": "11.12.1",
-  "git_commit": "3239efc63baa0255a24f63fe797193677b2126e6",
+  "git_commit": "b2cca46fb826bce0e376792ba39d75c969388deb",
   "images": {
-    "api": "power-monitor-api:1.0.0",
-    "frontend": "power-monitor-frontend:1.0.0",
-    "backup": "power-monitor-backup:1.0.0",
+    "api": "power-monitor-api:1.0.28",
+    "frontend": "power-monitor-frontend:1.0.28",
+    "backup": "power-monitor-backup:1.0.28",
     "postgres": "docker.io/library/postgres:17.5-bookworm",
     "caddy": "docker.io/library/caddy:2.10.0-alpine"
+  },
+  "ota_v2": {
+    "protocol": "pm-ota-manifest/2",
+    "authentication": "existing_device_hmac",
+    "artifacts": [
+      {
+        "path": "shared/schemas/ota-manifest-v2.schema.json",
+        "sha256": "92f6da405b0b9dc4ed57b8f8cbe8e11a1c7b5ccb75e0e4182fa446a9164ff7f7"
+      },
+      {
+        "path": "shared/schemas/ota-deployment-report-v2.schema.json",
+        "sha256": "053845d1b7481a8a92762411bb924b4e61422c3c1523ee8c85a44ae60dbebcd2"
+      },
+      {
+        "path": "shared/auth-test-vectors/ota-manifest-v2.json",
+        "sha256": "f362f609b898fcde0a46576ed4c78add59ae9c0540eafe324b78ad50ed595eb3"
+      },
+      {
+        "path": "backend/alembic/versions/20260802_0026_existing_trust_ota.py",
+        "sha256": "04d961c762d75d94977766a53aa8979e4c51c42e6a08b74f81391623d2c63a70"
+      }
+    ]
   },
   "truenas": {
     "target": "TrueNAS Community Edition 25.10 Apps / Install via YAML",
