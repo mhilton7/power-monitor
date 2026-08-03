@@ -66,6 +66,13 @@ class Settings(BaseSettings):
     default_timezone: str = "America/Los_Angeles"
     default_currency: str = "USD"
     firmware_path: Path = Path("/data/firmware")
+    firmware_max_bytes: int = 8 * 1024 * 1024
+    firmware_ota_partition_size_bytes: int = 6 * 1024 * 1024
+    firmware_project_name: str = "power-monitor-sensor"
+    firmware_manifest_ttl_seconds: int = 24 * 60 * 60
+    firmware_artifact_verify_interval_seconds: int = 15 * 60
+    firmware_verification_heartbeat_count: int = 10
+    firmware_bootstrap_offset: str = "0x20000"
     report_path: Path = Path("/data/reports")
     rate_sync_artifact_path: Path = Path("/app/data/rate-source-artifacts")
     rate_sync_enabled: bool = True

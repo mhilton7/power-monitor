@@ -1,5 +1,18 @@
+param(
+    [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')]
+    [string]$ReleaseVersion = '1.0.28',
+    [ValidatePattern('^[0-9]{8}_[0-9]{4}$')]
+    [string]$MigrationRevision = '20260802_0026'
+)
+
 $ErrorActionPreference = 'Stop'
 $python = '.\.venv\Scripts\python.exe'
+$releaseCommit = (git rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $releaseCommit) {
+    throw 'Could not resolve the release commit.'
+}
+$env:POWER_MONITOR_VERSION = $ReleaseVersion
+$env:RELEASE_COMMIT = $releaseCommit
 
 function Assert-NativeSuccess([string]$Step) {
     if ($LASTEXITCODE -ne 0) {
@@ -56,7 +69,8 @@ Assert-NativeSuccess 'Frontend dependency audit'
 npm sbom --sbom-format cyclonedx | Set-Content -Encoding utf8 ..\release\frontend-sbom.cdx.json
 Assert-NativeSuccess 'Frontend SBOM generation'
 Pop-Location
-& $python scripts/generate_release_reports.py
+& $python scripts/generate_release_reports.py --version $ReleaseVersion `
+    --migration-revision $MigrationRevision
 Assert-NativeSuccess 'Release report generation'
 docker compose config --quiet
 Assert-NativeSuccess 'Docker Compose validation'
@@ -89,8 +103,9 @@ Assert-NativeSuccess 'Rendered TrueNAS deployment validation'
     --setup-token-file $env:TRUENAS_SETUP_TOKEN_FILE --gateway-port $env:TRUENAS_GATEWAY_PORT
 Assert-NativeSuccess 'TrueNAS deployed workflow gate'
 
-$archive = 'release\power-monitor-server-1.0.0.tar.gz'
-git archive --format=tar.gz --prefix=power-monitor-server-1.0.0/ -o $archive HEAD
+$archiveName = "power-monitor-server-$ReleaseVersion.tar.gz"
+$archive = Join-Path 'release' $archiveName
+git archive --format=tar.gz --prefix="power-monitor-server-$ReleaseVersion/" -o $archive HEAD
 Assert-NativeSuccess 'Release archive creation'
 $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
-Add-Content -Encoding ascii -LiteralPath 'release\checksums.sha256' -Value "$digest  power-monitor-server-1.0.0.tar.gz"
+Add-Content -Encoding ascii -LiteralPath 'release\checksums.sha256' -Value "$digest  $archiveName"

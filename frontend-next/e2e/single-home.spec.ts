@@ -407,6 +407,71 @@ test('legacy routes redirect without rendering a legacy page', async ({ page }) 
   await expect(page.getByRole('heading', { name: 'Sensors' })).toBeVisible()
 })
 
+test('sensor firmware update uses one verified binary and existing device trust', async ({ page }) => {
+  let deploymentCreated = false
+  await page.route('**/api/v1/devices**', async (route) => route.fulfill({ json: [{
+    id: 'sensor-1', name: 'Outdoor-AC', site_id: home.id, status: 'online_synchronized',
+    heartbeat_freshness: 'online', measurement_freshness: 'live', offline_after_seconds: 45,
+    firmware_version: '1.0.10', circuit_name: 'Outdoor condenser', measurement_role: 'branch',
+    ct_rating_amps: '100', included_in_default: true, backlog: 0,
+    firmware_ota: {
+      state: 'ready', supported: true, protocol_version: 2,
+      authentication_mode: 'existing_device_hmac', rollback_supported: true,
+      partition_size_bytes: 6291456,
+    },
+  }] }))
+  await page.route('**/api/v1/firmware-releases', async (route) => {
+    if (route.request().method() === 'POST') {
+      return route.fulfill({ status: 201, json: {
+        id: 'release-11', version: '1.0.11', project_name: 'power-monitor-sensor',
+        hardware_target: 'esp32-s3', protocol_min: 'pm-protocol/1.0.0',
+        protocol_max: 'pm-protocol/1.0.0', size_bytes: 1650000,
+        sha256: 'b'.repeat(64), build_hash: 'build-11', trust_mode: 'existing_device_hmac',
+        verification_status: 'verified', active: true,
+      } })
+    }
+    return route.fulfill({ json: [] })
+  })
+  await page.route('**/api/v1/devices/sensor-1/firmware-readiness**', async (route) => route.fulfill({ json: {
+    device_id: 'sensor-1', current_firmware_version: '1.0.10', release_id: 'release-11',
+    firmware_ota: {
+      state: 'ready', supported: true, protocol_version: 2,
+      authentication_mode: 'existing_device_hmac', rollback_supported: true,
+      partition_size_bytes: 6291456,
+    },
+    compatibility: { ready: true, reasons: [] },
+  } }))
+  await page.route('**/api/v1/firmware-deployments**', async (route) => {
+    if (route.request().method() === 'POST') {
+      deploymentCreated = true
+      return route.fulfill({ status: 201, json: { deployments: [{
+        id: 'deployment-1', firmware_release_id: 'release-11', device_id: 'sensor-1',
+        state: 'scheduled', revision: 1, attempt: 1, progress: 0, bytes_received: 0,
+        target_version: '1.0.11', target_sha256: 'b'.repeat(64),
+      }] } })
+    }
+    return route.fulfill({ json: deploymentCreated ? [{
+      id: 'deployment-1', firmware_release_id: 'release-11', device_id: 'sensor-1',
+      state: 'manifest_authenticated', revision: 2, attempt: 1, progress: 10,
+      bytes_received: 0, target_version: '1.0.11', target_sha256: 'b'.repeat(64),
+    }] : [] })
+  })
+
+  await page.goto('/settings/sensors')
+  await expect(page.getByText('Outdoor-AC')).toBeVisible()
+  await page.getByRole('button', { name: 'Manage Outdoor-AC' }).click()
+  await page.getByRole('menuitem', { name: 'Update firmware' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Update Outdoor-AC' })
+  await expect(dialog.getByText('Ready for server OTA')).toBeVisible()
+  await dialog.locator('input[type="file"]').setInputFiles({ name: 'firmware.bin', mimeType: 'application/octet-stream', buffer: Buffer.from('esp-image') })
+  await dialog.getByRole('button', { name: 'Verify firmware' }).click()
+  await expect(dialog.getByText('Firmware verified')).toBeVisible()
+  await expect(dialog.getByText('Existing device HMAC')).toBeVisible()
+  await expect(dialog.getByText('Existing trusted HTTPS')).toBeVisible()
+  await dialog.getByRole('button', { name: 'Install' }).click()
+  await expect(dialog.getByText('Manifest authenticated')).toBeVisible()
+})
+
 test('Billing and Settings remain usable at narrow widths', async ({ page }) => {
   await page.goto('/billing')
   await expect(page.getByRole('heading', { name: 'Billing' })).toBeVisible()

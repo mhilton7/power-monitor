@@ -114,7 +114,89 @@ export interface SensorSummary {
     includedInDefault: boolean
     backlog: number
   ctRatingAmps: string
-    measurementRole: string
+  measurementRole: string
+  firmwareOta?: FirmwareOtaCapability
+}
+
+export type FirmwareOtaReadiness =
+  | 'ready'
+  | 'legacy_signed_ota_only'
+  | 'trust_missing'
+  | 'bootstrap_required'
+  | 'unsupported'
+
+export interface FirmwareOtaCapability {
+  state: FirmwareOtaReadiness
+  supported: boolean
+  protocolVersion?: number
+  authenticationMode?: string
+  rollbackSupported?: boolean
+  partitionSizeBytes?: number
+  reason?: string
+  bootstrap?: {
+    version?: string
+    sha256?: string
+    downloadPath?: string
+    usbCommand?: string
+  }
+}
+
+export interface FirmwareReadinessSummary {
+  deviceId: string
+  currentFirmwareVersion?: string
+  currentFirmwareBuildHash?: string
+  firmwareOta: FirmwareOtaCapability
+  releaseId?: string
+  compatible?: boolean
+  compatibilityReasons: string[]
+  bootstrap?: {
+    required: boolean
+    firmwareFilename?: string
+    sha256?: string
+    expectedVersion?: string
+    expectedBuildHash?: string
+    artifactDownloadPath?: string
+    usbCommand?: string
+    preserves: string[]
+  }
+}
+
+export interface FirmwareReleaseSummary {
+  id: string
+  version: string
+  projectName: string
+  hardwareTarget: string
+  protocolMin: string
+  protocolMax: string
+  sizeBytes: number
+  sha256: string
+  buildHash?: string
+  buildTimestamp?: string
+  trustMode: 'existing_device_hmac' | 'ed25519_legacy'
+  verificationStatus: string
+  active: boolean
+}
+
+export interface FirmwareDeploymentSummary {
+  id: string
+  firmwareReleaseId: string
+  deviceId: string
+  state: string
+  revision: number
+  attempt: number
+  progress: number
+  bytesReceived: number
+  targetVersion?: string
+  targetSha256?: string
+  failureCode?: string
+  failureSummary?: string
+  rollbackVersion?: string
+  rollbackBuildHash?: string
+  lastReportAt?: string
+  rolloutGroupId?: string
+  rolloutOrder?: number
+  verificationHeartbeats: number
+  readingConfirmedAt?: string
 }
 
 export interface SensorStoragePolicy {

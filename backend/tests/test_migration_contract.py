@@ -311,3 +311,21 @@ def test_modern_workspace_site_lifecycle_migration_preserves_history() -> None:
     assert "DELETE FROM status_layout_revisions" not in upgrade
     assert "DROP TABLE" not in upgrade
     assert "def downgrade()" in revision
+
+
+def test_existing_trust_ota_migration_is_additive_and_reversible() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (root / "alembic" / "versions" / "20260802_0026_existing_trust_ota.py").read_text()
+    upgrade = revision.split("def downgrade()", maxsplit=1)[0]
+    assert 'down_revision = "20260731_0025"' in revision
+    assert '"trust_mode"' in upgrade
+    assert "existing_device_hmac" in upgrade
+    assert "ed25519_legacy" in upgrade
+    assert '"verification_evidence"' in upgrade
+    assert '"idempotency_key"' in upgrade
+    assert '"rollout_group_id"' in upgrade
+    assert "uq_firmware_deployment_active_device" in upgrade
+    assert "firmware_deployment_state" in upgrade
+    assert '"firmware.deploy"' in upgrade
+    assert "DROP TABLE" not in upgrade
+    assert "def downgrade()" in revision

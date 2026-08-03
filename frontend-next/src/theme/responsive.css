@@ -194,6 +194,15 @@
   .modal-card { width: 100%; max-height: 100vh; height: 100%; border: 0; border-radius: 0; }
   .backup-details-dialog .detail-list { grid-template-columns: 1fr; }
   .backup-details-dialog .detail-list dd { margin-bottom: .5rem; }
+  .firmware-device-summary, .firmware-verification dl { grid-template-columns: 1fr; }
+  .firmware-verification dl > div, .firmware-verification dl > div:nth-child(2n) { border-right: 0; }
+  .firmware-verification dl > div.wide { grid-column: auto; }
+  .firmware-file-picker { grid-template-columns: auto minmax(0, 1fr); }
+  .firmware-file-picker > .pill { grid-column: 1 / -1; }
+  .firmware-bootstrap { grid-template-columns: 1fr; }
+  .firmware-fleet-release, .firmware-deployment-row { grid-template-columns: auto minmax(0, 1fr); }
+  .firmware-fleet-release > .icon-button, .firmware-deployment-row > .pill, .firmware-deployment-row > .inline-actions { grid-column: 1 / -1; justify-self: start; }
+  .firmware-rollout-policy { align-items: flex-start; flex-direction: column; }
   .permission-groups { grid-template-columns: 1fr; }
   .home-primary-onboarding { grid-template-columns: 1fr; min-height: auto; padding: var(--space-5); }
   .home-onboarding-icon { width: 4.5rem; }

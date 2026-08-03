@@ -53,6 +53,8 @@ import { DropdownMenu, DropdownMenuItem } from '../../components/overlays/Dropdo
 import { ModalLayer } from '../../components/overlays/ModalLayer'
 import { SensorSetupFlow } from '../../features/sensors/SensorSetupFlow'
 import { MeasurementAssignmentDialog } from '../../features/sensors/MeasurementAssignmentDialog'
+import { FirmwareUpdateDialog } from '../../features/firmware/FirmwareUpdateDialog'
+import { FirmwareFleetWorkflow } from '../../features/firmware/FirmwareFleetWorkflow'
 import { chartColorContrast, DEFAULT_CHART_COLORS, useAppearance, type ChartColorKind } from '../../state/AppearanceContext'
 import { useAuth } from '../../state/AuthContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
@@ -167,6 +169,7 @@ function SensorSettings() {
   const canRemoveDevices = hasPermission(session, 'devices.remove')
   const canViewFirmware = hasPermission(session, 'firmware.view')
   const canManageFirmware = hasPermission(session, 'firmware.manage')
+  const canDeployFirmware = hasPermission(session, 'firmware.deploy')
   const canManageTestMode = hasPermission(session, 'settings.manage')
   const testMode = useTestMode()
   const testSensors = useQuery({
@@ -188,12 +191,12 @@ function SensorSettings() {
   const [adding, setAdding] = useState(canEnroll && new URLSearchParams(location.search).get('action') === 'add')
   const [assignmentSensor, setAssignmentSensor] = useState<SensorSummary>()
   const [storageSensor, setStorageSensor] = useState<SensorSummary>()
+  const [firmwareSensor, setFirmwareSensor] = useState<SensorSummary>()
   const assignmentRequested = new URLSearchParams(location.search).get('configuration') === 'measurement-assignment'
   const requestedSensor = assignmentRequested && !assignmentSensor
     ? sensors.find((sensor) => !sensor.circuitId || !sensor.utilityAccountId)
     : undefined
   const activeAssignmentSensor = assignmentSensor ?? requestedSensor
-  const firmware = useQuery({ queryKey: ['firmware-releases'], queryFn: () => request<Array<{ id: string; version: string; channel: string; active: boolean }>>('/api/v1/firmware-releases'), enabled: canViewFirmware })
   const maintenance = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => enabled
       ? request(`/api/v1/devices/${id}/maintenance`, json('POST', { until: new Date(Date.now() + 3_600_000).toISOString(), note: 'Owner requested maintenance' }))
@@ -219,20 +222,13 @@ function SensorSettings() {
       }))
     },
   })
-  const updateFirmware = useMutation({
-    mutationFn: ({ releaseId, sensorId }: { releaseId: string; sensorId: string }) => request('/api/v1/firmware-deployments', json('POST', {
-      firmware_release_id: releaseId,
-      device_ids: [sensorId],
-      scheduled_at: new Date().toISOString(),
-    })),
-  })
   return (
     <>
       <Surface title="Sensors" subtitle="Monitor setup, connectivity, storage, and firmware." action={home && canEnroll && <button className="button primary" type="button" onClick={() => { setAdding(true); }}><Plus /> Add sensor</button>}>
         {!sensors.length ? <EmptyState title="No sensors connected" message="Add an ESP32 sensor to begin monitoring." action={home && canEnroll && <button type="button" className="button primary" onClick={() => { setAdding(true); }}>Connect sensor</button>} /> :
           <div className="stack-list">{sensors.map((sensor) => <article className="sensor-row" key={sensor.id}>
             <span className={`sensor-icon ${sensor.online ? 'online' : ''}`}><Radio /></span>
-            <span><strong>{sensor.name}</strong><small>{sensor.monitoredCircuit} · {sensor.firmware ?? 'Firmware unknown'} · last seen {relativeTime(sensor.lastSeenAt)}</small></span>
+            <span><strong>{sensor.name}</strong><small>{sensor.monitoredCircuit} · {sensor.firmware ?? 'Firmware unknown'}{canViewFirmware && sensor.firmwareOta ? ` · ${sensor.firmwareOta.state === 'ready' ? 'OTA ready' : sensor.firmwareOta.state.replaceAll('_', ' ')}` : ''} · last seen {relativeTime(sensor.lastSeenAt)}</small></span>
             <span className={`pill ${sensor.online ? 'success' : 'warning'}`}>{sensor.online ? 'Online' : 'Needs attention'}</span>
             <DropdownMenu label={`Manage ${sensor.name}`} triggerClassName="icon-button" menuClassName="row-menu" trigger={<MoreHorizontal />}>
               {canManageTopology && <DropdownMenuItem onSelect={() => { setAssignmentSensor(sensor) }}><Rows3 /> Assign circuit and electric service</DropdownMenuItem>}
@@ -240,7 +236,7 @@ function SensorSettings() {
               {canManageDevices && <DropdownMenuItem onSelect={() => { configure.mutate({ id: sensor.id, currentName: sensor.name, currentCt: sensor.ctRatingAmps }); }}><Gauge /> Edit name and CT rating</DropdownMenuItem>}
               {canManageDevices && <DropdownMenuItem onSelect={() => { maintenance.mutate({ id: sensor.id, enabled: true }); }}><Wrench /> Start maintenance test</DropdownMenuItem>}
               {canManageDevices && <DropdownMenuItem onSelect={() => { void request(`/api/v1/devices/${sensor.id}/credential-rotation`, json('POST', { overlap_seconds: 3600 })); }}><KeyRound /> Rotate credentials</DropdownMenuItem>}
-              {canManageFirmware && firmware.data?.[0] && <DropdownMenuItem onSelect={() => { const release = firmware.data[0]; if (release && confirm(`Install signed firmware ${release.version} on ${sensor.name}?`)) updateFirmware.mutate({ releaseId: release.id, sensorId: sensor.id }); }}><RefreshCw /> Update signed firmware</DropdownMenuItem>}
+              {canViewFirmware && canManageFirmware && canDeployFirmware && <DropdownMenuItem onSelect={() => { setFirmwareSensor(sensor) }}><RefreshCw /> Update firmware</DropdownMenuItem>}
               {canRemoveDevices && <DropdownMenuItem className="danger" onSelect={() => { if (confirm(`Remove ${sensor.name}? Historical readings will be preserved.`)) remove.mutate({ id: sensor.id, name: sensor.name }) }}><Trash2 /> Remove sensor</DropdownMenuItem>}
             </DropdownMenu>
           </article>)}</div>}
@@ -283,6 +279,11 @@ function SensorSettings() {
           canManage={hasPermission(session, 'storage.manage')}
           onClose={() => { setStorageSensor(undefined) }}
         />
+      )}
+      {firmwareSensor && (
+        <ModalLayer onRequestClose={() => { setFirmwareSensor(undefined) }}>
+          <FirmwareUpdateDialog sensor={firmwareSensor} onClose={() => { setFirmwareSensor(undefined) }} />
+        </ModalLayer>
       )}
       {home && activeAssignmentSensor && (
         <ModalLayer onRequestClose={closeAssignment}>
@@ -1173,7 +1174,7 @@ const ADVANCED_DETAIL_POLICIES = {
   network: { allOf: ['network.manage'] },
   rates: { anyOf: ['rates.manage_custom', 'rates.manage_sources', 'rates.check_sources'] },
   topology: { allOf: ['topology.manage'] },
-  firmware: { allOf: ['firmware.manage'] },
+  firmware: { anyOf: ['firmware.view', 'firmware.manage', 'firmware.deploy'] },
   interface: { allOf: ['interface_text.manage'] },
   layout: { allOf: ['status_indicators.manage'] },
   logs: { allOf: ['logs.export'] },
@@ -1513,9 +1514,11 @@ function TopologyDetail({ homeId }: { homeId: string }) {
 }
 
 function FirmwareDetail() {
-  const releases = useQuery({ queryKey: ['firmware-releases'], queryFn: () => request<Record<string, unknown>[]>('/api/v1/firmware-releases') })
-  const deployments = useQuery({ queryKey: ['firmware-deployments'], queryFn: () => request<Record<string, unknown>[]>('/api/v1/firmware-deployments') })
-  return <Surface title="Signed firmware" subtitle="Only verified, hardware-compatible Ed25519 releases can be scheduled.">{releases.isLoading ? <LoadingState /> : releases.data?.length ? releases.data.map((release, index) => <div className="list-row" key={typeof release.id === 'string' ? release.id : String(index)}><RefreshCw /><span><strong>{typeof release.version === 'string' ? release.version : 'Firmware release'}</strong><small>{typeof release.channel === 'string' ? release.channel : 'signed'} · {typeof release.hardware_target === 'string' ? release.hardware_target : 'hardware target retained'}</small></span><span className="pill success">{release.verified_at ? 'Verified' : 'Pending'}</span></div>) : <EmptyState title="No firmware releases" message="Upload signed releases through the documented owner workflow before scheduling an OTA update." />}<p>{deployments.data?.length ?? 0} deployment records retained.</p></Surface>
+  return (
+    <Surface title="Firmware" subtitle="Verified ESP32 application images use the enrolled sensor credential and the existing trusted HTTPS connection.">
+      <FirmwareFleetWorkflow />
+    </Surface>
+  )
 }
 
 function InterfaceTextDetail() {

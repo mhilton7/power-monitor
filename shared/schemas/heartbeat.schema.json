@@ -28,10 +28,23 @@
     "configuration_version": {"type": "integer", "minimum": 0},
     "time": {"type": "object", "required": ["trusted", "source"], "properties": {"trusted": {"type": "boolean"}, "source": {"type": "string"}}, "additionalProperties": true},
     "resources": {"type": "object"},
-    "queue": {"type": "object"}
+    "queue": {"type": "object"},
+    "ota": {"$ref": "#/$defs/ota"}
   },
   "$defs": {
-    "health": {"type": "object", "required": ["ok", "status"], "properties": {"ok": {"type": "boolean"}, "status": {"type": "string"}, "error_count": {"type": "integer", "minimum": 0}}, "additionalProperties": true}
+    "health": {"type": "object", "required": ["ok", "status"], "properties": {"ok": {"type": "boolean"}, "status": {"type": "string"}, "error_count": {"type": "integer", "minimum": 0}}, "additionalProperties": true},
+    "ota": {
+      "type": "object",
+      "required": ["supported", "protocol_version", "authentication_mode", "rollback_supported", "partition_size_bytes"],
+      "properties": {
+        "supported": {"type": "boolean"},
+        "protocol_version": {"type": "integer", "minimum": 1},
+        "authentication_mode": {"enum": ["existing_device_hmac", "ed25519_legacy", "none"]},
+        "rollback_supported": {"type": "boolean"},
+        "partition_size_bytes": {"type": "integer", "minimum": 1, "maximum": 33554432}
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": true
 }

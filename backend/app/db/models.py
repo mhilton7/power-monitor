@@ -2142,17 +2142,49 @@ class FirmwareRelease(TimestampMixin, Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     version: Mapped[str] = mapped_column(String(80))
     channel: Mapped[str] = mapped_column(String(24))
+    trust_mode: Mapped[str] = mapped_column(String(40), default="ed25519_legacy")
+    project_name: Mapped[str | None] = mapped_column(String(120))
     hardware_target: Mapped[str] = mapped_column(String(120))
     protocol_min: Mapped[str] = mapped_column(String(40))
     protocol_max: Mapped[str] = mapped_column(String(40))
-    file_path: Mapped[str] = mapped_column(String(500))
+    file_path: Mapped[str | None] = mapped_column(String(500))
+    artifact_path: Mapped[str | None] = mapped_column(String(500))
     size_bytes: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64), unique=True)
-    signature: Mapped[str] = mapped_column(Text)
-    signing_key_id: Mapped[str] = mapped_column(String(128))
-    release_notes: Mapped[str] = mapped_column(Text)
+    build_hash: Mapped[str | None] = mapped_column(String(128))
+    git_commit: Mapped[str | None] = mapped_column(String(64))
+    build_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    original_filename: Mapped[str | None] = mapped_column(String(255))
+    uploaded_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    verification_status: Mapped[str] = mapped_column(String(32), default="verified")
+    verification_evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    artifact_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    signature: Mapped[str | None] = mapped_column(Text)
+    signing_key_id: Mapped[str | None] = mapped_column(String(128))
+    release_notes: Mapped[str] = mapped_column(Text, default="")
     verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     active: Mapped[bool] = mapped_column(Boolean, default=False)
+    __table_args__ = (
+        Index(
+            "uq_firmware_release_v2_version_target",
+            "version",
+            "hardware_target",
+            unique=True,
+            postgresql_where=text("trust_mode = 'existing_device_hmac'"),
+            sqlite_where=text("trust_mode = 'existing_device_hmac'"),
+        ),
+        CheckConstraint(
+            "trust_mode IN ('existing_device_hmac','ed25519_legacy')",
+            name="firmware_release_trust_mode",
+        ),
+        CheckConstraint(
+            "verification_status IN ('verified','rejected','quarantined')",
+            name="firmware_release_verification_status",
+        ),
+        CheckConstraint("size_bytes > 0", name="firmware_release_size_positive"),
+    )
 
 
 class FirmwareDeployment(Base):
@@ -2165,13 +2197,64 @@ class FirmwareDeployment(Base):
         ForeignKey("devices.id", ondelete="RESTRICT"), index=True
     )
     status: Mapped[str] = mapped_column(String(32), default="scheduled")
+    state: Mapped[str] = mapped_column(String(32), default="scheduled", index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(180))
+    rollout_group_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    rollout_order: Mapped[int] = mapped_column(Integer, default=0)
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    bytes_received: Mapped[int] = mapped_column(BigInteger, default=0)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    allow_downgrade: Mapped[bool] = mapped_column(Boolean, default=False)
     downloaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     installed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failure_reason: Mapped[str | None] = mapped_column(String(500))
+    failure_code: Mapped[str | None] = mapped_column(String(80))
+    failure_summary: Mapped[str | None] = mapped_column(String(500))
+    last_report_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_report_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    validated_version: Mapped[str | None] = mapped_column(String(80))
+    validated_build_hash: Mapped[str | None] = mapped_column(String(128))
+    rollback_version: Mapped[str | None] = mapped_column(String(80))
+    rollback_build_hash: Mapped[str | None] = mapped_column(String(128))
+    last_boot_id: Mapped[str | None] = mapped_column(String(80))
+    verification_heartbeats: Mapped[int] = mapped_column(Integer, default=0)
+    stabilization_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reading_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rollback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "device_id", "idempotency_key", name="uq_firmware_deployment_device_idempotency"
+        ),
+        CheckConstraint(
+            "state IN ('waiting_canary','scheduled','offered','manifest_authenticated',"
+            "'download_started',"
+            "'downloading','binary_verified','partition_written','rebooting',"
+            "'post_boot_validation','validated','awaiting_heartbeat','completed','failed',"
+            "'cancelled','rollback_detected','rolled_back')",
+            name="firmware_deployment_state",
+        ),
+        CheckConstraint("revision >= 1", name="firmware_deployment_revision_positive"),
+        CheckConstraint("rollout_order >= 0", name="firmware_deployment_rollout_order"),
+        CheckConstraint("attempt >= 1", name="firmware_deployment_attempt_positive"),
+        CheckConstraint("progress >= 0 AND progress <= 100", name="firmware_deployment_progress"),
+        CheckConstraint("bytes_received >= 0", name="firmware_deployment_bytes_nonnegative"),
+        Index(
+            "uq_firmware_deployment_active_device",
+            "device_id",
+            unique=True,
+            postgresql_where=text("state NOT IN ('completed','failed','cancelled','rolled_back')"),
+            sqlite_where=text("state NOT IN ('completed','failed','cancelled','rolled_back')"),
+        ),
+    )
 
 
 class ExportJob(Base):

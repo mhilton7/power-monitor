@@ -251,6 +251,39 @@ run its preview, configure an account usage authority, and confirm Usage/Costs
 show the exact cycle. Do not finalize a cycle until coverage and utility dates
 have been reviewed.
 
+For the existing-trust OTA release, migration `20260802_0026` extends the
+existing firmware release and deployment tables; it does not create another
+service, port, dataset, mount, secret, or Caddy-key dependency. Historical
+Ed25519 release evidence remains present as `ed25519_legacy` with nullable
+legacy signing fields. New releases use `existing_device_hmac`, immutable
+content-addressed artifacts under the existing firmware dataset, and a
+revisioned device-specific deployment lifecycle. The migration resolves any
+pre-existing multiple-active-deployment conflict fail-closed by retaining the
+newest active row and marking older active rows failed with migration evidence,
+then enforces one active deployment per sensor.
+
+Before saving the upgraded App YAML, include the firmware dataset in the ZFS
+snapshot and confirm its logical backup/restore coverage. Do not add or mount
+`cert.key`, `root.key`, `tls.key`, or Caddy private-key storage to API, worker,
+frontend, migration, or backup services. After the migration is healthy, open
+**Settings > Sensors**, verify each sensor's OTA capability, upload one
+production `firmware.bin`, and check server verification without creating a
+new key. A sensor reported as **One-time bootstrap required** cannot use v2 OTA
+yet: download the verified artifact and use the displayed non-erasing USB
+command at application offset `0x20000`. Never run `erase_flash`; the bootstrap
+must preserve NVS, Wi-Fi, enrollment, CA trust, microSD history, and sequence
+state. Confirm a later signed heartbeat reports protocol v2 before using the
+dashboard Install action.
+
+For a fleet rollout, select the canary first and keep concurrency at one. Do not
+promote the next sensor until the server records the target version/build, ten
+healthy heartbeats, a committed reading, and no critical alert or rollback.
+Database/image rollback preserves firmware audit history; it cannot undo a
+sensor image already installed. If application rollback is required after any
+sensor update, first stop new promotions, retain deployment evidence, and use
+the server's explicit compatible rollback/downgrade workflow or the documented
+USB recovery path.
+
 If migration fails, do not bypass its dependency or point the old application at
 a partly migrated database. Preserve logs and follow the rollback path.
 

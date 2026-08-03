@@ -40,7 +40,16 @@ The API returns only redacted delivery targets and configuration state; it never
 returns a saved SMTP password. Authenticated SMTP is rejected unless STARTTLS or
 implicit TLS is enabled.
 
-Pull policy prevents arbitrary URLs and revalidates DNS results. Use VLANs/VPN; do not expose sensor ports. Firmware must have matching SHA-256 and a valid Ed25519 signature before activation; the server normally stores only public verification keys and already signed packages.
+Pull policy prevents arbitrary URLs and revalidates DNS results. Use VLANs/VPN;
+do not expose sensor ports. New firmware uses Device-authenticated HMAC OTA: the
+server strictly parses the uploaded ESP32-S3 application, calculates SHA-256,
+and creates a device-specific manifest authenticated with an HKDF-separated key
+derived from that device's existing encrypted enrollment credential. Derived
+keys are never stored or returned. Historical Ed25519 evidence remains nullable
+and explicitly marked `ed25519_legacy`, but it is not required by the ordinary
+workflow. The API and application containers never read Caddy's `cert.key`,
+`root.key`, `tls.key`, or private-key storage; only the gateway receives the TLS
+private key. See [Firmware management](FIRMWARE_MANAGEMENT.md).
 
 ## Key rotation and incident response
 

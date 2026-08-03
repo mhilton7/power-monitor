@@ -932,6 +932,42 @@ fallback are exercised together.
 
 No live mains equipment was connected. Remaining hardware validation is limited to an isolated, electrician-approved ESP32-S3/PZEM-004T V4 installation: CT orientation and rating, split-phase topology, SD removal/full/corruption, Wi-Fi/VLAN behavior, power loss, multi-hour offline backfill, OTA success/rollback, and comparison against an independent reference meter.
 
+## Existing-trust OTA verification
+
+OTA release gates exercise `backend/tests/test_existing_trust_ota.py`, the
+device-protocol tests, migration contracts, generated OpenAPI, JSON Schemas,
+the cross-language vector in
+`shared/auth-test-vectors/ota-manifest-v2.json`, and the greenfield firmware UI
+tests. The matrix must cover:
+
+- bounded upload and cleanup for valid, empty, oversized, truncated, corrupt,
+  wrong-chip, wrong-project, bootloader, partition-table, merged-flash, and
+  same-version/different-hash images;
+- exact HKDF-SHA256 derivation, canonical manifest HMAC, wrong secret, wrong
+  device, changed fields, expiry/not-before bounds, wrong context, and
+  cross-device replay;
+- readiness for capable, legacy, trust-missing, unsupported, offline, already
+  current, incompatible, and intentional-downgrade sensors;
+- one active deployment per sensor, idempotent creation/reports, legal state
+  transitions, monotonic progress, cancellation, retry, rollback evidence, and
+  sequential canary promotion;
+- streaming download ownership, expiry, response headers, missing/tampered
+  artifact rejection, and interrupted clients; and
+- viewer versus administrator controls, one-file upload, refresh persistence,
+  accessible dialogs, bootstrap instructions, progress, success, rollback, and
+  mobile layout.
+
+Migration testing upgrades both a populated prior schema and a clean database
+to `20260802_0026`, verifies legacy Ed25519 rows remain explicitly historical
+and nullable, confirms active-deployment conflicts are resolved fail-closed,
+and checks the unique/index/check constraints. It then exercises downgrade and
+re-upgrade only in the disposable migration test database.
+
+Deterministic software validation is not physical OTA proof. Unless an actual
+sensor is connected, flashed, and observed through its post-boot heartbeat and
+health window, report physical OTA, configuration preservation, microSD/
+sequence preservation, rollback, and long-running memory soak as pending.
+
 ## Detailed notification regression coverage
 
 `backend/tests/test_detailed_notifications.py` verifies the authoritative catalog, detailed

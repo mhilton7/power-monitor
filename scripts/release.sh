@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 python_bin=${PYTHON_BIN:-.venv/bin/python}
+release_version=${RELEASE_VERSION:-1.0.28}
+migration_revision=${MIGRATION_REVISION:-20260802_0026}
+
+[[ "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+  echo "RELEASE_VERSION must be strict X.Y.Z semantic versioning" >&2
+  exit 2
+}
+[[ "$migration_revision" =~ ^[0-9]{8}_[0-9]{4}$ ]] || {
+  echo "MIGRATION_REVISION must use YYYYMMDD_NNNN" >&2
+  exit 2
+}
+export POWER_MONITOR_VERSION=$release_version
+export RELEASE_COMMIT
+RELEASE_COMMIT=$(git rev-parse HEAD)
 
 "$python_bin" -m ruff check backend/app backend/tests backend/alembic worker simulator scripts tools
 "$python_bin" -m ruff format --check backend/app backend/tests backend/alembic worker simulator scripts tools
@@ -14,7 +28,8 @@ MYPYPATH=backend "$python_bin" -m mypy worker simulator --explicit-package-bases
 "$python_bin" scripts/secret_scan.py
 "$python_bin" -m pip_audit -r backend/requirements.lock --no-deps --format cyclonedx-json --output release/backend-sbom.cdx.json
 (cd frontend-next && npm audit --audit-level=high && npm sbom --sbom-format cyclonedx > ../release/frontend-sbom.cdx.json)
-"$python_bin" scripts/generate_release_reports.py
+"$python_bin" scripts/generate_release_reports.py \
+  --version "$release_version" --migration-revision "$migration_revision"
 
 docker compose config --quiet
 docker compose build --pull
@@ -35,5 +50,7 @@ docker compose ps
   --base-url "$TRUENAS_BASE_URL" --ca-certificate "$TRUENAS_CA_CERTIFICATE" \
   --setup-token-file "$TRUENAS_SETUP_TOKEN_FILE" --gateway-port "$TRUENAS_GATEWAY_PORT"
 
-git archive --format=tar.gz --prefix=power-monitor-server-1.0.0/ -o release/power-monitor-server-1.0.0.tar.gz HEAD
-sha256sum release/power-monitor-server-1.0.0.tar.gz >> release/checksums.sha256
+archive_name="power-monitor-server-${release_version}.tar.gz"
+git archive --format=tar.gz --prefix="power-monitor-server-${release_version}/" \
+  -o "release/${archive_name}" HEAD
+sha256sum "release/${archive_name}" >> release/checksums.sha256

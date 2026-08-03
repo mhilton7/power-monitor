@@ -15,6 +15,10 @@ import type {
   FamilyMember,
   FamilyRoleOption,
   FamilyRole,
+  FirmwareDeploymentSummary,
+  FirmwareOtaCapability,
+  FirmwareReadinessSummary,
+  FirmwareReleaseSummary,
   PermissionOption,
   HistoryView,
   Home,
@@ -57,6 +61,108 @@ function optionalNumber(value: unknown): number | undefined {
     return Number(value)
   }
   return undefined
+}
+
+export function adaptFirmwareOtaCapability(value: unknown): FirmwareOtaCapability | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const source = record(value, 'firmware OTA capability')
+  const rawState = stringValue(source.state, 'unsupported')
+  const states = new Set(['ready', 'legacy_signed_ota_only', 'trust_missing', 'bootstrap_required', 'unsupported'])
+  const bootstrapSource = source.bootstrap && typeof source.bootstrap === 'object' && !Array.isArray(source.bootstrap)
+    ? record(source.bootstrap, 'firmware OTA bootstrap')
+    : undefined
+  return {
+    state: (states.has(rawState) ? rawState : 'unsupported') as FirmwareOtaCapability['state'],
+    supported: booleanValue(source.supported),
+    protocolVersion: optionalNumber(source.protocol_version),
+    authenticationMode: optionalString(source.authentication_mode),
+    rollbackSupported: typeof source.rollback_supported === 'boolean' ? source.rollback_supported : undefined,
+    partitionSizeBytes: optionalNumber(source.partition_size_bytes),
+    reason: optionalString(source.reason),
+    bootstrap: bootstrapSource ? {
+      version: optionalString(bootstrapSource.version),
+      sha256: optionalString(bootstrapSource.sha256),
+      downloadPath: optionalString(bootstrapSource.download_path),
+      usbCommand: optionalString(bootstrapSource.usb_command),
+    } : undefined,
+  }
+}
+
+export function adaptFirmwareReadiness(value: unknown): FirmwareReadinessSummary {
+  const source = record(value, 'firmware readiness')
+  const ota = adaptFirmwareOtaCapability(source.firmware_ota)
+  if (!ota) throw new TypeError('firmware readiness did not include an OTA capability')
+  const compatibility = source.compatibility && typeof source.compatibility === 'object' && !Array.isArray(source.compatibility)
+    ? record(source.compatibility, 'firmware compatibility')
+    : undefined
+  const bootstrap = source.bootstrap && typeof source.bootstrap === 'object' && !Array.isArray(source.bootstrap)
+    ? record(source.bootstrap, 'firmware bootstrap')
+    : undefined
+  return {
+    deviceId: stringValue(source.device_id),
+    currentFirmwareVersion: optionalString(source.current_firmware_version),
+    currentFirmwareBuildHash: optionalString(source.current_firmware_build_hash),
+    firmwareOta: ota,
+    releaseId: optionalString(source.release_id),
+    compatible: compatibility && typeof compatibility.ready === 'boolean' ? compatibility.ready : undefined,
+    compatibilityReasons: compatibility ? stringList(compatibility.reasons) : [],
+    bootstrap: bootstrap ? {
+      required: booleanValue(bootstrap.required),
+      firmwareFilename: optionalString(bootstrap.firmware_filename),
+      sha256: optionalString(bootstrap.sha256),
+      expectedVersion: optionalString(bootstrap.expected_version),
+      expectedBuildHash: optionalString(bootstrap.expected_build_hash),
+      artifactDownloadPath: optionalString(bootstrap.artifact_download_path),
+      usbCommand: optionalString(bootstrap.usb_command),
+      preserves: stringList(bootstrap.preserves),
+    } : undefined,
+  }
+}
+
+export function adaptFirmwareReleases(value: unknown): FirmwareReleaseSummary[] {
+  return records(value, 'firmware releases').map((source) => ({
+    id: stringValue(source.id),
+    version: stringValue(source.version, 'Unknown version'),
+    projectName: stringValue(source.project_name, 'power-monitor-sensor'),
+    hardwareTarget: stringValue(source.hardware_target, 'unknown'),
+    protocolMin: stringValue(source.protocol_min, 'pm-protocol/1.0.0'),
+    protocolMax: stringValue(source.protocol_max, 'pm-protocol/1.0.0'),
+    sizeBytes: numberValue(source.size_bytes),
+    sha256: stringValue(source.sha256),
+    buildHash: optionalString(source.build_hash),
+    buildTimestamp: optionalString(source.build_timestamp),
+    trustMode: source.trust_mode === 'ed25519_legacy' ? 'ed25519_legacy' : 'existing_device_hmac',
+    verificationStatus: stringValue(source.verification_status, source.verified_at ? 'verified' : 'pending'),
+    active: booleanValue(source.active),
+  }))
+}
+
+export function adaptFirmwareRelease(value: unknown): FirmwareReleaseSummary {
+  return adaptFirmwareReleases([record(value, 'firmware release')])[0] as FirmwareReleaseSummary
+}
+
+export function adaptFirmwareDeployments(value: unknown): FirmwareDeploymentSummary[] {
+  return records(value, 'firmware deployments').map((source) => ({
+    id: stringValue(source.id),
+    firmwareReleaseId: stringValue(source.firmware_release_id),
+    deviceId: stringValue(source.device_id),
+    state: stringValue(source.state, stringValue(source.status, 'scheduled')),
+    revision: numberValue(source.revision, 1),
+    attempt: numberValue(source.attempt, 1),
+    progress: numberValue(source.progress),
+    bytesReceived: numberValue(source.bytes_received),
+    targetVersion: optionalString(source.target_version),
+    targetSha256: optionalString(source.target_sha256),
+    failureCode: optionalString(source.failure_code),
+    failureSummary: optionalString(source.failure_summary ?? source.failure_reason),
+    rollbackVersion: optionalString(source.rollback_version),
+    rollbackBuildHash: optionalString(source.rollback_build_hash),
+    lastReportAt: optionalString(source.last_report_at),
+    rolloutGroupId: optionalString(source.rollout_group_id),
+    rolloutOrder: optionalNumber(source.rollout_order),
+    verificationHeartbeats: numberValue(source.verification_heartbeats),
+    readingConfirmedAt: optionalString(source.reading_confirmed_at),
+  }))
 }
 
 function healthStatus(value: unknown): SystemHealthStatus {
@@ -343,6 +449,7 @@ export function adaptSensors(value: unknown): SensorSummary[] {
       backlog: numberValue(source.backlog),
       ctRatingAmps: stringValue(source.ct_rating_amps, '100'),
       measurementRole: stringValue(source.measurement_role, 'submeter'),
+      firmwareOta: adaptFirmwareOtaCapability(source.firmware_ota),
     }
   })
 }

@@ -164,3 +164,12 @@ def test_docker_desktop_runtime_uses_an_isolated_same_release_project(
     assert runtime["services"]["migrate"]["image"] == "power-monitor-api:1.2.3"
     assert runtime["services"]["frontend"]["image"] == "power-monitor-frontend:1.2.3"
     assert runtime["services"]["backup"]["image"] == "power-monitor-backup:1.2.3"
+    assert runtime["services"]["postgres"]["volumes"] == [
+        {
+            "type": "volume",
+            "source": "desktop_postgres",
+            "target": "/var/lib/postgresql/data",
+            "volume": {"nocopy": True},
+        }
+    ]
+    assert "desktop_postgres" in runtime["volumes"]

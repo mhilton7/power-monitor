@@ -8,7 +8,22 @@ attempts receive a generic structured denial and create a redacted audit record.
 
 An administrator creates a cryptographically random token with a default 10-minute lifetime and optional site/circuit/name/role/CT/mode preassignment. The token can be claimed once. The device sends its hardware identity, capabilities, `pm-protocol/1.0.0`, and token to `POST /api/v1/device-enrollment/claim` over validated TLS.
 
-Claim and token consumption occur in one transaction. The response contains a permanent UUID, a unique high-entropy enrollment secret shown only to the claiming device, effective non-secret configuration, server OTA public key metadata, and heartbeat/synchronization policy. Browser enrollment pages never receive the permanent secret.
+Claim and token consumption occur in one transaction. The response contains a
+permanent UUID, a unique high-entropy enrollment secret shown only to the
+claiming device, effective non-secret configuration, and heartbeat/
+synchronization policy. Browser enrollment pages never receive the permanent
+secret. A sensor that supports OTA manifest protocol v2 reports that capability
+in enrollment and subsequent signed heartbeats; the ordinary existing-trust OTA
+path does not provision an OTA public key.
+
+The same enrollment secret is the input key material for several deliberately
+separated HKDF contexts. Ordinary request signing continues to use the existing
+directional contexts. OTA v2 derives a separate, device-specific manifest key
+with the lower-case hyphenated device UUID as UTF-8 salt and the exact info
+string `pm-ota-manifest-v2/server-to-device`. The derived key is never stored,
+returned to a browser, or included in diagnostics. Enrollment therefore supplies
+all trust needed for future dashboard-managed OTA without another certificate,
+private key, public-key paste, or re-enrollment.
 
 The agent must commit identity and secret atomically to protected storage before sending the first signed heartbeat. If that write fails, erase the partial identity and use a new token. A factory reset requires reenrollment. Lost or compromised devices must be revoked immediately.
 

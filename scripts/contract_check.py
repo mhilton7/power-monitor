@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
 from pathlib import Path
+from uuid import UUID
 
 import yaml
 from jsonschema import Draft202012Validator, FormatChecker
@@ -126,6 +128,55 @@ def validate_vectors() -> None:
     signature = hmac.new(derived, canonical.encode(), hashlib.sha256).hexdigest()
     if canonical != vector["canonical_string"] or signature != vector["signature"]:
         raise AssertionError("canonical/signature vector mismatch")
+
+    ota = json.loads(
+        (ROOT / "shared" / "auth-test-vectors" / "ota-manifest-v2.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest = ota["manifest_without_hmac"]
+    canonical_device_id = str(UUID(ota["device_id"]))
+    if ota["hkdf_salt_utf8"] != canonical_device_id:
+        raise AssertionError("OTA HKDF salt is not a canonical UUID")
+    extract = hmac.new(
+        canonical_device_id.encode("utf-8"),
+        bytes.fromhex(ota["secret_hex"]),
+        hashlib.sha256,
+    ).digest()
+    ota_key = hmac.new(
+        extract,
+        ota["hkdf_info_utf8"].encode("utf-8") + b"\x01",
+        hashlib.sha256,
+    ).digest()
+    if ota_key.hex() != ota["derived_key_hex"]:
+        raise AssertionError("OTA HKDF vector mismatch")
+    ota_canonical = json.dumps(
+        manifest,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    if ota_canonical != ota["canonical_json_utf8"]:
+        raise AssertionError("OTA manifest canonical JSON mismatch")
+    ota_signature = (
+        base64.urlsafe_b64encode(
+            hmac.new(ota_key, ota_canonical.encode("utf-8"), hashlib.sha256).digest()
+        )
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+    if ota_signature != ota["manifest_hmac_base64url"]:
+        raise AssertionError("OTA manifest HMAC vector mismatch")
+    signed_manifest = {**manifest, "manifest_hmac": ota_signature}
+    ota_schema = json.loads(
+        (ROOT / "shared" / "schemas" / "ota-manifest-v2.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    Draft202012Validator(ota_schema, format_checker=FormatChecker()).validate(
+        signed_manifest
+    )
 
 
 if __name__ == "__main__":

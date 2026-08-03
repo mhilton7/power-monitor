@@ -844,6 +844,22 @@ class EnrollmentTokenView(ApiModel):
     preassignment: dict[str, Any]
 
 
+class FirmwareOtaReadinessView(ApiModel):
+    state: Literal[
+        "ready",
+        "legacy_signed_ota_only",
+        "trust_missing",
+        "bootstrap_required",
+        "unsupported",
+    ]
+    label: str
+    supported: bool
+    protocol_version: int | None
+    authentication_mode: str | None
+    rollback_supported: bool
+    partition_size_bytes: int | None
+
+
 class DeviceListItem(ApiModel):
     id: str
     name: str
@@ -870,6 +886,8 @@ class DeviceListItem(ApiModel):
     re_enrollment_allowed: bool
     last_seen_at: datetime | None
     firmware_version: str | None
+    firmware_build_hash: str | None
+    firmware_ota: FirmwareOtaReadinessView
     current_watts: Decimal | None
     voltage_volts: Decimal | None
     current_amps: Decimal | None
@@ -920,12 +938,21 @@ class DeviceMeasurementAssignmentView(ApiModel):
     included_in_default_site_total: bool
 
 
+class DeviceOtaCapability(DeviceProtocolModel):
+    supported: bool
+    protocol_version: int = Field(ge=1, le=100)
+    authentication_mode: Literal["existing_device_hmac", "ed25519_legacy", "none"]
+    rollback_supported: bool
+    partition_size_bytes: int = Field(gt=0, le=32 * 1024 * 1024)
+
+
 class DeviceCapabilities(DeviceProtocolModel):
     hardware_target: str = Field(min_length=1, max_length=120)
     pzem_model: str = Field(pattern=r"^PZEM-004T V4")
     sd_present: bool
     sd_required: bool = True
     supported_endpoints: list[str] = Field(default_factory=list)
+    ota: DeviceOtaCapability | None = None
 
 
 class EnrollmentClaim(DeviceProtocolModel):
@@ -998,6 +1025,7 @@ class Heartbeat(DeviceProtocolModel):
     time: TimeHealth
     resources: dict[str, Any] = Field(default_factory=dict)
     queue: dict[str, Any] = Field(default_factory=dict)
+    ota: DeviceOtaCapability | None = None
 
     @model_validator(mode="after")
     def valid_sequence_bounds(self) -> Heartbeat:
@@ -1702,8 +1730,216 @@ class FirmwareDeploymentCreate(ApiModel):
     firmware_release_id: str
     device_ids: list[str] = Field(min_length=1, max_length=1000)
     scheduled_at: datetime
+    expires_at: datetime | None = None
+    allow_downgrade: bool = False
+    idempotency_key: str | None = Field(default=None, min_length=16, max_length=128)
+    canary_first: bool = True
+    maximum_concurrency: Literal[1] = 1
 
     _aware = field_validator("scheduled_at")(require_aware)
+
+    @model_validator(mode="after")
+    def valid_window(self) -> FirmwareDeploymentCreate:
+        if len(set(self.device_ids)) != len(self.device_ids):
+            raise ValueError("device_ids must not contain duplicates")
+        if len(self.device_ids) > 1 and not self.canary_first:
+            raise ValueError("multi-sensor deployments require canary_first")
+        if self.expires_at is not None:
+            require_aware(self.expires_at)
+            if self.expires_at <= self.scheduled_at:
+                raise ValueError("expires_at must be later than scheduled_at")
+        return self
+
+
+class FirmwareDeploymentReport(DeviceProtocolModel):
+    device_id: str
+    deployment_id: str
+    release_id: str
+    attempt: int = Field(ge=1)
+    state: Literal[
+        "manifest_authenticated",
+        "download_started",
+        "downloading",
+        "binary_verified",
+        "partition_written",
+        "rebooting",
+        "post_boot_validation",
+        "validated",
+        "failed",
+        "rollback_detected",
+        "rolled_back",
+    ]
+    current_firmware_version: str = Field(min_length=1, max_length=80)
+    current_build_hash: str = Field(min_length=1, max_length=128)
+    target_version: str = Field(min_length=1, max_length=80)
+    target_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    bytes_received: int = Field(ge=0)
+    image_size: int = Field(gt=0)
+    progress: int = Field(ge=0, le=100)
+    boot_id: str = Field(min_length=1, max_length=80)
+    failure_code: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_]{0,79}$")
+    failure_summary: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def valid_progress(self) -> FirmwareDeploymentReport:
+        if self.bytes_received > self.image_size:
+            raise ValueError("bytes_received exceeds image_size")
+        if self.state in {
+            "binary_verified",
+            "partition_written",
+            "rebooting",
+            "post_boot_validation",
+            "validated",
+        } and (self.bytes_received != self.image_size or self.progress != 100):
+            raise ValueError("post-download milestones require the complete image")
+        if self.state == "failed" and not self.failure_code:
+            raise ValueError("failed report requires failure_code")
+        if self.state not in {"failed", "rollback_detected", "rolled_back"} and (
+            self.failure_code or self.failure_summary
+        ):
+            raise ValueError("failure evidence is accepted only for failure or rollback reports")
+        return self
+
+
+class FirmwareReleaseCompatibilityView(ApiModel):
+    verified_image: bool
+    device_selection_required: bool
+
+
+class FirmwareReleaseView(ApiModel):
+    id: str
+    version: str
+    project_name: str | None
+    hardware_target: str
+    protocol_min: str
+    protocol_max: str
+    size_bytes: int
+    sha256: str
+    build_hash: str | None
+    build_timestamp: datetime | None
+    trust_mode: str
+    verification_status: str
+    verification_evidence: dict[str, Any]
+    verified_at: datetime
+    active: bool
+    artifact_download_path: str
+    compatibility: FirmwareReleaseCompatibilityView
+    duplicate: bool
+
+
+class FirmwareReleaseDeviceCompatibilityView(ApiModel):
+    ready: bool
+    reasons: list[str]
+    ota: FirmwareOtaReadinessView
+    current_version: str | None
+    current_build_hash: str | None
+    target_version: str
+    target_build_hash: str | None
+
+
+class FirmwareBootstrapView(ApiModel):
+    required: bool
+    firmware_filename: str
+    sha256: str
+    expected_version: str
+    expected_build_hash: str | None
+    artifact_download_path: str
+    usb_command: str
+    preserves: list[str]
+
+
+class FirmwareReadinessView(ApiModel):
+    device_id: str
+    current_firmware_version: str | None
+    current_firmware_build_hash: str | None
+    firmware_ota: FirmwareOtaReadinessView
+    release_id: str | None = None
+    compatibility: FirmwareReleaseDeviceCompatibilityView | None = None
+    bootstrap: FirmwareBootstrapView | None = None
+
+
+class FirmwareDeploymentView(ApiModel):
+    id: str
+    firmware_release_id: str
+    device_id: str
+    state: str
+    status: str
+    revision: int
+    attempt: int
+    progress: int
+    bytes_received: int
+    scheduled_at: datetime
+    expires_at: datetime | None
+    allow_downgrade: bool
+    rollout_group_id: str | None
+    rollout_order: int
+    promoted_at: datetime | None
+    downloaded_at: datetime | None
+    installed_at: datetime | None
+    validated_at: datetime | None
+    last_report_at: datetime | None
+    failure_code: str | None
+    failure_summary: str | None
+    validated_version: str | None
+    validated_build_hash: str | None
+    rollback_at: datetime | None
+    rollback_version: str | None
+    rollback_build_hash: str | None
+    verification_heartbeats: int
+    reading_confirmed_at: datetime | None
+    created_at: datetime
+    target_version: str | None
+    target_sha256: str | None
+    target_build_hash: str | None
+
+
+class FirmwareDeploymentCreateResponse(ApiModel):
+    deployment_ids: list[str]
+    scheduled: int
+    deployments: list[FirmwareDeploymentView]
+
+
+class FirmwareDeploymentReportResponse(ApiModel):
+    recorded: bool
+    duplicate: bool
+    state: str
+    revision: int
+    attempt: int
+
+
+class FirmwareCanaryPromotionResponse(ApiModel):
+    promoted: bool
+    rollout_complete: bool
+    deployment: FirmwareDeploymentView | None = None
+
+
+class OtaManifestUnavailable(ApiModel):
+    available: Literal[False]
+    protocol_version: Literal["pm-protocol/1.0.0"]
+
+
+class OtaManifestV2(ApiModel):
+    schema_version: Literal["pm-ota-manifest/2"]
+    protocol_version: Literal["pm-protocol/1.0.0"]
+    deployment_id: str
+    release_id: str
+    device_id: str
+    version: str
+    project_name: Literal["power-monitor-sensor"]
+    hardware_target: Literal["esp32-s3"]
+    protocol_min: Literal["pm-protocol/1.0.0"]
+    protocol_max: Literal["pm-protocol/1.0.0"]
+    size_bytes: int = Field(gt=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    build_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    not_before: str
+    expires_at: str
+    allow_downgrade: bool
+    attempt: int = Field(ge=1)
+    hmac_algorithm: Literal["HMAC-SHA256"]
+    hmac_key_context: Literal["pm-ota-manifest-v2/server-to-device"]
+    download_path: str
+    manifest_hmac: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
 
 
 class FirmwareManifest(ApiModel):

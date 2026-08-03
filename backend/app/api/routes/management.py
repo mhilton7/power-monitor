@@ -41,6 +41,7 @@ from app.db.models import (
     DashboardAppearance,
     Device,
     DeviceAddress,
+    DeviceCapability,
     DeviceConfigVersion,
     DeviceCredential,
     DeviceEvent,
@@ -70,6 +71,7 @@ from app.home_aggregate import resolve_home_aggregate_devices
 from app.live_measurements import load_latest_measurements, log_measurement_decision
 from app.network_policy import ensure_site_policies, policy_cidrs, policy_for_site, policy_summary
 from app.notifications import NOTIFICATION_CATALOG, catalog_entry, load_notification_views
+from app.ota import ota_capability_payload
 from app.problem import ProblemError
 from app.schemas import (
     AggregateSetCreate,
@@ -1035,6 +1037,12 @@ async def list_devices(
             select(SyncCursor).where(SyncCursor.device_id.in_(device_ids))
         )
     }
+    capabilities = {
+        item.device_id: item
+        for item in await session.scalars(
+            select(DeviceCapability).where(DeviceCapability.device_id.in_(device_ids))
+        )
+    }
     removed_events: dict[str, DeviceLifecycleEvent] = {}
     if device_ids:
         ranked_events = (
@@ -1132,6 +1140,8 @@ async def list_devices(
                 "re_enrollment_allowed": device.lifecycle_status == "decommissioned",
                 "last_seen_at": device.last_seen_at,
                 "firmware_version": device.firmware_version,
+                "firmware_build_hash": device.firmware_build_hash,
+                "firmware_ota": ota_capability_payload(capabilities.get(device.id)),
                 "current_watts": measurement.power_watts,
                 "voltage_volts": measurement.voltage_volts,
                 "current_amps": measurement.current_amps,
@@ -1332,6 +1342,7 @@ async def device_detail(
     )
     measurement = measurements[device.id]
     cursor = await session.get(SyncCursor, device.id)
+    capability = await session.get(DeviceCapability, device.id)
     addresses = list(
         await session.scalars(
             select(DeviceAddress)
@@ -1394,6 +1405,8 @@ async def device_detail(
             "ct_rating_amps": device.ct_rating_amps,
             "protocol_version": device.protocol_version,
             "firmware_version": device.firmware_version,
+            "firmware_build_hash": device.firmware_build_hash,
+            "firmware_ota": ota_capability_payload(capability),
             "status": (
                 "decommissioned"
                 if device.lifecycle_status == "decommissioned"

@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -34,6 +35,15 @@ from app.db.models import (
 )
 from app.ingestion.service import ingest_readings
 from app.network_policy import effective_client_ip, evaluate_site_address
+from app.ota import (
+    OTA_MANIFEST_HKDF_INFO,
+    OTA_MANIFEST_HMAC_ALGORITHM,
+    OTA_MANIFEST_SCHEMA,
+    OTA_TRUST_MODE,
+    canonical_utc,
+    release_compatibility,
+    sign_ota_manifest,
+)
 from app.problem import ProblemError
 from app.schemas import (
     ConfigReport,
@@ -42,6 +52,8 @@ from app.schemas import (
     EnrollmentClaimResponse,
     Heartbeat,
     HeartbeatResponse,
+    OtaManifestUnavailable,
+    OtaManifestV2,
     ReadingBatch,
     ReadingBatchResponse,
     SequenceCursorResponse,
@@ -50,6 +62,109 @@ from app.security.protocol import PROTOCOL, SecretCipher
 
 router = APIRouter(prefix="/api/v1", tags=["device protocol"])
 logger = structlog.get_logger(__name__)
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _manifest_artifact_available(release: FirmwareRelease, settings: Any) -> bool:
+    root = settings.firmware_path.resolve()
+    if release.artifact_path:
+        path = (root / release.artifact_path).resolve()
+    elif release.file_path:
+        path = Path(release.file_path).resolve()
+    else:
+        return False
+    if path != root and root not in path.parents:
+        return False
+    try:
+        return path.is_file() and path.stat().st_size == release.size_bytes
+    except OSError:
+        return False
+
+
+async def _complete_firmware_if_stable(
+    session: DbSession, deployment: FirmwareDeployment, settings: Any, now: datetime
+) -> None:
+    if (
+        deployment.state != "awaiting_heartbeat"
+        or deployment.verification_heartbeats < settings.firmware_verification_heartbeat_count
+        or deployment.reading_confirmed_at is None
+        or deployment.stabilization_started_at is None
+        or _aware(deployment.stabilization_started_at)
+        > now
+        - timedelta(
+            seconds=(settings.firmware_verification_heartbeat_count - 1)
+            * settings.heartbeat_expectation_seconds
+        )
+    ):
+        return
+    critical_alert = await session.scalar(
+        select(AlertInstance.id).where(
+            AlertInstance.device_id == deployment.device_id,
+            AlertInstance.status.in_(["active", "acknowledged"]),
+            AlertInstance.severity == "critical",
+        )
+    )
+    if critical_alert is not None:
+        return
+    deployment.state = deployment.status = "completed"
+    deployment.progress = 100
+    deployment.revision += 1
+    deployment.validated_at = deployment.validated_at or now
+
+
+async def _reconcile_firmware_heartbeat(
+    session: DbSession, payload: Heartbeat, settings: Any, now: datetime
+) -> None:
+    deployment = await session.scalar(
+        select(FirmwareDeployment)
+        .where(
+            FirmwareDeployment.device_id == payload.device_id,
+            FirmwareDeployment.state.in_(["validated", "awaiting_heartbeat"]),
+        )
+        .order_by(FirmwareDeployment.scheduled_at.desc())
+        .limit(1)
+    )
+    if deployment is None:
+        return
+    release = await session.get(FirmwareRelease, deployment.firmware_release_id)
+    if (
+        release is None
+        or payload.firmware_version != release.version
+        or payload.firmware_build_hash != release.build_hash
+        or (deployment.last_boot_id is not None and payload.boot_id != deployment.last_boot_id)
+        or not payload.pzem.ok
+        or not payload.sd.ok
+        or not payload.time.trusted
+    ):
+        return
+    if deployment.state == "validated":
+        deployment.state = deployment.status = "awaiting_heartbeat"
+        deployment.stabilization_started_at = deployment.stabilization_started_at or now
+        deployment.revision += 1
+    deployment.verification_heartbeats += 1
+    deployment.last_boot_id = payload.boot_id
+    await _complete_firmware_if_stable(session, deployment, settings, now)
+
+
+async def _confirm_firmware_reading(
+    session: DbSession, device_id: str, settings: Any, now: datetime
+) -> None:
+    deployment = await session.scalar(
+        select(FirmwareDeployment)
+        .where(
+            FirmwareDeployment.device_id == device_id,
+            FirmwareDeployment.state == "awaiting_heartbeat",
+        )
+        .order_by(FirmwareDeployment.scheduled_at.desc())
+        .limit(1)
+    )
+    if deployment is None:
+        return
+    deployment.reading_confirmed_at = deployment.reading_confirmed_at or now
+    await _complete_firmware_if_stable(session, deployment, settings, now)
 
 
 async def _set_address_policy_alert(
@@ -298,6 +413,11 @@ async def claim_enrollment(
         created_at=now,
     )
     session.add(credential)
+    capability_features: dict[str, Any] = {
+        "supported_endpoints": payload.capabilities.supported_endpoints
+    }
+    if payload.capabilities.ota is not None:
+        capability_features["ota"] = payload.capabilities.ota.model_dump(mode="json")
     capability = await session.get(DeviceCapability, device.id)
     if capability is None:
         capability = DeviceCapability(
@@ -305,7 +425,7 @@ async def claim_enrollment(
             hardware_target=payload.capabilities.hardware_target,
             pzem_model=payload.capabilities.pzem_model,
             sd_required=True,
-            features={"supported_endpoints": payload.capabilities.supported_endpoints},
+            features=capability_features,
             reported_at=now,
         )
         session.add(capability)
@@ -313,7 +433,7 @@ async def claim_enrollment(
         capability.hardware_target = payload.capabilities.hardware_target
         capability.pzem_model = payload.capabilities.pzem_model
         capability.sd_required = True
-        capability.features = {"supported_endpoints": payload.capabilities.supported_endpoints}
+        capability.features = capability_features
         capability.reported_at = now
     session.add(
         DeviceConfigVersion(
@@ -418,6 +538,13 @@ async def heartbeat(
     device.connection_mode = payload.connection_mode
     device.effective_config_version = payload.configuration_version
     device.status = _status_from_heartbeat(payload)
+    if payload.ota is not None:
+        capability = await session.get(DeviceCapability, device.id)
+        if capability is not None:
+            features = dict(capability.features or {})
+            features["ota"] = payload.ota.model_dump(mode="json")
+            capability.features = features
+            capability.reported_at = now
     heartbeat_row = DeviceHeartbeat(
         device_id=device.id,
         boot_id=payload.boot_id,
@@ -637,11 +764,14 @@ async def heartbeat(
             .order_by(SequenceGap.start_sequence)
         )
     )
+    await _reconcile_firmware_heartbeat(session, payload, settings, now)
     release_available = bool(
         await session.scalar(
             select(FirmwareDeployment.id).where(
                 FirmwareDeployment.device_id == device.id,
-                FirmwareDeployment.status.in_(["scheduled", "available"]),
+                FirmwareDeployment.state.in_(["scheduled", "offered"]),
+                FirmwareDeployment.scheduled_at <= now,
+                ((FirmwareDeployment.expires_at.is_(None)) | (FirmwareDeployment.expires_at > now)),
             )
         )
     )
@@ -696,6 +826,8 @@ async def reading_batch(
         unavailable_sequence_ranges=payload.unavailable_sequence_ranges,
         maximum_clock_skew_seconds=settings.max_device_clock_skew_seconds,
     )
+    if result.accepted:
+        await _confirm_firmware_reading(session, verified.device.id, settings, datetime.now(UTC))
     await session.commit()
     logger.info(
         "history.normalization_completed",
@@ -938,36 +1070,93 @@ async def report_config(
     return {"recorded": True}
 
 
-@router.get("/device-firmware/manifest")
-async def firmware_manifest(verified: Verified, session: DbSession) -> dict[str, Any]:
+@router.get(
+    "/device-firmware/manifest",
+    response_model=OtaManifestV2 | OtaManifestUnavailable,
+)
+async def firmware_manifest(
+    verified: Verified, session: DbSession, settings: AppSettings
+) -> dict[str, Any]:
+    now = datetime.now(UTC)
     deployment = await session.scalar(
         select(FirmwareDeployment)
         .where(
             FirmwareDeployment.device_id == verified.device.id,
-            FirmwareDeployment.status.in_(["scheduled", "available"]),
+            FirmwareDeployment.state.in_(["scheduled", "offered"]),
+            FirmwareDeployment.scheduled_at <= now,
+            ((FirmwareDeployment.expires_at.is_(None)) | (FirmwareDeployment.expires_at > now)),
         )
         .order_by(FirmwareDeployment.scheduled_at)
         .limit(1)
+        .with_for_update()
     )
-    await session.commit()
     if deployment is None:
+        await session.commit()
         return {"available": False, "protocol_version": PROTOCOL}
     release = await session.get(FirmwareRelease, deployment.firmware_release_id)
-    if release is None:
+    capability = await session.get(DeviceCapability, verified.device.id)
+    if (
+        release is None
+        or release.trust_mode != OTA_TRUST_MODE
+        or release.verification_status != "verified"
+        or release.project_name is None
+        or release.build_hash is None
+        or deployment.expires_at is None
+        or not _manifest_artifact_available(release, settings)
+    ):
         raise ProblemError(
-            500, "Deployment invalid", "Firmware metadata is missing", "firmware_missing"
+            503,
+            "Firmware unavailable",
+            "Verified firmware metadata or artifact is unavailable",
+            "firmware_integrity_failure",
         )
-    return {
-        "available": True,
+    compatibility = release_compatibility(verified.device, capability, release)
+    reasons = set(compatibility["reasons"])
+    if deployment.allow_downgrade:
+        reasons.discard("downgrade_requires_confirmation")
+    if reasons:
+        raise ProblemError(
+            409,
+            "Firmware incompatible",
+            "Sensor capability no longer matches the scheduled firmware",
+            "firmware_incompatible",
+        )
+    manifest: dict[str, Any] = {
+        "schema_version": OTA_MANIFEST_SCHEMA,
+        "protocol_version": PROTOCOL,
         "deployment_id": deployment.id,
+        "release_id": release.id,
+        "device_id": verified.device.id,
         "version": release.version,
-        "channel": release.channel,
+        "project_name": release.project_name,
         "hardware_target": release.hardware_target,
         "protocol_min": release.protocol_min,
         "protocol_max": release.protocol_max,
         "size_bytes": release.size_bytes,
         "sha256": release.sha256,
-        "signature": release.signature,
-        "signing_key_id": release.signing_key_id,
-        "download_path": f"/api/v1/device-firmware/{release.id}/download",
+        "build_hash": release.build_hash,
+        "not_before": canonical_utc(deployment.scheduled_at),
+        "expires_at": canonical_utc(deployment.expires_at),
+        "allow_downgrade": deployment.allow_downgrade,
+        "attempt": deployment.attempt,
+        "hmac_algorithm": OTA_MANIFEST_HMAC_ALGORITHM,
+        "hmac_key_context": OTA_MANIFEST_HKDF_INFO.decode("ascii"),
+        "download_path": (
+            f"/api/v1/device-firmware/{release.id}/download?deployment_id={deployment.id}"
+        ),
     }
+    secret_buffer = bytearray(
+        SecretCipher(settings.app_master_key).decrypt(verified.credential.encrypted_secret)
+    )
+    try:
+        manifest["manifest_hmac"] = sign_ota_manifest(
+            bytes(secret_buffer), verified.device.id, manifest
+        )
+    finally:
+        for index in range(len(secret_buffer)):
+            secret_buffer[index] = 0
+    if deployment.state == "scheduled":
+        deployment.state = deployment.status = "offered"
+        deployment.revision += 1
+    await session.commit()
+    return manifest

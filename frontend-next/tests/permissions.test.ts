@@ -30,4 +30,15 @@ describe('permission-driven navigation policies', () => {
     expect(satisfiesPolicy(custom, ROUTE_POLICIES.home)).toBe(true)
     expect(canAccessSettings(custom)).toBe(true)
   })
+
+  it('keeps firmware viewing, upload management, and deployment as separate authorities', () => {
+    const firmwareViewer = session(['firmware.view'])
+    const firmwareManager = session(['firmware.view', 'firmware.manage'])
+    const firmwareDeployer = session(['firmware.view', 'firmware.manage', 'firmware.deploy'])
+
+    expect(hasPermission(firmwareViewer, 'firmware.manage')).toBe(false)
+    expect(hasPermission(firmwareViewer, 'firmware.deploy')).toBe(false)
+    expect(hasPermission(firmwareManager, 'firmware.deploy')).toBe(false)
+    expect(hasPermission(firmwareDeployer, 'firmware.deploy')).toBe(true)
+  })
 })

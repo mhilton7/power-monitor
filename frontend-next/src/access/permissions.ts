@@ -21,6 +21,7 @@ export const PERMISSION_CODES = [
   'enrollment.manage',
   'enrollment.view',
   'firmware.manage',
+  'firmware.deploy',
   'firmware.view',
   'history.export',
   'history.view',
@@ -89,14 +90,14 @@ export const ROUTE_POLICIES = {
 
 export const SETTINGS_SECTION_POLICIES = {
   home: { anyOf: ['sites.edit', 'settings.manage'] },
-  sensors: { anyOf: ['devices.manage', 'devices.remove', 'topology.manage', 'enrollment.manage', 'firmware.manage', 'storage.view', 'storage.manage'] },
+  sensors: { anyOf: ['devices.manage', 'devices.remove', 'topology.manage', 'enrollment.manage', 'firmware.view', 'firmware.manage', 'firmware.deploy', 'storage.view', 'storage.manage'] },
   family: { allOf: ['users.view'] },
   notifications: { anyOf: ['alerts.manage_rules', 'alerts.manage_delivery'] },
   appearance: { anyOf: ['settings.view', 'settings.manage'] },
   data: { allOf: ['backups.view'] },
   advanced: {
     anyOf: [
-      'network.manage', 'topology.manage', 'firmware.manage', 'interface_text.manage',
+      'network.manage', 'topology.manage', 'firmware.view', 'firmware.manage', 'firmware.deploy', 'interface_text.manage',
       'status_indicators.manage', 'audit.view', 'logs.export', 'settings.manage',
       'rates.manage_custom', 'rates.manage_sources', 'rates.check_sources',
     ],

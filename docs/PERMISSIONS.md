@@ -12,7 +12,7 @@ renames them. Dependencies are validated server-side, including `users.manage`
 | Area | Permission codes |
 |---|---|
 | Dashboard/data | `overview.view`, `usage.view`, `history.view`, `history.export`, `costs.view`, `costs.export` |
-| Sites/devices | `sites.view`, `sites.manage`, `utility_accounts.view`, `utility_accounts.manage`, `network.view`, `network.manage`, `topology.view`, `topology.manage`, `devices.view`, `devices.manage`, `devices.remove`, `enrollment.view`, `enrollment.manage`, `firmware.view`, `firmware.manage` |
+| Sites/devices | `sites.view`, `sites.manage`, `utility_accounts.view`, `utility_accounts.manage`, `network.view`, `network.manage`, `topology.view`, `topology.manage`, `devices.view`, `devices.manage`, `devices.remove`, `enrollment.view`, `enrollment.manage`, `firmware.view`, `firmware.manage`, `firmware.deploy` |
 | Rates | `rates.view`, `rates.manage_custom`, `rates.manage_sources`, `rates.check_sources`, `rates.review_candidates`, `rates.approve_candidates`, `rates.assign` |
 | Alerts | `alerts.view`, `alerts.acknowledge`, `alerts.manage_rules`, `alerts.manage_delivery` |
 | Backup/logs | `backups.view`, `backups.create`, `backups.restore`, `logs.export` |
@@ -26,6 +26,12 @@ renames them. Dependencies are validated server-side, including `users.manage`
 | Regular User / Read-Only Viewer (`viewer`) | Read-only Home, History, and Billing data: `overview.view`, `usage.view`, `history.view`, `costs.view`, `sites.view`, `utility_accounts.view`, `topology.view`, `devices.view`, `rates.view`, `alerts.view`, and `status_indicators.view`. Export, private-bill, Settings, and mutation permissions are intentionally excluded. |
 | Operator (`operator`) | Viewer plus topology and device management, enrollment, firmware view, alert acknowledgement, and alert-rule management. Device removal remains excluded and separately protected. |
 | Rate Manager (`rate-manager`) | Viewer plus custom rates, rate sources/checks, candidate review/approval, and assignment. |
+
+`firmware.view` exposes release and deployment status. `firmware.manage` uploads
+and manages verified artifacts. `firmware.deploy` installs, cancels, retries,
+promotes canaries, and authorizes an explicitly confirmed downgrade. Only the
+built-in Administrator receives upload/deploy permissions by default; Operator
+receives firmware view only.
 
 Custom roles contain a validated subset of the same catalog. Direct per-user permission grants are intentionally not used; effective permissions are the union of assigned active roles, constrained by site scope.
 

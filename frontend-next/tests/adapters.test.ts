@@ -153,6 +153,11 @@ describe('typed homeowner adapters', () => {
       previous_outage_reason: 'Sensor previously deferred synchronization because internal heap was fragmented.',
       measurement_source: 'heartbeat_live',
       measurement_invalid_metrics: [],
+      firmware_ota: {
+        state: 'ready', supported: true, protocol_version: 2,
+        authentication_mode: 'existing_device_hmac', rollback_supported: true,
+        partition_size_bytes: 6291456,
+      },
     }])
     const live = adaptHomeSummary({
       current_load_w: '0.8',
@@ -175,6 +180,11 @@ describe('typed homeowner adapters', () => {
       heartbeatFreshness: 'online',
       online: true,
       previousOutageReason: 'Sensor previously deferred synchronization because internal heap was fragmented.',
+      firmwareOta: {
+        state: 'ready', supported: true, protocolVersion: 2,
+        authenticationMode: 'existing_device_hmac', rollbackSupported: true,
+        partitionSizeBytes: 6291456,
+      },
     })
     const reconciling = adaptSensors([{
       id: 'sensor-2',

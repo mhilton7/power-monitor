@@ -1086,7 +1086,9 @@ test('History preserves intentional no-data and configured layouts', async ({ pa
   await mockRepairServer(page, true)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Whole Home', exact: true })).toBeVisible()
-  await expect(page.getByText('60.34%')).toHaveCount(4)
+  // The configured view renders the normalized coverage in the summary,
+  // explanation, chart/table metadata, and export evidence surfaces.
+  await expect(page.getByText('60.34%')).toHaveCount(6)
   await expect(page.getByText('60.3444444444444%', { exact: true })).toHaveCount(0)
   await expect(page.getByText(/Data begins Jul 25, 8:15 AM/)).toBeVisible()
   await expect(page.getByText(/Each point represents one 15-minute interval/)).toBeVisible()

@@ -63,6 +63,7 @@ def docker_desktop_runtime_compose(
             break
     if prefix is None or not prefix.startswith("/mnt/"):
         raise WorkflowFailure("could not identify the validated TrueNAS bind root")
+    postgres_prefix = prefix.rsplit("/power-monitor", 1)[0] + "/postgres"
     if project_name is not None:
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", project_name):
             raise WorkflowFailure(
@@ -86,11 +87,17 @@ def docker_desktop_runtime_compose(
     for service in document["services"].values():
         translated: list[Any] = []
         for volume in service.get("volumes", []):
-            if not isinstance(volume, str) or not volume.startswith(prefix + "/"):
+            if not isinstance(volume, str):
                 translated.append(volume)
                 continue
             source, target, *options = volume.split(":")
-            relative = source.removeprefix(prefix).lstrip("/")
+            if source == postgres_prefix:
+                relative = "postgres"
+            elif source.startswith(prefix + "/"):
+                relative = source.removeprefix(prefix).lstrip("/")
+            else:
+                translated.append(volume)
+                continue
             if relative == "config/Caddyfile":
                 runtime_volume: dict[str, Any] = {
                     "type": "bind",

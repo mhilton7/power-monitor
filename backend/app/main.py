@@ -35,6 +35,7 @@ from app.logging import configure_logging
 from app.problem import ProblemError, problem_response
 from app.security.protocol import ProtocolAuthError
 from app.sensor_test_mode import sensor_test_mode
+from app.upload_limits import FirmwareUploadLimitMiddleware
 
 
 @asynccontextmanager
@@ -64,6 +65,11 @@ app = FastAPI(
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
 )
+
+# Keep this inside the request-controls middleware so rejected requests retain
+# the normal request ID, security headers, and structured request log. The
+# limiter itself runs before FastAPI's multipart parser and temporary spooling.
+app.add_middleware(FirmwareUploadLimitMiddleware)
 
 for router in (
     auth.router,

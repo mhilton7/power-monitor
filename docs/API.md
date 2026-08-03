@@ -11,6 +11,48 @@ Browser routes use an opaque `pm_session` cookie and `X-CSRF-Token` on mutations
 
 Key groups are `/api/v1/auth`, `/sites`, `/utility-accounts`, `/circuits`, `/aggregate-sets`, `/devices`, `/readings/history`, `/history/query`, `/history/export`, `/rates`, `/billing`, `/alerts`, `/exports`, `/firmware-*`, `/reports`, `/backups`, `/audit-events`, `/system/info`, and `/events/stream`. Administrator log discovery and export use `/api/v1/admin/logs/availability`, `POST /api/v1/admin/logs/exports`, export status, and the short-lived authorized download route. Safe sensor removal uses `POST /api/v1/admin/devices/{device_id}/unclaim`; it requires CSRF, an administrator, and exact name-or-ID confirmation. Health endpoints are outside `/api/v1`. Metrics are authenticated.
 
+## Existing-trust firmware OTA
+
+Browser firmware APIs are permission- and site-scoped. `firmware.view` permits
+release, readiness, and deployment reads; `firmware.manage` permits a verified
+release upload; and `firmware.deploy` permits installation, cancellation,
+retry, canary promotion, and explicit downgrade. Mutations use the normal
+session and CSRF proof. An intentional downgrade also requires recent
+reauthentication.
+
+- `POST /api/v1/firmware-releases` accepts multipart form data containing
+  exactly one field, `binary`. The server streams and strictly parses the
+  ESP32-S3 application, calculates SHA-256, and creates an immutable
+  content-addressed release. The browser does not submit trusted metadata,
+  hashes, manifests, certificates, or key material.
+- `GET /api/v1/firmware-releases` lists release verification evidence, and
+  `GET /api/v1/firmware-releases/{release_id}/artifact` provides the verified
+  binary for authorized review or a one-time USB bootstrap.
+- `GET /api/v1/devices/{device_id}/firmware-readiness?release_id=...` reports
+  the current version/build, v2 capability, release compatibility, and one of
+  `ready`, `legacy_signed_ota_only`, `trust_missing`, `bootstrap_required`, or
+  `unsupported`. A bootstrap response includes the verified filename, SHA-256,
+  application offset, and non-erasing USB command.
+- `POST /api/v1/firmware-deployments` creates device-specific deployments.
+  Multiple ordered device IDs form a maximum-concurrency-one canary rollout;
+  the first selected sensor is the canary. `GET /api/v1/firmware-deployments`
+  preserves progress across refreshes. Explicit `/cancel`, `/retry`, and
+  `/promote` subresources enforce the deployment state machine.
+
+Sensor routes retain the normal request HMAC and validated HTTPS transport.
+`GET /api/v1/device-firmware/manifest` returns either `available: false` or a
+device-specific `pm-ota-manifest/2` object authenticated with the separate
+HKDF/HMAC context. `GET /api/v1/device-firmware/{release_id}/download`
+(with `deployment_id` as a query parameter) streams only
+the authorized immutable artifact with exact length, digest, no-store, and
+nosniff headers. `POST /api/v1/device-firmware/report` accepts attempt-aware,
+idempotent milestones and rejects cross-device, stale, and illegal transitions.
+Download or partition write alone is not completion: the server waits for the
+target version/build on the same boot, the configured healthy-heartbeat window,
+a committed reading, and absence of rollback or a critical alert. See
+[Firmware management](FIRMWARE_MANAGEMENT.md) and the normative OpenAPI/schema
+contracts.
+
 Detailed notifications use `GET /api/v1/notifications`, `GET
 /api/v1/notifications/{id}`, acknowledge/silence/end-silence mutations, optional
 recommendation dismiss/suppress mutations, `GET /api/v1/notification-suppressions`, the

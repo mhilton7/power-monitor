@@ -4537,8 +4537,9 @@ paths:
           content:
             application/json:
               schema:
-                additionalProperties: true
-                type: object
+                anyOf:
+                - $ref: '#/components/schemas/OtaManifestV2'
+                - $ref: '#/components/schemas/OtaManifestUnavailable'
                 title: Response Firmware Manifest Api V1 Device Firmware Manifest
                   Get
   /api/v1/admin/logs/availability:
@@ -12205,8 +12206,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  additionalProperties: true
+                  $ref: '#/components/schemas/FirmwareReleaseView'
                 title: Response List Releases Api V1 Firmware Releases Get
         '422':
           description: Validation Error
@@ -12248,9 +12248,79 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-                title: Response Upload Release Api V1 Firmware Releases Post
+                $ref: '#/components/schemas/FirmwareReleaseView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/firmware-releases/{release_id}/artifact:
+    get:
+      tags:
+      - firmware
+      summary: Admin Download Artifact
+      operationId: admin_download_artifact_api_v1_firmware_releases__release_id__artifact_get
+      parameters:
+      - name: release_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Release Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/firmware-readiness:
+    get:
+      tags:
+      - firmware
+      summary: Firmware Readiness
+      operationId: firmware_readiness_api_v1_devices__device_id__firmware_readiness_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: release_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Release Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirmwareReadinessView'
         '422':
           description: Validation Error
           content:
@@ -12292,9 +12362,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
-                title: Response Create Deployments Api V1 Firmware Deployments Post
+                $ref: '#/components/schemas/FirmwareDeploymentCreateResponse'
         '422':
           description: Validation Error
           content:
@@ -12307,6 +12375,14 @@ paths:
       summary: List Deployments
       operationId: list_deployments_api_v1_firmware_deployments_get
       parameters:
+      - name: device_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Device Id
       - name: pm_session
         in: cookie
         required: false
@@ -12323,9 +12399,159 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  additionalProperties: true
+                  $ref: '#/components/schemas/FirmwareDeploymentView'
                 title: Response List Deployments Api V1 Firmware Deployments Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/firmware-deployments/{deployment_id}/cancel:
+    post:
+      tags:
+      - firmware
+      summary: Cancel Deployment
+      operationId: cancel_deployment_api_v1_firmware_deployments__deployment_id__cancel_post
+      parameters:
+      - name: deployment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Deployment Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirmwareDeploymentView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/firmware-deployments/{deployment_id}/retry:
+    post:
+      tags:
+      - firmware
+      summary: Retry Deployment
+      operationId: retry_deployment_api_v1_firmware_deployments__deployment_id__retry_post
+      parameters:
+      - name: deployment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Deployment Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirmwareDeploymentView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/device-firmware/report:
+    post:
+      tags:
+      - firmware
+      summary: Report Deployment
+      operationId: report_deployment_api_v1_device_firmware_report_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FirmwareDeploymentReport'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirmwareDeploymentReportResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/firmware-deployments/{deployment_id}/promote:
+    post:
+      tags:
+      - firmware
+      summary: Promote Canary
+      operationId: promote_canary_api_v1_firmware_deployments__deployment_id__promote_post
+      parameters:
+      - name: deployment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Deployment Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirmwareCanaryPromotionResponse'
         '422':
           description: Validation Error
           content:
@@ -12345,6 +12571,13 @@ paths:
         schema:
           type: string
           title: Release Id
+      - name: deployment_id
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          title: Deployment Id
       responses:
         '200':
           description: Successful Response
@@ -13824,20 +14057,12 @@ components:
       title: Body_upload_rate_artifact_api_v1_admin_rate_artifacts_upload_post
     Body_upload_release_api_v1_firmware_releases_post:
       properties:
-        manifest_json:
-          type: string
-          title: Manifest Json
-        public_key_pem:
-          type: string
-          title: Public Key Pem
         binary:
           type: string
           contentMediaType: application/octet-stream
           title: Binary
       type: object
       required:
-      - manifest_json
-      - public_key_pem
       - binary
       title: Body_upload_release_api_v1_firmware_releases_post
     Body_upload_unassigned_utility_bill_api_v1_admin_utility_bill_imports_post:
@@ -14384,6 +14609,10 @@ components:
             type: string
           type: array
           title: Supported Endpoints
+        ota:
+          anyOf:
+          - $ref: '#/components/schemas/DeviceOtaCapability'
+          - type: 'null'
       type: object
       required:
       - hardware_target
@@ -14586,6 +14815,13 @@ components:
           - type: string
           - type: 'null'
           title: Firmware Version
+        firmware_build_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Firmware Build Hash
+        firmware_ota:
+          $ref: '#/components/schemas/FirmwareOtaReadinessView'
         current_watts:
           anyOf:
           - type: string
@@ -14731,6 +14967,8 @@ components:
       - re_enrollment_allowed
       - last_seen_at
       - firmware_version
+      - firmware_build_hash
+      - firmware_ota
       - current_watts
       - voltage_volts
       - current_amps
@@ -14827,6 +15065,39 @@ components:
       required:
       - reason
       title: DeviceMeasurementAssignmentWrite
+    DeviceOtaCapability:
+      properties:
+        supported:
+          type: boolean
+          title: Supported
+        protocol_version:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Protocol Version
+        authentication_mode:
+          type: string
+          enum:
+          - existing_device_hmac
+          - ed25519_legacy
+          - none
+          title: Authentication Mode
+        rollback_supported:
+          type: boolean
+          title: Rollback Supported
+        partition_size_bytes:
+          type: integer
+          maximum: 33554432.0
+          exclusiveMinimum: 0.0
+          title: Partition Size Bytes
+      type: object
+      required:
+      - supported
+      - protocol_version
+      - authentication_mode
+      - rollback_supported
+      - partition_size_bytes
+      title: DeviceOtaCapability
     DeviceUnclaimRequest:
       properties:
         confirmation:
@@ -15003,6 +15274,66 @@ components:
       - expires_at
       - preassignment
       title: EnrollmentTokenView
+    FirmwareBootstrapView:
+      properties:
+        required:
+          type: boolean
+          title: Required
+        firmware_filename:
+          type: string
+          title: Firmware Filename
+        sha256:
+          type: string
+          title: Sha256
+        expected_version:
+          type: string
+          title: Expected Version
+        expected_build_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Expected Build Hash
+        artifact_download_path:
+          type: string
+          title: Artifact Download Path
+        usb_command:
+          type: string
+          title: Usb Command
+        preserves:
+          items:
+            type: string
+          type: array
+          title: Preserves
+      additionalProperties: false
+      type: object
+      required:
+      - required
+      - firmware_filename
+      - sha256
+      - expected_version
+      - expected_build_hash
+      - artifact_download_path
+      - usb_command
+      - preserves
+      title: FirmwareBootstrapView
+    FirmwareCanaryPromotionResponse:
+      properties:
+        promoted:
+          type: boolean
+          title: Promoted
+        rollout_complete:
+          type: boolean
+          title: Rollout Complete
+        deployment:
+          anyOf:
+          - $ref: '#/components/schemas/FirmwareDeploymentView'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - promoted
+      - rollout_complete
+      title: FirmwareCanaryPromotionResponse
     FirmwareDeploymentCreate:
       properties:
         firmware_release_id:
@@ -15019,6 +15350,32 @@ components:
           type: string
           format: date-time
           title: Scheduled At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        allow_downgrade:
+          type: boolean
+          title: Allow Downgrade
+          default: false
+        idempotency_key:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 16
+          - type: 'null'
+          title: Idempotency Key
+        canary_first:
+          type: boolean
+          title: Canary First
+          default: true
+        maximum_concurrency:
+          type: integer
+          const: 1
+          title: Maximum Concurrency
+          default: 1
       additionalProperties: false
       type: object
       required:
@@ -15026,6 +15383,554 @@ components:
       - device_ids
       - scheduled_at
       title: FirmwareDeploymentCreate
+    FirmwareDeploymentCreateResponse:
+      properties:
+        deployment_ids:
+          items:
+            type: string
+          type: array
+          title: Deployment Ids
+        scheduled:
+          type: integer
+          title: Scheduled
+        deployments:
+          items:
+            $ref: '#/components/schemas/FirmwareDeploymentView'
+          type: array
+          title: Deployments
+      additionalProperties: false
+      type: object
+      required:
+      - deployment_ids
+      - scheduled
+      - deployments
+      title: FirmwareDeploymentCreateResponse
+    FirmwareDeploymentReport:
+      properties:
+        device_id:
+          type: string
+          title: Device Id
+        deployment_id:
+          type: string
+          title: Deployment Id
+        release_id:
+          type: string
+          title: Release Id
+        attempt:
+          type: integer
+          minimum: 1.0
+          title: Attempt
+        state:
+          type: string
+          enum:
+          - manifest_authenticated
+          - download_started
+          - downloading
+          - binary_verified
+          - partition_written
+          - rebooting
+          - post_boot_validation
+          - validated
+          - failed
+          - rollback_detected
+          - rolled_back
+          title: State
+        current_firmware_version:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Current Firmware Version
+        current_build_hash:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Current Build Hash
+        target_version:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Target Version
+        target_sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Target Sha256
+        bytes_received:
+          type: integer
+          minimum: 0.0
+          title: Bytes Received
+        image_size:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Image Size
+        progress:
+          type: integer
+          maximum: 100.0
+          minimum: 0.0
+          title: Progress
+        boot_id:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Boot Id
+        failure_code:
+          anyOf:
+          - type: string
+            pattern: ^[a-z0-9][a-z0-9_]{0,79}$
+          - type: 'null'
+          title: Failure Code
+        failure_summary:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Failure Summary
+      type: object
+      required:
+      - device_id
+      - deployment_id
+      - release_id
+      - attempt
+      - state
+      - current_firmware_version
+      - current_build_hash
+      - target_version
+      - target_sha256
+      - bytes_received
+      - image_size
+      - progress
+      - boot_id
+      title: FirmwareDeploymentReport
+    FirmwareDeploymentReportResponse:
+      properties:
+        recorded:
+          type: boolean
+          title: Recorded
+        duplicate:
+          type: boolean
+          title: Duplicate
+        state:
+          type: string
+          title: State
+        revision:
+          type: integer
+          title: Revision
+        attempt:
+          type: integer
+          title: Attempt
+      additionalProperties: false
+      type: object
+      required:
+      - recorded
+      - duplicate
+      - state
+      - revision
+      - attempt
+      title: FirmwareDeploymentReportResponse
+    FirmwareDeploymentView:
+      properties:
+        id:
+          type: string
+          title: Id
+        firmware_release_id:
+          type: string
+          title: Firmware Release Id
+        device_id:
+          type: string
+          title: Device Id
+        state:
+          type: string
+          title: State
+        status:
+          type: string
+          title: Status
+        revision:
+          type: integer
+          title: Revision
+        attempt:
+          type: integer
+          title: Attempt
+        progress:
+          type: integer
+          title: Progress
+        bytes_received:
+          type: integer
+          title: Bytes Received
+        scheduled_at:
+          type: string
+          format: date-time
+          title: Scheduled At
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+        allow_downgrade:
+          type: boolean
+          title: Allow Downgrade
+        rollout_group_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rollout Group Id
+        rollout_order:
+          type: integer
+          title: Rollout Order
+        promoted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Promoted At
+        downloaded_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Downloaded At
+        installed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Installed At
+        validated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Validated At
+        last_report_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Report At
+        failure_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Code
+        failure_summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Summary
+        validated_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Validated Version
+        validated_build_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Validated Build Hash
+        rollback_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Rollback At
+        rollback_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rollback Version
+        rollback_build_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rollback Build Hash
+        verification_heartbeats:
+          type: integer
+          title: Verification Heartbeats
+        reading_confirmed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Reading Confirmed At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        target_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Version
+        target_sha256:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Sha256
+        target_build_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Build Hash
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - firmware_release_id
+      - device_id
+      - state
+      - status
+      - revision
+      - attempt
+      - progress
+      - bytes_received
+      - scheduled_at
+      - expires_at
+      - allow_downgrade
+      - rollout_group_id
+      - rollout_order
+      - promoted_at
+      - downloaded_at
+      - installed_at
+      - validated_at
+      - last_report_at
+      - failure_code
+      - failure_summary
+      - validated_version
+      - validated_build_hash
+      - rollback_at
+      - rollback_version
+      - rollback_build_hash
+      - verification_heartbeats
+      - reading_confirmed_at
+      - created_at
+      - target_version
+      - target_sha256
+      - target_build_hash
+      title: FirmwareDeploymentView
+    FirmwareOtaReadinessView:
+      properties:
+        state:
+          type: string
+          enum:
+          - ready
+          - legacy_signed_ota_only
+          - trust_missing
+          - bootstrap_required
+          - unsupported
+          title: State
+        label:
+          type: string
+          title: Label
+        supported:
+          type: boolean
+          title: Supported
+        protocol_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Protocol Version
+        authentication_mode:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authentication Mode
+        rollback_supported:
+          type: boolean
+          title: Rollback Supported
+        partition_size_bytes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Partition Size Bytes
+      additionalProperties: false
+      type: object
+      required:
+      - state
+      - label
+      - supported
+      - protocol_version
+      - authentication_mode
+      - rollback_supported
+      - partition_size_bytes
+      title: FirmwareOtaReadinessView
+    FirmwareReadinessView:
+      properties:
+        device_id:
+          type: string
+          title: Device Id
+        current_firmware_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Firmware Version
+        current_firmware_build_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Firmware Build Hash
+        firmware_ota:
+          $ref: '#/components/schemas/FirmwareOtaReadinessView'
+        release_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Release Id
+        compatibility:
+          anyOf:
+          - $ref: '#/components/schemas/FirmwareReleaseDeviceCompatibilityView'
+          - type: 'null'
+        bootstrap:
+          anyOf:
+          - $ref: '#/components/schemas/FirmwareBootstrapView'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - device_id
+      - current_firmware_version
+      - current_firmware_build_hash
+      - firmware_ota
+      title: FirmwareReadinessView
+    FirmwareReleaseCompatibilityView:
+      properties:
+        verified_image:
+          type: boolean
+          title: Verified Image
+        device_selection_required:
+          type: boolean
+          title: Device Selection Required
+      additionalProperties: false
+      type: object
+      required:
+      - verified_image
+      - device_selection_required
+      title: FirmwareReleaseCompatibilityView
+    FirmwareReleaseDeviceCompatibilityView:
+      properties:
+        ready:
+          type: boolean
+          title: Ready
+        reasons:
+          items:
+            type: string
+          type: array
+          title: Reasons
+        ota:
+          $ref: '#/components/schemas/FirmwareOtaReadinessView'
+        current_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Version
+        current_build_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Build Hash
+        target_version:
+          type: string
+          title: Target Version
+        target_build_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Build Hash
+      additionalProperties: false
+      type: object
+      required:
+      - ready
+      - reasons
+      - ota
+      - current_version
+      - current_build_hash
+      - target_version
+      - target_build_hash
+      title: FirmwareReleaseDeviceCompatibilityView
+    FirmwareReleaseView:
+      properties:
+        id:
+          type: string
+          title: Id
+        version:
+          type: string
+          title: Version
+        project_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Name
+        hardware_target:
+          type: string
+          title: Hardware Target
+        protocol_min:
+          type: string
+          title: Protocol Min
+        protocol_max:
+          type: string
+          title: Protocol Max
+        size_bytes:
+          type: integer
+          title: Size Bytes
+        sha256:
+          type: string
+          title: Sha256
+        build_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Build Hash
+        build_timestamp:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Build Timestamp
+        trust_mode:
+          type: string
+          title: Trust Mode
+        verification_status:
+          type: string
+          title: Verification Status
+        verification_evidence:
+          additionalProperties: true
+          type: object
+          title: Verification Evidence
+        verified_at:
+          type: string
+          format: date-time
+          title: Verified At
+        active:
+          type: boolean
+          title: Active
+        artifact_download_path:
+          type: string
+          title: Artifact Download Path
+        compatibility:
+          $ref: '#/components/schemas/FirmwareReleaseCompatibilityView'
+        duplicate:
+          type: boolean
+          title: Duplicate
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - version
+      - project_name
+      - hardware_target
+      - protocol_min
+      - protocol_max
+      - size_bytes
+      - sha256
+      - build_hash
+      - build_timestamp
+      - trust_mode
+      - verification_status
+      - verification_evidence
+      - verified_at
+      - active
+      - artifact_download_path
+      - compatibility
+      - duplicate
+      title: FirmwareReleaseView
     FleetSummary:
       properties:
         site_id:
@@ -15382,6 +16287,10 @@ components:
           additionalProperties: true
           type: object
           title: Queue
+        ota:
+          anyOf:
+          - $ref: '#/components/schemas/DeviceOtaCapability'
+          - type: 'null'
       type: object
       required:
       - protocol_version
@@ -17150,6 +18059,125 @@ components:
       - remediation
       - suppression
       title: NotificationView
+    OtaManifestUnavailable:
+      properties:
+        available:
+          type: boolean
+          const: false
+          title: Available
+        protocol_version:
+          type: string
+          const: pm-protocol/1.0.0
+          title: Protocol Version
+      additionalProperties: false
+      type: object
+      required:
+      - available
+      - protocol_version
+      title: OtaManifestUnavailable
+    OtaManifestV2:
+      properties:
+        schema_version:
+          type: string
+          const: pm-ota-manifest/2
+          title: Schema Version
+        protocol_version:
+          type: string
+          const: pm-protocol/1.0.0
+          title: Protocol Version
+        deployment_id:
+          type: string
+          title: Deployment Id
+        release_id:
+          type: string
+          title: Release Id
+        device_id:
+          type: string
+          title: Device Id
+        version:
+          type: string
+          title: Version
+        project_name:
+          type: string
+          const: power-monitor-sensor
+          title: Project Name
+        hardware_target:
+          type: string
+          const: esp32-s3
+          title: Hardware Target
+        protocol_min:
+          type: string
+          const: pm-protocol/1.0.0
+          title: Protocol Min
+        protocol_max:
+          type: string
+          const: pm-protocol/1.0.0
+          title: Protocol Max
+        size_bytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Size Bytes
+        sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+        build_hash:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Build Hash
+        not_before:
+          type: string
+          title: Not Before
+        expires_at:
+          type: string
+          title: Expires At
+        allow_downgrade:
+          type: boolean
+          title: Allow Downgrade
+        attempt:
+          type: integer
+          minimum: 1.0
+          title: Attempt
+        hmac_algorithm:
+          type: string
+          const: HMAC-SHA256
+          title: Hmac Algorithm
+        hmac_key_context:
+          type: string
+          const: pm-ota-manifest-v2/server-to-device
+          title: Hmac Key Context
+        download_path:
+          type: string
+          title: Download Path
+        manifest_hmac:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{43}$
+          title: Manifest Hmac
+      additionalProperties: false
+      type: object
+      required:
+      - schema_version
+      - protocol_version
+      - deployment_id
+      - release_id
+      - device_id
+      - version
+      - project_name
+      - hardware_target
+      - protocol_min
+      - protocol_max
+      - size_bytes
+      - sha256
+      - build_hash
+      - not_before
+      - expires_at
+      - allow_downgrade
+      - attempt
+      - hmac_algorithm
+      - hmac_key_context
+      - download_path
+      - manifest_hmac
+      title: OtaManifestV2
     PasswordReset:
       properties:
         new_password:

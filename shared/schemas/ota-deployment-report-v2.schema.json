@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://power-monitor.local/schemas/ota-deployment-report-v2.schema.json",
+  "title": "Power Monitor OTA deployment milestone report v2",
+  "type": "object",
+  "required": [
+    "device_id",
+    "deployment_id",
+    "release_id",
+    "attempt",
+    "state",
+    "current_firmware_version",
+    "current_build_hash",
+    "target_version",
+    "target_sha256",
+    "bytes_received",
+    "image_size",
+    "progress",
+    "boot_id",
+    "failure_code",
+    "failure_summary"
+  ],
+  "properties": {
+    "device_id": {"type": "string", "format": "uuid"},
+    "deployment_id": {"type": "string", "format": "uuid"},
+    "release_id": {"type": "string", "format": "uuid"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "state": {
+      "enum": [
+        "manifest_authenticated",
+        "download_started",
+        "downloading",
+        "binary_verified",
+        "partition_written",
+        "rebooting",
+        "post_boot_validation",
+        "validated",
+        "failed",
+        "rollback_detected",
+        "rolled_back"
+      ]
+    },
+    "current_firmware_version": {"type": "string", "minLength": 1, "maxLength": 80},
+    "current_build_hash": {"type": "string", "minLength": 1, "maxLength": 128},
+    "target_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "target_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "bytes_received": {"type": "integer", "minimum": 0},
+    "image_size": {"type": "integer", "minimum": 1, "maximum": 33554432},
+    "progress": {"type": "integer", "minimum": 0, "maximum": 100},
+    "boot_id": {"type": "string", "format": "uuid"},
+    "failure_code": {
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9][a-z0-9_]{0,79}$"
+    },
+    "failure_summary": {"type": ["string", "null"], "maxLength": 500}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"const": "failed"}}},
+      "then": {"properties": {"failure_code": {"type": "string"}}}
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "not": {"enum": ["failed", "rollback_detected", "rolled_back"]}
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "failure_code": {"const": null},
+          "failure_summary": {"const": null}
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

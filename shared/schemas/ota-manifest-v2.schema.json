@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://power-monitor.local/schemas/ota-manifest-v2.schema.json",
+  "title": "Power Monitor existing-trust OTA manifest v2",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "protocol_version",
+    "deployment_id",
+    "release_id",
+    "device_id",
+    "version",
+    "project_name",
+    "hardware_target",
+    "protocol_min",
+    "protocol_max",
+    "size_bytes",
+    "sha256",
+    "build_hash",
+    "not_before",
+    "expires_at",
+    "allow_downgrade",
+    "attempt",
+    "hmac_algorithm",
+    "hmac_key_context",
+    "download_path",
+    "manifest_hmac"
+  ],
+  "properties": {
+    "schema_version": {"const": "pm-ota-manifest/2"},
+    "protocol_version": {"const": "pm-protocol/1.0.0"},
+    "deployment_id": {"type": "string", "format": "uuid"},
+    "release_id": {"type": "string", "format": "uuid"},
+    "device_id": {"type": "string", "format": "uuid"},
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "project_name": {"const": "power-monitor-sensor"},
+    "hardware_target": {"const": "esp32-s3"},
+    "protocol_min": {"const": "pm-protocol/1.0.0"},
+    "protocol_max": {"const": "pm-protocol/1.0.0"},
+    "size_bytes": {"type": "integer", "minimum": 1, "maximum": 33554432},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "build_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "not_before": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "allow_downgrade": {"type": "boolean"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "hmac_algorithm": {"const": "HMAC-SHA256"},
+    "hmac_key_context": {"const": "pm-ota-manifest-v2/server-to-device"},
+    "download_path": {
+      "type": "string",
+      "pattern": "^/api/v1/device-firmware/[0-9a-f-]{36}/download\\?deployment_id=[0-9a-f-]{36}$"
+    },
+    "manifest_hmac": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"}
+  },
+  "additionalProperties": false
+}
