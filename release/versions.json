@@ -1,26 +1,26 @@
 {
   "product": "Power Monitor Server",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "protocol": "pm-protocol/1.0.0",
-  "migration_revision": "20260802_0026",
+  "migration_revision": "20260803_0027",
   "migration": {
     "source": {
-      "path": "backend/alembic/versions/20260802_0026_existing_trust_ota.py",
-      "sha256": "04d961c762d75d94977766a53aa8979e4c51c42e6a08b74f81391623d2c63a70"
+      "path": "backend/alembic/versions/20260803_0027_ota_reconciliation.py",
+      "sha256": "3e9975cf03d27e58d303fbf778e278f77667fdef533379adb8a7d21ff858b380"
     },
     "offline_sql": {
       "path": "release/migration-offline.sql",
-      "sha256": "1a9cbfc3866f3198d1b970e8364add48d5578eee37ff29f0f195cc25f33f5350"
+      "sha256": "f56eb247fe82c5331d3e48e275e536db1427bb249b2269492a2feae5aba3849e"
     }
   },
   "python": "3.13.14",
-  "node": "v24.14.0",
+  "node": "v26.0.0",
   "npm": "11.12.1",
-  "git_commit": "b2cca46fb826bce0e376792ba39d75c969388deb",
+  "git_commit": "3730736ee645f115f91db36fbb007012cba2342b",
   "images": {
-    "api": "power-monitor-api:1.0.28",
-    "frontend": "power-monitor-frontend:1.0.28",
-    "backup": "power-monitor-backup:1.0.28",
+    "api": "power-monitor-api:1.0.29",
+    "frontend": "power-monitor-frontend:1.0.29",
+    "backup": "power-monitor-backup:1.0.29",
     "postgres": "docker.io/library/postgres:17.5-bookworm",
     "caddy": "docker.io/library/caddy:2.10.0-alpine"
   },
@@ -41,8 +41,8 @@
         "sha256": "f362f609b898fcde0a46576ed4c78add59ae9c0540eafe324b78ad50ed595eb3"
       },
       {
-        "path": "backend/alembic/versions/20260802_0026_existing_trust_ota.py",
-        "sha256": "04d961c762d75d94977766a53aa8979e4c51c42e6a08b74f81391623d2c63a70"
+        "path": "backend/alembic/versions/20260803_0027_ota_reconciliation.py",
+        "sha256": "3e9975cf03d27e58d303fbf778e278f77667fdef533379adb8a7d21ff858b380"
       }
     ]
   },

@@ -3786,4 +3786,18 @@ INSERT INTO role_permissions (role_name, permission_code) VALUES ('admin', 'firm
 
 UPDATE alembic_version SET version_num='20260802_0026' WHERE alembic_version.version_num = '20260731_0025';
 
+-- Running upgrade 20260802_0026 -> 20260803_0027
+
+ALTER TABLE firmware_deployments ADD COLUMN source_version VARCHAR(80);
+
+ALTER TABLE firmware_deployments ADD COLUMN source_build_hash VARCHAR(128);
+
+ALTER TABLE firmware_deployments ADD COLUMN source_boot_id VARCHAR(80);
+
+ALTER TABLE firmware_deployments ADD COLUMN interruption_evidence JSON DEFAULT '{}' NOT NULL;
+
+UPDATE firmware_deployments AS deployment SET source_version = device.firmware_version, source_build_hash = device.firmware_build_hash FROM devices AS device WHERE deployment.device_id = device.id AND deployment.state NOT IN ('completed','failed','cancelled','rolled_back');
+
+UPDATE alembic_version SET version_num='20260803_0027' WHERE alembic_version.version_num = '20260802_0026';
+
 COMMIT;
