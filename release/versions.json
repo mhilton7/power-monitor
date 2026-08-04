@@ -29,7 +29,7 @@
       "backup": "postgres:17.5-bookworm"
     }
   },
-  "git_commit": "9ca9dc69ff9049c57707f017e7aec8f829c36b9f",
+  "git_commit": "f3f8fb54618641c6495fce137789b6a3e5058567",
   "dependency_audits": {
     "backend": {
       "lock": {
