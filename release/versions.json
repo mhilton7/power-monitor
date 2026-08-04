@@ -1,12 +1,12 @@
 {
   "product": "Power Monitor Server",
-  "version": "1.0.30",
+  "version": "1.0.31",
   "protocol": "pm-protocol/1.0.0",
   "migration_revision": "20260803_0030",
   "migration": {
     "source": {
       "path": "backend/alembic/versions/20260803_0030_ota_waiting_schedule.py",
-      "sha256": "e7307a32e412cd252161a7d59a0b81aff03ffdb9beeed4c5812a1e89e184215a"
+      "sha256": "25de67b333b6fcc9eefee1f2911c2932dbb7e11a8b7c743073c53e0000d98d3e"
     },
     "offline_sql": {
       "path": "release/migration-offline.sql",
@@ -29,12 +29,12 @@
       "backup": "postgres:17.5-bookworm"
     }
   },
-  "git_commit": "289fdb283449c3a7566f75046cb4b033c99578af",
+  "git_commit": "0dac1847fa398a89e09c1f42def3b8cbf67ba20a",
   "dependency_audits": {
     "backend": {
       "lock": {
         "path": "backend/requirements.lock",
-        "sha256": "f4ab01f7c78f63173a961943c286d638d50a763eb909cf489ba18dcab57dcb9d"
+        "sha256": "5d6a628f4fc762de729c98dabf5cbc44cbd5f68ae34277c0935abd61a30f4305"
       },
       "report": {
         "path": "release/backend-audit.json",
@@ -45,7 +45,7 @@
     "frontend": {
       "lock": {
         "path": "frontend-next/package-lock.json",
-        "sha256": "ea9182ccde34488aacabf33ddb71311960e19791cff91d686a8fbb85059d0c49"
+        "sha256": "9041283f903d54db7c5bb2f5cacbb3d7851fd72d980ef2d1308324694b1763b1"
       },
       "report": {
         "path": "release/frontend-audit.json",
@@ -55,9 +55,9 @@
     }
   },
   "images": {
-    "api": "power-monitor-api:1.0.30",
-    "frontend": "power-monitor-frontend:1.0.30",
-    "backup": "power-monitor-backup:1.0.30",
+    "api": "power-monitor-api:1.0.31",
+    "frontend": "power-monitor-frontend:1.0.31",
+    "backup": "power-monitor-backup:1.0.31",
     "postgres": "docker.io/library/postgres:17.5-bookworm",
     "caddy": "docker.io/library/caddy:2.10.0-alpine"
   },
@@ -67,31 +67,31 @@
     "artifacts": [
       {
         "path": "shared/schemas/ota-manifest-v2.schema.json",
-        "sha256": "bfe727522775c71181aed259ee33fe454274a94a1957271cf3c15fbfc4a5ca7b"
+        "sha256": "92f6da405b0b9dc4ed57b8f8cbe8e11a1c7b5ccb75e0e4182fa446a9164ff7f7"
       },
       {
         "path": "shared/schemas/ota-deployment-report-v2.schema.json",
-        "sha256": "23cea278f65808da449fce22ef0cfbfc83a92285bb6a16a7c9484a8ef3caec1d"
+        "sha256": "379d2a34309b08e9e47eb537f6ab33a0294c3060e7e47275f11087c9b5222661"
       },
       {
         "path": "shared/auth-test-vectors/ota-manifest-v2.json",
-        "sha256": "f362f609b898fcde0a46576ed4c78add59ae9c0540eafe324b78ad50ed595eb3"
+        "sha256": "18d4e6732b20f5537cb550684a3be67906ea03f01234bbc811b10f33cd2d9206"
       },
       {
         "path": "backend/alembic/versions/20260802_0026_existing_trust_ota.py",
-        "sha256": "d7db486c4236b76b1c0c8ba91503c563dbecbbbf6b3c331ef0c20d2ba96db773"
+        "sha256": "04d961c762d75d94977766a53aa8979e4c51c42e6a08b74f81391623d2c63a70"
       },
       {
         "path": "backend/alembic/versions/20260803_0027_ota_reconciliation.py",
-        "sha256": "9e65b6f990794e1d894b02aa0a00bcb00f3f6bd21848e06a3a9d1f44dcc0aa3c"
+        "sha256": "3e9975cf03d27e58d303fbf778e278f77667fdef533379adb8a7d21ff858b380"
       },
       {
         "path": "backend/alembic/versions/20260803_0028_ota_lifecycle_terminalization.py",
-        "sha256": "57f2d7e10cfaaa703612ecfbbbf2e7274364d9a88648abc565cc18beb925b4f9"
+        "sha256": "221a94a6081fbc6f7b05eda25a737d639a3412b600b228cf4547ea50424e2a83"
       },
       {
         "path": "backend/alembic/versions/20260803_0030_ota_waiting_schedule.py",
-        "sha256": "e7307a32e412cd252161a7d59a0b81aff03ffdb9beeed4c5812a1e89e184215a"
+        "sha256": "25de67b333b6fcc9eefee1f2911c2932dbb7e11a8b7c743073c53e0000d98d3e"
       }
     ]
   },
