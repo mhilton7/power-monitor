@@ -2554,6 +2554,7 @@ async def _apply_coarse_costs(
     tier_version_ids = {
         item.context.version.id for item in tier_windows if item.context is not None
     }
+    matched_tier_windows: set[tuple[int, str]] = set()
     eligible_tier_membership = _fixed_interval_membership(
         session,
         boundaries,
@@ -2728,7 +2729,9 @@ async def _apply_coarse_costs(
             context = window.context
             if context is None or context.version.id != str(row["rate_version_id"]):
                 continue
-            accumulator = accumulators[int(row["bucket_index"])][str(row["device_id"])]
+            device_id = str(row["device_id"])
+            matched_tier_windows.add((window.window_id, device_id))
+            accumulator = accumulators[int(row["bucket_index"])][device_id]
             energy_value = _decimal_or_zero(row["energy_kwh"])
             cost_value = _decimal_or_zero(row["energy_cost"])
             label = (
@@ -2750,6 +2753,19 @@ async def _apply_coarse_costs(
                 usage_authority_type=str(row["usage_authority_type"]),
             )
 
+    # Missing chronological tier facts are materially different from a flat
+    # rate gap. Preserve that distinction for every sensor/window so rolling
+    # partial-day requests have the same quality semantics as the exact raw
+    # path. The merge step applies these flags only when that sensor actually
+    # contributed energy to the chart bucket.
+    for window in tier_windows:
+        for device_id in tier_account_devices.get(window.account_id, []):
+            if (window.window_id, device_id) in matched_tier_windows:
+                continue
+            accumulator = accumulators[window.bucket_index][device_id]
+            accumulator.cost_missing = True
+            accumulator.quality_flags.add("tier_recalculation_required")
+
     return contribution_rows
 
 
@@ -2767,6 +2783,7 @@ def _merge_coarse_cost_accumulators(
             accumulator.cost_missing = cost_accumulator.cost_missing
             if not accumulator.energy_available:
                 continue
+            accumulator.quality_flags.update(cost_accumulator.quality_flags)
             account_id = device_accounts.get(device_id)
             if account_id is None or not accumulator.cost_parts:
                 accumulator.cost_missing = True

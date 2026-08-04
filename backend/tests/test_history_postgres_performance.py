@@ -498,8 +498,10 @@ def _request(
     bucket: str,
     *,
     include_cost: bool = False,
+    end_offset: timedelta = timedelta(0),
 ) -> HistoryQueryRequest:
     selected = DEVICE_IDS[:device_count]
+    request_end = BENCHMARK_END - end_offset
     scope: dict[str, Any] = (
         {"type": "device", "device_id": selected[0]}
         if device_count == 1
@@ -512,8 +514,8 @@ def _request(
             "metrics": (
                 ["energy_kwh", "energy_cost"] if include_cost else ["power_w", "energy_kwh"]
             ),
-            "start_utc": BENCHMARK_END - timedelta(days=days),
-            "end_utc": BENCHMARK_END,
+            "start_utc": request_end - timedelta(days=days),
+            "end_utc": request_end,
             "bucket": bucket,
             "timezone": "UTC",
             "page": 1,
@@ -805,11 +807,35 @@ async def test_postgres_history_scale_latency_and_query_plan() -> None:
                 # production baseline because shared snapshot fixes affect both
                 # strategies in this build.
                 tiered_results: dict[str, Any] = {}
-                for name, days, cold_limit, warm_limit in (
-                    ("2x7d-tiered-cost", 7, 2.0, 0.75),
-                    ("2x30d-tiered-cost", 30, 3.0, 1.0),
+                for name, days, bucket, end_offset, expected_buckets, cold_limit, warm_limit in (
+                    ("2x7d-tiered-cost", 7, "1h", timedelta(0), 168, 2.0, 0.75),
+                    ("2x30d-tiered-cost", 30, "1h", timedelta(0), 720, 3.0, 1.0),
+                    (
+                        "2x7d-tiered-cost-partial-hours",
+                        7,
+                        "1h",
+                        timedelta(minutes=17),
+                        169,
+                        2.0,
+                        0.75,
+                    ),
+                    (
+                        "2x30d-tiered-cost-partial-days",
+                        30,
+                        "1d",
+                        timedelta(minutes=17),
+                        31,
+                        3.0,
+                        1.0,
+                    ),
                 ):
-                    request = _request(2, days, "1h", include_cost=True)
+                    request = _request(
+                        2,
+                        days,
+                        bucket,
+                        include_cost=True,
+                        end_offset=end_offset,
+                    )
                     reference_durations, reference_response = await _measure_history(
                         factory,
                         request,
@@ -826,14 +852,40 @@ async def test_postgres_history_scale_latency_and_query_plan() -> None:
                     assert (
                         optimized_response.selected_summary == reference_response.selected_summary
                     )
-                    assert optimized_response.combined == reference_response.combined
+                    assert len(optimized_response.combined) == len(reference_response.combined)
+                    for bucket_index, (optimized_bucket, reference_bucket) in enumerate(
+                        zip(optimized_response.combined, reference_response.combined, strict=True)
+                    ):
+                        differences = {
+                            key: (
+                                getattr(optimized_bucket, key),
+                                getattr(reference_bucket, key),
+                            )
+                            for key in optimized_bucket.__class__.model_fields
+                            if getattr(optimized_bucket, key) != getattr(reference_bucket, key)
+                        }
+                        assert not differences, {
+                            "bucket_index": bucket_index,
+                            "differences": differences,
+                        }
                     assert (
                         optimized_response.rate_versions_used
                         == reference_response.rate_versions_used
                     )
-                    assert optimized_response.total_buckets == days * 24
+                    assert optimized_response.total_buckets == expected_buckets
                     assert optimized_response.summary.energy_kwh is not None
-                    assert optimized_response.summary.energy_cost is not None
+                    if name == "2x30d-tiered-cost-partial-days":
+                        # The first 17-minute bucket predates this fixture's
+                        # immutable tier allocation facts. Exact cost is
+                        # therefore intentionally unavailable for the complete
+                        # range, while all later per-tier totals remain intact.
+                        assert optimized_response.summary.energy_cost is None
+                        assert any(
+                            warning["code"] == "rate_unavailable"
+                            for warning in optimized_response.warnings
+                        )
+                    else:
+                        assert optimized_response.summary.energy_cost is not None
 
                     optimized_cold = optimized_durations[0]
                     optimized_warm = optimized_durations[1:]

@@ -110,7 +110,21 @@ async def request_controls(request: Request, call_next: Any) -> Any:
             detail="Request exceeds the configured size limit",
             code="request_too_large",
         )
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        # Preserve the exception for FastAPI's normal 500 handling, but record a
+        # sanitized correlation trail. Request bodies, query strings, cookies,
+        # authorization values, and device signatures are intentionally absent.
+        structlog.get_logger().exception(
+            "http_request_failed",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            error_type=type(exc).__name__,
+            duration_ms=round((time.monotonic() - started) * 1000, 2),
+        )
+        raise
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
