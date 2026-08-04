@@ -1,4 +1,10 @@
 *.sh text eol=lf
+release/*.csv text eol=lf
+release/*.json text eol=lf
+release/*.md text eol=lf
+release/*.sql text eol=lf
+release/*.sha256 text eol=lf
+release/*.txt text eol=lf
 *.pdf binary
 *.png binary
 *.jpg binary

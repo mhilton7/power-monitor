@@ -15,8 +15,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE = ROOT / "release"
-DEFAULT_RELEASE_VERSION = "1.0.31"
+DEFAULT_RELEASE_VERSION = "1.0.32"
 DEFAULT_MIGRATION_REVISION = "20260803_0030"
+CANONICAL_RELEASE_TEXT_SUFFIXES = frozenset(
+    {".csv", ".json", ".md", ".sha256", ".sql", ".txt"}
+)
 SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 MIGRATION_PATTERN = re.compile(r"^[0-9]{8}_[0-9]{4}$")
 OTA_V2_ARTIFACTS = (
@@ -199,6 +202,34 @@ def _release_artifact_evidence(filename: str) -> dict[str, str]:
     }
 
 
+def canonicalize_release_text_artifacts() -> int:
+    """Make generated evidence byte-identical on Windows and Linux.
+
+    Git stores these tracked text artifacts with LF line endings.  Dependency
+    audit tools can emit CRLF on Windows, so evidence must be normalized before
+    its SHA-256 is recorded.  Otherwise a clean Linux checkout contains valid
+    data whose checksum differs from the one generated on the release host.
+    """
+
+    normalized = 0
+    for path in sorted(RELEASE.iterdir()):
+        if (
+            not path.is_file()
+            or path.suffix.lower() not in CANONICAL_RELEASE_TEXT_SUFFIXES
+        ):
+            continue
+        contents = path.read_bytes()
+        canonical = (
+            contents.removeprefix(b"\xef\xbb\xbf")
+            .replace(b"\r\n", b"\n")
+            .replace(b"\r", b"\n")
+        )
+        if canonical != contents:
+            path.write_bytes(canonical)
+            normalized += 1
+    return normalized
+
+
 def _migration_evidence(
     revision: str, *, release_commit: str | None = None
 ) -> dict[str, str]:
@@ -330,7 +361,7 @@ def versions(
         },
     }
     (RELEASE / "versions.json").write_text(
-        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+        json.dumps(payload, indent=2) + "\n", encoding="utf-8", newline="\n"
     )
 
 
@@ -450,7 +481,9 @@ def checksums() -> None:
         ):
             continue
         lines.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}")
-    (RELEASE / "checksums.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (RELEASE / "checksums.sha256").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8", newline="\n"
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -488,6 +521,7 @@ if __name__ == "__main__":
     backend_licenses()
     frontend_licenses()
     migration_offline_sql(args.migration_revision)
+    canonicalize_release_text_artifacts()
     versions(
         args.version,
         args.migration_revision,

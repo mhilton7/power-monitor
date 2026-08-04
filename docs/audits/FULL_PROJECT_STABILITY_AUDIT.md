@@ -8,7 +8,7 @@
 - Deployed sensor build identity at baseline: firmware `1.0.15`, source identity
   `5c98b6939764`, built `2026-08-03T22:36:45Z`
 - Shared protocol: `pm-protocol/1.0.0`
-- Planned server release: `1.0.31` at Alembic head `20260803_0030`
+- Planned server release: `1.0.32` at Alembic head `20260803_0030`
 - Audit branches (both repositories):
   `codex/full-stability-history-ota-hardening`
 

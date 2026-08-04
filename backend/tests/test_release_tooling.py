@@ -45,7 +45,7 @@ def test_release_defaults_track_head_and_ota_evidence_is_explicit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     reports = _load_script("generate_release_reports.py", "release_reports_test")
-    assert reports.DEFAULT_RELEASE_VERSION == "1.0.31"
+    assert reports.DEFAULT_RELEASE_VERSION == "1.0.32"
     assert reports.DEFAULT_MIGRATION_REVISION == "20260803_0030"
     assert reports.OTA_MIGRATION_REVISIONS == (
         "20260802_0026",
@@ -240,6 +240,27 @@ def test_source_evidence_hashes_immutable_git_blob_not_crlf_worktree(
 
     assert evidence["sha256"] == hashlib.sha256(committed_bytes).hexdigest()
     assert evidence["sha256"] != hashlib.sha256(worktree_bytes).hexdigest()
+
+
+def test_generated_release_evidence_is_canonical_lf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reports = _load_script("generate_release_reports.py", "release_line_endings_test")
+    release = tmp_path / "release"
+    release.mkdir()
+    audit = release / "backend-audit.json"
+    notes = release / "RELEASE_NOTES.md"
+    binary = release / "power-monitor-server.tar.gz"
+    audit.write_bytes(b'\xef\xbb\xbf{\r\n  "dependencies": []\r\n}\r\n')
+    notes.write_bytes(b"# Release\rDetails\r\n")
+    binary.write_bytes(b"archive\r\nbytes")
+    monkeypatch.setattr(reports, "RELEASE", release)
+
+    assert reports.canonicalize_release_text_artifacts() == 2
+    assert audit.read_bytes() == b'{\n  "dependencies": []\n}\n'
+    assert notes.read_bytes() == b"# Release\nDetails\n"
+    assert binary.read_bytes() == b"archive\r\nbytes"
+    assert reports.canonicalize_release_text_artifacts() == 0
 
 
 def test_release_archive_overlays_current_evidence_on_frozen_source(
