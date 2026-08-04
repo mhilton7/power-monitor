@@ -135,6 +135,27 @@ def test_release_guard_rejects_dirty_source_and_nonrelease_output(
     guard.assert_only_release_outputs()
 
 
+def test_release_guard_does_not_treat_git_stderr_warnings_as_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guard = _load_script("release_guard.py", "release_guard_stderr_test")
+
+    def fake_run(*args: object, **kwargs: object) -> object:
+        return guard.subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="release/migration-offline.sql\n",
+            stderr=(
+                "warning: in the working copy of 'release/migration-offline.sql', "
+                "LF will be replaced by CRLF the next time Git touches it\n"
+            ),
+        )
+
+    monkeypatch.setattr(guard.subprocess, "run", fake_run)
+
+    assert guard._git("diff", "--name-only") == "release/migration-offline.sql"
+
+
 def test_node_24_is_required_for_release_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

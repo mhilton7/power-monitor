@@ -26,9 +26,18 @@ COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _git(*args: str) -> str:
-    return subprocess.check_output(  # noqa: S603 - fixed git release checks
-        ["git", *args], cwd=ROOT, text=True, stderr=subprocess.STDOUT
-    ).strip()
+    result = subprocess.run(  # noqa: S603 - fixed git release checks
+        ["git", *args],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    # Git may emit platform-specific advisory messages (for example, line-ending
+    # conversion warnings) on stderr even when the command succeeds.  Only
+    # stdout is the machine-readable path stream for the commands below.
+    return result.stdout.strip()
 
 
 def head_commit() -> str:
