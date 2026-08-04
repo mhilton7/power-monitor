@@ -63,6 +63,9 @@ only after that acceptance run.
 The detailed file-level evidence is recorded in the linked architecture,
 benchmark, OTA and release documents. Generated binaries are audited by
 provenance and checksum rather than treated as independent source files.
+Source-frozen archives explicitly run Git with `core.autocrlf=false`; otherwise
+a Windows release host can convert LF Git objects to CRLF inside the archive and
+invalidate the embedded migration, lockfile, or OTA-source evidence hashes.
 
 ## Reproduced production symptoms
 

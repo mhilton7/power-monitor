@@ -89,6 +89,8 @@ def create_archive(
             subprocess.run(  # noqa: S603 - fixed Git archive command
                 [
                     "git",
+                    "-c",
+                    "core.autocrlf=false",
                     "archive",
                     "--format=tar",
                     f"--prefix={prefix}",

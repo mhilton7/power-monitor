@@ -203,7 +203,9 @@ def test_release_archive_overlays_current_evidence_on_frozen_source(
         ("git", "init", "--quiet"),
         ("git", "config", "user.email", "release-test@example.invalid"),
         ("git", "config", "user.name", "Release Test"),
-        ("git", "config", "core.autocrlf", "false"),
+        # Reproduce a Windows release host. The archive builder must still emit
+        # the immutable Git-object bytes rather than autocrlf-converted CRLF.
+        ("git", "config", "core.autocrlf", "true"),
         ("git", "add", "."),
         ("git", "commit", "--quiet", "-m", "frozen source"),
     )

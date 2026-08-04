@@ -14,6 +14,9 @@
   enrollment, sequence state, and immutable microSD history.
 - GHCR publication and production-YAML promotion remain gated on the exact
   physical firmware canary; this candidate is not a stable firmware promotion.
+- Makes source archive contents deterministic across release hosts by disabling
+  `core.autocrlf` conversion during `git archive`, so embedded source evidence
+  hashes always bind to the immutable Git-object bytes.
 
 ## OTA interruption recovery and protected permission changes
 
