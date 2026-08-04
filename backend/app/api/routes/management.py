@@ -1967,11 +1967,7 @@ async def device_storage_status(
             DeviceConfigVersion.version == device.effective_config_version,
         )
     )
-    payload = (
-        cast(dict[str, Any], heartbeat.payload)
-        if heartbeat and isinstance(heartbeat.payload, dict)
-        else {}
-    )
+    payload = heartbeat.payload if heartbeat and isinstance(heartbeat.payload, dict) else {}
     raw_subsystem = payload.get("sd")
     subsystem = cast(dict[str, Any], raw_subsystem) if isinstance(raw_subsystem, dict) else {}
     raw_details = subsystem.get("details")
@@ -3170,7 +3166,10 @@ async def _suppress_recommendation(
         await session.commit()
     except IntegrityError:
         await session.rollback()
-        existing = await session.scalar(select(NotificationSuppression).where(*filters))
+        existing = cast(
+            NotificationSuppression | None,
+            await session.scalar(select(NotificationSuppression).where(*filters)),
+        )
         if existing is None:
             raise
         return existing
@@ -4194,14 +4193,17 @@ def _backup_payload(run: BackupRun) -> BackupView:
 
 
 async def _active_backup_job(session: DbSession) -> BackgroundJob | None:
-    return await session.scalar(
-        select(BackgroundJob)
-        .where(
-            BackgroundJob.job_type.in_(BACKUP_JOB_TYPES),
-            BackgroundJob.status.in_(ACTIVE_BACKUP_JOB_STATUSES),
-        )
-        .order_by(BackgroundJob.requested_at)
-        .limit(1)
+    return cast(
+        BackgroundJob | None,
+        await session.scalar(
+            select(BackgroundJob)
+            .where(
+                BackgroundJob.job_type.in_(BACKUP_JOB_TYPES),
+                BackgroundJob.status.in_(ACTIVE_BACKUP_JOB_STATUSES),
+            )
+            .order_by(BackgroundJob.requested_at)
+            .limit(1)
+        ),
     )
 
 

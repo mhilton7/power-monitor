@@ -548,7 +548,15 @@ async def get_normalized_utility_bill(
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.view")
     payload = await import_payload(session, await _bill(session, principal, bill_id))
-    return payload["normalized_artifact"]
+    normalized_artifact = payload.get("normalized_artifact")
+    if not isinstance(normalized_artifact, dict):
+        raise ProblemError(
+            500,
+            "Normalized bill artifact unavailable",
+            "The stored bill import does not contain a valid normalized artifact",
+            "utility_bill_normalized_artifact_invalid",
+        )
+    return normalized_artifact
 
 
 @router.get("/admin/utility-bill-imports/{bill_id}/extracted-text")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, MutableMapping
-from typing import Any
+from typing import Any, cast
 
 from fastapi import Request
 
@@ -41,7 +41,7 @@ class FirmwareUploadLimitMiddleware:
             return self.settings_provider()
         application = scope.get("app")
         overrides = getattr(application, "dependency_overrides", {})
-        provider = overrides.get(get_settings, get_settings)
+        provider = cast(SettingsProvider, overrides.get(get_settings, get_settings))
         return provider()
 
     @staticmethod

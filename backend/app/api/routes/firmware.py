@@ -125,7 +125,7 @@ def _install_content_addressed(temp_path: Path, target: Path, expected_sha256: s
 
 
 def _resolve_artifact(release: FirmwareRelease, settings: Any) -> Path:
-    root = settings.firmware_path.resolve()
+    root = Path(settings.firmware_path).resolve()
     if release.artifact_path:
         candidate = (root / release.artifact_path).resolve()
     elif release.file_path:

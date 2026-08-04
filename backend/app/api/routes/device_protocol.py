@@ -71,7 +71,7 @@ def _aware(value: datetime) -> datetime:
 
 
 def _manifest_artifact_available(release: FirmwareRelease, settings: Any) -> bool:
-    root = settings.firmware_path.resolve()
+    root = Path(settings.firmware_path).resolve()
     if release.artifact_path:
         path = (root / release.artifact_path).resolve()
     elif release.file_path:
