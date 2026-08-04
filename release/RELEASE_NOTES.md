@@ -1,7 +1,9 @@
-# Power Monitor Server 1.0.33
+# Power Monitor Server 1.0.34
 
 ## Cross-platform evidence, Stability, History, OTA, and release provenance
 
+- Generates backend vulnerability and SBOM evidence in the pinned linux/amd64
+  Python builder so platform markers match the production API runtime.
 - Fetches complete source history for publication validation so exact
   source-commit blobs remain available after the separate evidence commit.
 
