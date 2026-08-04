@@ -63,9 +63,14 @@ only after that acceptance run.
 The detailed file-level evidence is recorded in the linked architecture,
 benchmark, OTA and release documents. Generated binaries are audited by
 provenance and checksum rather than treated as independent source files.
-Source-frozen archives explicitly run Git with `core.autocrlf=false`; otherwise
-a Windows release host can convert LF Git objects to CRLF inside the archive and
-invalidate the embedded migration, lockfile, or OTA-source evidence hashes.
+Source-frozen archives explicitly run Git with `core.autocrlf=false`, and both
+release-evidence generation and pre-archive verification read committed source
+artifacts with `git cat-file blob <release-commit>:<path>`. This keeps migration,
+lockfile, and OTA-source hashes in the same immutable Git-byte domain as the
+archive even when a clean Windows checkout contains CRLF-filtered worktree bytes.
+The final archive gate caught both independent line-ending defects before any
+publication: archive creation had originally allowed checkout conversion, and
+the corrected archive then exposed worktree-based evidence hashing.
 
 ## Reproduced production symptoms
 

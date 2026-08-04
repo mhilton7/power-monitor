@@ -147,15 +147,45 @@ def _node_toolchain(node_bin: str, npm_bin: str) -> tuple[str, str]:
     return node, npm
 
 
-def _artifact_evidence(relative_path: str) -> dict[str, str]:
+def _git_blob_bytes(relative_path: str, release_commit: str) -> bytes:
+    """Read committed source bytes without worktree/filter conversion.
+
+    Release archives are built from the immutable Git tree.  On Windows a
+    checkout can contain CRLF bytes even when the committed blob contains LF,
+    so hashing ``Path.read_bytes()`` would bind evidence to the checkout rather
+    than to the source actually placed in the archive.
+    """
+
+    result = subprocess.run(  # noqa: S603 - commit and repository path are validated
+        ["git", "cat-file", "blob", f"{release_commit}:{relative_path}"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise ValueError(
+            f"required release artifact is not present at {release_commit}: "
+            f"{relative_path}"
+        )
+    return result.stdout
+
+
+def _artifact_evidence(
+    relative_path: str, *, release_commit: str | None = None
+) -> dict[str, str]:
     path = ROOT / relative_path
     if not path.is_file():
         raise FileNotFoundError(
             f"required release artifact is missing: {relative_path}"
         )
+    contents = (
+        path.read_bytes()
+        if release_commit is None
+        else _git_blob_bytes(relative_path, release_commit)
+    )
     return {
         "path": relative_path,
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "sha256": hashlib.sha256(contents).hexdigest(),
     }
 
 
@@ -169,7 +199,9 @@ def _release_artifact_evidence(filename: str) -> dict[str, str]:
     }
 
 
-def _migration_evidence(revision: str) -> dict[str, str]:
+def _migration_evidence(
+    revision: str, *, release_commit: str | None = None
+) -> dict[str, str]:
     matches = sorted(
         (ROOT / "backend" / "alembic" / "versions").glob(f"{revision}_*.py")
     )
@@ -178,7 +210,7 @@ def _migration_evidence(revision: str) -> dict[str, str]:
             f"migration revision {revision} must resolve to exactly one migration file"
         )
     relative_path = matches[0].relative_to(ROOT).as_posix()
-    return _artifact_evidence(relative_path)
+    return _artifact_evidence(relative_path, release_commit=release_commit)
 
 
 def _validate_migration_head(revision: str) -> None:
@@ -233,7 +265,7 @@ def versions(
         "protocol": (ROOT / "shared" / "protocol-version.txt").read_text().strip(),
         "migration_revision": migration_revision,
         "migration": {
-            "source": _migration_evidence(migration_revision),
+            "source": _migration_evidence(migration_revision, release_commit=git),
             "offline_sql": _release_artifact_evidence("migration-offline.sql"),
         },
         "python": platform.python_version(),
@@ -255,12 +287,16 @@ def versions(
         "git_commit": git,
         "dependency_audits": {
             "backend": {
-                "lock": _artifact_evidence("backend/requirements.lock"),
+                "lock": _artifact_evidence(
+                    "backend/requirements.lock", release_commit=git
+                ),
                 "report": _release_artifact_evidence("backend-audit.json"),
                 "format": "pip-audit/json",
             },
             "frontend": {
-                "lock": _artifact_evidence("frontend-next/package-lock.json"),
+                "lock": _artifact_evidence(
+                    "frontend-next/package-lock.json", release_commit=git
+                ),
                 "report": _release_artifact_evidence("frontend-audit.json"),
                 "format": "npm-audit/json",
             },
@@ -276,9 +312,12 @@ def versions(
             "protocol": "pm-ota-manifest/2",
             "authentication": "existing_device_hmac",
             "artifacts": [
-                *[_artifact_evidence(path) for path in OTA_V2_ARTIFACTS],
                 *[
-                    _migration_evidence(revision)
+                    _artifact_evidence(path, release_commit=git)
+                    for path in OTA_V2_ARTIFACTS
+                ],
+                *[
+                    _migration_evidence(revision, release_commit=git)
                     for revision in OTA_MIGRATION_REVISIONS
                 ],
             ],

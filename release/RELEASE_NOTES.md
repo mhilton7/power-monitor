@@ -15,8 +15,9 @@
 - GHCR publication and production-YAML promotion remain gated on the exact
   physical firmware canary; this candidate is not a stable firmware promotion.
 - Makes source archive contents deterministic across release hosts by disabling
-  `core.autocrlf` conversion during `git archive`, so embedded source evidence
-  hashes always bind to the immutable Git-object bytes.
+  `core.autocrlf` conversion during `git archive`, and hashes committed source
+  evidence directly from the frozen Git tree so a CRLF-filtered Windows
+  worktree cannot diverge from the archived source bytes.
 - Bounds Windows Playwright release concurrency to prevent host socket-buffer
   exhaustion from being misreported as a production asset or route failure.
 

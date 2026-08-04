@@ -242,18 +242,45 @@ def _alembic_heads(root: Path) -> set[str]:
     return set(re.findall(r"^([^\s]+)\s+\(head\)$", result.stdout, re.MULTILINE))
 
 
-def _source_evidence(root: Path, evidence: Any, label: str) -> None:
+def _git_blob_bytes(root: Path, commit: str, relative: str, label: str) -> bytes:
+    """Return immutable source bytes from the release commit.
+
+    Git archives contain tree-object bytes, not bytes after checkout filters such
+    as Windows ``core.autocrlf``.  Source provenance must use that same byte
+    domain both before and after the archive is assembled.
+    """
+
+    result = subprocess.run(  # noqa: S603 - commit and source path are validated
+        ["git", "cat-file", "blob", f"{commit}:{relative}"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"{label} source is not present at release commit {commit}: {relative}"
+        )
+    return result.stdout
+
+
+def _source_evidence(root: Path, evidence: Any, label: str, *, commit: str) -> bytes:
     if not isinstance(evidence, dict):
         raise AssertionError(f"missing {label} evidence")
     relative = evidence.get("path")
     digest = evidence.get("sha256")
     if not isinstance(relative, str) or not isinstance(digest, str):
         raise AssertionError(f"invalid {label} evidence")
-    path = (root / relative).resolve()
+    source_path = _safe_archive_source_path(relative)
+    path = (root / Path(*source_path.parts)).resolve()
     if root.resolve() not in path.parents or not path.is_file():
         raise AssertionError(f"unsafe or missing {label} source: {relative}")
-    if not SHA256_PATTERN.fullmatch(digest) or _sha256(path) != digest:
+    contents = _git_blob_bytes(root, commit, source_path.as_posix(), label)
+    if (
+        not SHA256_PATTERN.fullmatch(digest)
+        or hashlib.sha256(contents).hexdigest() != digest
+    ):
         raise AssertionError(f"{label} source hash mismatch: {relative}")
+    return contents
 
 
 def _release_evidence(release: Path, evidence: Any, label: str) -> Path:
@@ -275,9 +302,9 @@ def _normalized_package(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def _applicable_locked_requirements(path: Path) -> dict[str, str]:
+def _applicable_locked_requirements(contents: str) -> dict[str, str]:
     requirements: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    for raw_line in contents.splitlines():
         match = REQUIREMENT_PATTERN.fullmatch(raw_line.strip())
         if match is None:
             continue
@@ -300,7 +327,7 @@ def _applicable_locked_requirements(path: Path) -> dict[str, str]:
 
 
 def _verify_dependency_audits(
-    root: Path, release: Path, metadata: dict[str, Any]
+    root: Path, release: Path, metadata: dict[str, Any], *, commit: str
 ) -> None:
     audits = metadata.get("dependency_audits")
     if not isinstance(audits, dict) or set(audits) != {"backend", "frontend"}:
@@ -313,8 +340,18 @@ def _verify_dependency_audits(
     if not isinstance(frontend, dict) or frontend.get("format") != "npm-audit/json":
         raise AssertionError("invalid frontend dependency audit evidence")
 
-    _source_evidence(root, backend.get("lock"), "backend dependency lock")
-    _source_evidence(root, frontend.get("lock"), "frontend dependency lock")
+    backend_lock = _source_evidence(
+        root,
+        backend.get("lock"),
+        "backend dependency lock",
+        commit=commit,
+    )
+    frontend_lock = _source_evidence(
+        root,
+        frontend.get("lock"),
+        "frontend dependency lock",
+        commit=commit,
+    )
     backend_report = _release_evidence(
         release, backend.get("report"), "backend dependency audit"
     )
@@ -346,7 +383,10 @@ def _verify_dependency_audits(
         if normalized in audited:
             raise AssertionError(f"duplicate backend dependency audit entry: {name}")
         audited[normalized] = version
-    expected = _applicable_locked_requirements(root / "backend/requirements.lock")
+    try:
+        expected = _applicable_locked_requirements(backend_lock.decode("utf-8"))
+    except UnicodeDecodeError as exc:
+        raise AssertionError("backend dependency lock is not UTF-8") from exc
     if audited != expected:
         raise AssertionError(
             "backend dependency audit does not match the applicable locked packages"
@@ -373,10 +413,8 @@ def _verify_dependency_audits(
     if any(vulnerability_totals.get(severity) != 0 for severity in severities):
         raise AssertionError("frontend dependency audit reports vulnerabilities")
     try:
-        package_lock = json.loads(
-            (root / "frontend-next/package-lock.json").read_text(encoding="utf-8")
-        )
-    except (OSError, json.JSONDecodeError) as exc:
+        package_lock = json.loads(frontend_lock.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise AssertionError(f"invalid frontend dependency lock JSON: {exc}") from exc
     packages = package_lock.get("packages")
     if not isinstance(packages, dict) or "" not in packages:
@@ -453,7 +491,12 @@ def verify_release(
     migration_evidence = metadata.get("migration")
     if not isinstance(migration_evidence, dict):
         raise AssertionError("versions.json is missing migration evidence")
-    _source_evidence(root, migration_evidence.get("source"), "migration")
+    _source_evidence(
+        root,
+        migration_evidence.get("source"),
+        "migration",
+        commit=commit,
+    )
     source_path = str(migration_evidence["source"]["path"])
     if not Path(source_path).name.startswith(f"{migration}_"):
         raise AssertionError("migration evidence does not identify the configured head")
@@ -465,7 +508,7 @@ def verify_release(
     if _sha256(offline_path) != offline_evidence.get("sha256"):
         raise AssertionError("offline migration SQL evidence hash mismatch")
 
-    _verify_dependency_audits(root, release, metadata)
+    _verify_dependency_audits(root, release, metadata, commit=commit)
 
     if require_archive:
         archive_name = f"power-monitor-server-{version}.tar.gz"

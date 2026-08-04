@@ -27,6 +27,13 @@ def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _git_blob_bytes(root: Path, commit: str, path: Path) -> bytes:
+    return subprocess.check_output(  # noqa: S603 - fixed local Git fixture command
+        ("git", "cat-file", "blob", f"{commit}:{path.relative_to(root).as_posix()}"),
+        cwd=root,
+    )
+
+
 def _add_tar_bytes(archive: tarfile.TarFile, name: str, contents: bytes) -> None:
     member = tarfile.TarInfo(name)
     member.mode = 0o644
@@ -62,6 +69,11 @@ def test_release_defaults_track_head_and_ota_evidence_is_explicit(
     monkeypatch.setattr(reports, "RELEASE", release)
     monkeypatch.setattr(reports, "_release_commit", lambda expected=None: "a" * 40)
     monkeypatch.setattr(reports, "_node_toolchain", lambda *_: ("v24.4.0", "11.4.2"))
+    monkeypatch.setattr(
+        reports,
+        "_git_blob_bytes",
+        lambda relative_path, _commit: (reports.ROOT / relative_path).read_bytes(),
+    )
 
     reports.versions(
         "9.8.7",
@@ -185,6 +197,51 @@ def test_node_24_is_required_for_release_evidence(
     assert reports._node_toolchain("node24", "npm24") == ("v24.4.0", "11.4.2")
 
 
+def test_source_evidence_hashes_immutable_git_blob_not_crlf_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reports = _load_script("generate_release_reports.py", "release_git_blob_test")
+    root = tmp_path / "repository"
+    artifact = root / "shared" / "auth-test-vectors" / "ota-manifest-v2.json"
+    artifact.parent.mkdir(parents=True)
+    (root / ".gitattributes").write_bytes(b"*.json text eol=crlf\n")
+    committed_bytes = b'{\n  "protocol": "pm-ota-manifest/2"\n}\n'
+    artifact.write_bytes(committed_bytes)
+    for command in (
+        ("git", "init", "--quiet"),
+        ("git", "config", "user.email", "release-test@example.invalid"),
+        ("git", "config", "user.name", "Release Test"),
+        ("git", "config", "core.autocrlf", "true"),
+        ("git", "add", "."),
+        ("git", "commit", "--quiet", "-m", "frozen source"),
+    ):
+        subprocess.run(  # noqa: S603 - fixed local Git fixture commands
+            command, cwd=root, check=True, capture_output=True
+        )
+    commit = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=root, text=True).strip()
+
+    # Reproduce a Windows checkout whose clean worktree bytes are converted to
+    # CRLF while the Git blob and release archive remain LF.
+    artifact.write_bytes(committed_bytes.replace(b"\n", b"\r\n"))
+    worktree_bytes = artifact.read_bytes()
+    assert artifact.read_bytes() != committed_bytes
+    subprocess.run(  # noqa: S603 - fixed local Git fixture command
+        ("git", "diff", "--quiet", "--", artifact.relative_to(root).as_posix()),
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+
+    monkeypatch.setattr(reports, "ROOT", root)
+    evidence = reports._artifact_evidence(
+        "shared/auth-test-vectors/ota-manifest-v2.json",
+        release_commit=commit,
+    )
+
+    assert evidence["sha256"] == hashlib.sha256(committed_bytes).hexdigest()
+    assert evidence["sha256"] != hashlib.sha256(worktree_bytes).hexdigest()
+
+
 def test_release_archive_overlays_current_evidence_on_frozen_source(
     tmp_path: Path,
 ) -> None:
@@ -294,16 +351,56 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
     migration.write_text("revision = '20260803_0030'\n", encoding="utf-8")
     offline = release / "migration-offline.sql"
     offline.write_text("-- exact offline migration\n", encoding="utf-8")
+    attributes = root / ".gitattributes"
+    attributes.write_text(
+        "*.json text eol=crlf\n*.lock text eol=crlf\n*.py text eol=crlf\n*.txt text eol=crlf\n",
+        encoding="utf-8",
+    )
+    source_paths = (
+        migration,
+        requirements,
+        package_lock,
+        protocol_dir / "protocol-version.txt",
+    )
+    for command in (
+        ("git", "init", "--quiet"),
+        ("git", "config", "user.email", "release-test@example.invalid"),
+        ("git", "config", "user.name", "Release Test"),
+        ("git", "config", "core.autocrlf", "true"),
+        (
+            "git",
+            "add",
+            ".gitattributes",
+            *(path.relative_to(root).as_posix() for path in source_paths),
+        ),
+        ("git", "commit", "--quiet", "-m", "frozen release sources"),
+    ):
+        subprocess.run(  # noqa: S603 - fixed local Git fixture commands
+            command, cwd=root, check=True, capture_output=True
+        )
+    commit = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=root, text=True).strip()
+    for path in source_paths:
+        committed_source = _git_blob_bytes(root, commit, path)
+        path.write_bytes(committed_source.replace(b"\n", b"\r\n"))
+        subprocess.run(  # noqa: S603 - fixed local Git fixture command
+            ("git", "diff", "--quiet", "--", path.relative_to(root).as_posix()),
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+        assert b"\r\n" in path.read_bytes()
+        assert b"\r\n" not in committed_source
+
     archive = release / "power-monitor-server-9.8.7.tar.gz"
     metadata = {
         "version": "9.8.7",
         "protocol": "pm-protocol/1.0.0",
         "migration_revision": "20260803_0030",
-        "git_commit": "a" * 40,
+        "git_commit": commit,
         "migration": {
             "source": {
                 "path": migration.relative_to(root).as_posix(),
-                "sha256": _digest(migration),
+                "sha256": hashlib.sha256(_git_blob_bytes(root, commit, migration)).hexdigest(),
             },
             "offline_sql": {
                 "path": "release/migration-offline.sql",
@@ -315,7 +412,9 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
                 "format": "pip-audit/json",
                 "lock": {
                     "path": "backend/requirements.lock",
-                    "sha256": _digest(requirements),
+                    "sha256": hashlib.sha256(
+                        _git_blob_bytes(root, commit, requirements)
+                    ).hexdigest(),
                 },
                 "report": {
                     "path": "release/backend-audit.json",
@@ -326,7 +425,9 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
                 "format": "npm-audit/json",
                 "lock": {
                     "path": "frontend-next/package-lock.json",
-                    "sha256": _digest(package_lock),
+                    "sha256": hashlib.sha256(
+                        _git_blob_bytes(root, commit, package_lock)
+                    ).hexdigest(),
                 },
                 "report": {
                     "path": "release/frontend-audit.json",
@@ -356,7 +457,7 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
         archive,
         mode="w:gz",
         format=tarfile.PAX_FORMAT,
-        pax_headers={"comment": "a" * 40},
+        pax_headers={"comment": commit},
     ) as release_archive:
         root_member = tarfile.TarInfo(prefix.removesuffix("/"))
         root_member.type = tarfile.DIRTYPE
@@ -368,11 +469,11 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
                 f"{prefix}release/{path.name}",
                 path.read_bytes(),
             )
-        for path in (migration, requirements, package_lock, protocol_dir / "protocol-version.txt"):
+        for path in source_paths:
             _add_tar_bytes(
                 release_archive,
                 f"{prefix}{path.relative_to(root).as_posix()}",
-                path.read_bytes(),
+                _git_blob_bytes(root, commit, path),
             )
     checksums.write_text(
         embedded_inventory + f"{_digest(archive)}  {archive.name}\n",
@@ -385,7 +486,7 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
             release=release,
             expected_version="9.8.7",
             expected_migration="20260803_0030",
-            expected_commit="a" * 40,
+            expected_commit=commit,
             require_archive=True,
         )
         == 5
@@ -406,7 +507,7 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
         archive,
         mode="w:gz",
         format=tarfile.PAX_FORMAT,
-        pax_headers={"comment": "a" * 40},
+        pax_headers={"comment": commit},
     ) as release_archive:
         for name, contents in archived_files.items():
             _add_tar_bytes(release_archive, name, contents)
@@ -417,7 +518,7 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
         verifier.verify_release(
             root=root,
             release=release,
-            expected_commit="a" * 40,
+            expected_commit=commit,
             require_archive=True,
         )
 
