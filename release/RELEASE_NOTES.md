@@ -1,6 +1,9 @@
-# Power Monitor Server 1.0.32
+# Power Monitor Server 1.0.33
 
 ## Cross-platform evidence, Stability, History, OTA, and release provenance
+
+- Fetches complete source history for publication validation so exact
+  source-commit blobs remain available after the separate evidence commit.
 
 - Supersedes the image-free 1.0.31 publication attempt after canonicalizing all
   checksum-bound text evidence to UTF-8 without BOM and LF line endings; the
