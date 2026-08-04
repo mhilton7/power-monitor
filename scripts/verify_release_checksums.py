@@ -162,9 +162,7 @@ def _verify_embedded_archive(
         archived_release_files = {
             member.name.removeprefix(release_prefix)
             for member in member_list
-            if member.isfile()
-            and member.name.startswith(release_prefix)
-            and "/" not in member.name.removeprefix(release_prefix)
+            if member.isfile() and member.name.startswith(release_prefix)
         }
         if archived_release_files != expected_release_files:
             raise AssertionError(
