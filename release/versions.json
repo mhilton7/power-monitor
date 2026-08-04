@@ -1,6 +1,6 @@
 {
   "product": "Power Monitor Server",
-  "version": "1.0.31",
+  "version": "1.0.32",
   "protocol": "pm-protocol/1.0.0",
   "migration_revision": "20260803_0030",
   "migration": {
@@ -29,7 +29,7 @@
       "backup": "postgres:17.5-bookworm"
     }
   },
-  "git_commit": "0dac1847fa398a89e09c1f42def3b8cbf67ba20a",
+  "git_commit": "e0f6e06b9e63d0f92ef31efb5d2b9ce99db69eed",
   "dependency_audits": {
     "backend": {
       "lock": {
@@ -38,7 +38,7 @@
       },
       "report": {
         "path": "release/backend-audit.json",
-        "sha256": "f7f8880d5a614cbdb52ac37e29548ce33627306c367de2980c4768aa66784168"
+        "sha256": "bae651c80cb16044d4055299af5d48db6a31cf9fc40069e0d57b9c43b0d6946a"
       },
       "format": "pip-audit/json"
     },
@@ -49,15 +49,15 @@
       },
       "report": {
         "path": "release/frontend-audit.json",
-        "sha256": "084d75ad905d9c9bd16d1cacc0feedea738a0f0a44722e8048864e540061dfcc"
+        "sha256": "7295e85702601e0d1f19cb2b7ada26ccb4a47b16f3013b120a8748e029759883"
       },
       "format": "npm-audit/json"
     }
   },
   "images": {
-    "api": "power-monitor-api:1.0.31",
-    "frontend": "power-monitor-frontend:1.0.31",
-    "backup": "power-monitor-backup:1.0.31",
+    "api": "power-monitor-api:1.0.32",
+    "frontend": "power-monitor-frontend:1.0.32",
+    "backup": "power-monitor-backup:1.0.32",
     "postgres": "docker.io/library/postgres:17.5-bookworm",
     "caddy": "docker.io/library/caddy:2.10.0-alpine"
   },

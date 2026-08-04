@@ -1,9 +1,10 @@
-# Power Monitor Server 1.0.31
+# Power Monitor Server 1.0.32
 
-## Stability, History, OTA, and release provenance
+## Cross-platform evidence, Stability, History, OTA, and release provenance
 
-- Supersedes the unpublished 1.0.30 candidate after correcting its embedded
-  release-notes identity; no existing image tag or release asset is overwritten.
+- Supersedes the image-free 1.0.31 publication attempt after canonicalizing all
+  checksum-bound text evidence to UTF-8 without BOM and LF line endings; the
+  failed tag remains immutable and no existing image tag is overwritten.
 - Adds metric-aware exact PostgreSQL History aggregation, signed continuation
   pages, repeatable-read pricing snapshots, and bounded/coalesced browser refresh.
 - Centralizes authenticated OTA deployment reconciliation in the worker with
