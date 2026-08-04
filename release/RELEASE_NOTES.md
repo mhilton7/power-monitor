@@ -17,6 +17,8 @@
 - Makes source archive contents deterministic across release hosts by disabling
   `core.autocrlf` conversion during `git archive`, so embedded source evidence
   hashes always bind to the immutable Git-object bytes.
+- Bounds Windows Playwright release concurrency to prevent host socket-buffer
+  exhaustion from being misreported as a production asset or route failure.
 
 ## OTA interruption recovery and protected permission changes
 

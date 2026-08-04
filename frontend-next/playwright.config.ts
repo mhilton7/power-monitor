@@ -5,7 +5,11 @@ const externalBaseUrl = process.env.PW_EXTERNAL_BASE_URL
 export default defineConfig({
   testDir: './e2e',
   timeout: 35_000,
-  workers: process.platform === 'win32' ? 4 : undefined,
+  // Windows can exhaust its ephemeral socket buffers when four browser
+  // contexts repeatedly load the production preview in this full matrix.
+  // Keep the release gate parallel, but bounded so an asset request cannot
+  // fail with net::ERR_NO_BUFFER_SPACE and leave an empty application root.
+  workers: process.platform === 'win32' ? 2 : undefined,
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.015 } },
   use: {
     baseURL: externalBaseUrl ?? 'http://127.0.0.1:4197',
