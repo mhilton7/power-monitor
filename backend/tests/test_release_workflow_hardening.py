@@ -57,6 +57,9 @@ def test_publish_gate_rejects_version_reuse_before_build_or_publish() -> None:
     )
     assert 'RUN_POSTGRES_INTEGRATION: "1"' in workflow
     assert 'RUN_HISTORY_PERFORMANCE: "1"' in workflow
+    source_validation = workflow[source_validation_at:frontend_validation_at]
+    assert "- uses: actions/checkout@v4\n        with:\n" in source_validation
+    assert "fetch-depth: 0" in source_validation
     assert "push: false" in workflow[build_validation_at:publish_at]
     assert "push: true" in workflow[publish_at:]
 

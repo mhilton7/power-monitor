@@ -45,7 +45,7 @@ def test_release_defaults_track_head_and_ota_evidence_is_explicit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     reports = _load_script("generate_release_reports.py", "release_reports_test")
-    assert reports.DEFAULT_RELEASE_VERSION == "1.0.32"
+    assert reports.DEFAULT_RELEASE_VERSION == "1.0.33"
     assert reports.DEFAULT_MIGRATION_REVISION == "20260803_0030"
     assert reports.OTA_MIGRATION_REVISIONS == (
         "20260802_0026",
