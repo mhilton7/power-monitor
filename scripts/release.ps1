@@ -151,8 +151,9 @@ $archive = Join-Path 'release' $archiveName
 if (Test-Path -LiteralPath $archive) {
     throw "Release archive already exists; refusing to reuse version $ReleaseVersion."
 }
-git archive --format=tar.gz --prefix="power-monitor-server-$ReleaseVersion/" -o $archive $ReleaseCommit
-Assert-NativeSuccess 'Exact-commit release archive creation'
+& $python scripts/create_release_archive.py --version $ReleaseVersion `
+    --release-commit $ReleaseCommit --output $archive
+Assert-NativeSuccess 'Source-frozen release archive with current evidence creation'
 $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
 Add-Content -Encoding ascii -LiteralPath 'release\checksums.sha256' -Value "$digest  $archiveName"
 & $python scripts/verify_release_checksums.py --expected-version $ReleaseVersion `

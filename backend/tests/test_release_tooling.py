@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
 import json
+import subprocess
+import tarfile
 import uuid
 from pathlib import Path
 from types import ModuleType
@@ -22,6 +25,13 @@ def _load_script(filename: str, module_name: str) -> ModuleType:
 
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _add_tar_bytes(archive: tarfile.TarFile, name: str, contents: bytes) -> None:
+    member = tarfile.TarInfo(name)
+    member.mode = 0o644
+    member.size = len(contents)
+    archive.addfile(member, io.BytesIO(contents))
 
 
 def test_release_defaults_track_head_and_ota_evidence_is_explicit(
@@ -175,6 +185,73 @@ def test_node_24_is_required_for_release_evidence(
     assert reports._node_toolchain("node24", "npm24") == ("v24.4.0", "11.4.2")
 
 
+def test_release_archive_overlays_current_evidence_on_frozen_source(
+    tmp_path: Path,
+) -> None:
+    builder = _load_script("create_release_archive.py", "release_archive_builder_test")
+    root = tmp_path / "repository"
+    release = root / "release"
+    release.mkdir(parents=True)
+    (root / "application.txt").write_text("frozen source\n", encoding="utf-8")
+    evidence = release / "evidence.json"
+    versions = release / "versions.json"
+    checksums = release / "checksums.sha256"
+    evidence.write_text('{"generation": "old"}\n', encoding="utf-8")
+    versions.write_text('{"git_commit": "old"}\n', encoding="utf-8")
+    checksums.write_text("old committed inventory\n", encoding="utf-8")
+    commands = (
+        ("git", "init", "--quiet"),
+        ("git", "config", "user.email", "release-test@example.invalid"),
+        ("git", "config", "user.name", "Release Test"),
+        ("git", "config", "core.autocrlf", "false"),
+        ("git", "add", "."),
+        ("git", "commit", "--quiet", "-m", "frozen source"),
+    )
+    for command in commands:
+        subprocess.run(  # noqa: S603 - fixed local Git fixture commands
+            command, cwd=root, check=True, capture_output=True
+        )
+    commit = subprocess.check_output(("git", "rev-parse", "HEAD"), cwd=root, text=True).strip()
+
+    evidence.write_text('{"generation": "current"}\n', encoding="utf-8")
+    versions.write_text(
+        json.dumps({"git_commit": commit}) + "\n",
+        encoding="utf-8",
+    )
+    checksums.write_text(
+        f"{_digest(evidence)}  {evidence.name}\n{_digest(versions)}  {versions.name}\n",
+        encoding="utf-8",
+    )
+    output = release / "power-monitor-server-9.8.7.tar.gz"
+    assert (
+        builder.create_archive(
+            root=root,
+            release=release,
+            version="9.8.7",
+            release_commit=commit,
+            output=output,
+        )
+        == 3
+    )
+
+    prefix = "power-monitor-server-9.8.7/"
+    with tarfile.open(output, mode="r:gz") as archive:
+        assert archive.pax_headers["comment"] == commit
+        frozen_application = subprocess.check_output(  # noqa: S603
+            ("git", "show", f"{commit}:application.txt"), cwd=root
+        )
+        assert archive.extractfile(f"{prefix}application.txt").read() == frozen_application
+        assert archive.extractfile(f"{prefix}release/evidence.json").read() == (
+            evidence.read_bytes()
+        )
+        assert archive.extractfile(f"{prefix}release/versions.json").read() == (
+            versions.read_bytes()
+        )
+        assert archive.extractfile(f"{prefix}release/checksums.sha256").read() == (
+            checksums.read_bytes()
+        )
+
+
 def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -216,7 +293,6 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
     offline = release / "migration-offline.sql"
     offline.write_text("-- exact offline migration\n", encoding="utf-8")
     archive = release / "power-monitor-server-9.8.7.tar.gz"
-    archive.write_bytes(b"exact source archive")
     metadata = {
         "version": "9.8.7",
         "protocol": "pm-protocol/1.0.0",
@@ -256,21 +332,48 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
                 },
             },
         },
+        "ota_v2": {"artifacts": []},
     }
     versions = release / "versions.json"
     versions.write_text(json.dumps(metadata), encoding="utf-8")
     checksums = release / "checksums.sha256"
-    checksums.write_text(
+    embedded_inventory = (
         "\n".join(
             (
                 f"{_digest(offline)}  migration-offline.sql",
                 f"{_digest(backend_audit)}  backend-audit.json",
                 f"{_digest(frontend_audit)}  frontend-audit.json",
                 f"{_digest(versions)}  versions.json",
-                f"{_digest(archive)}  {archive.name}",
             )
         )
-        + "\n",
+        + "\n"
+    )
+    checksums.write_text(embedded_inventory, encoding="utf-8")
+    prefix = "power-monitor-server-9.8.7/"
+    with tarfile.open(
+        archive,
+        mode="w:gz",
+        format=tarfile.PAX_FORMAT,
+        pax_headers={"comment": "a" * 40},
+    ) as release_archive:
+        root_member = tarfile.TarInfo(prefix.removesuffix("/"))
+        root_member.type = tarfile.DIRTYPE
+        root_member.mode = 0o755
+        release_archive.addfile(root_member)
+        for path in (offline, backend_audit, frontend_audit, versions, checksums):
+            _add_tar_bytes(
+                release_archive,
+                f"{prefix}release/{path.name}",
+                path.read_bytes(),
+            )
+        for path in (migration, requirements, package_lock, protocol_dir / "protocol-version.txt"):
+            _add_tar_bytes(
+                release_archive,
+                f"{prefix}{path.relative_to(root).as_posix()}",
+                path.read_bytes(),
+            )
+    checksums.write_text(
+        embedded_inventory + f"{_digest(archive)}  {archive.name}\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(verifier, "_alembic_heads", lambda _: {"20260803_0030"})
@@ -285,6 +388,37 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
         )
         == 5
     )
+
+    # Recomputing the outer archive checksum must not legitimize stale provenance
+    # embedded in the package itself.
+    with tarfile.open(archive, mode="r:gz") as release_archive:
+        archived_files = {
+            member.name: release_archive.extractfile(member).read()
+            for member in release_archive.getmembers()
+            if member.isfile()
+        }
+    stale_metadata = dict(metadata)
+    stale_metadata["git_commit"] = "b" * 40
+    archived_files[f"{prefix}release/versions.json"] = json.dumps(stale_metadata).encode()
+    with tarfile.open(
+        archive,
+        mode="w:gz",
+        format=tarfile.PAX_FORMAT,
+        pax_headers={"comment": "a" * 40},
+    ) as release_archive:
+        for name, contents in archived_files.items():
+            _add_tar_bytes(release_archive, name, contents)
+    lines = checksums.read_text(encoding="utf-8").splitlines()
+    lines[-1] = f"{_digest(archive)}  {archive.name}"
+    checksums.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="embedded versions.json"):
+        verifier.verify_release(
+            root=root,
+            release=release,
+            expected_commit="a" * 40,
+            require_archive=True,
+        )
+
     archive.unlink()
     assert verifier.verify_release(root=root, release=release) == 4
     with pytest.raises(AssertionError, match="missing release artifact"):

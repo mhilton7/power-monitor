@@ -74,3 +74,16 @@ def test_local_release_gates_regenerate_dependency_audits_before_evidence() -> N
         assert frontend_audit_at < evidence_at
         assert "pip_audit" in script
         assert "audit --audit-level=high --json" in script
+
+
+def test_local_release_packages_current_evidence_and_verifies_archive_contents() -> None:
+    powershell = (ROOT / "scripts/release.ps1").read_text(encoding="utf-8")
+    shell = (ROOT / "scripts/release.sh").read_text(encoding="utf-8")
+
+    for script in (powershell, shell):
+        builder_at = script.index("scripts/create_release_archive.py")
+        final_verifier_at = script.index("--require-archive")
+        assert builder_at < final_verifier_at
+        assert "git archive --format=tar.gz" not in script
+    assert '"$archive_name"' in shell
+    assert 'sha256sum "$archive" >>' not in shell

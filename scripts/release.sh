@@ -89,9 +89,11 @@ if [[ -e "$archive" ]]; then
   echo "release archive already exists; refusing to reuse version ${release_version}" >&2
   exit 2
 fi
-git archive --format=tar.gz --prefix="power-monitor-server-${release_version}/" \
-  -o "$archive" "$release_commit"
-sha256sum "$archive" >> release/checksums.sha256
+"$python_bin" scripts/create_release_archive.py --version "$release_version" \
+  --release-commit "$release_commit" --output "$archive"
+archive_digest=$(sha256sum "$archive")
+printf '%s  %s\n' "${archive_digest%% *}" "$archive_name" \
+  >> release/checksums.sha256
 "$python_bin" scripts/verify_release_checksums.py \
   --expected-version "$release_version" --expected-migration "$migration_revision" \
   --expected-commit "$release_commit" --require-archive
