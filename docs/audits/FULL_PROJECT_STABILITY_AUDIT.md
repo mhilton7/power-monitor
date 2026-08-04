@@ -8,7 +8,7 @@
 - Deployed sensor build identity at baseline: firmware `1.0.15`, source identity
   `5c98b6939764`, built `2026-08-03T22:36:45Z`
 - Shared protocol: `pm-protocol/1.0.0`
-- Planned server release: `1.0.30` at Alembic head `20260803_0030`
+- Planned server release: `1.0.31` at Alembic head `20260803_0030`
 - Audit branches (both repositories):
   `codex/full-stability-history-ota-hardening`
 
@@ -172,8 +172,8 @@ The complete server acceptance matrix passed after the History and OTA repairs:
 - Ruff check and format verification passed for `backend`, `worker`, and
   `simulator`;
 - mypy passed for 81 checked source files;
-- the complete Python suite reported **335 passed and 5 expected opt-in
-  skips** in 81.53 seconds;
+- the final clean-release Python suite reported **342 passed and 1 expected
+  opt-in skip**;
 - 31 focused migration and release tests passed;
 - PostgreSQL 17.5 passed legacy/populated upgrade, upgrade to Alembic head
   `20260803_0030`, downgrade to `0002`, re-upgrade, prior-schema upgrade, and
@@ -184,9 +184,15 @@ The complete server acceptance matrix passed after the History and OTA repairs:
   traced Python memory.
 
 Contract, OpenAPI, secret, static Compose, and TrueNAS Compose validators also
-passed. These are source/configuration validation results only. They do not
-replace the still-pending final image build, deployed-container health,
-registry-digest, backup/restore release, or rendered production YAML gates.
+passed. The final release run built the API, frontend, and backup images and
+validated an isolated seven-service TrueNAS-style deployment at migration head
+`20260803_0030`. All long-running services reported healthy, only the gateway
+published a host port, three simulated devices contributed 90 readings, and the
+workflow retained two utility accounts and one canonical network CIDR. Its
+encrypted logical backup passed checksum verification and restored into a clean
+database at the current migration head. GHCR publication, immutable registry
+digests, and promotion of the rendered production YAML remain gated on the
+physical firmware canary.
 
 ### Automated frontend evidence
 
@@ -228,6 +234,14 @@ shared `pm-protocol/1.0.0` identifier:
   **30/30 passed**, including monotonic evidence ordering, idempotency, retry,
   locking, and stale terminalization.
 
+The exact packaged 1.0.16 canary artifact is 1,616,784 bytes with firmware
+SHA-256
+`8986804382cffdd995ff0f3e11b020e85b52c93d991b911d6ea6f9a3a4b0b0c7`.
+Its matching ELF is 36,096,012 bytes with SHA-256
+`2982873bc8f22c089181c0edc378ca9ffd46489a825195e650c1b9d35a57d506`.
+The PlatformIO application-size figure above is linker capacity evidence, not
+the packaged `firmware.bin` file size.
+
 These automated results verify source behavior and host simulations. They do
 not prove that a final candidate can self-update, boot, stabilize, preserve
 device data, or roll back on either physical sensor. Those exact-artifact
@@ -247,14 +261,14 @@ or a `PENDING` value is not a pass.
 | Focused History correctness | PASS | 17 focused tests; exact raw/coarse equivalence, continuation, pricing mutation, topology and boundary coverage. |
 | History performance matrices | PASS | PG17.5: 7d tier/cost p95 0.1643 s; 30d 0.4104 s; 87.01%/94.46% same-build reductions. |
 | Compound protocol/server load and clean restore | PASS | 72/72 signed requests HTTP 200; endpoint p95 <= 0.6337 s; pool failures 0; pg_dump restored and queried. |
-| Complete backend suite | PASS | Ruff and format PASS; mypy 81 files; pytest 335 passed, 5 expected opt-in skips. |
+| Complete backend suite | PASS | Ruff and format PASS; mypy 81 files; final clean-release pytest 342 passed, 1 expected opt-in skip. |
 | PostgreSQL migration upgrade/rollback checks | PASS | PG17.5 legacy/populated/prior/clean paths; head 0030; downgrade 0002 and re-upgrade; 102 tables. |
 | PostgreSQL 100-device load gate | PASS | 100 devices; 18,000 records; pool 5; 0 duplicate retry failures; 120.83 s total; 12.86 MiB peak traced memory. |
 | Complete frontend suite | PASS | 163 unit/component tests; 265 E2E passed and 62 skipped; lint/typecheck/build PASS. |
 | Frontend repair and History performance matrix | PASS | 36/36 repair E2E; 720 points; 221 DOM nodes; one coalesced refresh; zero Long Tasks. |
 | Complete sensor automated suite | PASS | 102/102 Python; native and checked builds; four ESP32-S3 firmware builds; Linux ASan/UBSan/leak clean; Web UI 36/36 and browser 12/12. |
 | OTA lifecycle/fault injection | PASS | 30/30 focused server tests; monotonic ordering, idempotency, retry, locking, and stale terminalization. |
-| Container and Compose health | PENDING | Post-repair run required. |
+| Container and Compose health | PASS | Final API/frontend/backup image builds and isolated seven-service TrueNAS workflow passed; all long-running services healthy, gateway-only publication, encrypted backup checksum and clean restore at head 0030. |
 | One-hour physical canary | PENDING | Exact tested artifact required. |
-| Release provenance and hashes | PENDING | Final commits required. |
-| GHCR image digests and rendered TrueNAS YAML | PENDING | Final immutable images and release commits required. |
+| Release provenance and hashes | PASS (candidate) | The final clean release gate records the authoritative source commit and archive SHA-256 in `release/versions.json` and `release/checksums.sha256`; exact canary hashes are recorded above. |
+| GHCR image digests and promoted TrueNAS YAML | PENDING (physical gate) | Publication and production-YAML promotion are intentionally deferred until the exact 1.0.16 physical canary passes. |

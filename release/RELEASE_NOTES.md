@@ -1,4 +1,19 @@
-# Power Monitor Server 1.0.29
+# Power Monitor Server 1.0.31
+
+## Stability, History, OTA, and release provenance
+
+- Supersedes the unpublished 1.0.30 candidate after correcting its embedded
+  release-notes identity; no existing image tag or release asset is overwritten.
+- Adds metric-aware exact PostgreSQL History aggregation, signed continuation
+  pages, repeatable-read pricing snapshots, and bounded/coalesced browser refresh.
+- Centralizes authenticated OTA deployment reconciliation in the worker with
+  monotonic evidence, attempt isolation, expiry handling, and actionable terminal
+  states.
+- Coordinates the canary-only sensor 1.0.16 internal-memory and fail-closed OTA
+  repair while preserving `pm-protocol/1.0.0`, TLS verification, configuration,
+  enrollment, sequence state, and immutable microSD history.
+- GHCR publication and production-YAML promotion remain gated on the exact
+  physical firmware canary; this candidate is not a stable firmware promotion.
 
 ## OTA interruption recovery and protected permission changes
 

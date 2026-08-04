@@ -131,14 +131,20 @@ The post-repair automated matrix completed on 2026-08-03:
 | Sensor Web UI production build | PASS |
 | Sensor Web UI browser matrix | PASS, 12/12 across Chromium, Firefox, and WebKit |
 
-The frozen-source production build produced a 1,616,768-byte `firmware.bin`
-with SHA-256
+An earlier frozen-source automated build produced a 1,616,768-byte
+`firmware.bin` with SHA-256
 `4a83c9fe5a7709897cc14bbe8004fcbf86e63a900b7dd2e330646d70d087ed99`
 and an ELF with SHA-256
 `c4dd4f3d6452682bd09fbf455c223823db3da924ce599a526b09ab2586d5fcd8`.
-These hashes document the automated build input and are not final release
-provenance: the semantic-version commits, exact canary artifact, final release
-bundle, and stable promotion remain pending.
+These hashes document that intermediate automated build only and are not the
+final canary identity. The exact packaged 1.0.16 canary is 1,616,784 bytes with
+firmware SHA-256
+`8986804382cffdd995ff0f3e11b020e85b52c93d991b911d6ea6f9a3a4b0b0c7`;
+its matching 36,096,012-byte ELF has SHA-256
+`2982873bc8f22c089181c0edc378ca9ffd46489a825195e650c1b9d35a57d506`.
+That exact identity is authoritative in
+[`../ota/HARDWARE_CANARY_RESULTS.md`](../ota/HARDWARE_CANARY_RESULTS.md) and
+remains canary-only until physical validation passes.
 
 ## Genuine Linux ASan and UBSan evidence
 

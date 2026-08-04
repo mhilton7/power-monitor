@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE = ROOT / "release"
-DEFAULT_RELEASE_VERSION = "1.0.30"
+DEFAULT_RELEASE_VERSION = "1.0.31"
 DEFAULT_MIGRATION_REVISION = "20260803_0030"
 SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 MIGRATION_PATTERN = re.compile(r"^[0-9]{8}_[0-9]{4}$")
