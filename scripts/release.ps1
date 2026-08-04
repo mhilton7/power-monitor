@@ -85,10 +85,11 @@ Pop-Location
 
 & $python scripts/secret_scan.py
 Assert-NativeSuccess 'Secret scan'
-& $python -m pip_audit -r backend/requirements.lock --no-deps --format json --output release/backend-audit.json
-Assert-NativeSuccess 'Backend dependency audit report'
-& $python -m pip_audit -r backend/requirements.lock --no-deps --format cyclonedx-json --output release/backend-sbom.cdx.json
-Assert-NativeSuccess 'Backend dependency audit'
+$backendAuditMount = "type=bind,source=$($PWD.Path),target=/workspace"
+docker run --rm --platform linux/amd64 --mount $backendAuditMount --workdir /workspace `
+    python:3.13.5-slim-bookworm sh -ec `
+    'python -m venv /tmp/audit-venv && /tmp/audit-venv/bin/pip install --disable-pip-version-check pip-audit==2.9.0 && /tmp/audit-venv/bin/python -m pip_audit -r backend/requirements.lock --no-deps --format json --output release/backend-audit.json && /tmp/audit-venv/bin/python -m pip_audit -r backend/requirements.lock --no-deps --format cyclonedx-json --output release/backend-sbom.cdx.json'
+Assert-NativeSuccess 'Linux/amd64 backend dependency audit and SBOM'
 Push-Location frontend-next
 $frontendAudit = (& $NpmBin audit --audit-level=high --json | Out-String)
 $frontendAuditCode = $LASTEXITCODE

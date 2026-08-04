@@ -23,6 +23,19 @@ COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 REQUIREMENT_PATTERN = re.compile(
     r"^([A-Za-z0-9_.-]+)==([^ ;\\]+)(?:\s*;\s*(.*?))?\s*\\?$"
 )
+PRODUCTION_MARKER_ENVIRONMENT = {
+    "implementation_name": "cpython",
+    "implementation_version": "3.13.5",
+    "os_name": "posix",
+    "platform_machine": "x86_64",
+    "platform_python_implementation": "CPython",
+    "platform_release": "",
+    "platform_system": "Linux",
+    "platform_version": "",
+    "python_full_version": "3.13.5",
+    "python_version": "3.13",
+    "sys_platform": "linux",
+}
 
 
 def _sha256(path: Path) -> str:
@@ -311,7 +324,9 @@ def _applicable_locked_requirements(contents: str) -> dict[str, str]:
         name, version, marker_text = match.groups()
         if marker_text:
             try:
-                if not Marker(marker_text.rstrip(" \\")).evaluate():
+                if not Marker(marker_text.rstrip(" \\")).evaluate(
+                    environment=PRODUCTION_MARKER_ENVIRONMENT
+                ):
                     continue
             except InvalidMarker as exc:
                 raise AssertionError(

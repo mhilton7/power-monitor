@@ -45,7 +45,7 @@ def test_release_defaults_track_head_and_ota_evidence_is_explicit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     reports = _load_script("generate_release_reports.py", "release_reports_test")
-    assert reports.DEFAULT_RELEASE_VERSION == "1.0.33"
+    assert reports.DEFAULT_RELEASE_VERSION == "1.0.34"
     assert reports.DEFAULT_MIGRATION_REVISION == "20260803_0030"
     assert reports.OTA_MIGRATION_REVISIONS == (
         "20260802_0026",
@@ -261,6 +261,22 @@ def test_generated_release_evidence_is_canonical_lf(
     assert notes.read_bytes() == b"# Release\nDetails\n"
     assert binary.read_bytes() == b"archive\r\nbytes"
     assert reports.canonicalize_release_text_artifacts() == 0
+
+
+def test_backend_audit_requirements_target_linux_amd64_not_release_host() -> None:
+    verifier = _load_script("verify_release_checksums.py", "release_linux_audit_test")
+    locked = "\n".join(
+        (
+            "colorama==0.4.6 ; sys_platform == 'win32' \\",
+            "uvloop==0.22.1 ; sys_platform != 'win32' \\",
+            "typing-extensions==4.16.0 \\",
+        )
+    )
+
+    assert verifier._applicable_locked_requirements(locked) == {
+        "typing-extensions": "4.16.0",
+        "uvloop": "0.22.1",
+    }
 
 
 def test_release_archive_overlays_current_evidence_on_frozen_source(
