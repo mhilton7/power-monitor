@@ -3800,4 +3800,50 @@ UPDATE firmware_deployments AS deployment SET source_version = device.firmware_v
 
 UPDATE alembic_version SET version_num='20260803_0027' WHERE alembic_version.version_num = '20260802_0026';
 
+-- Running upgrade 20260803_0027 -> 20260803_0028
+
+ALTER TABLE firmware_deployments ADD COLUMN state_changed_at TIMESTAMP WITH TIME ZONE;
+
+ALTER TABLE firmware_deployments ADD COLUMN terminal_at TIMESTAMP WITH TIME ZONE;
+
+UPDATE firmware_deployments SET state_changed_at = COALESCE(last_report_at, validated_at, installed_at, downloaded_at, scheduled_at, created_at) WHERE state_changed_at IS NULL;
+
+UPDATE firmware_deployments SET terminal_at = COALESCE(validated_at, rollback_at, last_report_at, state_changed_at) WHERE terminal_at IS NULL AND state IN ('completed','failed','cancelled','rolled_back');
+
+ALTER TABLE firmware_deployments ALTER COLUMN state_changed_at SET NOT NULL;
+
+CREATE INDEX ix_firmware_deployment_state_changed ON firmware_deployments (state, state_changed_at);
+
+CREATE INDEX ix_firmware_deployment_state_expires ON firmware_deployments (state, expires_at);
+
+CREATE INDEX ix_firmware_deployments_terminal_at ON firmware_deployments (terminal_at);
+
+UPDATE alembic_version SET version_num='20260803_0028' WHERE alembic_version.version_num = '20260803_0027';
+
+-- Running upgrade 20260803_0028 -> 20260803_0029
+
+COMMIT;
+
+CREATE INDEX CONCURRENTLY ix_raw_device_time_end ON raw_readings (device_id, interval_end, interval_start);
+
+CREATE INDEX CONCURRENTLY ix_normalized_device_time_end ON normalized_intervals (device_id, interval_end, interval_start);
+
+CREATE INDEX CONCURRENTLY ix_tier_segment_account_time_recalc ON tier_allocation_segments (utility_account_id, interval_start, interval_end, recalculation_version);
+
+CREATE INDEX CONCURRENTLY ix_tier_segment_version_time ON tier_allocation_segments (rate_version_id, interval_start, interval_end);
+
+CREATE INDEX CONCURRENTLY ix_tier_segment_history_cover ON tier_allocation_segments (utility_account_id, rate_version_id, interval_start, interval_end) INCLUDE (billing_cycle_id, normalized_interval_id, recalculation_version, tier_stable_id, tier_name, tou_period, cumulative_start_kwh, cumulative_end_kwh, segment_energy_kwh, price_per_kwh, unrounded_energy_charge, usage_authority_type);
+
+BEGIN;
+
+UPDATE alembic_version SET version_num='20260803_0029' WHERE alembic_version.version_num = '20260803_0028';
+
+-- Running upgrade 20260803_0029 -> 20260803_0030
+
+ALTER TABLE firmware_deployments DROP CONSTRAINT ck_firmware_deployments_firmware_deployment_state;
+
+ALTER TABLE firmware_deployments ADD CONSTRAINT ck_firmware_deployments_firmware_deployment_state CHECK (state IN ('waiting_canary','scheduled','offered','manifest_authenticated','waiting_for_schedule','download_started','downloading','binary_verified','partition_written','rebooting','post_boot_validation','validated','awaiting_heartbeat','completed','failed','cancelled','rollback_detected','rolled_back'));
+
+UPDATE alembic_version SET version_num='20260803_0030' WHERE alembic_version.version_num = '20260803_0029';
+
 COMMIT;

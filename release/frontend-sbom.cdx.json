@@ -1,11 +1,11 @@
-{
+﻿{
   "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
-  "serialNumber": "urn:uuid:c764c33e-f533-4fb4-b3b8-798e0cbdc132",
+  "serialNumber": "urn:uuid:7c21b62c-5f1e-40c1-aeaf-78204a95bcad",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-08-03T04:57:00.104Z",
+    "timestamp": "2026-08-04T07:32:39.624Z",
     "lifecycles": [
       {
         "phase": "build"
@@ -15,7 +15,7 @@
       {
         "vendor": "npm",
         "name": "cli",
-        "version": "11.12.1"
+        "version": "11.4.2"
       }
     ],
     "component": {
@@ -40,8 +40,8 @@
       "type": "library",
       "name": "@adobe/css-tools",
       "version": "4.5.0",
-      "scope": "required",
-      "author": "TJ Holowaychuk <tj@vision-media.ca>",
+      "scope": "optional",
+      "author": "TJ Holowaychuk",
       "description": "A modern CSS parser and stringifier with TypeScript support",
       "purl": "pkg:npm/%40adobe/css-tools@4.5.0",
       "properties": [
@@ -57,7 +57,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/adobe/css-tools.git"
+          "url": "git+https://github.com/adobe/css-tools.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/adobe/css-tools#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/adobe/css-tools/issues"
         }
       ],
       "hashes": [
@@ -79,7 +87,7 @@
       "type": "library",
       "name": "@asamuzakjp/css-color",
       "version": "3.2.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "asamuzaK",
       "description": "CSS color - Resolve and convert CSS colors.",
       "purl": "pkg:npm/%40asamuzakjp/css-color@3.2.0",
@@ -126,8 +134,8 @@
       "type": "library",
       "name": "lru-cache",
       "version": "10.4.3",
-      "scope": "required",
-      "author": "Isaac Z. Schlueter <i@izs.me>",
+      "scope": "optional",
+      "author": "Isaac Z. Schlueter",
       "description": "A cache object that deletes the least-recently-used items.",
       "purl": "pkg:npm/lru-cache@10.4.3",
       "properties": [
@@ -144,6 +152,14 @@
         {
           "type": "vcs",
           "url": "git://github.com/isaacs/node-lru-cache.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/isaacs/node-lru-cache#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/isaacs/node-lru-cache/issues"
         }
       ],
       "hashes": [
@@ -165,8 +181,8 @@
       "type": "library",
       "name": "@babel/code-frame",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Generate errors that contain a code frame that point to source locations.",
       "purl": "pkg:npm/%40babel/code-frame@7.29.7",
       "properties": [
@@ -182,11 +198,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-code-frame"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues?utf8=%E2%9C%93&q=is%3Aissue+is%3Aopen"
         }
       ],
       "hashes": [
@@ -208,8 +228,8 @@
       "type": "library",
       "name": "@babel/compat-data",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "The compat-data to determine required Babel plugins",
       "purl": "pkg:npm/%40babel/compat-data@7.29.7",
       "properties": [
@@ -225,7 +245,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/babel/babel#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -247,8 +275,8 @@
       "type": "library",
       "name": "@babel/core",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Babel compiler core.",
       "purl": "pkg:npm/%40babel/core@7.29.7",
       "properties": [
@@ -264,11 +292,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-core"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3A%22pkg%3A%20core%22+is%3Aopen"
         }
       ],
       "hashes": [
@@ -290,8 +322,8 @@
       "type": "library",
       "name": "@babel/generator",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Turns an AST into code.",
       "purl": "pkg:npm/%40babel/generator@7.29.7",
       "properties": [
@@ -307,11 +339,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-generator"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3A%22pkg%3A%20generator%22+is%3Aopen"
         }
       ],
       "hashes": [
@@ -333,8 +369,8 @@
       "type": "library",
       "name": "@babel/helper-compilation-targets",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Helper functions on Babel compilation targets",
       "purl": "pkg:npm/%40babel/helper-compilation-targets@7.29.7",
       "properties": [
@@ -350,7 +386,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/babel/babel#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -372,8 +416,8 @@
       "type": "library",
       "name": "@babel/helper-globals",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "A collection of JavaScript globals for Babel internal usage",
       "purl": "pkg:npm/%40babel/helper-globals@7.29.7",
       "properties": [
@@ -389,7 +433,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/babel/babel#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -411,8 +463,8 @@
       "type": "library",
       "name": "@babel/helper-module-imports",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Babel helper functions for inserting module loads",
       "purl": "pkg:npm/%40babel/helper-module-imports@7.29.7",
       "properties": [
@@ -428,11 +480,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-helper-module-imports"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -454,8 +510,8 @@
       "type": "library",
       "name": "@babel/helper-module-transforms",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Babel helper functions for implementing ES6 module transformations",
       "purl": "pkg:npm/%40babel/helper-module-transforms@7.29.7",
       "properties": [
@@ -471,11 +527,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-helper-module-transforms"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -497,8 +557,8 @@
       "type": "library",
       "name": "@babel/helper-plugin-utils",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "General utilities for plugins to use",
       "purl": "pkg:npm/%40babel/helper-plugin-utils@7.29.7",
       "properties": [
@@ -514,11 +574,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-helper-plugin-utils"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -540,8 +604,8 @@
       "type": "library",
       "name": "@babel/helper-string-parser",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "A utility package to parse strings",
       "purl": "pkg:npm/%40babel/helper-string-parser@7.29.7",
       "properties": [
@@ -557,11 +621,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-helper-string-parser"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -583,8 +651,8 @@
       "type": "library",
       "name": "@babel/helper-validator-identifier",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Validate identifier/keywords name",
       "purl": "pkg:npm/%40babel/helper-validator-identifier@7.29.7",
       "properties": [
@@ -600,7 +668,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/babel/babel#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -622,8 +698,8 @@
       "type": "library",
       "name": "@babel/helper-validator-option",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Validate plugin/preset options",
       "purl": "pkg:npm/%40babel/helper-validator-option@7.29.7",
       "properties": [
@@ -639,7 +715,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/babel/babel#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -661,8 +745,8 @@
       "type": "library",
       "name": "@babel/helpers",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Collection of helper functions used by Babel transforms.",
       "purl": "pkg:npm/%40babel/helpers@7.29.7",
       "properties": [
@@ -678,11 +762,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-helpers"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -704,8 +792,8 @@
       "type": "library",
       "name": "@babel/parser",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "A JavaScript parser",
       "purl": "pkg:npm/%40babel/parser@7.29.7",
       "properties": [
@@ -721,11 +809,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-parser"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3A%22pkg%3A+parser+%28babylon%29%22+is%3Aopen"
         }
       ],
       "hashes": [
@@ -747,8 +839,8 @@
       "type": "library",
       "name": "@babel/plugin-transform-react-jsx-self",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Add a __self prop to all JSX Elements",
       "purl": "pkg:npm/%40babel/plugin-transform-react-jsx-self@7.29.7",
       "properties": [
@@ -764,11 +856,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-plugin-transform-react-jsx-self"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -790,8 +886,8 @@
       "type": "library",
       "name": "@babel/plugin-transform-react-jsx-source",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Add a __source prop to all JSX Elements",
       "purl": "pkg:npm/%40babel/plugin-transform-react-jsx-source@7.29.7",
       "properties": [
@@ -807,11 +903,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-plugin-transform-react-jsx-source"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -833,8 +933,8 @@
       "type": "library",
       "name": "@babel/runtime",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "babel's modular runtime helpers",
       "purl": "pkg:npm/%40babel/runtime@7.29.7",
       "properties": [
@@ -850,11 +950,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-runtime"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues"
         }
       ],
       "hashes": [
@@ -876,8 +980,8 @@
       "type": "library",
       "name": "@babel/template",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Generate an AST from a string template.",
       "purl": "pkg:npm/%40babel/template@7.29.7",
       "properties": [
@@ -893,11 +997,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-template"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3A%22pkg%3A%20template%22+is%3Aopen"
         }
       ],
       "hashes": [
@@ -919,8 +1027,8 @@
       "type": "library",
       "name": "@babel/traverse",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "The Babel Traverse module maintains the overall tree state, and is responsible for replacing, removing, and adding nodes",
       "purl": "pkg:npm/%40babel/traverse@7.29.7",
       "properties": [
@@ -936,11 +1044,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-traverse"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3A%22pkg%3A%20traverse%22+is%3Aopen"
         }
       ],
       "hashes": [
@@ -962,8 +1074,8 @@
       "type": "library",
       "name": "@babel/types",
       "version": "7.29.7",
-      "scope": "required",
-      "author": "The Babel Team (https://babel.dev/team)",
+      "scope": "optional",
+      "author": "The Babel Team",
       "description": "Babel Types is a Lodash-esque utility library for AST nodes",
       "purl": "pkg:npm/%40babel/types@7.29.7",
       "properties": [
@@ -979,11 +1091,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/babel/babel.git"
+          "url": "git+https://github.com/babel/babel.git"
         },
         {
           "type": "website",
           "url": "https://babel.dev/docs/en/next/babel-types"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/babel/babel/issues?utf8=%E2%9C%93&q=is%3Aissue+label%3A%22pkg%3A%20types%22+is%3Aopen"
         }
       ],
       "hashes": [
@@ -1005,7 +1121,7 @@
       "type": "library",
       "name": "@csstools/color-helpers",
       "version": "5.1.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "Color helpers to ease transformation between formats, gamut, etc",
       "purl": "pkg:npm/%40csstools/color-helpers@5.1.0",
       "properties": [
@@ -1026,6 +1142,10 @@
         {
           "type": "website",
           "url": "https://github.com/csstools/postcss-plugins/tree/main/packages/color-helpers#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/csstools/postcss-plugins/issues"
         }
       ],
       "hashes": [
@@ -1047,7 +1167,7 @@
       "type": "library",
       "name": "@csstools/css-calc",
       "version": "2.1.4",
-      "scope": "required",
+      "scope": "optional",
       "description": "Solve CSS math expressions",
       "purl": "pkg:npm/%40csstools/css-calc@2.1.4",
       "properties": [
@@ -1068,6 +1188,10 @@
         {
           "type": "website",
           "url": "https://github.com/csstools/postcss-plugins/tree/main/packages/css-calc#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/csstools/postcss-plugins/issues"
         }
       ],
       "hashes": [
@@ -1089,7 +1213,7 @@
       "type": "library",
       "name": "@csstools/css-color-parser",
       "version": "3.1.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "Parse CSS color values",
       "purl": "pkg:npm/%40csstools/css-color-parser@3.1.0",
       "properties": [
@@ -1110,6 +1234,10 @@
         {
           "type": "website",
           "url": "https://github.com/csstools/postcss-plugins/tree/main/packages/css-color-parser#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/csstools/postcss-plugins/issues"
         }
       ],
       "hashes": [
@@ -1131,7 +1259,7 @@
       "type": "library",
       "name": "@csstools/css-parser-algorithms",
       "version": "3.0.5",
-      "scope": "required",
+      "scope": "optional",
       "description": "Algorithms to help you parse CSS from an array of tokens.",
       "purl": "pkg:npm/%40csstools/css-parser-algorithms@3.0.5",
       "properties": [
@@ -1152,6 +1280,10 @@
         {
           "type": "website",
           "url": "https://github.com/csstools/postcss-plugins/tree/main/packages/css-parser-algorithms#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/csstools/postcss-plugins/issues"
         }
       ],
       "hashes": [
@@ -1173,7 +1305,7 @@
       "type": "library",
       "name": "@csstools/css-tokenizer",
       "version": "3.0.4",
-      "scope": "required",
+      "scope": "optional",
       "description": "Tokenize CSS",
       "purl": "pkg:npm/%40csstools/css-tokenizer@3.0.4",
       "properties": [
@@ -1194,6 +1326,10 @@
         {
           "type": "website",
           "url": "https://github.com/csstools/postcss-plugins/tree/main/packages/css-tokenizer#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/csstools/postcss-plugins/issues"
         }
       ],
       "hashes": [
@@ -1232,6 +1368,14 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/evanw/esbuild.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/evanw/esbuild/issues"
         }
       ],
       "hashes": [
@@ -1253,7 +1397,7 @@
       "type": "library",
       "name": "@eslint-community/eslint-utils",
       "version": "4.10.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Toru Nagashima",
       "description": "Utilities for ESLint plugins.",
       "purl": "pkg:npm/%40eslint-community/eslint-utils@4.10.1",
@@ -1270,7 +1414,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/eslint-community/eslint-utils"
+          "url": "git+https://github.com/eslint-community/eslint-utils.git"
         },
         {
           "type": "website",
@@ -1300,8 +1444,8 @@
       "type": "library",
       "name": "eslint-visitor-keys",
       "version": "3.4.3",
-      "scope": "required",
-      "author": "Toru Nagashima (https://github.com/mysticatea)",
+      "scope": "optional",
+      "author": "Toru Nagashima",
       "description": "Constants and utilities about visitor keys to traverse AST.",
       "purl": "pkg:npm/eslint-visitor-keys@3.4.3",
       "properties": [
@@ -1314,6 +1458,10 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/eslint-visitor-keys/-/eslint-visitor-keys-3.4.3.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/eslint/eslint-visitor-keys.git"
         },
         {
           "type": "website",
@@ -1343,7 +1491,7 @@
       "type": "library",
       "name": "@eslint-community/regexpp",
       "version": "4.12.2",
-      "scope": "required",
+      "scope": "optional",
       "author": "Toru Nagashima",
       "description": "Regular expression parser for ECMAScript.",
       "purl": "pkg:npm/%40eslint-community/regexpp@4.12.2",
@@ -1360,7 +1508,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/eslint-community/regexpp"
+          "url": "git+https://github.com/eslint-community/regexpp.git"
         },
         {
           "type": "website",
@@ -1390,7 +1538,7 @@
       "type": "library",
       "name": "@eslint/config-array",
       "version": "0.23.5",
-      "scope": "required",
+      "scope": "optional",
       "author": "Nicholas C. Zakas",
       "description": "General purpose glob-based configuration matching.",
       "purl": "pkg:npm/%40eslint/config-array@0.23.5",
@@ -1437,7 +1585,7 @@
       "type": "library",
       "name": "@eslint/config-helpers",
       "version": "0.7.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "Helper utilities for creating ESLint configuration",
       "purl": "pkg:npm/%40eslint/config-helpers@0.7.0",
       "properties": [
@@ -1483,7 +1631,7 @@
       "type": "library",
       "name": "@eslint/core",
       "version": "1.2.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Nicholas C. Zakas",
       "description": "Runtime-agnostic core of ESLint",
       "purl": "pkg:npm/%40eslint/core@1.2.1",
@@ -1530,7 +1678,7 @@
       "type": "library",
       "name": "@eslint/js",
       "version": "10.0.1",
-      "scope": "required",
+      "scope": "optional",
       "description": "ESLint JavaScript language implementation",
       "purl": "pkg:npm/%40eslint/js@10.0.1",
       "properties": [
@@ -1546,11 +1694,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/eslint/eslint.git"
+          "url": "git+https://github.com/eslint/eslint.git"
         },
         {
           "type": "website",
           "url": "https://eslint.org"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/eslint/eslint/issues/"
         }
       ],
       "hashes": [
@@ -1572,7 +1724,7 @@
       "type": "library",
       "name": "@eslint/object-schema",
       "version": "3.0.5",
-      "scope": "required",
+      "scope": "optional",
       "author": "Nicholas C. Zakas",
       "description": "An object schema merger/validator",
       "purl": "pkg:npm/%40eslint/object-schema@3.0.5",
@@ -1619,7 +1771,7 @@
       "type": "library",
       "name": "@eslint/plugin-kit",
       "version": "0.7.2",
-      "scope": "required",
+      "scope": "optional",
       "author": "Nicholas C. Zakas",
       "description": "Utilities for building ESLint plugins.",
       "purl": "pkg:npm/%40eslint/plugin-kit@0.7.2",
@@ -1666,7 +1818,7 @@
       "type": "library",
       "name": "@humanfs/core",
       "version": "0.19.2",
-      "scope": "required",
+      "scope": "optional",
       "author": "Nicholas C. Zakas",
       "description": "The core of the humanfs library.",
       "purl": "pkg:npm/%40humanfs/core@0.19.2",
@@ -1713,7 +1865,7 @@
       "type": "library",
       "name": "@humanfs/node",
       "version": "0.16.8",
-      "scope": "required",
+      "scope": "optional",
       "author": "Nicholas C. Zakas",
       "description": "The Node.js bindings of the humanfs library.",
       "purl": "pkg:npm/%40humanfs/node@0.16.8",
@@ -1760,7 +1912,7 @@
       "type": "library",
       "name": "@humanfs/types",
       "version": "0.15.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Nicholas C. Zakas",
       "description": "The TypeScript types for the hfs project.",
       "purl": "pkg:npm/%40humanfs/types@0.15.0",
@@ -1807,7 +1959,7 @@
       "type": "library",
       "name": "@humanwhocodes/module-importer",
       "version": "1.0.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Nicholas C. Zaks",
       "description": "Universal module importer for Node.js",
       "purl": "pkg:npm/%40humanwhocodes/module-importer@1.0.1",
@@ -1825,6 +1977,14 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/humanwhocodes/module-importer.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/humanwhocodes/module-importer#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/humanwhocodes/module-importer/issues"
         }
       ],
       "hashes": [
@@ -1846,7 +2006,7 @@
       "type": "library",
       "name": "@humanwhocodes/retry",
       "version": "0.4.3",
-      "scope": "required",
+      "scope": "optional",
       "author": "Nicholas C. Zaks",
       "description": "A utility to retry failed async methods.",
       "purl": "pkg:npm/%40humanwhocodes/retry@0.4.3",
@@ -1864,6 +2024,14 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/humanwhocodes/retry.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/humanwhocodes/retry#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/humanwhocodes/retry/issues"
         }
       ],
       "hashes": [
@@ -1885,8 +2053,8 @@
       "type": "library",
       "name": "@jridgewell/gen-mapping",
       "version": "0.3.13",
-      "scope": "required",
-      "author": "Justin Ridgewell <justin@ridgewell.name>",
+      "scope": "optional",
+      "author": "Justin Ridgewell",
       "description": "Generate source maps",
       "purl": "pkg:npm/%40jridgewell/gen-mapping@0.3.13",
       "properties": [
@@ -1907,6 +2075,10 @@
         {
           "type": "website",
           "url": "https://github.com/jridgewell/sourcemaps/tree/main/packages/gen-mapping"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jridgewell/sourcemaps/issues"
         }
       ],
       "hashes": [
@@ -1928,8 +2100,8 @@
       "type": "library",
       "name": "@jridgewell/remapping",
       "version": "2.3.5",
-      "scope": "required",
-      "author": "Justin Ridgewell <justin@ridgewell.name>",
+      "scope": "optional",
+      "author": "Justin Ridgewell",
       "description": "Remap sequential sourcemaps through transformations to point at the original source code",
       "purl": "pkg:npm/%40jridgewell/remapping@2.3.5",
       "properties": [
@@ -1950,6 +2122,10 @@
         {
           "type": "website",
           "url": "https://github.com/jridgewell/sourcemaps/tree/main/packages/remapping"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jridgewell/sourcemaps/issues"
         }
       ],
       "hashes": [
@@ -1971,8 +2147,8 @@
       "type": "library",
       "name": "@jridgewell/resolve-uri",
       "version": "3.1.2",
-      "scope": "required",
-      "author": "Justin Ridgewell <justin@ridgewell.name>",
+      "scope": "optional",
+      "author": "Justin Ridgewell",
       "description": "Resolve a URI relative to an optional base URI",
       "purl": "pkg:npm/%40jridgewell/resolve-uri@3.1.2",
       "properties": [
@@ -1985,6 +2161,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jridgewell/resolve-uri.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jridgewell/resolve-uri#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jridgewell/resolve-uri/issues"
         }
       ],
       "hashes": [
@@ -2006,8 +2194,8 @@
       "type": "library",
       "name": "@jridgewell/sourcemap-codec",
       "version": "1.5.5",
-      "scope": "required",
-      "author": "Justin Ridgewell <justin@ridgewell.name>",
+      "scope": "optional",
+      "author": "Justin Ridgewell",
       "description": "Encode/decode sourcemap mappings",
       "purl": "pkg:npm/%40jridgewell/sourcemap-codec@1.5.5",
       "properties": [
@@ -2028,6 +2216,10 @@
         {
           "type": "website",
           "url": "https://github.com/jridgewell/sourcemaps/tree/main/packages/sourcemap-codec"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jridgewell/sourcemaps/issues"
         }
       ],
       "hashes": [
@@ -2049,8 +2241,8 @@
       "type": "library",
       "name": "@jridgewell/trace-mapping",
       "version": "0.3.31",
-      "scope": "required",
-      "author": "Justin Ridgewell <justin@ridgewell.name>",
+      "scope": "optional",
+      "author": "Justin Ridgewell",
       "description": "Trace the original position through a source map",
       "purl": "pkg:npm/%40jridgewell/trace-mapping@0.3.31",
       "properties": [
@@ -2071,6 +2263,10 @@
         {
           "type": "website",
           "url": "https://github.com/jridgewell/sourcemaps/tree/main/packages/trace-mapping"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jridgewell/sourcemaps/issues"
         }
       ],
       "hashes": [
@@ -2134,7 +2330,7 @@
       "type": "library",
       "name": "@playwright/test",
       "version": "1.61.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Microsoft Corporation",
       "description": "A high-level API to automate web browsers",
       "purl": "pkg:npm/%40playwright/test@1.61.1",
@@ -2156,6 +2352,10 @@
         {
           "type": "website",
           "url": "https://playwright.dev"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/microsoft/playwright/issues"
         }
       ],
       "hashes": [
@@ -2177,7 +2377,7 @@
       "type": "library",
       "name": "@rolldown/pluginutils",
       "version": "1.0.0-beta.19",
-      "scope": "required",
+      "scope": "optional",
       "purl": "pkg:npm/%40rolldown/pluginutils@1.0.0-beta.19",
       "properties": [
         {
@@ -2193,6 +2393,14 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/rolldown/rolldown.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/rolldown/rolldown#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/rolldown/rolldown/issues"
         }
       ],
       "hashes": [
@@ -2236,6 +2444,10 @@
         {
           "type": "website",
           "url": "https://rollupjs.org/"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/rollup/rollup/issues"
         }
       ],
       "hashes": [
@@ -2279,6 +2491,10 @@
         {
           "type": "website",
           "url": "https://rollupjs.org/"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/rollup/rollup/issues"
         }
       ],
       "hashes": [
@@ -2312,11 +2528,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/TanStack/query.git"
+          "url": "git+https://github.com/TanStack/query.git"
         },
         {
           "type": "website",
           "url": "https://tanstack.com/query"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/TanStack/query/issues"
         }
       ],
       "hashes": [
@@ -2350,11 +2570,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/TanStack/query.git"
+          "url": "git+https://github.com/TanStack/query.git"
         },
         {
           "type": "website",
           "url": "https://tanstack.com/query"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/TanStack/query/issues"
         }
       ],
       "hashes": [
@@ -2376,8 +2600,8 @@
       "type": "library",
       "name": "@testing-library/dom",
       "version": "10.4.1",
-      "scope": "required",
-      "author": "Kent C. Dodds <me@kentcdodds.com> (https://kentcdodds.com)",
+      "scope": "optional",
+      "author": "Kent C. Dodds",
       "description": "Simple and complete DOM testing utilities that encourage good testing practices.",
       "purl": "pkg:npm/%40testing-library/dom@10.4.1",
       "properties": [
@@ -2393,7 +2617,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/testing-library/dom-testing-library"
+          "url": "git+https://github.com/testing-library/dom-testing-library.git"
         },
         {
           "type": "website",
@@ -2423,8 +2647,8 @@
       "type": "library",
       "name": "@testing-library/jest-dom",
       "version": "6.6.4",
-      "scope": "required",
-      "author": "Ernesto Garcia <gnapse@gmail.com> (http://gnapse.github.io)",
+      "scope": "optional",
+      "author": "Ernesto Garcia",
       "description": "Custom jest matchers to test the state of the DOM",
       "purl": "pkg:npm/%40testing-library/jest-dom@6.6.4",
       "properties": [
@@ -2440,7 +2664,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/testing-library/jest-dom"
+          "url": "git+https://github.com/testing-library/jest-dom.git"
         },
         {
           "type": "website",
@@ -2470,7 +2694,7 @@
       "type": "library",
       "name": "dom-accessibility-api",
       "version": "0.6.3",
-      "scope": "required",
+      "scope": "optional",
       "description": "Implements https://w3c.github.io/accname/",
       "purl": "pkg:npm/dom-accessibility-api@0.6.3",
       "properties": [
@@ -2486,7 +2710,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/eps1lon/dom-accessibility-api.git"
+          "url": "git+https://github.com/eps1lon/dom-accessibility-api.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/eps1lon/dom-accessibility-api#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/eps1lon/dom-accessibility-api/issues"
         }
       ],
       "hashes": [
@@ -2508,8 +2740,8 @@
       "type": "library",
       "name": "@testing-library/react",
       "version": "16.3.0",
-      "scope": "required",
-      "author": "Kent C. Dodds <me@kentcdodds.com> (https://kentcdodds.com)",
+      "scope": "optional",
+      "author": "Kent C. Dodds",
       "description": "Simple and complete React DOM testing utilities that encourage good testing practices.",
       "purl": "pkg:npm/%40testing-library/react@16.3.0",
       "properties": [
@@ -2525,7 +2757,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/testing-library/react-testing-library"
+          "url": "git+https://github.com/testing-library/react-testing-library.git"
         },
         {
           "type": "website",
@@ -2555,8 +2787,8 @@
       "type": "library",
       "name": "@testing-library/user-event",
       "version": "14.6.1",
-      "scope": "required",
-      "author": "Giorgio Polvara <polvara@gmail.com>",
+      "scope": "optional",
+      "author": "Giorgio Polvara",
       "description": "Fire events the same way the user does",
       "purl": "pkg:npm/%40testing-library/user-event@14.6.1",
       "properties": [
@@ -2572,7 +2804,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/testing-library/user-event"
+          "url": "git+https://github.com/testing-library/user-event.git"
         },
         {
           "type": "website",
@@ -2602,7 +2834,7 @@
       "type": "library",
       "name": "@types/aria-query",
       "version": "5.0.4",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for aria-query",
       "purl": "pkg:npm/%40types/aria-query@5.0.4",
       "properties": [
@@ -2618,11 +2850,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/aria-query"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -2644,7 +2880,7 @@
       "type": "library",
       "name": "@types/babel__core",
       "version": "7.20.5",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for @babel/core",
       "purl": "pkg:npm/%40types/babel__core@7.20.5",
       "properties": [
@@ -2660,11 +2896,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/babel__core"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -2686,7 +2926,7 @@
       "type": "library",
       "name": "@types/babel__generator",
       "version": "7.27.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for @babel/generator",
       "purl": "pkg:npm/%40types/babel__generator@7.27.0",
       "properties": [
@@ -2702,11 +2942,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/babel__generator"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -2728,7 +2972,7 @@
       "type": "library",
       "name": "@types/babel__template",
       "version": "7.4.4",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for @babel/template",
       "purl": "pkg:npm/%40types/babel__template@7.4.4",
       "properties": [
@@ -2744,11 +2988,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/babel__template"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -2770,7 +3018,7 @@
       "type": "library",
       "name": "@types/babel__traverse",
       "version": "7.28.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for @babel/traverse",
       "purl": "pkg:npm/%40types/babel__traverse@7.28.0",
       "properties": [
@@ -2786,11 +3034,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/babel__traverse"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -2812,7 +3064,7 @@
       "type": "library",
       "name": "@types/chai",
       "version": "5.2.3",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for chai",
       "purl": "pkg:npm/%40types/chai@5.2.3",
       "properties": [
@@ -2828,11 +3080,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/chai"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -2854,7 +3110,7 @@
       "type": "library",
       "name": "@types/deep-eql",
       "version": "4.0.2",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for deep-eql",
       "purl": "pkg:npm/%40types/deep-eql@4.0.2",
       "properties": [
@@ -2870,11 +3126,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/deep-eql"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -2896,7 +3156,7 @@
       "type": "library",
       "name": "@types/esrecurse",
       "version": "4.3.1",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for esrecurse",
       "purl": "pkg:npm/%40types/esrecurse@4.3.1",
       "properties": [
@@ -2912,11 +3172,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/esrecurse"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -2938,7 +3202,7 @@
       "type": "library",
       "name": "@types/estree",
       "version": "1.0.9",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for estree",
       "purl": "pkg:npm/%40types/estree@1.0.9",
       "properties": [
@@ -2954,11 +3218,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/estree"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -2980,7 +3248,7 @@
       "type": "library",
       "name": "@types/json-schema",
       "version": "7.0.15",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for json-schema",
       "purl": "pkg:npm/%40types/json-schema@7.0.15",
       "properties": [
@@ -2996,11 +3264,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/json-schema"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -3022,7 +3294,7 @@
       "type": "library",
       "name": "@types/node",
       "version": "24.1.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for node",
       "purl": "pkg:npm/%40types/node@24.1.0",
       "properties": [
@@ -3038,11 +3310,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -3064,7 +3340,7 @@
       "type": "library",
       "name": "@types/react",
       "version": "19.1.8",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for react",
       "purl": "pkg:npm/%40types/react@19.1.8",
       "properties": [
@@ -3080,11 +3356,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -3106,7 +3386,7 @@
       "type": "library",
       "name": "@types/react-dom",
       "version": "19.1.6",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript definitions for react-dom",
       "purl": "pkg:npm/%40types/react-dom@19.1.6",
       "properties": [
@@ -3122,11 +3402,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git"
+          "url": "git+https://github.com/DefinitelyTyped/DefinitelyTyped.git"
         },
         {
           "type": "website",
           "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/DefinitelyTyped/DefinitelyTyped/issues"
         }
       ],
       "hashes": [
@@ -3148,7 +3432,7 @@
       "type": "library",
       "name": "@typescript-eslint/eslint-plugin",
       "version": "8.65.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript plugin for ESLint",
       "purl": "pkg:npm/%40typescript-eslint/eslint-plugin@8.65.0",
       "properties": [
@@ -3164,7 +3448,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/typescript-eslint/typescript-eslint.git"
+          "url": "git+https://github.com/typescript-eslint/typescript-eslint.git"
         },
         {
           "type": "website",
@@ -3194,7 +3478,7 @@
       "type": "library",
       "name": "ignore",
       "version": "7.0.6",
-      "scope": "required",
+      "scope": "optional",
       "author": "kael",
       "description": "Ignore is a manager and filter for .gitignore rules, the one used by eslint, gitbook and many others.",
       "purl": "pkg:npm/ignore@7.0.6",
@@ -3211,7 +3495,11 @@
         },
         {
           "type": "vcs",
-          "url": "git@github.com:kaelzhang/node-ignore.git"
+          "url": "git+ssh://git@github.com/kaelzhang/node-ignore.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/kaelzhang/node-ignore#readme"
         },
         {
           "type": "issue-tracker",
@@ -3237,7 +3525,7 @@
       "type": "library",
       "name": "@typescript-eslint/parser",
       "version": "8.65.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "An ESLint custom parser which leverages TypeScript ESTree",
       "purl": "pkg:npm/%40typescript-eslint/parser@8.65.0",
       "properties": [
@@ -3253,7 +3541,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/typescript-eslint/typescript-eslint.git"
+          "url": "git+https://github.com/typescript-eslint/typescript-eslint.git"
         },
         {
           "type": "website",
@@ -3283,7 +3571,7 @@
       "type": "library",
       "name": "@typescript-eslint/project-service",
       "version": "8.65.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "Standalone TypeScript project service wrapper for linting.",
       "purl": "pkg:npm/%40typescript-eslint/project-service@8.65.0",
       "properties": [
@@ -3299,7 +3587,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/typescript-eslint/typescript-eslint.git"
+          "url": "git+https://github.com/typescript-eslint/typescript-eslint.git"
         },
         {
           "type": "website",
@@ -3329,7 +3617,7 @@
       "type": "library",
       "name": "@typescript-eslint/scope-manager",
       "version": "8.65.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "TypeScript scope analyser for ESLint",
       "purl": "pkg:npm/%40typescript-eslint/scope-manager@8.65.0",
       "properties": [
@@ -3345,7 +3633,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/typescript-eslint/typescript-eslint.git"
+          "url": "git+https://github.com/typescript-eslint/typescript-eslint.git"
         },
         {
           "type": "website",
@@ -3375,7 +3663,7 @@
       "type": "library",
       "name": "@typescript-eslint/tsconfig-utils",
       "version": "8.65.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "Utilities for collecting TSConfigs for linting scenarios.",
       "purl": "pkg:npm/%40typescript-eslint/tsconfig-utils@8.65.0",
       "properties": [
@@ -3391,7 +3679,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/typescript-eslint/typescript-eslint.git"
+          "url": "git+https://github.com/typescript-eslint/typescript-eslint.git"
         },
         {
           "type": "website",
@@ -3421,7 +3709,7 @@
       "type": "library",
       "name": "@typescript-eslint/type-utils",
       "version": "8.65.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "Type utilities for working with TypeScript + ESLint together",
       "purl": "pkg:npm/%40typescript-eslint/type-utils@8.65.0",
       "properties": [
@@ -3437,7 +3725,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/typescript-eslint/typescript-eslint.git"
+          "url": "git+https://github.com/typescript-eslint/typescript-eslint.git"
         },
         {
           "type": "website",
@@ -3467,7 +3755,7 @@
       "type": "library",
       "name": "@typescript-eslint/types",
       "version": "8.65.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "Types for the TypeScript-ESTree AST spec",
       "purl": "pkg:npm/%40typescript-eslint/types@8.65.0",
       "properties": [
@@ -3483,7 +3771,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/typescript-eslint/typescript-eslint.git"
+          "url": "git+https://github.com/typescript-eslint/typescript-eslint.git"
         },
         {
           "type": "website",
@@ -3513,7 +3801,7 @@
       "type": "library",
       "name": "@typescript-eslint/typescript-estree",
       "version": "8.65.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "A parser that converts TypeScript source code into an ESTree compatible form",
       "purl": "pkg:npm/%40typescript-eslint/typescript-estree@8.65.0",
       "properties": [
@@ -3529,7 +3817,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/typescript-eslint/typescript-eslint.git"
+          "url": "git+https://github.com/typescript-eslint/typescript-eslint.git"
         },
         {
           "type": "website",
@@ -3559,7 +3847,7 @@
       "type": "library",
       "name": "semver",
       "version": "7.8.5",
-      "scope": "required",
+      "scope": "optional",
       "author": "GitHub Inc.",
       "description": "The semantic version parser used by npm.",
       "purl": "pkg:npm/semver@7.8.5",
@@ -3577,6 +3865,14 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/npm/node-semver.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/npm/node-semver#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/npm/node-semver/issues"
         }
       ],
       "hashes": [
@@ -3598,7 +3894,7 @@
       "type": "library",
       "name": "@typescript-eslint/utils",
       "version": "8.65.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "Utilities for working with TypeScript + ESLint together",
       "purl": "pkg:npm/%40typescript-eslint/utils@8.65.0",
       "properties": [
@@ -3614,7 +3910,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/typescript-eslint/typescript-eslint.git"
+          "url": "git+https://github.com/typescript-eslint/typescript-eslint.git"
         },
         {
           "type": "website",
@@ -3644,7 +3940,7 @@
       "type": "library",
       "name": "@typescript-eslint/visitor-keys",
       "version": "8.65.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "Visitor keys used to help traverse the TypeScript-ESTree AST",
       "purl": "pkg:npm/%40typescript-eslint/visitor-keys@8.65.0",
       "properties": [
@@ -3660,7 +3956,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/typescript-eslint/typescript-eslint.git"
+          "url": "git+https://github.com/typescript-eslint/typescript-eslint.git"
         },
         {
           "type": "website",
@@ -3690,7 +3986,7 @@
       "type": "library",
       "name": "@vitejs/plugin-react",
       "version": "4.6.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Evan You",
       "description": "The default Vite plugin for React projects",
       "purl": "pkg:npm/%40vitejs/plugin-react@4.6.0",
@@ -3737,7 +4033,7 @@
       "type": "library",
       "name": "@vitest/expect",
       "version": "3.2.7",
-      "scope": "required",
+      "scope": "optional",
       "description": "Jest's expect matchers as a Chai plugin",
       "purl": "pkg:npm/%40vitest/expect@3.2.7",
       "properties": [
@@ -3783,7 +4079,7 @@
       "type": "library",
       "name": "@vitest/mocker",
       "version": "3.2.7",
-      "scope": "required",
+      "scope": "optional",
       "description": "Vitest module mocker implementation",
       "purl": "pkg:npm/%40vitest/mocker@3.2.7",
       "properties": [
@@ -3829,7 +4125,7 @@
       "type": "library",
       "name": "@vitest/pretty-format",
       "version": "3.2.7",
-      "scope": "required",
+      "scope": "optional",
       "description": "Fork of pretty-format with support for ESM",
       "purl": "pkg:npm/%40vitest/pretty-format@3.2.7",
       "properties": [
@@ -3875,7 +4171,7 @@
       "type": "library",
       "name": "@vitest/runner",
       "version": "3.2.7",
-      "scope": "required",
+      "scope": "optional",
       "description": "Vitest test runner",
       "purl": "pkg:npm/%40vitest/runner@3.2.7",
       "properties": [
@@ -3921,7 +4217,7 @@
       "type": "library",
       "name": "@vitest/snapshot",
       "version": "3.2.7",
-      "scope": "required",
+      "scope": "optional",
       "description": "Vitest snapshot manager",
       "purl": "pkg:npm/%40vitest/snapshot@3.2.7",
       "properties": [
@@ -3967,7 +4263,7 @@
       "type": "library",
       "name": "@vitest/spy",
       "version": "3.2.7",
-      "scope": "required",
+      "scope": "optional",
       "description": "Lightweight Jest compatible spy implementation",
       "purl": "pkg:npm/%40vitest/spy@3.2.7",
       "properties": [
@@ -4013,7 +4309,7 @@
       "type": "library",
       "name": "@vitest/utils",
       "version": "3.2.7",
-      "scope": "required",
+      "scope": "optional",
       "description": "Shared Vitest utility functions",
       "purl": "pkg:npm/%40vitest/utils@3.2.7",
       "properties": [
@@ -4059,7 +4355,7 @@
       "type": "library",
       "name": "acorn",
       "version": "8.17.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "ECMAScript parser",
       "purl": "pkg:npm/acorn@8.17.0",
       "properties": [
@@ -4080,6 +4376,10 @@
         {
           "type": "website",
           "url": "https://github.com/acornjs/acorn"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/acornjs/acorn/issues"
         }
       ],
       "hashes": [
@@ -4101,7 +4401,7 @@
       "type": "library",
       "name": "acorn-jsx",
       "version": "5.3.2",
-      "scope": "required",
+      "scope": "optional",
       "description": "Modern, fast React.js JSX parser",
       "purl": "pkg:npm/acorn-jsx@5.3.2",
       "properties": [
@@ -4117,11 +4417,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/acornjs/acorn-jsx"
+          "url": "git+https://github.com/acornjs/acorn-jsx.git"
         },
         {
           "type": "website",
           "url": "https://github.com/acornjs/acorn-jsx"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/acornjs/acorn-jsx/issues"
         }
       ],
       "hashes": [
@@ -4143,8 +4447,8 @@
       "type": "library",
       "name": "agent-base",
       "version": "7.1.4",
-      "scope": "required",
-      "author": "Nathan Rajlich <nathan@tootallnate.net> (http://n8.io/)",
+      "scope": "optional",
+      "author": "Nathan Rajlich",
       "description": "Turn a function into an `http.Agent` instance",
       "purl": "pkg:npm/agent-base@7.1.4",
       "properties": [
@@ -4160,7 +4464,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/TooTallNate/proxy-agents.git"
+          "url": "git+https://github.com/TooTallNate/proxy-agents.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/TooTallNate/proxy-agents#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/TooTallNate/proxy-agents/issues"
         }
       ],
       "hashes": [
@@ -4182,7 +4494,7 @@
       "type": "library",
       "name": "ajv",
       "version": "6.15.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Evgeny Poberezkin",
       "description": "Another JSON Schema Validator",
       "purl": "pkg:npm/ajv@6.15.0",
@@ -4199,7 +4511,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/ajv-validator/ajv.git"
+          "url": "git+https://github.com/ajv-validator/ajv.git"
         },
         {
           "type": "website",
@@ -4229,7 +4541,7 @@
       "type": "library",
       "name": "ansi-regex",
       "version": "5.0.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Regular expression for matching ANSI escape codes",
       "purl": "pkg:npm/ansi-regex@5.0.1",
@@ -4243,6 +4555,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/ansi-regex/-/ansi-regex-5.0.1.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/chalk/ansi-regex.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/chalk/ansi-regex#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/chalk/ansi-regex/issues"
         }
       ],
       "hashes": [
@@ -4264,8 +4588,8 @@
       "type": "library",
       "name": "aria-query",
       "version": "5.3.0",
-      "scope": "required",
-      "author": "Jesse Beach <splendidnoise@gmail.com>",
+      "scope": "optional",
+      "author": "Jesse Beach",
       "description": "Programmatic access to the ARIA specification",
       "purl": "pkg:npm/aria-query@5.3.0",
       "properties": [
@@ -4311,8 +4635,8 @@
       "type": "library",
       "name": "assertion-error",
       "version": "2.0.1",
-      "scope": "required",
-      "author": "Jake Luer <jake@qualiancy.com> (http://qualiancy.com)",
+      "scope": "optional",
+      "author": "Jake Luer",
       "description": "Error constructor for test and validation frameworks that implements standardized AssertionError specification.",
       "purl": "pkg:npm/assertion-error@2.0.1",
       "properties": [
@@ -4328,7 +4652,15 @@
         },
         {
           "type": "vcs",
-          "url": "git@github.com:chaijs/assertion-error.git"
+          "url": "git+ssh://git@github.com/chaijs/assertion-error.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/chaijs/assertion-error#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/chaijs/assertion-error/issues"
         }
       ],
       "hashes": [
@@ -4350,7 +4682,7 @@
       "type": "library",
       "name": "balanced-match",
       "version": "4.0.4",
-      "scope": "required",
+      "scope": "optional",
       "description": "Match balanced character pairs, like \"{\" and \"}\"",
       "purl": "pkg:npm/balanced-match@4.0.4",
       "properties": [
@@ -4367,6 +4699,14 @@
         {
           "type": "vcs",
           "url": "git://github.com/juliangruber/balanced-match.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/juliangruber/balanced-match#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/juliangruber/balanced-match/issues"
         }
       ],
       "hashes": [
@@ -4388,7 +4728,7 @@
       "type": "library",
       "name": "baseline-browser-mapping",
       "version": "2.11.1",
-      "scope": "required",
+      "scope": "optional",
       "description": "A library for obtaining browser versions with their maximum supported Baseline feature set and Widely Available status.",
       "purl": "pkg:npm/baseline-browser-mapping@2.11.1",
       "properties": [
@@ -4405,6 +4745,14 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/web-platform-dx/baseline-browser-mapping.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/web-platform-dx/baseline-browser-mapping#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/web-platform-dx/baseline-browser-mapping/issues"
         }
       ],
       "hashes": [
@@ -4422,13 +4770,13 @@
       ]
     },
     {
-      "bom-ref": "brace-expansion@5.0.8",
+      "bom-ref": "brace-expansion@5.0.9",
       "type": "library",
       "name": "brace-expansion",
-      "version": "5.0.8",
-      "scope": "required",
+      "version": "5.0.9",
+      "scope": "optional",
       "description": "Brace expansion as known from sh/bash",
-      "purl": "pkg:npm/brace-expansion@5.0.8",
+      "purl": "pkg:npm/brace-expansion@5.0.9",
       "properties": [
         {
           "name": "cdx:npm:package:development",
@@ -4438,17 +4786,25 @@
       "externalReferences": [
         {
           "type": "distribution",
-          "url": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.8.tgz"
+          "url": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz"
         },
         {
           "type": "vcs",
           "url": "git+https://github.com/juliangruber/brace-expansion.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/juliangruber/brace-expansion#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/juliangruber/brace-expansion/issues"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-512",
-          "content": "259c83caadc3e005227ca4cf381ec310b7fa5ec07759d3ee3710ada1bd6f1573ec49785d0221c1589fed27c1c073d687f3804afb924564b36424ac771bd93342"
+          "content": "49c43822ebc8105d533253fb66dfaf8c9ffff7394f6f64837315b13376e4f2ceade8619d27b28ed5d09c4e274e3c929e3d6df42c4ff6713ef00b23e1a3dfd6c6"
         }
       ],
       "licenses": [
@@ -4464,8 +4820,8 @@
       "type": "library",
       "name": "browserslist",
       "version": "4.28.7",
-      "scope": "required",
-      "author": "Andrey Sitnik <andrey@sitnik.es>",
+      "scope": "optional",
+      "author": "Andrey Sitnik",
       "description": "Share target browsers between different front-end tools, like Autoprefixer, Stylelint and babel-env-preset",
       "purl": "pkg:npm/browserslist@4.28.7",
       "properties": [
@@ -4478,6 +4834,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/browserslist/-/browserslist-4.28.7.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/browserslist/browserslist.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/browserslist/browserslist#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/browserslist/browserslist/issues"
         }
       ],
       "hashes": [
@@ -4499,8 +4867,8 @@
       "type": "library",
       "name": "cac",
       "version": "6.7.14",
-      "scope": "required",
-      "author": "egoist <0x142857@gmail.com>",
+      "scope": "optional",
+      "author": "egoist",
       "description": "Simple yet powerful framework for building command-line apps.",
       "purl": "pkg:npm/cac@6.7.14",
       "properties": [
@@ -4516,7 +4884,15 @@
         },
         {
           "type": "vcs",
-          "url": "egoist/cac"
+          "url": "git+https://github.com/egoist/cac.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/egoist/cac#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/egoist/cac/issues"
         }
       ],
       "hashes": [
@@ -4538,7 +4914,7 @@
       "type": "library",
       "name": "caniuse-lite",
       "version": "1.0.30001806",
-      "scope": "required",
+      "scope": "optional",
       "author": "Ben Briggs",
       "description": "A smaller version of caniuse-db, with only the essentials!",
       "purl": "pkg:npm/caniuse-lite@1.0.30001806",
@@ -4552,6 +4928,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001806.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/browserslist/caniuse-lite.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/browserslist/caniuse-lite#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/browserslist/caniuse-lite/issues"
         }
       ],
       "hashes": [
@@ -4573,8 +4961,8 @@
       "type": "library",
       "name": "chai",
       "version": "5.3.3",
-      "scope": "required",
-      "author": "Jake Luer <jake@alogicalparadox.com>",
+      "scope": "optional",
+      "author": "Jake Luer",
       "description": "BDD/TDD assertion library for node.js and the browser. Test framework agnostic.",
       "purl": "pkg:npm/chai@5.3.3",
       "properties": [
@@ -4590,7 +4978,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/chaijs/chai"
+          "url": "git+https://github.com/chaijs/chai.git"
         },
         {
           "type": "website",
@@ -4631,7 +5019,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/chartjs/Chart.js.git"
+          "url": "git+https://github.com/chartjs/Chart.js.git"
         },
         {
           "type": "website",
@@ -4661,8 +5049,8 @@
       "type": "library",
       "name": "check-error",
       "version": "2.1.3",
-      "scope": "required",
-      "author": "Jake Luer <jake@alogicalparadox.com> (http://alogicalparadox.com)",
+      "scope": "optional",
+      "author": "Jake Luer",
       "description": "Error comparison and information related utility for node and the browser",
       "purl": "pkg:npm/check-error@2.1.3",
       "properties": [
@@ -4679,6 +5067,14 @@
         {
           "type": "vcs",
           "url": "git+ssh://git@github.com/chaijs/check-error.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/chaijs/check-error#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/chaijs/check-error/issues"
         }
       ],
       "hashes": [
@@ -4700,7 +5096,7 @@
       "type": "library",
       "name": "convert-source-map",
       "version": "2.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Thorsten Lorenz",
       "description": "Converts a source-map from/to  different formats and allows adding/changing properties.",
       "purl": "pkg:npm/convert-source-map@2.0.0",
@@ -4722,6 +5118,10 @@
         {
           "type": "website",
           "url": "https://github.com/thlorenz/convert-source-map"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/thlorenz/convert-source-map/issues"
         }
       ],
       "hashes": [
@@ -4743,8 +5143,8 @@
       "type": "library",
       "name": "cross-spawn",
       "version": "7.0.6",
-      "scope": "required",
-      "author": "André Cruz <andre@moxy.studio>",
+      "scope": "optional",
+      "author": "André Cruz",
       "description": "Cross platform child_process#spawn and child_process#spawnSync",
       "purl": "pkg:npm/cross-spawn@7.0.6",
       "properties": [
@@ -4760,11 +5160,15 @@
         },
         {
           "type": "vcs",
-          "url": "git@github.com:moxystudio/node-cross-spawn.git"
+          "url": "git+ssh://git@github.com/moxystudio/node-cross-spawn.git"
         },
         {
           "type": "website",
           "url": "https://github.com/moxystudio/node-cross-spawn"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/moxystudio/node-cross-spawn/issues"
         }
       ],
       "hashes": [
@@ -4786,7 +5190,7 @@
       "type": "library",
       "name": "css.escape",
       "version": "1.5.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Mathias Bynens",
       "description": "A robust polyfill for the `CSS.escape` utility method as defined in CSSOM.",
       "purl": "pkg:npm/css.escape@1.5.1",
@@ -4803,11 +5207,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/mathiasbynens/CSS.escape.git"
+          "url": "git+https://github.com/mathiasbynens/CSS.escape.git"
         },
         {
           "type": "website",
           "url": "https://mths.be/cssescape"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/mathiasbynens/CSS.escape/issues"
         }
       ],
       "hashes": [
@@ -4829,7 +5237,7 @@
       "type": "library",
       "name": "cssstyle",
       "version": "4.6.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "CSSStyleDeclaration Object Model implementation",
       "purl": "pkg:npm/cssstyle@4.6.0",
       "properties": [
@@ -4844,8 +5252,16 @@
           "url": "https://registry.npmjs.org/cssstyle/-/cssstyle-4.6.0.tgz"
         },
         {
+          "type": "vcs",
+          "url": "git+https://github.com/jsdom/cssstyle.git"
+        },
+        {
           "type": "website",
           "url": "https://github.com/jsdom/cssstyle"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jsdom/cssstyle/issues"
         }
       ],
       "hashes": [
@@ -4867,8 +5283,8 @@
       "type": "library",
       "name": "csstype",
       "version": "3.2.3",
-      "scope": "required",
-      "author": "Fredrik Nicol <fredrik.nicol@gmail.com>",
+      "scope": "optional",
+      "author": "Fredrik Nicol",
       "description": "Strict TypeScript and Flow types for style based on MDN data",
       "purl": "pkg:npm/csstype@3.2.3",
       "properties": [
@@ -4881,6 +5297,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/frenic/csstype.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/frenic/csstype#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/frenic/csstype/issues"
         }
       ],
       "hashes": [
@@ -4902,8 +5330,8 @@
       "type": "library",
       "name": "data-urls",
       "version": "5.0.0",
-      "scope": "required",
-      "author": "Domenic Denicola <d@domenic.me> (https://domenic.me/)",
+      "scope": "optional",
+      "author": "Domenic Denicola",
       "description": "Parses data: URLs",
       "purl": "pkg:npm/data-urls@5.0.0",
       "properties": [
@@ -4916,6 +5344,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/data-urls/-/data-urls-5.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jsdom/data-urls.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jsdom/data-urls#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jsdom/data-urls/issues"
         }
       ],
       "hashes": [
@@ -4937,8 +5377,8 @@
       "type": "library",
       "name": "debug",
       "version": "4.4.3",
-      "scope": "required",
-      "author": "Josh Junon (https://github.com/qix-)",
+      "scope": "optional",
+      "author": "Josh Junon",
       "description": "Lightweight debugging utility for Node.js and the browser",
       "purl": "pkg:npm/debug@4.4.3",
       "properties": [
@@ -4955,6 +5395,14 @@
         {
           "type": "vcs",
           "url": "git://github.com/debug-js/debug.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/debug-js/debug#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/debug-js/debug/issues"
         }
       ],
       "hashes": [
@@ -4976,7 +5424,7 @@
       "type": "library",
       "name": "decimal.js",
       "version": "10.6.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Michael Mclaughlin",
       "description": "An arbitrary-precision Decimal type for JavaScript.",
       "purl": "pkg:npm/decimal.js@10.6.0",
@@ -4993,7 +5441,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/MikeMcl/decimal.js.git"
+          "url": "git+https://github.com/MikeMcl/decimal.js.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/MikeMcl/decimal.js#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/MikeMcl/decimal.js/issues"
         }
       ],
       "hashes": [
@@ -5015,8 +5471,8 @@
       "type": "library",
       "name": "deep-eql",
       "version": "5.0.2",
-      "scope": "required",
-      "author": "Jake Luer <jake@alogicalparadox.com>",
+      "scope": "optional",
+      "author": "Jake Luer",
       "description": "Improved deep equality testing for Node.js and the browser.",
       "purl": "pkg:npm/deep-eql@5.0.2",
       "properties": [
@@ -5032,7 +5488,15 @@
         },
         {
           "type": "vcs",
-          "url": "git@github.com:chaijs/deep-eql.git"
+          "url": "git+ssh://git@github.com/chaijs/deep-eql.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/chaijs/deep-eql#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/chaijs/deep-eql/issues"
         }
       ],
       "hashes": [
@@ -5054,7 +5518,7 @@
       "type": "library",
       "name": "deep-is",
       "version": "0.1.4",
-      "scope": "required",
+      "scope": "optional",
       "author": "Thorsten Lorenz",
       "description": "node's assert.deepEqual algorithm except for NaN being equal to NaN",
       "purl": "pkg:npm/deep-is@0.1.4",
@@ -5071,7 +5535,15 @@
         },
         {
           "type": "vcs",
-          "url": "http://github.com/thlorenz/deep-is.git"
+          "url": "git+ssh://git@github.com/thlorenz/deep-is.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/thlorenz/deep-is#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/thlorenz/deep-is/issues"
         }
       ],
       "hashes": [
@@ -5093,7 +5565,7 @@
       "type": "library",
       "name": "dequal",
       "version": "2.0.3",
-      "scope": "required",
+      "scope": "optional",
       "author": "Luke Edwards",
       "description": "A tiny (304B to 489B) utility for check for deep equality",
       "purl": "pkg:npm/dequal@2.0.3",
@@ -5107,6 +5579,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/dequal/-/dequal-2.0.3.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/lukeed/dequal.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/lukeed/dequal#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/lukeed/dequal/issues"
         }
       ],
       "hashes": [
@@ -5128,7 +5612,7 @@
       "type": "library",
       "name": "dom-accessibility-api",
       "version": "0.5.16",
-      "scope": "required",
+      "scope": "optional",
       "description": "Implements https://w3c.github.io/accname/",
       "purl": "pkg:npm/dom-accessibility-api@0.5.16",
       "properties": [
@@ -5144,7 +5628,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/eps1lon/dom-accessibility-api.git"
+          "url": "git+https://github.com/eps1lon/dom-accessibility-api.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/eps1lon/dom-accessibility-api#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/eps1lon/dom-accessibility-api/issues"
         }
       ],
       "hashes": [
@@ -5166,7 +5658,7 @@
       "type": "library",
       "name": "electron-to-chromium",
       "version": "1.5.396",
-      "scope": "required",
+      "scope": "optional",
       "author": "Kilian Valkhof",
       "description": "Provides a list of electron-to-chromium version mappings",
       "purl": "pkg:npm/electron-to-chromium@1.5.396",
@@ -5184,6 +5676,14 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/Kilian/electron-to-chromium.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/Kilian/electron-to-chromium#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/Kilian/electron-to-chromium/issues"
         }
       ],
       "hashes": [
@@ -5205,8 +5705,8 @@
       "type": "library",
       "name": "entities",
       "version": "6.0.1",
-      "scope": "required",
-      "author": "Felix Boehm <me@feedic.com>",
+      "scope": "optional",
+      "author": "Felix Boehm",
       "description": "Encode & decode XML and HTML entities with ease & speed",
       "purl": "pkg:npm/entities@6.0.1",
       "properties": [
@@ -5223,6 +5723,14 @@
         {
           "type": "vcs",
           "url": "git://github.com/fb55/entities.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/fb55/entities#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/fb55/entities/issues"
         }
       ],
       "hashes": [
@@ -5244,7 +5752,7 @@
       "type": "library",
       "name": "es-module-lexer",
       "version": "1.7.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Guy Bedford",
       "description": "Lexes ES modules returning their import/export metadata",
       "purl": "pkg:npm/es-module-lexer@1.7.0",
@@ -5291,7 +5799,7 @@
       "type": "library",
       "name": "esbuild",
       "version": "0.28.1",
-      "scope": "required",
+      "scope": "optional",
       "description": "An extremely fast JavaScript and CSS bundler and minifier.",
       "purl": "pkg:npm/esbuild@0.28.1",
       "properties": [
@@ -5308,6 +5816,14 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/evanw/esbuild.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/evanw/esbuild#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/evanw/esbuild/issues"
         }
       ],
       "hashes": [
@@ -5329,7 +5845,7 @@
       "type": "library",
       "name": "escalade",
       "version": "3.2.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Luke Edwards",
       "description": "A tiny (183B to 210B) and fast utility to ascend parent directories",
       "purl": "pkg:npm/escalade@3.2.0",
@@ -5343,6 +5859,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/escalade/-/escalade-3.2.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/lukeed/escalade.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/lukeed/escalade#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/lukeed/escalade/issues"
         }
       ],
       "hashes": [
@@ -5364,7 +5892,7 @@
       "type": "library",
       "name": "escape-string-regexp",
       "version": "4.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Escape RegExp special characters",
       "purl": "pkg:npm/escape-string-regexp@4.0.0",
@@ -5378,6 +5906,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/escape-string-regexp/-/escape-string-regexp-4.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/escape-string-regexp.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/escape-string-regexp#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/escape-string-regexp/issues"
         }
       ],
       "hashes": [
@@ -5399,8 +5939,8 @@
       "type": "library",
       "name": "eslint",
       "version": "10.8.0",
-      "scope": "required",
-      "author": "Nicholas C. Zakas <nicholas+npm@nczconsulting.com>",
+      "scope": "optional",
+      "author": "Nicholas C. Zakas",
       "description": "An AST-based pattern checker for JavaScript.",
       "purl": "pkg:npm/eslint@10.8.0",
       "properties": [
@@ -5415,8 +5955,16 @@
           "url": "https://registry.npmjs.org/eslint/-/eslint-10.8.0.tgz"
         },
         {
+          "type": "vcs",
+          "url": "git+https://github.com/eslint/eslint.git"
+        },
+        {
           "type": "website",
           "url": "https://eslint.org"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/eslint/eslint/issues/"
         }
       ],
       "hashes": [
@@ -5438,7 +5986,7 @@
       "type": "library",
       "name": "eslint-plugin-react-hooks",
       "version": "7.1.1",
-      "scope": "required",
+      "scope": "optional",
       "description": "ESLint rules for React Hooks",
       "purl": "pkg:npm/eslint-plugin-react-hooks@7.1.1",
       "properties": [
@@ -5454,7 +6002,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/facebook/react.git"
+          "url": "git+https://github.com/facebook/react.git"
         },
         {
           "type": "website",
@@ -5484,8 +6032,8 @@
       "type": "library",
       "name": "eslint-plugin-react-refresh",
       "version": "0.4.20",
-      "scope": "required",
-      "author": "Arnaud Barré (https://github.com/ArnaudBarre)",
+      "scope": "optional",
+      "author": "Arnaud Barré",
       "description": "Validate that your components can safely be updated with Fast Refresh",
       "purl": "pkg:npm/eslint-plugin-react-refresh@0.4.20",
       "properties": [
@@ -5498,6 +6046,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/eslint-plugin-react-refresh/-/eslint-plugin-react-refresh-0.4.20.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/ArnaudBarre/eslint-plugin-react-refresh.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/ArnaudBarre/eslint-plugin-react-refresh#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/ArnaudBarre/eslint-plugin-react-refresh/issues"
         }
       ],
       "hashes": [
@@ -5519,7 +6079,7 @@
       "type": "library",
       "name": "eslint-scope",
       "version": "9.1.2",
-      "scope": "required",
+      "scope": "optional",
       "description": "ECMAScript scope analyzer for ESLint",
       "purl": "pkg:npm/eslint-scope@9.1.2",
       "properties": [
@@ -5535,7 +6095,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/eslint/js.git"
+          "url": "git+https://github.com/eslint/js.git"
         },
         {
           "type": "website",
@@ -5565,8 +6125,8 @@
       "type": "library",
       "name": "eslint-visitor-keys",
       "version": "5.0.1",
-      "scope": "required",
-      "author": "Toru Nagashima (https://github.com/mysticatea)",
+      "scope": "optional",
+      "author": "Toru Nagashima",
       "description": "Constants and utilities about visitor keys to traverse AST.",
       "purl": "pkg:npm/eslint-visitor-keys@5.0.1",
       "properties": [
@@ -5582,7 +6142,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/eslint/js.git"
+          "url": "git+https://github.com/eslint/js.git"
         },
         {
           "type": "website",
@@ -5612,8 +6172,8 @@
       "type": "library",
       "name": "espree",
       "version": "11.2.0",
-      "scope": "required",
-      "author": "Nicholas C. Zakas <nicholas+npm@nczconsulting.com>",
+      "scope": "optional",
+      "author": "Nicholas C. Zakas",
       "description": "An Esprima-compatible JavaScript parser built on Acorn",
       "purl": "pkg:npm/espree@11.2.0",
       "properties": [
@@ -5629,7 +6189,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/eslint/js.git"
+          "url": "git+https://github.com/eslint/js.git"
         },
         {
           "type": "website",
@@ -5659,8 +6219,8 @@
       "type": "library",
       "name": "esquery",
       "version": "1.7.0",
-      "scope": "required",
-      "author": "Joel Feenstra <jrfeenst+esquery@gmail.com>",
+      "scope": "optional",
+      "author": "Joel Feenstra",
       "description": "A query library for ECMAScript AST using a CSS selector like query language.",
       "purl": "pkg:npm/esquery@1.7.0",
       "properties": [
@@ -5676,11 +6236,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/estools/esquery.git"
+          "url": "git+https://github.com/estools/esquery.git"
         },
         {
           "type": "website",
           "url": "https://github.com/estools/esquery/"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/estools/esquery/issues"
         }
       ],
       "hashes": [
@@ -5702,7 +6266,7 @@
       "type": "library",
       "name": "esrecurse",
       "version": "4.3.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "ECMAScript AST recursive visitor",
       "purl": "pkg:npm/esrecurse@4.3.0",
       "properties": [
@@ -5718,11 +6282,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/estools/esrecurse.git"
+          "url": "git+https://github.com/estools/esrecurse.git"
         },
         {
           "type": "website",
           "url": "https://github.com/estools/esrecurse"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/estools/esrecurse/issues"
         }
       ],
       "hashes": [
@@ -5744,7 +6312,7 @@
       "type": "library",
       "name": "estraverse",
       "version": "5.3.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "ECMAScript JS AST traversal functions",
       "purl": "pkg:npm/estraverse@5.3.0",
       "properties": [
@@ -5760,11 +6328,15 @@
         },
         {
           "type": "vcs",
-          "url": "http://github.com/estools/estraverse.git"
+          "url": "git+ssh://git@github.com/estools/estraverse.git"
         },
         {
           "type": "website",
           "url": "https://github.com/estools/estraverse"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/estools/estraverse/issues"
         }
       ],
       "hashes": [
@@ -5786,7 +6358,7 @@
       "type": "library",
       "name": "estree-walker",
       "version": "3.0.3",
-      "scope": "required",
+      "scope": "optional",
       "author": "Rich Harris",
       "description": "Traverse an ESTree-compliant AST",
       "purl": "pkg:npm/estree-walker@3.0.3",
@@ -5803,7 +6375,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/Rich-Harris/estree-walker"
+          "url": "git+https://github.com/Rich-Harris/estree-walker.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/Rich-Harris/estree-walker#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/Rich-Harris/estree-walker/issues"
         }
       ],
       "hashes": [
@@ -5825,7 +6405,7 @@
       "type": "library",
       "name": "esutils",
       "version": "2.0.3",
-      "scope": "required",
+      "scope": "optional",
       "description": "utility box for ECMAScript language tools",
       "purl": "pkg:npm/esutils@2.0.3",
       "properties": [
@@ -5841,11 +6421,15 @@
         },
         {
           "type": "vcs",
-          "url": "http://github.com/estools/esutils.git"
+          "url": "git+ssh://git@github.com/estools/esutils.git"
         },
         {
           "type": "website",
           "url": "https://github.com/estools/esutils"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/estools/esutils/issues"
         }
       ],
       "hashes": [
@@ -5867,7 +6451,7 @@
       "type": "library",
       "name": "expect-type",
       "version": "1.4.0",
-      "scope": "required",
+      "scope": "optional",
       "purl": "pkg:npm/expect-type@1.4.0",
       "properties": [
         {
@@ -5882,11 +6466,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/mmkal/expect-type.git"
+          "url": "git+https://github.com/mmkal/expect-type.git"
         },
         {
           "type": "website",
           "url": "https://github.com/mmkal/expect-type#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/mmkal/expect-type/issues"
         }
       ],
       "hashes": [
@@ -5908,7 +6496,7 @@
       "type": "library",
       "name": "fast-deep-equal",
       "version": "3.1.3",
-      "scope": "required",
+      "scope": "optional",
       "author": "Evgeny Poberezkin",
       "description": "Fast deep equal",
       "purl": "pkg:npm/fast-deep-equal@3.1.3",
@@ -5955,7 +6543,7 @@
       "type": "library",
       "name": "fast-json-stable-stringify",
       "version": "2.1.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "James Halliday",
       "description": "deterministic `JSON.stringify()` - a faster version of substack's json-stable-strigify without jsonify",
       "purl": "pkg:npm/fast-json-stable-stringify@2.1.0",
@@ -5977,6 +6565,10 @@
         {
           "type": "website",
           "url": "https://github.com/epoberezkin/fast-json-stable-stringify"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/epoberezkin/fast-json-stable-stringify/issues"
         }
       ],
       "hashes": [
@@ -5998,8 +6590,8 @@
       "type": "library",
       "name": "fast-levenshtein",
       "version": "2.0.6",
-      "scope": "required",
-      "author": "Ramesh Nair <ram@hiddentao.com> (http://www.hiddentao.com/)",
+      "scope": "optional",
+      "author": "Ramesh Nair",
       "description": "Efficient implementation of Levenshtein algorithm  with locale-specific collator support.",
       "purl": "pkg:npm/fast-levenshtein@2.0.6",
       "properties": [
@@ -6015,7 +6607,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/hiddentao/fast-levenshtein.git"
+          "url": "git+https://github.com/hiddentao/fast-levenshtein.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/hiddentao/fast-levenshtein#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/hiddentao/fast-levenshtein/issues"
         }
       ],
       "hashes": [
@@ -6037,7 +6637,7 @@
       "type": "library",
       "name": "file-entry-cache",
       "version": "8.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Jared Wray",
       "description": "Super simple cache for file metadata, useful for process that work o a given series of files and that only need to repeat the job on the changed ones since the previous run of the process",
       "purl": "pkg:npm/file-entry-cache@8.0.0",
@@ -6051,6 +6651,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/file-entry-cache/-/file-entry-cache-8.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jaredwray/file-entry-cache.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jaredwray/file-entry-cache#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jaredwray/file-entry-cache/issues"
         }
       ],
       "hashes": [
@@ -6072,7 +6684,7 @@
       "type": "library",
       "name": "find-up",
       "version": "5.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Find a file or directory by walking up parent directories",
       "purl": "pkg:npm/find-up@5.0.0",
@@ -6086,6 +6698,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/find-up/-/find-up-5.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/find-up.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/find-up#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/find-up/issues"
         }
       ],
       "hashes": [
@@ -6107,7 +6731,7 @@
       "type": "library",
       "name": "flat-cache",
       "version": "4.0.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Jared Wray",
       "description": "A stupidly simple key/value storage using files to persist some data",
       "purl": "pkg:npm/flat-cache@4.0.1",
@@ -6121,6 +6745,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/flat-cache/-/flat-cache-4.0.1.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jaredwray/flat-cache.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jaredwray/flat-cache#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jaredwray/flat-cache/issues"
         }
       ],
       "hashes": [
@@ -6142,7 +6778,7 @@
       "type": "library",
       "name": "flatted",
       "version": "3.4.3",
-      "scope": "required",
+      "scope": "optional",
       "author": "Andrea Giammarchi",
       "description": "A super light and fast circular JSON parser.",
       "purl": "pkg:npm/flatted@3.4.3",
@@ -6189,8 +6825,8 @@
       "type": "library",
       "name": "gensync",
       "version": "1.0.0-beta.2",
-      "scope": "required",
-      "author": "Logan Smyth <loganfsmyth@gmail.com>",
+      "scope": "optional",
+      "author": "Logan Smyth",
       "description": "Allows users to use generators in order to write common functions that can be both sync or async.",
       "purl": "pkg:npm/gensync@1.0.0-beta.2",
       "properties": [
@@ -6206,11 +6842,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/loganfsmyth/gensync.git"
+          "url": "git+https://github.com/loganfsmyth/gensync.git"
         },
         {
           "type": "website",
           "url": "https://github.com/loganfsmyth/gensync"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/loganfsmyth/gensync/issues"
         }
       ],
       "hashes": [
@@ -6232,8 +6872,8 @@
       "type": "library",
       "name": "glob-parent",
       "version": "6.0.2",
-      "scope": "required",
-      "author": "Gulp Team <team@gulpjs.com> (https://gulpjs.com/)",
+      "scope": "optional",
+      "author": "Gulp Team",
       "description": "Extract the non-magic parent path from a glob string.",
       "purl": "pkg:npm/glob-parent@6.0.2",
       "properties": [
@@ -6246,6 +6886,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/glob-parent/-/glob-parent-6.0.2.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/gulpjs/glob-parent.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/gulpjs/glob-parent#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/gulpjs/glob-parent/issues"
         }
       ],
       "hashes": [
@@ -6267,7 +6919,7 @@
       "type": "library",
       "name": "globals",
       "version": "16.3.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Global identifiers from different JavaScript environments",
       "purl": "pkg:npm/globals@16.3.0",
@@ -6281,6 +6933,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/globals/-/globals-16.3.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/globals.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/globals#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/globals/issues"
         }
       ],
       "hashes": [
@@ -6302,7 +6966,7 @@
       "type": "library",
       "name": "hermes-estree",
       "version": "0.25.1",
-      "scope": "required",
+      "scope": "optional",
       "description": "Flow types for the Flow-ESTree spec produced by the hermes parser",
       "purl": "pkg:npm/hermes-estree@0.25.1",
       "properties": [
@@ -6318,7 +6982,15 @@
         },
         {
           "type": "vcs",
-          "url": "git@github.com:facebook/hermes.git"
+          "url": "git+ssh://git@github.com/facebook/hermes.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/facebook/hermes#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/facebook/hermes/issues"
         }
       ],
       "hashes": [
@@ -6340,7 +7012,7 @@
       "type": "library",
       "name": "hermes-parser",
       "version": "0.25.1",
-      "scope": "required",
+      "scope": "optional",
       "description": "A JavaScript parser built from the Hermes engine",
       "purl": "pkg:npm/hermes-parser@0.25.1",
       "properties": [
@@ -6356,7 +7028,15 @@
         },
         {
           "type": "vcs",
-          "url": "git@github.com:facebook/hermes.git"
+          "url": "git+ssh://git@github.com/facebook/hermes.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/facebook/hermes#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/facebook/hermes/issues"
         }
       ],
       "hashes": [
@@ -6378,8 +7058,8 @@
       "type": "library",
       "name": "html-encoding-sniffer",
       "version": "4.0.0",
-      "scope": "required",
-      "author": "Domenic Denicola <d@domenic.me> (https://domenic.me/)",
+      "scope": "optional",
+      "author": "Domenic Denicola",
       "description": "Sniff the encoding from a HTML byte stream",
       "purl": "pkg:npm/html-encoding-sniffer@4.0.0",
       "properties": [
@@ -6392,6 +7072,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/html-encoding-sniffer/-/html-encoding-sniffer-4.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jsdom/html-encoding-sniffer.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jsdom/html-encoding-sniffer#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jsdom/html-encoding-sniffer/issues"
         }
       ],
       "hashes": [
@@ -6413,8 +7105,8 @@
       "type": "library",
       "name": "http-proxy-agent",
       "version": "7.0.2",
-      "scope": "required",
-      "author": "Nathan Rajlich <nathan@tootallnate.net> (http://n8.io/)",
+      "scope": "optional",
+      "author": "Nathan Rajlich",
       "description": "An HTTP(s) proxy `http.Agent` implementation for HTTP",
       "purl": "pkg:npm/http-proxy-agent@7.0.2",
       "properties": [
@@ -6430,7 +7122,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/TooTallNate/proxy-agents.git"
+          "url": "git+https://github.com/TooTallNate/proxy-agents.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/TooTallNate/proxy-agents#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/TooTallNate/proxy-agents/issues"
         }
       ],
       "hashes": [
@@ -6452,8 +7152,8 @@
       "type": "library",
       "name": "https-proxy-agent",
       "version": "7.0.6",
-      "scope": "required",
-      "author": "Nathan Rajlich <nathan@tootallnate.net> (http://n8.io/)",
+      "scope": "optional",
+      "author": "Nathan Rajlich",
       "description": "An HTTP(s) proxy `http.Agent` implementation for HTTPS",
       "purl": "pkg:npm/https-proxy-agent@7.0.6",
       "properties": [
@@ -6469,7 +7169,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/TooTallNate/proxy-agents.git"
+          "url": "git+https://github.com/TooTallNate/proxy-agents.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/TooTallNate/proxy-agents#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/TooTallNate/proxy-agents/issues"
         }
       ],
       "hashes": [
@@ -6491,8 +7199,8 @@
       "type": "library",
       "name": "iconv-lite",
       "version": "0.6.3",
-      "scope": "required",
-      "author": "Alexander Shtuchkin <ashtuchkin@gmail.com>",
+      "scope": "optional",
+      "author": "Alexander Shtuchkin",
       "description": "Convert character encodings in pure javascript.",
       "purl": "pkg:npm/iconv-lite@0.6.3",
       "properties": [
@@ -6513,6 +7221,10 @@
         {
           "type": "website",
           "url": "https://github.com/ashtuchkin/iconv-lite"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/ashtuchkin/iconv-lite/issues"
         }
       ],
       "hashes": [
@@ -6534,7 +7246,7 @@
       "type": "library",
       "name": "ignore",
       "version": "5.3.2",
-      "scope": "required",
+      "scope": "optional",
       "author": "kael",
       "description": "Ignore is a manager and filter for .gitignore rules, the one used by eslint, gitbook and many others.",
       "purl": "pkg:npm/ignore@5.3.2",
@@ -6551,7 +7263,11 @@
         },
         {
           "type": "vcs",
-          "url": "git@github.com:kaelzhang/node-ignore.git"
+          "url": "git+ssh://git@github.com/kaelzhang/node-ignore.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/kaelzhang/node-ignore#readme"
         },
         {
           "type": "issue-tracker",
@@ -6577,7 +7293,7 @@
       "type": "library",
       "name": "imurmurhash",
       "version": "0.1.4",
-      "scope": "required",
+      "scope": "optional",
       "author": "Jens Taylor",
       "description": "An incremental implementation of MurmurHash3",
       "purl": "pkg:npm/imurmurhash@0.1.4",
@@ -6594,7 +7310,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/jensyt/imurmurhash-js"
+          "url": "git+https://github.com/jensyt/imurmurhash-js.git"
         },
         {
           "type": "website",
@@ -6624,7 +7340,7 @@
       "type": "library",
       "name": "indent-string",
       "version": "4.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Indent each line in a string",
       "purl": "pkg:npm/indent-string@4.0.0",
@@ -6638,6 +7354,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/indent-string/-/indent-string-4.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/indent-string.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/indent-string#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/indent-string/issues"
         }
       ],
       "hashes": [
@@ -6659,8 +7387,8 @@
       "type": "library",
       "name": "is-extglob",
       "version": "2.1.1",
-      "scope": "required",
-      "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
+      "scope": "optional",
+      "author": "Jon Schlinkert",
       "description": "Returns true if a string has an extglob.",
       "purl": "pkg:npm/is-extglob@2.1.1",
       "properties": [
@@ -6673,6 +7401,10 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/is-extglob/-/is-extglob-2.1.1.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jonschlinkert/is-extglob.git"
         },
         {
           "type": "website",
@@ -6702,8 +7434,8 @@
       "type": "library",
       "name": "is-glob",
       "version": "4.0.3",
-      "scope": "required",
-      "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
+      "scope": "optional",
+      "author": "Jon Schlinkert",
       "description": "Returns `true` if the given string looks like a glob pattern or an extglob pattern. This makes it easy to create code that only uses external modules like node-glob when necessary, resulting in much faster code execution and initialization time, and a better user experience.",
       "purl": "pkg:npm/is-glob@4.0.3",
       "properties": [
@@ -6716,6 +7448,10 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/is-glob/-/is-glob-4.0.3.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/micromatch/is-glob.git"
         },
         {
           "type": "website",
@@ -6745,7 +7481,7 @@
       "type": "library",
       "name": "is-potential-custom-element-name",
       "version": "1.0.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Mathias Bynens",
       "description": "Check whether a given string matches the `PotentialCustomElementName` production as defined in the HTML Standard.",
       "purl": "pkg:npm/is-potential-custom-element-name@1.0.1",
@@ -6762,11 +7498,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/mathiasbynens/is-potential-custom-element-name.git"
+          "url": "git+https://github.com/mathiasbynens/is-potential-custom-element-name.git"
         },
         {
           "type": "website",
           "url": "https://github.com/mathiasbynens/is-potential-custom-element-name"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/mathiasbynens/is-potential-custom-element-name/issues"
         }
       ],
       "hashes": [
@@ -6788,8 +7528,8 @@
       "type": "library",
       "name": "isexe",
       "version": "2.0.0",
-      "scope": "required",
-      "author": "Isaac Z. Schlueter <i@izs.me> (http://blog.izs.me/)",
+      "scope": "optional",
+      "author": "Isaac Z. Schlueter",
       "description": "Minimal module to check if a file is executable.",
       "purl": "pkg:npm/isexe@2.0.0",
       "properties": [
@@ -6835,7 +7575,7 @@
       "type": "library",
       "name": "js-tokens",
       "version": "4.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Simon Lydell",
       "description": "A regex that tokenizes JavaScript.",
       "purl": "pkg:npm/js-tokens@4.0.0",
@@ -6849,6 +7589,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/lydell/js-tokens.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/lydell/js-tokens#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/lydell/js-tokens/issues"
         }
       ],
       "hashes": [
@@ -6870,7 +7622,7 @@
       "type": "library",
       "name": "jsdom",
       "version": "26.1.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "A JavaScript implementation of many web standards",
       "purl": "pkg:npm/jsdom@26.1.0",
       "properties": [
@@ -6887,6 +7639,14 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/jsdom/jsdom.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jsdom/jsdom#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jsdom/jsdom/issues"
         }
       ],
       "hashes": [
@@ -6908,7 +7668,7 @@
       "type": "library",
       "name": "jsesc",
       "version": "3.1.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Mathias Bynens",
       "description": "Given some data, jsesc returns the shortest possible stringified & ASCII-safe representation of that data.",
       "purl": "pkg:npm/jsesc@3.1.0",
@@ -6925,11 +7685,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/mathiasbynens/jsesc.git"
+          "url": "git+https://github.com/mathiasbynens/jsesc.git"
         },
         {
           "type": "website",
           "url": "https://mths.be/jsesc"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/mathiasbynens/jsesc/issues"
         }
       ],
       "hashes": [
@@ -6951,8 +7715,8 @@
       "type": "library",
       "name": "json-buffer",
       "version": "3.0.1",
-      "scope": "required",
-      "author": "Dominic Tarr <dominic.tarr@gmail.com> (http://dominictarr.com)",
+      "scope": "optional",
+      "author": "Dominic Tarr",
       "description": "JSON parse & stringify that supports binary via bops & base64",
       "purl": "pkg:npm/json-buffer@3.0.1",
       "properties": [
@@ -6973,6 +7737,10 @@
         {
           "type": "website",
           "url": "https://github.com/dominictarr/json-buffer"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/dominictarr/json-buffer/issues"
         }
       ],
       "hashes": [
@@ -6994,7 +7762,7 @@
       "type": "library",
       "name": "json-schema-traverse",
       "version": "0.4.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Evgeny Poberezkin",
       "description": "Traverse JSON Schema passing each schema object to callback",
       "purl": "pkg:npm/json-schema-traverse@0.4.1",
@@ -7041,7 +7809,7 @@
       "type": "library",
       "name": "json-stable-stringify-without-jsonify",
       "version": "1.0.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "James Halliday",
       "description": "deterministic JSON.stringify() with custom sorting to get deterministic hashes from stringified results, with no public domain dependencies",
       "purl": "pkg:npm/json-stable-stringify-without-jsonify@1.0.1",
@@ -7063,6 +7831,10 @@
         {
           "type": "website",
           "url": "https://github.com/samn/json-stable-stringify"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/samn/json-stable-stringify/issues"
         }
       ],
       "hashes": [
@@ -7084,8 +7856,8 @@
       "type": "library",
       "name": "json5",
       "version": "2.2.3",
-      "scope": "required",
-      "author": "Aseem Kishore <aseem.kishore@gmail.com>",
+      "scope": "optional",
+      "author": "Aseem Kishore",
       "description": "JSON for Humans",
       "purl": "pkg:npm/json5@2.2.3",
       "properties": [
@@ -7131,8 +7903,8 @@
       "type": "library",
       "name": "keyv",
       "version": "4.5.4",
-      "scope": "required",
-      "author": "Jared Wray <me@jaredwray.com> (http://jaredwray.com)",
+      "scope": "optional",
+      "author": "Jared Wray",
       "description": "Simple key-value storage with support for multiple backends",
       "purl": "pkg:npm/keyv@4.5.4",
       "properties": [
@@ -7178,8 +7950,8 @@
       "type": "library",
       "name": "levn",
       "version": "0.4.1",
-      "scope": "required",
-      "author": "George Zahariev <z@georgezahariev.com>",
+      "scope": "optional",
+      "author": "George Zahariev",
       "description": "Light ECMAScript (JavaScript) Value Notation - human written, concise, typed, flexible",
       "purl": "pkg:npm/levn@0.4.1",
       "properties": [
@@ -7200,6 +7972,10 @@
         {
           "type": "website",
           "url": "https://github.com/gkz/levn"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/gkz/levn/issues"
         }
       ],
       "hashes": [
@@ -7221,7 +7997,7 @@
       "type": "library",
       "name": "locate-path",
       "version": "6.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Get the first path that exists on disk of multiple paths",
       "purl": "pkg:npm/locate-path@6.0.0",
@@ -7235,6 +8011,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/locate-path/-/locate-path-6.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/locate-path.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/locate-path#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/locate-path/issues"
         }
       ],
       "hashes": [
@@ -7256,8 +8044,8 @@
       "type": "library",
       "name": "lodash",
       "version": "4.18.1",
-      "scope": "required",
-      "author": "John-David Dalton <john.david.dalton@gmail.com>",
+      "scope": "optional",
+      "author": "John-David Dalton",
       "description": "Lodash modular utilities.",
       "purl": "pkg:npm/lodash@4.18.1",
       "properties": [
@@ -7272,8 +8060,16 @@
           "url": "https://registry.npmjs.org/lodash/-/lodash-4.18.1.tgz"
         },
         {
+          "type": "vcs",
+          "url": "git+https://github.com/lodash/lodash.git"
+        },
+        {
           "type": "website",
           "url": "https://lodash.com/"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/lodash/lodash/issues"
         }
       ],
       "hashes": [
@@ -7295,8 +8091,8 @@
       "type": "library",
       "name": "loupe",
       "version": "3.2.1",
-      "scope": "required",
-      "author": "Veselin Todorov <hi@vesln.com>",
+      "scope": "optional",
+      "author": "Veselin Todorov",
       "description": "Inspect utility for Node.js and browsers",
       "purl": "pkg:npm/loupe@3.2.1",
       "properties": [
@@ -7312,11 +8108,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/chaijs/loupe"
+          "url": "git+https://github.com/chaijs/loupe.git"
         },
         {
           "type": "website",
           "url": "https://github.com/chaijs/loupe"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/chaijs/loupe/issues"
         }
       ],
       "hashes": [
@@ -7338,8 +8138,8 @@
       "type": "library",
       "name": "lru-cache",
       "version": "5.1.1",
-      "scope": "required",
-      "author": "Isaac Z. Schlueter <i@izs.me>",
+      "scope": "optional",
+      "author": "Isaac Z. Schlueter",
       "description": "A cache object that deletes the least-recently-used items.",
       "purl": "pkg:npm/lru-cache@5.1.1",
       "properties": [
@@ -7352,6 +8152,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/lru-cache/-/lru-cache-5.1.1.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git://github.com/isaacs/node-lru-cache.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/isaacs/node-lru-cache#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/isaacs/node-lru-cache/issues"
         }
       ],
       "hashes": [
@@ -7385,11 +8197,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/lucide-icons/lucide.git"
+          "url": "git+https://github.com/lucide-icons/lucide.git"
         },
         {
           "type": "website",
           "url": "https://lucide.dev"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/lucide-icons/lucide/issues"
         }
       ],
       "hashes": [
@@ -7411,8 +8227,8 @@
       "type": "library",
       "name": "lz-string",
       "version": "1.5.0",
-      "scope": "required",
-      "author": "pieroxy <pieroxy@pieroxy.net>",
+      "scope": "optional",
+      "author": "pieroxy",
       "description": "LZ-based compression algorithm",
       "purl": "pkg:npm/lz-string@1.5.0",
       "properties": [
@@ -7428,7 +8244,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/pieroxy/lz-string.git"
+          "url": "git+https://github.com/pieroxy/lz-string.git"
         },
         {
           "type": "website",
@@ -7458,7 +8274,7 @@
       "type": "library",
       "name": "magic-string",
       "version": "0.30.21",
-      "scope": "required",
+      "scope": "optional",
       "author": "Rich Harris",
       "description": "Modify strings, generate sourcemaps",
       "purl": "pkg:npm/magic-string@0.30.21",
@@ -7476,6 +8292,14 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/Rich-Harris/magic-string.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/Rich-Harris/magic-string#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/Rich-Harris/magic-string/issues"
         }
       ],
       "hashes": [
@@ -7497,7 +8321,7 @@
       "type": "library",
       "name": "min-indent",
       "version": "1.0.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "James Kyle",
       "description": "Get the shortest leading whitespace from lines in a string",
       "purl": "pkg:npm/min-indent@1.0.1",
@@ -7511,6 +8335,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/min-indent/-/min-indent-1.0.1.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/thejameskyle/min-indent.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/thejameskyle/min-indent#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/thejameskyle/min-indent/issues"
         }
       ],
       "hashes": [
@@ -7532,8 +8368,8 @@
       "type": "library",
       "name": "minimatch",
       "version": "10.2.5",
-      "scope": "required",
-      "author": "Isaac Z. Schlueter <i@izs.me> (http://blog.izs.me)",
+      "scope": "optional",
+      "author": "Isaac Z. Schlueter",
       "description": "a glob matcher in javascript",
       "purl": "pkg:npm/minimatch@10.2.5",
       "properties": [
@@ -7549,7 +8385,15 @@
         },
         {
           "type": "vcs",
-          "url": "git@github.com:isaacs/minimatch"
+          "url": "git+ssh://git@github.com/isaacs/minimatch.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/isaacs/minimatch#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/isaacs/minimatch/issues"
         }
       ],
       "hashes": [
@@ -7571,7 +8415,7 @@
       "type": "library",
       "name": "ms",
       "version": "2.1.3",
-      "scope": "required",
+      "scope": "optional",
       "description": "Tiny millisecond conversion utility",
       "purl": "pkg:npm/ms@2.1.3",
       "properties": [
@@ -7584,6 +8428,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/vercel/ms.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/vercel/ms#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/vercel/ms/issues"
         }
       ],
       "hashes": [
@@ -7605,8 +8461,8 @@
       "type": "library",
       "name": "nanoid",
       "version": "3.3.16",
-      "scope": "required",
-      "author": "Andrey Sitnik <andrey@sitnik.ru>",
+      "scope": "optional",
+      "author": "Andrey Sitnik",
       "description": "A tiny (116 bytes), secure URL-friendly unique string ID generator",
       "purl": "pkg:npm/nanoid@3.3.16",
       "properties": [
@@ -7619,6 +8475,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/nanoid/-/nanoid-3.3.16.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/ai/nanoid.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/ai/nanoid#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/ai/nanoid/issues"
         }
       ],
       "hashes": [
@@ -7640,8 +8508,8 @@
       "type": "library",
       "name": "natural-compare",
       "version": "1.4.0",
-      "scope": "required",
-      "author": "Lauri Rooden (https://github.com/litejs/natural-compare-lite)",
+      "scope": "optional",
+      "author": "Lauri Rooden",
       "description": "Compare strings containing a mix of letters and numbers in the way a human being would in sort order.",
       "purl": "pkg:npm/natural-compare@1.4.0",
       "properties": [
@@ -7654,6 +8522,14 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/natural-compare/-/natural-compare-1.4.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git://github.com/litejs/natural-compare-lite.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/litejs/natural-compare-lite#readme"
         },
         {
           "type": "issue-tracker",
@@ -7679,8 +8555,8 @@
       "type": "library",
       "name": "node-releases",
       "version": "2.0.51",
-      "scope": "required",
-      "author": "Sergey Rubanov <chi187@gmail.com>",
+      "scope": "optional",
+      "author": "Sergey Rubanov",
       "description": "Node.js releases data",
       "purl": "pkg:npm/node-releases@2.0.51",
       "properties": [
@@ -7696,7 +8572,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/chicoxyzzy/node-releases.git"
+          "url": "git+https://github.com/chicoxyzzy/node-releases.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/chicoxyzzy/node-releases#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/chicoxyzzy/node-releases/issues"
         }
       ],
       "hashes": [
@@ -7718,7 +8602,7 @@
       "type": "library",
       "name": "nwsapi",
       "version": "2.2.24",
-      "scope": "required",
+      "scope": "optional",
       "author": "Diego Perini",
       "description": "Fast CSS Selectors API Engine",
       "purl": "pkg:npm/nwsapi@2.2.24",
@@ -7765,8 +8649,8 @@
       "type": "library",
       "name": "optionator",
       "version": "0.9.4",
-      "scope": "required",
-      "author": "George Zahariev <z@georgezahariev.com>",
+      "scope": "optional",
+      "author": "George Zahariev",
       "description": "option parsing and help generation",
       "purl": "pkg:npm/optionator@0.9.4",
       "properties": [
@@ -7787,6 +8671,10 @@
         {
           "type": "website",
           "url": "https://github.com/gkz/optionator"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/gkz/optionator/issues"
         }
       ],
       "hashes": [
@@ -7808,7 +8696,7 @@
       "type": "library",
       "name": "p-limit",
       "version": "3.1.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Run multiple promise-returning & async functions with limited concurrency",
       "purl": "pkg:npm/p-limit@3.1.0",
@@ -7822,6 +8710,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/p-limit/-/p-limit-3.1.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/p-limit.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/p-limit#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/p-limit/issues"
         }
       ],
       "hashes": [
@@ -7843,7 +8743,7 @@
       "type": "library",
       "name": "p-locate",
       "version": "5.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Get the first fulfilled promise that satisfies the provided testing function",
       "purl": "pkg:npm/p-locate@5.0.0",
@@ -7857,6 +8757,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/p-locate/-/p-locate-5.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/p-locate.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/p-locate#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/p-locate/issues"
         }
       ],
       "hashes": [
@@ -7878,8 +8790,8 @@
       "type": "library",
       "name": "parse5",
       "version": "7.3.0",
-      "scope": "required",
-      "author": "Ivan Nikulin <ifaaan@gmail.com> (https://github.com/inikulin)",
+      "scope": "optional",
+      "author": "Ivan Nikulin",
       "description": "HTML parser and serializer.",
       "purl": "pkg:npm/parse5@7.3.0",
       "properties": [
@@ -7900,6 +8812,10 @@
         {
           "type": "website",
           "url": "https://parse5.js.org"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/inikulin/parse5/issues"
         }
       ],
       "hashes": [
@@ -7921,7 +8837,7 @@
       "type": "library",
       "name": "path-exists",
       "version": "4.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Check if a path exists",
       "purl": "pkg:npm/path-exists@4.0.0",
@@ -7935,6 +8851,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/path-exists/-/path-exists-4.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/path-exists.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/path-exists#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/path-exists/issues"
         }
       ],
       "hashes": [
@@ -7956,7 +8884,7 @@
       "type": "library",
       "name": "path-key",
       "version": "3.1.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Get the PATH environment variable key cross-platform",
       "purl": "pkg:npm/path-key@3.1.1",
@@ -7970,6 +8898,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/path-key/-/path-key-3.1.1.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/path-key.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/path-key#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/path-key/issues"
         }
       ],
       "hashes": [
@@ -7991,7 +8931,7 @@
       "type": "library",
       "name": "pathe",
       "version": "2.0.3",
-      "scope": "required",
+      "scope": "optional",
       "description": "Universal filesystem path utils",
       "purl": "pkg:npm/pathe@2.0.3",
       "properties": [
@@ -8004,6 +8944,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/pathe/-/pathe-2.0.3.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/unjs/pathe.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/unjs/pathe#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/unjs/pathe/issues"
         }
       ],
       "hashes": [
@@ -8025,8 +8977,8 @@
       "type": "library",
       "name": "pathval",
       "version": "2.0.1",
-      "scope": "required",
-      "author": "Veselin Todorov <hi@vesln.com>",
+      "scope": "optional",
+      "author": "Veselin Todorov",
       "description": "Object value retrieval given a string path",
       "purl": "pkg:npm/pathval@2.0.1",
       "properties": [
@@ -8047,6 +8999,10 @@
         {
           "type": "website",
           "url": "https://github.com/chaijs/pathval"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/chaijs/pathval/issues"
         }
       ],
       "hashes": [
@@ -8068,7 +9024,7 @@
       "type": "library",
       "name": "picocolors",
       "version": "1.1.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Alexey Raspopov",
       "description": "The tiniest and the fastest library for terminal output formatting with ANSI colors",
       "purl": "pkg:npm/picocolors@1.1.1",
@@ -8082,6 +9038,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/alexeyraspopov/picocolors.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/alexeyraspopov/picocolors#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/alexeyraspopov/picocolors/issues"
         }
       ],
       "hashes": [
@@ -8103,7 +9071,7 @@
       "type": "library",
       "name": "playwright",
       "version": "1.61.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Microsoft Corporation",
       "description": "A high-level API to automate web browsers",
       "purl": "pkg:npm/playwright@1.61.1",
@@ -8125,6 +9093,10 @@
         {
           "type": "website",
           "url": "https://playwright.dev"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/microsoft/playwright/issues"
         }
       ],
       "hashes": [
@@ -8146,7 +9118,7 @@
       "type": "library",
       "name": "playwright-core",
       "version": "1.61.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Microsoft Corporation",
       "description": "A high-level API to automate web browsers",
       "purl": "pkg:npm/playwright-core@1.61.1",
@@ -8168,6 +9140,10 @@
         {
           "type": "website",
           "url": "https://playwright.dev"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/microsoft/playwright/issues"
         }
       ],
       "hashes": [
@@ -8189,8 +9165,8 @@
       "type": "library",
       "name": "postcss",
       "version": "8.5.23",
-      "scope": "required",
-      "author": "Andrey Sitnik <andrey@sitnik.es>",
+      "scope": "optional",
+      "author": "Andrey Sitnik",
       "description": "Tool for transforming styles with JS plugins",
       "purl": "pkg:npm/postcss@8.5.23",
       "properties": [
@@ -8203,6 +9179,10 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/postcss/-/postcss-8.5.23.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/postcss/postcss.git"
         },
         {
           "type": "website",
@@ -8232,8 +9212,8 @@
       "type": "library",
       "name": "prelude-ls",
       "version": "1.2.1",
-      "scope": "required",
-      "author": "George Zahariev <z@georgezahariev.com>",
+      "scope": "optional",
+      "author": "George Zahariev",
       "description": "prelude.ls is a functionally oriented utility library. It is powerful and flexible. Almost all of its functions are curried. It is written in, and is the recommended base library for, LiveScript.",
       "purl": "pkg:npm/prelude-ls@1.2.1",
       "properties": [
@@ -8254,6 +9234,10 @@
         {
           "type": "website",
           "url": "http://preludels.com"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/gkz/prelude-ls/issues"
         }
       ],
       "hashes": [
@@ -8275,8 +9259,8 @@
       "type": "library",
       "name": "pretty-format",
       "version": "27.5.1",
-      "scope": "required",
-      "author": "James Kyle <me@thejameskyle.com>",
+      "scope": "optional",
+      "author": "James Kyle",
       "description": "Stringify any JavaScript value.",
       "purl": "pkg:npm/pretty-format@27.5.1",
       "properties": [
@@ -8292,7 +9276,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/facebook/jest.git"
+          "url": "git+https://github.com/facebook/jest.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/facebook/jest#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/facebook/jest/issues"
         }
       ],
       "hashes": [
@@ -8314,7 +9306,7 @@
       "type": "library",
       "name": "ansi-styles",
       "version": "5.2.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "ANSI escape codes for styling strings in the terminal",
       "purl": "pkg:npm/ansi-styles@5.2.0",
@@ -8328,6 +9320,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/ansi-styles/-/ansi-styles-5.2.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/chalk/ansi-styles.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/chalk/ansi-styles#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/chalk/ansi-styles/issues"
         }
       ],
       "hashes": [
@@ -8349,7 +9353,7 @@
       "type": "library",
       "name": "punycode",
       "version": "2.3.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Mathias Bynens",
       "description": "A robust Punycode converter that fully complies to RFC 3492 and RFC 5891, and works on nearly all JavaScript platforms.",
       "purl": "pkg:npm/punycode@2.3.1",
@@ -8366,11 +9370,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/mathiasbynens/punycode.js.git"
+          "url": "git+https://github.com/mathiasbynens/punycode.js.git"
         },
         {
           "type": "website",
           "url": "https://mths.be/punycode"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/mathiasbynens/punycode.js/issues"
         }
       ],
       "hashes": [
@@ -8403,11 +9411,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/facebook/react.git"
+          "url": "git+https://github.com/facebook/react.git"
         },
         {
           "type": "website",
           "url": "https://react.dev/"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/facebook/react/issues"
         }
       ],
       "hashes": [
@@ -8441,7 +9453,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/reactchartjs/react-chartjs-2.git"
+          "url": "git+https://github.com/reactchartjs/react-chartjs-2.git"
         },
         {
           "type": "website",
@@ -8482,7 +9494,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/facebook/react.git"
+          "url": "git+https://github.com/facebook/react.git"
         },
         {
           "type": "website",
@@ -8512,7 +9524,7 @@
       "type": "library",
       "name": "react-is",
       "version": "17.0.2",
-      "scope": "required",
+      "scope": "optional",
       "description": "Brand checking of React Elements.",
       "purl": "pkg:npm/react-is@17.0.2",
       "properties": [
@@ -8528,7 +9540,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/facebook/react.git"
+          "url": "git+https://github.com/facebook/react.git"
         },
         {
           "type": "website",
@@ -8558,7 +9570,7 @@
       "type": "library",
       "name": "react-refresh",
       "version": "0.17.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "React is a JavaScript library for building user interfaces.",
       "purl": "pkg:npm/react-refresh@0.17.0",
       "properties": [
@@ -8574,11 +9586,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/facebook/react.git"
+          "url": "git+https://github.com/facebook/react.git"
         },
         {
           "type": "website",
           "url": "https://react.dev/"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/facebook/react/issues"
         }
       ],
       "hashes": [
@@ -8600,7 +9616,7 @@
       "type": "library",
       "name": "redent",
       "version": "3.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Strip redundant indentation and indent the string",
       "purl": "pkg:npm/redent@3.0.0",
@@ -8614,6 +9630,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/redent/-/redent-3.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/redent.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/redent#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/redent/issues"
         }
       ],
       "hashes": [
@@ -8635,7 +9663,7 @@
       "type": "library",
       "name": "rollup",
       "version": "4.62.2",
-      "scope": "required",
+      "scope": "optional",
       "author": "Rich Harris",
       "description": "Next-generation ES module bundler",
       "purl": "pkg:npm/rollup@4.62.2",
@@ -8682,8 +9710,8 @@
       "type": "library",
       "name": "rrweb-cssom",
       "version": "0.8.0",
-      "scope": "required",
-      "author": "Nikita Vasilyev <me@elv1s.ru>",
+      "scope": "optional",
+      "author": "Nikita Vasilyev",
       "description": "CSS Object Model implementation and CSS parser",
       "purl": "pkg:npm/rrweb-cssom@0.8.0",
       "properties": [
@@ -8696,6 +9724,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/rrweb-cssom/-/rrweb-cssom-0.8.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/rrweb-io/CSSOM.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/rrweb-io/CSSOM#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/rrweb-io/CSSOM/issues"
         }
       ],
       "hashes": [
@@ -8717,7 +9757,7 @@
       "type": "library",
       "name": "safer-buffer",
       "version": "2.1.2",
-      "scope": "required",
+      "scope": "optional",
       "author": "Nikita Skovoroda",
       "description": "Modern Buffer API polyfill without footguns",
       "purl": "pkg:npm/safer-buffer@2.1.2",
@@ -8735,6 +9775,10 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/ChALkeR/safer-buffer.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/ChALkeR/safer-buffer#readme"
         },
         {
           "type": "issue-tracker",
@@ -8760,8 +9804,8 @@
       "type": "library",
       "name": "saxes",
       "version": "6.0.0",
-      "scope": "required",
-      "author": "Louis-Dominique Dubeau <ldd@lddubeau.com>",
+      "scope": "optional",
+      "author": "Louis-Dominique Dubeau",
       "description": "An evented streaming XML parser in JavaScript",
       "purl": "pkg:npm/saxes@6.0.0",
       "properties": [
@@ -8774,6 +9818,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/saxes/-/saxes-6.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/lddubeau/saxes.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/lddubeau/saxes#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/lddubeau/saxes/issues"
         }
       ],
       "hashes": [
@@ -8806,7 +9862,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/facebook/react.git"
+          "url": "git+https://github.com/facebook/react.git"
         },
         {
           "type": "website",
@@ -8836,7 +9892,7 @@
       "type": "library",
       "name": "semver",
       "version": "6.3.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "GitHub Inc.",
       "description": "The semantic version parser used by npm.",
       "purl": "pkg:npm/semver@6.3.1",
@@ -8853,7 +9909,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/npm/node-semver.git"
+          "url": "git+https://github.com/npm/node-semver.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/npm/node-semver#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/npm/node-semver/issues"
         }
       ],
       "hashes": [
@@ -8875,7 +9939,7 @@
       "type": "library",
       "name": "shebang-command",
       "version": "2.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Kevin Mårtensson",
       "description": "Get the command from a shebang",
       "purl": "pkg:npm/shebang-command@2.0.0",
@@ -8889,6 +9953,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/shebang-command/-/shebang-command-2.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/kevva/shebang-command.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/kevva/shebang-command#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/kevva/shebang-command/issues"
         }
       ],
       "hashes": [
@@ -8910,7 +9986,7 @@
       "type": "library",
       "name": "shebang-regex",
       "version": "3.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Regular expression for matching a shebang line",
       "purl": "pkg:npm/shebang-regex@3.0.0",
@@ -8924,6 +10000,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/shebang-regex/-/shebang-regex-3.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/shebang-regex.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/shebang-regex#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/shebang-regex/issues"
         }
       ],
       "hashes": [
@@ -8945,8 +10033,8 @@
       "type": "library",
       "name": "siginfo",
       "version": "2.0.0",
-      "scope": "required",
-      "author": "Emil Bay <github@tixz.dk>",
+      "scope": "optional",
+      "author": "Emil Bay",
       "description": "Utility module to print pretty messages on SIGINFO/SIGUSR1",
       "purl": "pkg:npm/siginfo@2.0.0",
       "properties": [
@@ -8992,8 +10080,8 @@
       "type": "library",
       "name": "source-map-js",
       "version": "1.2.1",
-      "scope": "required",
-      "author": "Valentin 7rulnik Semirulnik <v7rulnik@gmail.com>",
+      "scope": "optional",
+      "author": "Valentin 7rulnik Semirulnik",
       "description": "Generates and consumes source maps",
       "purl": "pkg:npm/source-map-js@1.2.1",
       "properties": [
@@ -9008,8 +10096,16 @@
           "url": "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz"
         },
         {
+          "type": "vcs",
+          "url": "git+https://github.com/7rulnik/source-map-js.git"
+        },
+        {
           "type": "website",
           "url": "https://github.com/7rulnik/source-map-js"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/7rulnik/source-map-js/issues"
         }
       ],
       "hashes": [
@@ -9031,8 +10127,8 @@
       "type": "library",
       "name": "stackback",
       "version": "0.0.2",
-      "scope": "required",
-      "author": "Roman Shtylman <shtylman@gmail.com>",
+      "scope": "optional",
+      "author": "Roman Shtylman",
       "description": "return list of CallSite objects from a captured stacktrace",
       "purl": "pkg:npm/stackback@0.0.2",
       "properties": [
@@ -9049,6 +10145,14 @@
         {
           "type": "vcs",
           "url": "git://github.com/shtylman/node-stackback.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/shtylman/node-stackback#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/shtylman/node-stackback/issues"
         }
       ],
       "hashes": [
@@ -9070,7 +10174,7 @@
       "type": "library",
       "name": "std-env",
       "version": "3.10.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "Runtime agnostic JS utils",
       "purl": "pkg:npm/std-env@3.10.0",
       "properties": [
@@ -9083,6 +10187,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/std-env/-/std-env-3.10.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/unjs/std-env.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/unjs/std-env#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/unjs/std-env/issues"
         }
       ],
       "hashes": [
@@ -9104,7 +10220,7 @@
       "type": "library",
       "name": "strip-indent",
       "version": "3.0.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Strip leading whitespace from each line in a string",
       "purl": "pkg:npm/strip-indent@3.0.0",
@@ -9118,6 +10234,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/strip-indent/-/strip-indent-3.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/strip-indent.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/strip-indent#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/strip-indent/issues"
         }
       ],
       "hashes": [
@@ -9139,8 +10267,8 @@
       "type": "library",
       "name": "strip-literal",
       "version": "3.1.0",
-      "scope": "required",
-      "author": "Anthony Fu <anthonyfu117@hotmail.com>",
+      "scope": "optional",
+      "author": "Anthony Fu",
       "description": "Strip comments and string literals from JavaScript code",
       "purl": "pkg:npm/strip-literal@3.1.0",
       "properties": [
@@ -9186,7 +10314,7 @@
       "type": "library",
       "name": "js-tokens",
       "version": "9.0.1",
-      "scope": "required",
+      "scope": "optional",
       "author": "Simon Lydell",
       "description": "Tiny JavaScript tokenizer.",
       "purl": "pkg:npm/js-tokens@9.0.1",
@@ -9200,6 +10328,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/js-tokens/-/js-tokens-9.0.1.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/lydell/js-tokens.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/lydell/js-tokens#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/lydell/js-tokens/issues"
         }
       ],
       "hashes": [
@@ -9221,8 +10361,8 @@
       "type": "library",
       "name": "symbol-tree",
       "version": "3.2.4",
-      "scope": "required",
-      "author": "Joris van der Wel <joris@jorisvanderwel.com>",
+      "scope": "optional",
+      "author": "Joris van der Wel",
       "description": "Turn any collection of objects into its own efficient tree or linked list using Symbol",
       "purl": "pkg:npm/symbol-tree@3.2.4",
       "properties": [
@@ -9238,7 +10378,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/jsdom/js-symbol-tree.git"
+          "url": "git+https://github.com/jsdom/js-symbol-tree.git"
         },
         {
           "type": "website",
@@ -9268,7 +10408,7 @@
       "type": "library",
       "name": "tinybench",
       "version": "2.9.0",
-      "scope": "required",
+      "scope": "optional",
       "purl": "pkg:npm/tinybench@2.9.0",
       "properties": [
         {
@@ -9280,6 +10420,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/tinybench/-/tinybench-2.9.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/tinylibs/tinybench.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/tinylibs/tinybench#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/tinylibs/tinybench/issues"
         }
       ],
       "hashes": [
@@ -9301,8 +10453,8 @@
       "type": "library",
       "name": "tinyexec",
       "version": "0.3.2",
-      "scope": "required",
-      "author": "James Garbutt (https://github.com/43081j)",
+      "scope": "optional",
+      "author": "James Garbutt",
       "description": "A minimal library for executing processes in Node",
       "purl": "pkg:npm/tinyexec@0.3.2",
       "properties": [
@@ -9348,7 +10500,7 @@
       "type": "library",
       "name": "tinyglobby",
       "version": "0.2.17",
-      "scope": "required",
+      "scope": "optional",
       "author": "Superchupu",
       "description": "A fast and minimal alternative to globby and fast-glob",
       "purl": "pkg:npm/tinyglobby@0.2.17",
@@ -9395,8 +10547,8 @@
       "type": "library",
       "name": "fdir",
       "version": "6.5.0",
-      "scope": "required",
-      "author": "thecodrr <thecodrr@protonmail.com>",
+      "scope": "optional",
+      "author": "thecodrr",
       "description": "The fastest directory crawler & globbing alternative to glob, fast-glob, & tiny-glob. Crawls 1m files in < 1s",
       "purl": "pkg:npm/fdir@6.5.0",
       "properties": [
@@ -9442,8 +10594,8 @@
       "type": "library",
       "name": "picomatch",
       "version": "4.0.5",
-      "scope": "required",
-      "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
+      "scope": "optional",
+      "author": "Jon Schlinkert",
       "description": "Blazing fast and accurate glob matcher written in JavaScript, with no dependencies and full support for standard and extended Bash glob features, including braces, extglobs, POSIX brackets, and regular expressions.",
       "purl": "pkg:npm/picomatch@4.0.5",
       "properties": [
@@ -9456,6 +10608,10 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/picomatch/-/picomatch-4.0.5.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/micromatch/picomatch.git"
         },
         {
           "type": "website",
@@ -9485,7 +10641,7 @@
       "type": "library",
       "name": "tinypool",
       "version": "1.1.1",
-      "scope": "required",
+      "scope": "optional",
       "description": "A minimal and tiny Node.js Worker Thread Pool implementation, a fork of piscina, but with fewer features",
       "purl": "pkg:npm/tinypool@1.1.1",
       "properties": [
@@ -9501,7 +10657,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/tinylibs/tinypool.git"
+          "url": "git+https://github.com/tinylibs/tinypool.git"
         },
         {
           "type": "website",
@@ -9531,7 +10687,7 @@
       "type": "library",
       "name": "tinyrainbow",
       "version": "2.0.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "A small library to print colourful messages.",
       "purl": "pkg:npm/tinyrainbow@2.0.0",
       "properties": [
@@ -9577,7 +10733,7 @@
       "type": "library",
       "name": "tinyspy",
       "version": "4.0.4",
-      "scope": "required",
+      "scope": "optional",
       "description": "A minimal fork of nanospy, with more features",
       "purl": "pkg:npm/tinyspy@4.0.4",
       "properties": [
@@ -9623,7 +10779,7 @@
       "type": "library",
       "name": "tldts",
       "version": "6.1.86",
-      "scope": "required",
+      "scope": "optional",
       "author": "Rémi Berson",
       "description": "Library to work against complex domain names, subdomains and URIs.",
       "purl": "pkg:npm/tldts@6.1.86",
@@ -9670,7 +10826,7 @@
       "type": "library",
       "name": "tldts-core",
       "version": "6.1.86",
-      "scope": "required",
+      "scope": "optional",
       "author": "Rémi Berson",
       "description": "tldts core primitives (internal module)",
       "purl": "pkg:npm/tldts-core@6.1.86",
@@ -9717,7 +10873,7 @@
       "type": "library",
       "name": "tough-cookie",
       "version": "5.1.2",
-      "scope": "required",
+      "scope": "optional",
       "author": "Jeremy Stashewsky",
       "description": "RFC6265 Cookies and Cookie Jar for node.js",
       "purl": "pkg:npm/tough-cookie@5.1.2",
@@ -9764,8 +10920,8 @@
       "type": "library",
       "name": "tr46",
       "version": "5.1.1",
-      "scope": "required",
-      "author": "Sebastian Mayr <npm@smayr.name>",
+      "scope": "optional",
+      "author": "Sebastian Mayr",
       "description": "An implementation of the Unicode UTS #46: Unicode IDNA Compatibility Processing",
       "purl": "pkg:npm/tr46@5.1.1",
       "properties": [
@@ -9778,6 +10934,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/tr46/-/tr46-5.1.1.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jsdom/tr46.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jsdom/tr46#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jsdom/tr46/issues"
         }
       ],
       "hashes": [
@@ -9799,7 +10967,7 @@
       "type": "library",
       "name": "ts-api-utils",
       "version": "2.5.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "JoshuaKGoldberg",
       "description": "Utility functions for working with TypeScript's API. Successor to the wonderful tsutils. 🛠️️",
       "purl": "pkg:npm/ts-api-utils@2.5.0",
@@ -9816,7 +10984,15 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/JoshuaKGoldberg/ts-api-utils"
+          "url": "git+https://github.com/JoshuaKGoldberg/ts-api-utils.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/JoshuaKGoldberg/ts-api-utils#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/JoshuaKGoldberg/ts-api-utils/issues"
         }
       ],
       "hashes": [
@@ -9838,8 +11014,8 @@
       "type": "library",
       "name": "type-check",
       "version": "0.4.0",
-      "scope": "required",
-      "author": "George Zahariev <z@georgezahariev.com>",
+      "scope": "optional",
+      "author": "George Zahariev",
       "description": "type-check allows you to check the types of JavaScript values at runtime with a Haskell like type syntax.",
       "purl": "pkg:npm/type-check@0.4.0",
       "properties": [
@@ -9860,6 +11036,10 @@
         {
           "type": "website",
           "url": "https://github.com/gkz/type-check"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/gkz/type-check/issues"
         }
       ],
       "hashes": [
@@ -9881,7 +11061,7 @@
       "type": "library",
       "name": "typescript",
       "version": "5.8.3",
-      "scope": "required",
+      "scope": "optional",
       "author": "Microsoft Corp.",
       "description": "TypeScript is a language for application scale JavaScript development",
       "purl": "pkg:npm/typescript@5.8.3",
@@ -9898,7 +11078,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/microsoft/TypeScript.git"
+          "url": "git+https://github.com/microsoft/TypeScript.git"
         },
         {
           "type": "website",
@@ -9928,7 +11108,7 @@
       "type": "library",
       "name": "typescript-eslint",
       "version": "8.65.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "Tooling which enables you to use TypeScript with ESLint",
       "purl": "pkg:npm/typescript-eslint@8.65.0",
       "properties": [
@@ -9944,7 +11124,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/typescript-eslint/typescript-eslint.git"
+          "url": "git+https://github.com/typescript-eslint/typescript-eslint.git"
         },
         {
           "type": "website",
@@ -9974,7 +11154,7 @@
       "type": "library",
       "name": "undici-types",
       "version": "7.8.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "A stand-alone types package for Undici",
       "purl": "pkg:npm/undici-types@7.8.0",
       "properties": [
@@ -10020,8 +11200,8 @@
       "type": "library",
       "name": "update-browserslist-db",
       "version": "1.2.3",
-      "scope": "required",
-      "author": "Andrey Sitnik <andrey@sitnik.ru>",
+      "scope": "optional",
+      "author": "Andrey Sitnik",
       "description": "CLI tool to update caniuse-lite to refresh target browsers from Browserslist config",
       "purl": "pkg:npm/update-browserslist-db@1.2.3",
       "properties": [
@@ -10034,6 +11214,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.2.3.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/browserslist/update-db.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/browserslist/update-db#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/browserslist/update-db/issues"
         }
       ],
       "hashes": [
@@ -10055,8 +11247,8 @@
       "type": "library",
       "name": "uri-js",
       "version": "4.4.1",
-      "scope": "required",
-      "author": "Gary Court <gary.court@gmail.com>",
+      "scope": "optional",
+      "author": "Gary Court",
       "description": "An RFC 3986/3987 compliant, scheme extendable URI/IRI parsing/validating/resolving library for JavaScript.",
       "purl": "pkg:npm/uri-js@4.4.1",
       "properties": [
@@ -10072,7 +11264,7 @@
         },
         {
           "type": "vcs",
-          "url": "http://github.com/garycourt/uri-js"
+          "url": "git+ssh://git@github.com/garycourt/uri-js.git"
         },
         {
           "type": "website",
@@ -10102,7 +11294,7 @@
       "type": "library",
       "name": "vite",
       "version": "7.3.6",
-      "scope": "required",
+      "scope": "optional",
       "author": "Evan You",
       "description": "Native-ESM powered web dev build tool",
       "purl": "pkg:npm/vite@7.3.6",
@@ -10149,8 +11341,8 @@
       "type": "library",
       "name": "vite-node",
       "version": "3.2.4",
-      "scope": "required",
-      "author": "Anthony Fu <anthonyfu117@hotmail.com>",
+      "scope": "optional",
+      "author": "Anthony Fu",
       "description": "Vite as Node.js runtime",
       "purl": "pkg:npm/vite-node@3.2.4",
       "properties": [
@@ -10196,8 +11388,8 @@
       "type": "library",
       "name": "vitest",
       "version": "3.2.7",
-      "scope": "required",
-      "author": "Anthony Fu <anthonyfu117@hotmail.com>",
+      "scope": "optional",
+      "author": "Anthony Fu",
       "description": "Next generation testing framework powered by Vite",
       "purl": "pkg:npm/vitest@3.2.7",
       "properties": [
@@ -10243,7 +11435,7 @@
       "type": "library",
       "name": "w3c-xmlserializer",
       "version": "5.0.0",
-      "scope": "required",
+      "scope": "optional",
       "description": "A per-spec XML serializer implementation",
       "purl": "pkg:npm/w3c-xmlserializer@5.0.0",
       "properties": [
@@ -10256,6 +11448,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/w3c-xmlserializer/-/w3c-xmlserializer-5.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jsdom/w3c-xmlserializer.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jsdom/w3c-xmlserializer#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jsdom/w3c-xmlserializer/issues"
         }
       ],
       "hashes": [
@@ -10277,8 +11481,8 @@
       "type": "library",
       "name": "webidl-conversions",
       "version": "7.0.0",
-      "scope": "required",
-      "author": "Domenic Denicola <d@domenic.me> (https://domenic.me/)",
+      "scope": "optional",
+      "author": "Domenic Denicola",
       "description": "Implements the WebIDL algorithms for converting to and from JavaScript values",
       "purl": "pkg:npm/webidl-conversions@7.0.0",
       "properties": [
@@ -10291,6 +11495,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-7.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jsdom/webidl-conversions.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jsdom/webidl-conversions#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jsdom/webidl-conversions/issues"
         }
       ],
       "hashes": [
@@ -10312,8 +11528,8 @@
       "type": "library",
       "name": "whatwg-encoding",
       "version": "3.1.1",
-      "scope": "required",
-      "author": "Domenic Denicola <d@domenic.me> (https://domenic.me/)",
+      "scope": "optional",
+      "author": "Domenic Denicola",
       "description": "Decode strings according to the WHATWG Encoding Standard",
       "purl": "pkg:npm/whatwg-encoding@3.1.1",
       "properties": [
@@ -10326,6 +11542,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/whatwg-encoding/-/whatwg-encoding-3.1.1.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jsdom/whatwg-encoding.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jsdom/whatwg-encoding#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jsdom/whatwg-encoding/issues"
         }
       ],
       "hashes": [
@@ -10347,8 +11575,8 @@
       "type": "library",
       "name": "whatwg-mimetype",
       "version": "4.0.0",
-      "scope": "required",
-      "author": "Domenic Denicola <d@domenic.me> (https://domenic.me/)",
+      "scope": "optional",
+      "author": "Domenic Denicola",
       "description": "Parses, serializes, and manipulates MIME types, according to the WHATWG MIME Sniffing Standard",
       "purl": "pkg:npm/whatwg-mimetype@4.0.0",
       "properties": [
@@ -10361,6 +11589,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/whatwg-mimetype/-/whatwg-mimetype-4.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jsdom/whatwg-mimetype.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jsdom/whatwg-mimetype#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jsdom/whatwg-mimetype/issues"
         }
       ],
       "hashes": [
@@ -10382,8 +11622,8 @@
       "type": "library",
       "name": "whatwg-url",
       "version": "14.2.0",
-      "scope": "required",
-      "author": "Sebastian Mayr <github@smayr.name>",
+      "scope": "optional",
+      "author": "Sebastian Mayr",
       "description": "An implementation of the WHATWG URL Standard's URL API and parsing machinery",
       "purl": "pkg:npm/whatwg-url@14.2.0",
       "properties": [
@@ -10396,6 +11636,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-14.2.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jsdom/whatwg-url.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jsdom/whatwg-url#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jsdom/whatwg-url/issues"
         }
       ],
       "hashes": [
@@ -10417,8 +11669,8 @@
       "type": "library",
       "name": "which",
       "version": "2.0.2",
-      "scope": "required",
-      "author": "Isaac Z. Schlueter <i@izs.me> (http://blog.izs.me)",
+      "scope": "optional",
+      "author": "Isaac Z. Schlueter",
       "description": "Like which(1) unix command. Find the first instance of an executable in the PATH.",
       "purl": "pkg:npm/which@2.0.2",
       "properties": [
@@ -10435,6 +11687,14 @@
         {
           "type": "vcs",
           "url": "git://github.com/isaacs/node-which.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/isaacs/node-which#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/isaacs/node-which/issues"
         }
       ],
       "hashes": [
@@ -10456,8 +11716,8 @@
       "type": "library",
       "name": "why-is-node-running",
       "version": "2.3.0",
-      "scope": "required",
-      "author": "Mathias Buus (@mafintosh)",
+      "scope": "optional",
+      "author": "Mathias Buus",
       "description": "Node is running but you don't know why? why-is-node-running is here to help you.",
       "purl": "pkg:npm/why-is-node-running@2.3.0",
       "properties": [
@@ -10473,7 +11733,7 @@
         },
         {
           "type": "vcs",
-          "url": "https://github.com/mafintosh/why-is-node-running.git"
+          "url": "git+https://github.com/mafintosh/why-is-node-running.git"
         },
         {
           "type": "website",
@@ -10503,8 +11763,8 @@
       "type": "library",
       "name": "word-wrap",
       "version": "1.2.5",
-      "scope": "required",
-      "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
+      "scope": "optional",
+      "author": "Jon Schlinkert",
       "description": "Wrap words to a specified length.",
       "purl": "pkg:npm/word-wrap@1.2.5",
       "properties": [
@@ -10517,6 +11777,10 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/word-wrap/-/word-wrap-1.2.5.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jonschlinkert/word-wrap.git"
         },
         {
           "type": "website",
@@ -10546,8 +11810,8 @@
       "type": "library",
       "name": "ws",
       "version": "8.21.1",
-      "scope": "required",
-      "author": "Einar Otto Stangvik <einaros@gmail.com> (http://2x.io)",
+      "scope": "optional",
+      "author": "Einar Otto Stangvik",
       "description": "Simple to use, blazing fast and thoroughly tested websocket client and server for Node.js",
       "purl": "pkg:npm/ws@8.21.1",
       "properties": [
@@ -10568,6 +11832,10 @@
         {
           "type": "website",
           "url": "https://github.com/websockets/ws"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/websockets/ws/issues"
         }
       ],
       "hashes": [
@@ -10589,8 +11857,8 @@
       "type": "library",
       "name": "xml-name-validator",
       "version": "5.0.0",
-      "scope": "required",
-      "author": "Domenic Denicola <d@domenic.me> (https://domenic.me/)",
+      "scope": "optional",
+      "author": "Domenic Denicola",
       "description": "Validates whether a string matches the production for an XML name or qualified name",
       "purl": "pkg:npm/xml-name-validator@5.0.0",
       "properties": [
@@ -10603,6 +11871,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/xml-name-validator/-/xml-name-validator-5.0.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jsdom/xml-name-validator.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/jsdom/xml-name-validator#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jsdom/xml-name-validator/issues"
         }
       ],
       "hashes": [
@@ -10624,8 +11904,8 @@
       "type": "library",
       "name": "xmlchars",
       "version": "2.2.0",
-      "scope": "required",
-      "author": "Louis-Dominique Dubeau <ldd@lddubeau.com>",
+      "scope": "optional",
+      "author": "Louis-Dominique Dubeau",
       "description": "Utilities for determining if characters belong to character classes defined by the XML specs.",
       "purl": "pkg:npm/xmlchars@2.2.0",
       "properties": [
@@ -10638,6 +11918,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/xmlchars/-/xmlchars-2.2.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/lddubeau/xmlchars.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/lddubeau/xmlchars#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/lddubeau/xmlchars/issues"
         }
       ],
       "hashes": [
@@ -10659,8 +11951,8 @@
       "type": "library",
       "name": "yallist",
       "version": "3.1.1",
-      "scope": "required",
-      "author": "Isaac Z. Schlueter <i@izs.me> (http://blog.izs.me/)",
+      "scope": "optional",
+      "author": "Isaac Z. Schlueter",
       "description": "Yet Another Linked List",
       "purl": "pkg:npm/yallist@3.1.1",
       "properties": [
@@ -10677,6 +11969,14 @@
         {
           "type": "vcs",
           "url": "git+https://github.com/isaacs/yallist.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/isaacs/yallist#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/isaacs/yallist/issues"
         }
       ],
       "hashes": [
@@ -10698,7 +11998,7 @@
       "type": "library",
       "name": "yocto-queue",
       "version": "0.1.0",
-      "scope": "required",
+      "scope": "optional",
       "author": "Sindre Sorhus",
       "description": "Tiny queue data structure",
       "purl": "pkg:npm/yocto-queue@0.1.0",
@@ -10712,6 +12012,18 @@
         {
           "type": "distribution",
           "url": "https://registry.npmjs.org/yocto-queue/-/yocto-queue-0.1.0.tgz"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/sindresorhus/yocto-queue.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/sindresorhus/yocto-queue#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/sindresorhus/yocto-queue/issues"
         }
       ],
       "hashes": [
@@ -10733,8 +12045,8 @@
       "type": "library",
       "name": "zod",
       "version": "4.4.3",
-      "scope": "required",
-      "author": "Colin McDonnell <zod@colinhacks.com>",
+      "scope": "optional",
+      "author": "Colin McDonnell",
       "description": "TypeScript-first schema declaration and validation library with static type inference",
       "purl": "pkg:npm/zod@4.4.3",
       "properties": [
@@ -10780,7 +12092,7 @@
       "type": "library",
       "name": "zod-validation-error",
       "version": "4.0.2",
-      "scope": "required",
+      "scope": "optional",
       "author": "Dimitrios C. Michalakos",
       "description": "Wrap zod validation errors in user-friendly readable messages",
       "purl": "pkg:npm/zod-validation-error@4.0.2",
@@ -10798,6 +12110,14 @@
         {
           "type": "vcs",
           "url": "git://github.com/causaly/zod-validation-error.git"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/causaly/zod-validation-error#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/causaly/zod-validation-error/issues"
         }
       ],
       "hashes": [
@@ -11523,7 +12843,7 @@
       "dependsOn": []
     },
     {
-      "ref": "brace-expansion@5.0.8",
+      "ref": "brace-expansion@5.0.9",
       "dependsOn": [
         "balanced-match@4.0.4"
       ]
@@ -11976,7 +13296,7 @@
     {
       "ref": "minimatch@10.2.5",
       "dependsOn": [
-        "brace-expansion@5.0.8"
+        "brace-expansion@5.0.9"
       ]
     },
     {
