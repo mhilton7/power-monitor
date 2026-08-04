@@ -1,4 +1,5 @@
 import type { ApiProblem } from '../types/models'
+import { HISTORY_PERFORMANCE_MARKS, measureAsync, measureSync } from '../utils/performance'
 
 export class ApiError extends Error {
   constructor(public readonly problem: ApiProblem) {
@@ -43,8 +44,14 @@ export async function request<T>(
     throw new ApiError(problem)
   }
   if (response.status === 204) return undefined as T
-  const payload: unknown = await response.json()
-  return adapt ? adapt(payload) : payload as T
+  const historyRequest = path === '/api/v1/history/query'
+  const payload: unknown = historyRequest
+    ? await measureAsync(HISTORY_PERFORMANCE_MARKS.jsonParse, () => response.json())
+    : await response.json()
+  if (!adapt) return payload as T
+  return historyRequest
+    ? measureSync(HISTORY_PERFORMANCE_MARKS.adaptation, () => adapt(payload))
+    : adapt(payload)
 }
 
 export async function download(path: string, init: RequestInit = {}): Promise<Blob> {

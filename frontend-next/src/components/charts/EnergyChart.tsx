@@ -1,20 +1,34 @@
 import { Chart as ChartJS, Filler, Legend, LinearScale, LineElement, PointElement, Tooltip, type ChartData, type ChartDataset, type ChartOptions, type ScatterDataPoint } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import { AlertTriangle } from 'lucide-react'
-import { useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useAppearance } from '../../state/AppearanceContext'
 import type { HistoryBucket, HistoryPoint } from '../../types/models'
 import { energy, money, percentage, power, rate } from '../../utils/format'
-import { chartAvailabilityMessage, chartAxisValue, chartIntervalLabel, chartTickLabel, chartTickTimestamps, colorWithAlpha } from './chartUtils'
+import {
+  chartAvailabilityMessageFromEpoch,
+  chartAxisValue,
+  chartIntervalLabel,
+  chartTickLabel,
+  chartTickTimestampsFromEpochs,
+  colorWithAlpha,
+} from './chartUtils'
 import { ResponsiveChartFrame } from './ResponsiveChartFrame'
+import { HISTORY_PERFORMANCE_MARKS, measureSync } from '../../utils/performance'
 
 ChartJS.register(LinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
+const ACCESSIBLE_TABLE_PAGE_SIZE = 100
 
 export function energyChartTooltipLines(point: HistoryPoint, currency: string): string[] {
   return [point.period ? `Period: ${point.period}` : '', point.tier ? `Tier: ${point.tier}` : '', point.rate ? `Rate: ${rate(point.rate, currency)}` : '', `Stored readings: ${percentage(point.coveragePercent)}`].filter(Boolean)
 }
 
 type ChartDatum = ScatterDataPoint
+interface ParsedHistoryPoint {
+  point: HistoryPoint
+  startMs: number
+  endMs: number
+}
 
 export function energyChartSeries(
   points: HistoryPoint[],
@@ -40,6 +54,10 @@ export function energyChartPointRadii(points: HistoryPoint[], now = Date.now()):
   })
 }
 
+export function energyChartPointIndex(points: HistoryPoint[]): Map<number, HistoryPoint> {
+  return new Map(points.map((point) => [Date.parse(point.start), point]))
+}
+
 export function chartTickLimitForWidth(width: number): number {
   if (!Number.isFinite(width) || width <= 0) return 6
   return Math.max(3, Math.min(12, Math.floor((width - 80) / 84)))
@@ -58,40 +76,98 @@ export function EnergyChart({ points, mode, currency, title, timezone = 'UTC', b
 }) {
   const { chartColors } = useAppearance()
   const chartRef = useRef<ChartJS<'line', ChartDatum[]> | null>(null)
-  const invalidCount = points.filter((point) => !Number.isFinite(Date.parse(point.start)) || !Number.isFinite(Date.parse(point.end))).length
-  const ordered = points.filter((point) => Number.isFinite(Date.parse(point.start)) && Number.isFinite(Date.parse(point.end))).sort((left, right) => Date.parse(left.start) - Date.parse(right.start))
-  const series = (field: 'powerW' | 'energyKwh' | 'cost'): ChartDatum[] => energyChartSeries(ordered, field)
-  const pointRadii = energyChartPointRadii(ordered)
-  const pointHoverRadii = pointRadii.map((radius) => radius > 0 ? 6 : 4)
-  const pointBorderWidths = pointRadii.map((radius) => radius > 0 ? 2 : 1)
-  const datasets: ChartDataset<'line', ChartDatum[]>[] = mode === 'power'
-    ? [{ label: 'Power (W)', data: series('powerW'), borderColor: chartColors.power, backgroundColor: colorWithAlpha(chartColors.power, .12), fill: true, tension: .2, spanGaps: false, pointRadius: pointRadii, pointHoverRadius: pointHoverRadii, pointBorderWidth: pointBorderWidths, pointBackgroundColor: chartColors.power, pointBorderColor: '#071A14', yAxisID: 'power' }]
+  const [tableOpen, setTableOpen] = useState(false)
+  const [tableRowLimit, setTableRowLimit] = useState(ACCESSIBLE_TABLE_PAGE_SIZE)
+  const parsedPoints = useMemo<ParsedHistoryPoint[]>(() => measureSync(
+    HISTORY_PERFORMANCE_MARKS.timestampParse,
+    () => points.map((point) => ({
+      point,
+      startMs: Date.parse(point.start),
+      endMs: Date.parse(point.end),
+    })),
+  ), [points])
+  const invalidCount = useMemo(
+    () => parsedPoints.filter(({ startMs, endMs }) => !Number.isFinite(startMs) || !Number.isFinite(endMs)).length,
+    [parsedPoints],
+  )
+  const orderedParsed = useMemo(
+    () => parsedPoints
+      .filter(({ startMs, endMs }) => Number.isFinite(startMs) && Number.isFinite(endMs))
+      .sort((left, right) => left.startMs - right.startMs),
+    [parsedPoints],
+  )
+  const ordered = useMemo(() => orderedParsed.map(({ point }) => point), [orderedParsed])
+  const pointIndex = useMemo(
+    () => new Map(orderedParsed.map(({ point, startMs }) => [startMs, point])),
+    [orderedParsed],
+  )
+  const rangeStartMs = useMemo(() => Date.parse(rangeStart ?? ''), [rangeStart])
+  const rangeEndMs = useMemo(() => Date.parse(rangeEnd ?? ''), [rangeEnd])
+  const visibleRangeEnd = Number.isFinite(rangeEndMs) ? rangeEndMs - 1 : Number.NaN
+  const series = useMemo(() => measureSync(HISTORY_PERFORMANCE_MARKS.chartPreparation, () => {
+    const build = (field: 'powerW' | 'energyKwh' | 'cost'): ChartDatum[] => orderedParsed.map(
+      ({ point, startMs }) => {
+        const rawValue = point[field]
+        const y = rawValue === undefined || rawValue.trim() === ''
+          ? Number.NaN
+          : Number(rawValue)
+        return { x: startMs, y: point.missing || !Number.isFinite(y) ? Number.NaN : y }
+      },
+    )
+    return {
+      powerW: build('powerW'),
+      energyKwh: build('energyKwh'),
+      cost: build('cost'),
+    }
+  }), [orderedParsed])
+  const pointRadii = useMemo(
+    () => orderedParsed.map(({ point, startMs, endMs }) => (
+      !point.missing && startMs <= visibleRangeEnd && visibleRangeEnd < endMs ? 4 : 0
+    )),
+    [orderedParsed, visibleRangeEnd],
+  )
+  const pointHoverRadii = useMemo(
+    () => pointRadii.map((radius) => radius > 0 ? 6 : 4),
+    [pointRadii],
+  )
+  const pointBorderWidths = useMemo(
+    () => pointRadii.map((radius) => radius > 0 ? 2 : 1),
+    [pointRadii],
+  )
+  const datasets = useMemo<ChartDataset<'line', ChartDatum[]>[]>(() => mode === 'power'
+    ? [{ label: 'Power (W)', data: series.powerW, borderColor: chartColors.power, backgroundColor: colorWithAlpha(chartColors.power, .12), fill: true, tension: .2, spanGaps: false, pointRadius: pointRadii, pointHoverRadius: pointHoverRadii, pointBorderWidth: pointBorderWidths, pointBackgroundColor: chartColors.power, pointBorderColor: '#071A14', yAxisID: 'power' }]
     : [
-        ...(mode !== 'cost' ? [{ label: 'Energy (kWh)', data: series('energyKwh'), borderColor: chartColors.energy, backgroundColor: colorWithAlpha(chartColors.energy, .12), fill: true, tension: .2, spanGaps: false, pointRadius: pointRadii, pointHoverRadius: pointHoverRadii, pointBorderWidth: pointBorderWidths, pointBackgroundColor: chartColors.energy, pointBorderColor: '#071A14', yAxisID: 'energy' } satisfies ChartDataset<'line', ChartDatum[]>] : []),
-        ...(mode !== 'energy' ? [{ label: `Cost (${currency})`, data: series('cost'), borderColor: chartColors.cost, backgroundColor: colorWithAlpha(chartColors.cost, .08), borderDash: [7, 5], fill: false, tension: .2, spanGaps: false, pointRadius: pointRadii, pointHoverRadius: pointHoverRadii, pointBorderWidth: pointBorderWidths, pointBackgroundColor: chartColors.cost, pointBorderColor: '#071A14', yAxisID: 'cost' } satisfies ChartDataset<'line', ChartDatum[]>] : []),
-      ]
-  const data: ChartData<'line', ChartDatum[]> = { datasets }
-  const min = rangeStart ? Date.parse(rangeStart) : Date.parse(ordered[0]?.start ?? '')
-  const max = rangeEnd ? Date.parse(rangeEnd) : Date.parse(ordered.at(-1)?.end ?? '')
-  const options: ChartOptions<'line'> = {
+        ...(mode !== 'cost' ? [{ label: 'Energy (kWh)', data: series.energyKwh, borderColor: chartColors.energy, backgroundColor: colorWithAlpha(chartColors.energy, .12), fill: true, tension: .2, spanGaps: false, pointRadius: pointRadii, pointHoverRadius: pointHoverRadii, pointBorderWidth: pointBorderWidths, pointBackgroundColor: chartColors.energy, pointBorderColor: '#071A14', yAxisID: 'energy' } satisfies ChartDataset<'line', ChartDatum[]>] : []),
+        ...(mode !== 'energy' ? [{ label: `Cost (${currency})`, data: series.cost, borderColor: chartColors.cost, backgroundColor: colorWithAlpha(chartColors.cost, .08), borderDash: [7, 5], fill: false, tension: .2, spanGaps: false, pointRadius: pointRadii, pointHoverRadius: pointHoverRadii, pointBorderWidth: pointBorderWidths, pointBackgroundColor: chartColors.cost, pointBorderColor: '#071A14', yAxisID: 'cost' } satisfies ChartDataset<'line', ChartDatum[]>] : []),
+      ], [chartColors.cost, chartColors.energy, chartColors.power, currency, mode, pointBorderWidths, pointHoverRadii, pointRadii, series])
+  const data = useMemo<ChartData<'line', ChartDatum[]>>(() => ({ datasets }), [datasets])
+  const min = Number.isFinite(rangeStartMs) ? rangeStartMs : orderedParsed[0]?.startMs
+  const max = Number.isFinite(rangeEndMs) ? rangeEndMs : orderedParsed.at(-1)?.endMs
+  const options = useMemo<ChartOptions<'line'>>(() => ({
     responsive: true, maintainAspectRatio: false, parsing: false, normalized: true,
-    animation: { duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 250 }, interaction: { intersect: false, mode: 'nearest', axis: 'x' },
+    animation: false, interaction: { intersect: false, mode: 'nearest', axis: 'x' },
     plugins: {
       legend: { display: datasets.length > 1, labels: { color: '#a9b5b1', usePointStyle: true } },
       tooltip: { callbacks: {
-        title(items) { const timestamp = Number(items[0]?.parsed.x); const point = ordered.find((candidate) => Date.parse(candidate.start) === timestamp); return point ? chartIntervalLabel(point.start, point.end, timezone) : '' },
-        afterBody(items) { const timestamp = Number(items[0]?.parsed.x); const point = ordered.find((candidate) => Date.parse(candidate.start) === timestamp); return point ? energyChartTooltipLines(point, currency) : [] },
+        title(items) { const timestamp = Number(items[0]?.parsed.x); const point = pointIndex.get(timestamp); return point ? chartIntervalLabel(point.start, point.end, timezone) : '' },
+        afterBody(items) { const timestamp = Number(items[0]?.parsed.x); const point = pointIndex.get(timestamp); return point ? energyChartTooltipLines(point, currency) : [] },
       } },
     },
     scales: {
-      x: { type: 'linear', min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined, afterBuildTicks(axis) { axis.ticks = chartTickTimestamps(ordered, rangeStart, rangeEnd, chartTickLimitForWidth(axis.chart.width)).map((value) => ({ value })) }, grid: { display: false }, title: { display: true, text: `Time (${timezone})`, color: '#97b1a7' }, ticks: { color: '#82908b', autoSkip: false, maxRotation: 0, minRotation: 0, callback: (value) => chartTickLabel(Number(value), bucket, timezone) } },
+      x: { type: 'linear', min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined, afterBuildTicks(axis) { axis.ticks = chartTickTimestampsFromEpochs(orderedParsed.map(({ startMs }) => startMs), rangeStartMs, rangeEndMs, chartTickLimitForWidth(axis.chart.width)).map((value) => ({ value })) }, grid: { display: false }, title: { display: true, text: `Time (${timezone})`, color: '#97b1a7' }, ticks: { color: '#82908b', autoSkip: false, maxRotation: 0, minRotation: 0, callback: (value) => chartTickLabel(Number(value), bucket, timezone) } },
       power: { display: mode === 'power', position: 'left', title: { display: true, text: 'Power (W)', color: '#97b1a7' }, grid: { color: colorWithAlpha('#FFFFFF', .06) }, ticks: { color: '#82908b', callback: (value) => chartAxisValue(value, 'power', currency) } },
       energy: { display: mode !== 'power' && mode !== 'cost', position: 'left', title: { display: true, text: 'Energy (kWh)', color: '#97b1a7' }, grid: { color: colorWithAlpha('#FFFFFF', .06) }, ticks: { color: '#82908b', callback: (value) => chartAxisValue(value, 'energy', currency) } },
       cost: { display: mode === 'cost' || mode === 'energy_cost', position: mode === 'cost' ? 'left' : 'right', title: { display: true, text: `Estimated cost (${currency})`, color: '#97b1a7' }, grid: { display: mode === 'cost', color: colorWithAlpha('#FFFFFF', .06) }, ticks: { color: chartColors.cost, callback: (value) => chartAxisValue(value, 'cost', currency) } },
     },
-  }
-  const missingCount = ordered.filter((point) => point.missing).length
-  const availabilityMessage = chartAvailabilityMessage(ordered, rangeStart, timezone)
+  }), [bucket, chartColors.cost, currency, datasets.length, max, min, mode, orderedParsed, pointIndex, rangeEndMs, rangeStartMs, timezone])
+  const missingCount = useMemo(() => ordered.filter((point) => point.missing).length, [ordered])
+  const firstAvailable = orderedParsed.find(({ point }) => !point.missing)
+  const availabilityMessage = chartAvailabilityMessageFromEpoch(
+    firstAvailable?.point.start,
+    firstAvailable?.startMs,
+    rangeStartMs,
+    timezone,
+  )
   const gapMessage = [
     availabilityMessage,
     missingCount > 0 ? `${missingCount} missing interval${missingCount === 1 ? '' : 's'} shown as gaps` : undefined,
@@ -114,9 +190,12 @@ export function EnergyChart({ points, mode, currency, title, timezone = 'UTC', b
     >
       <Line ref={chartRef} data={data} options={options} />
     </ResponsiveChartFrame>
-    <details className="chart-table"><summary>View accessible data table</summary><div className="table-scroll"><table>
+    <details className="chart-table" open={tableOpen} onToggle={(event) => {
+      setTableOpen(event.currentTarget.open)
+      if (!event.currentTarget.open) setTableRowLimit(ACCESSIBLE_TABLE_PAGE_SIZE)
+    }}><summary>View accessible data table</summary>{tableOpen && <div className="table-scroll"><table>
       <thead><tr><th>Exact interval ({timezone})</th><th>Power</th><th>Energy</th><th>Cost</th><th>Rate period</th><th>Stored readings</th></tr></thead>
-      <tbody>{ordered.map((point) => <tr key={`${point.start}-${point.end}`}><th scope="row">{chartIntervalLabel(point.start, point.end, timezone)}</th><td>{point.missing ? 'Missing' : power(point.powerW)}</td><td>{point.missing ? 'Missing' : energy(point.energyKwh)}</td><td>{point.missing ? 'Missing' : money(point.cost, currency)}</td><td>{[point.tier, point.period].filter(Boolean).join(' · ') || 'Not available'}</td><td>{percentage(point.coveragePercent)}</td></tr>)}</tbody>
-    </table></div></details>
+      <tbody>{ordered.slice(0, tableRowLimit).map((point) => <tr key={`${point.start}-${point.end}`}><th scope="row">{chartIntervalLabel(point.start, point.end, timezone)}</th><td>{point.missing ? 'Missing' : power(point.powerW)}</td><td>{point.missing ? 'Missing' : energy(point.energyKwh)}</td><td>{point.missing ? 'Missing' : money(point.cost, currency)}</td><td>{[point.tier, point.period].filter(Boolean).join(' · ') || 'Not available'}</td><td>{percentage(point.coveragePercent)}</td></tr>)}</tbody>
+    </table>{tableRowLimit < ordered.length && <button className="button secondary" type="button" onClick={() => { setTableRowLimit((current) => Math.min(current + ACCESSIBLE_TABLE_PAGE_SIZE, ordered.length)); }}>Show next {Math.min(ACCESSIBLE_TABLE_PAGE_SIZE, ordered.length - tableRowLimit)} intervals</button>}</div>}</details>
   </div>
 }

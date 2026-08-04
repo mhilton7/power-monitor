@@ -344,3 +344,50 @@ def test_ota_reconciliation_migration_preserves_deployments_and_evidence() -> No
     assert "DELETE FROM firmware_deployments" not in upgrade
     assert "DROP TABLE" not in upgrade
     assert "def downgrade()" in revision
+
+
+def test_ota_lifecycle_terminalization_migration_is_additive_and_indexed() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260803_0028_ota_lifecycle_terminalization.py"
+    ).read_text()
+    upgrade = revision.split("def downgrade()", maxsplit=1)[0]
+    assert 'down_revision = "20260803_0027"' in revision
+    assert '"state_changed_at"' in upgrade
+    assert '"terminal_at"' in upgrade
+    assert "ix_firmware_deployment_state_changed" in upgrade
+    assert "ix_firmware_deployment_state_expires" in upgrade
+    assert "UPDATE firmware_deployments SET state_changed_at" in upgrade
+    assert "DELETE FROM firmware_deployments" not in upgrade
+    assert "DROP TABLE" not in upgrade
+    assert "def downgrade()" in revision
+
+
+def test_history_coarse_index_migration_is_additive_and_covering() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (
+        root / "alembic" / "versions" / "20260803_0029_history_coarse_indexes.py"
+    ).read_text()
+    upgrade = revision.split("def downgrade()", maxsplit=1)[0]
+    assert 'down_revision = "20260803_0028"' in revision
+    assert "ix_raw_device_time_end" in upgrade
+    assert "ix_normalized_device_time_end" in upgrade
+    assert "ix_tier_segment_account_time_recalc" in upgrade
+    assert "ix_tier_segment_version_time" in upgrade
+    assert "autocommit_block" in upgrade
+    assert "postgresql_concurrently=True" in upgrade
+    assert "DELETE FROM" not in upgrade
+    assert "DROP TABLE" not in upgrade
+    assert "def downgrade()" in revision
+
+
+def test_ota_waiting_schedule_migration_extends_state_without_data_loss() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (root / "alembic" / "versions" / "20260803_0030_ota_waiting_schedule.py").read_text()
+    upgrade = revision.split("def downgrade()", maxsplit=1)[0]
+    assert 'down_revision = "20260803_0029"' in revision
+    assert "waiting_for_schedule" in upgrade
+    assert "firmware_deployment_state" in upgrade
+    assert "DELETE FROM" not in upgrade
+    assert "DROP TABLE" not in upgrade
+    assert "def downgrade()" in revision

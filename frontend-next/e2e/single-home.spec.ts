@@ -469,7 +469,8 @@ test('sensor firmware update uses one verified binary and existing device trust'
   await expect(dialog.getByText('Existing device HMAC')).toBeVisible()
   await expect(dialog.getByText('Existing trusted HTTPS')).toBeVisible()
   await dialog.getByRole('button', { name: 'Install' }).click()
-  await expect(dialog.getByText('Manifest authenticated')).toBeVisible()
+  await expect(dialog.getByText('Preparing download')).toBeVisible()
+  await expect(dialog.getByText('Waiting for the next authenticated sensor progress report.')).toBeVisible()
 })
 
 test('Billing and Settings remain usable at narrow widths', async ({ page }) => {

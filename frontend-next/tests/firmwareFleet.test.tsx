@@ -178,9 +178,18 @@ describe('advanced existing-trust firmware rollout', () => {
       if (url === '/api/v1/firmware-deployments') return Promise.resolve(new Response(JSON.stringify([
         deployment({
           id: 'deployment-canary', state: 'completed', rollout_group_id: 'rollout-1', rollout_order: 0,
-          verification_heartbeats: gateOpen ? 10 : 9,
+          verification_heartbeats: gateOpen ? 3 : 2,
           reading_confirmed_at: gateOpen ? '2026-08-02T10:00:00Z' : null,
           progress: 100,
+          verification: {
+            checks: [],
+            blocker: null,
+            blocking_critical_alert_count: 0,
+            verification_heartbeat_count: gateOpen ? 3 : 2,
+            verification_heartbeat_required: 3,
+            stabilization_elapsed_seconds: 30,
+            stabilization_required_seconds: 30,
+          },
         }),
       ]), { status: 200, headers: jsonHeaders }))
       throw new Error(`Unexpected request ${url}`)
@@ -225,7 +234,9 @@ describe('advanced existing-trust firmware rollout', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Cancel' }))
     await waitFor(() => { expect(calls.some((item) => item.url.endsWith('/cancel') && item.init?.method === 'POST')).toBe(true) })
-    const failedRow = (await screen.findByText('Failed')).closest('.firmware-deployment-row')
+    const failedRow = (await screen.findAllByText('Failed'))
+      .map((element) => element.closest('.firmware-deployment-row'))
+      .find((element) => element !== null)
     expect(failedRow).not.toBeNull()
     await user.click(within(failedRow as HTMLElement).getByRole('button', { name: 'Retry' }))
     await waitFor(() => { expect(calls.some((item) => item.url.endsWith('/retry') && item.init?.method === 'POST')).toBe(true) })

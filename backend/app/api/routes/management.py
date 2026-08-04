@@ -2001,8 +2001,18 @@ async def device_storage_status(
         value = details.get(key)
         return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
 
+    reading_index_integrity = details.get("reading_index_integrity_verified")
+    if not isinstance(reading_index_integrity, bool):
+        legacy_history_integrity = details.get("history_integrity_verified")
+        reading_index_integrity = (
+            legacy_history_integrity if isinstance(legacy_history_integrity, bool) else None
+        )
+
     normalized_details = {
         **details,
+        # Preserve the original field while providing one stable server-side
+        # name to both legacy and current firmware clients.
+        "reading_index_integrity_verified": reading_index_integrity,
         "oldest_stored_sequence": details.get("oldest_record_sequence"),
         "newest_stored_sequence": details.get("newest_record_sequence"),
         "server_event_ack_sequence": details.get("event_ack_sequence"),
@@ -2317,7 +2327,18 @@ async def history(
     )
 
 
-@router.post("/history/query", response_model=HistoryQueryResponse)
+@router.post(
+    "/history/query",
+    response_model=HistoryQueryResponse,
+    responses={
+        409: {
+            "description": (
+                "Continuation missing/invalid, or pricing and billing-cycle inputs changed; "
+                "restart from page 1."
+            )
+        }
+    },
+)
 async def query_history_api(
     payload: HistoryQueryRequest,
     principal: CsrfPrincipal,
@@ -2325,6 +2346,14 @@ async def query_history_api(
 ) -> HistoryQueryResponse:
     """Query aligned, topology-safe electrical and estimated energy-cost history."""
     _permission(principal, "history.view")
+    # Authentication reads and refreshes the browser-session ``last_seen_at``
+    # value on this same SQLAlchemy session.  PostgreSQL therefore already has
+    # a READ COMMITTED transaction by the time the endpoint is entered.  Close
+    # that authentication transaction (and persist its intentional mutation)
+    # before ``query_history`` establishes the stable REPEATABLE READ snapshot
+    # used by its exact measurement/pricing aggregates.
+    if session.in_transaction():
+        await session.commit()
     return await query_history(session, principal, payload)
 
 
@@ -2337,6 +2366,11 @@ async def export_history_api(
 ) -> Response:
     """Export the bounded server-authoritative history result with provenance."""
     _permission(principal, "history.export")
+    # See ``query_history_api``: preserve the authentication refresh, then let
+    # the export query own a fresh REPEATABLE READ snapshot.  The audit write
+    # below remains part of that endpoint-owned transaction.
+    if session.in_transaction():
+        await session.commit()
     export_payload = payload.model_copy(update={"page": 1, "page_size": MAX_HISTORY_BUCKETS})
     result = await query_history(session, principal, export_payload)
     session.add(

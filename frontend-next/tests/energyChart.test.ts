@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chartTickLimitForWidth, energyChartPointRadii, energyChartSeries, energyChartTooltipLines } from '../src/components/charts/EnergyChart'
+import { chartTickLimitForWidth, energyChartPointIndex, energyChartPointRadii, energyChartSeries, energyChartTooltipLines } from '../src/components/charts/EnergyChart'
 import { chartAvailabilityMessage, chartAxisValue, chartIntervalLabel, chartTickLabel, chartTickTimestamps, colorWithAlpha } from '../src/components/charts/chartUtils'
 import { chartColorContrast, normalizeChartColor } from '../src/state/AppearanceContext'
 import type { HistoryPoint } from '../src/types/models'
@@ -122,5 +122,22 @@ describe('energy chart tooltip formatting', () => {
     expect(chartTickLimitForWidth(900)).toBe(9)
     expect(chartTickLimitForWidth(1200)).toBe(12)
     expect(chartTickLimitForWidth(0)).toBe(6)
+  })
+
+  it('indexes 500-plus tooltip points by timestamp for constant-time lookup', () => {
+    const start = Date.parse('2026-07-01T00:00:00Z')
+    const points = Array.from({ length: 720 }, (_, index): HistoryPoint => ({
+      start: new Date(start + index * 60_000).toISOString(),
+      end: new Date(start + (index + 1) * 60_000).toISOString(),
+      label: String(index),
+      coveragePercent: '100',
+      energyKwh: '0.001',
+      missing: false,
+    }))
+
+    const index = energyChartPointIndex(points)
+
+    expect(index.size).toBe(720)
+    expect(index.get(Date.parse(points[619]?.start ?? ''))).toBe(points[619])
   })
 })

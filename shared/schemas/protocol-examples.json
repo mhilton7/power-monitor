@@ -13,7 +13,16 @@
     "rssi_dbm": -58,
     "connection_mode": "hybrid",
     "pzem": {"ok": true, "status": "connected", "error_count": 0},
-    "sd": {"ok": true, "status": "mounted", "free_bytes": 8000000000},
+    "sd": {
+      "ok": true,
+      "status": "mounted",
+      "free_bytes": 8000000000,
+      "details": {
+        "reading_index_integrity_verified": true,
+        "event_log_integrity_verified": true,
+        "event_log_integrity_status": "verified"
+      }
+    },
     "oldest_stored_sequence": 1,
     "oldest_syncable_sequence": 1,
     "newest_stored_sequence": 60,
@@ -45,5 +54,20 @@
   },
   "problem": {"type": "about:blank", "title": "Protocol mismatch", "status": 426, "detail": "Upgrade required", "instance": "/api/v1/device-heartbeats", "code": "protocol_incompatible"},
   "health": {"protocol_version": "pm-protocol/1.0.0", "status": "healthy", "pzem": {"ok": true}, "sd": {"ok": true}, "time": {"trusted": true}, "latest_sequence": 60},
-  "config": {"protocol_version": "pm-protocol/1.0.0", "version": 2, "settings": {"heartbeat_seconds": 15, "ct_rating_amps": 100}}
+  "config": {"protocol_version": "pm-protocol/1.0.0", "version": 2, "settings": {"heartbeat_seconds": 15, "ct_rating_amps": 100}},
+  "storage_integrity_status_examples": {
+    "not_scanned": {
+      "event_log_integrity_verified": null,
+      "event_log_integrity_status": "not_scanned"
+    },
+    "unavailable": {
+      "event_log_integrity_verified": null,
+      "event_log_integrity_status": "unavailable"
+    }
+  },
+  "ota_recovery_evidence_example": {
+    "deployment_id": "123e4567-e89b-12d3-a456-426614174001",
+    "attempt": 2,
+    "evidence_sequence": 17
+  }
 }

@@ -164,7 +164,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      <nav className="mobile-nav" aria-label="Primary mobile">
+      <nav className="mobile-nav" aria-label="Primary mobile" data-dropdown-viewport-obstruction="bottom">
         {destinations.map(({ label, path, icon: Icon }) => (
           <NavLink key={path} to={path}>
             <Icon aria-hidden="true" />

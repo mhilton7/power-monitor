@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ButtonHTMLAttributes,
@@ -36,6 +37,7 @@ export function DropdownMenu({
   children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  const [placement, setPlacement] = useState<'above' | 'below'>('below')
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const focusFrameRef = useRef<number | null>(null)
@@ -61,6 +63,7 @@ export function DropdownMenu({
   }, [])
   const openMenu = (focus: 'first' | 'last' | 'none' = 'none') => {
     activeMenu?.close()
+    setPlacement('below')
     setOpen(true)
     activeMenu = { id: menuId.current, close: () => { close(false) } }
     if (focus !== 'none') {
@@ -71,6 +74,32 @@ export function DropdownMenu({
       })
     }
   }
+
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current || !menuRef.current) return
+
+    const triggerBounds = triggerRef.current.getBoundingClientRect()
+    const menuBounds = menuRef.current.getBoundingClientRect()
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight
+    const viewportBottom = [...document.querySelectorAll<HTMLElement>('[data-dropdown-viewport-obstruction="bottom"]')]
+      .reduce((bottom, obstruction) => {
+        const style = window.getComputedStyle(obstruction)
+        const bounds = obstruction.getBoundingClientRect()
+        const isVisible = style.display !== 'none'
+          && style.visibility !== 'hidden'
+          && bounds.width > 0
+          && bounds.height > 0
+          && bounds.bottom >= viewportHeight - 1
+        return isVisible ? Math.min(bottom, bounds.top) : bottom
+      }, viewportHeight)
+    const safeGap = 8
+    const spaceBelow = viewportBottom - safeGap - triggerBounds.bottom
+    const spaceAbove = triggerBounds.top - safeGap
+    const nextPlacement = spaceBelow < menuBounds.height && spaceAbove > spaceBelow
+      ? 'above'
+      : 'below'
+    setPlacement((current) => current === nextPlacement ? current : nextPlacement)
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -171,6 +200,7 @@ export function DropdownMenu({
             className={menuClassName}
             role="menu"
             aria-label={label}
+            data-placement={placement}
             onKeyDown={onMenuKeyDown}
           >
             {children}

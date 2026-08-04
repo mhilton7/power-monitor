@@ -6267,6 +6267,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HistoryQueryResponse'
+        '409':
+          description: Continuation missing/invalid, or pricing and billing-cycle
+            inputs changed; restart from page 1.
         '422':
           description: Validation Error
           content:
@@ -15424,6 +15427,7 @@ components:
           type: string
           enum:
           - manifest_authenticated
+          - waiting_for_schedule
           - download_started
           - downloading
           - binary_verified
@@ -15472,6 +15476,13 @@ components:
           maxLength: 80
           minLength: 1
           title: Boot Id
+        evidence_sequence:
+          anyOf:
+          - type: integer
+            maximum: 1.8446744073709552e+19
+            minimum: 0.0
+          - type: 'null'
+          title: Evidence Sequence
         failure_code:
           anyOf:
           - type: string
@@ -15660,6 +15671,16 @@ components:
             format: date-time
           - type: 'null'
           title: Reading Confirmed At
+        state_changed_at:
+          type: string
+          format: date-time
+          title: State Changed At
+        terminal_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Terminal At
         created_at:
           type: string
           format: date-time
@@ -15698,6 +15719,8 @@ components:
           additionalProperties: true
           type: object
           title: Interruption Evidence
+        verification:
+          $ref: '#/components/schemas/FirmwareVerificationStatus'
       additionalProperties: false
       type: object
       required:
@@ -15731,6 +15754,8 @@ components:
       - rollback_build_hash
       - verification_heartbeats
       - reading_confirmed_at
+      - state_changed_at
+      - terminal_at
       - created_at
       - target_version
       - target_sha256
@@ -15739,6 +15764,7 @@ components:
       - source_build_hash
       - source_boot_id
       - interruption_evidence
+      - verification
       title: FirmwareDeploymentView
     FirmwareOtaReadinessView:
       properties:
@@ -15965,6 +15991,162 @@ components:
       - compatibility
       - duplicate
       title: FirmwareReleaseView
+    FirmwareVerificationBlocker:
+      properties:
+        code:
+          type: string
+          title: Code
+        state:
+          type: string
+          title: State
+        title:
+          type: string
+          title: Title
+        detail:
+          type: string
+          title: Detail
+        action:
+          type: string
+          title: Action
+      additionalProperties: false
+      type: object
+      required:
+      - code
+      - state
+      - title
+      - detail
+      - action
+      title: FirmwareVerificationBlocker
+    FirmwareVerificationCheck:
+      properties:
+        key:
+          type: string
+          title: Key
+        label:
+          type: string
+          title: Label
+        status:
+          type: string
+          enum:
+          - pending
+          - passed
+          - failed
+          - unavailable
+          title: Status
+        detail:
+          type: string
+          title: Detail
+        observed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Observed At
+      additionalProperties: false
+      type: object
+      required:
+      - key
+      - label
+      - status
+      - detail
+      title: FirmwareVerificationCheck
+    FirmwareVerificationStatus:
+      properties:
+        checks:
+          items:
+            $ref: '#/components/schemas/FirmwareVerificationCheck'
+          type: array
+          title: Checks
+        blocker:
+          anyOf:
+          - $ref: '#/components/schemas/FirmwareVerificationBlocker'
+          - type: 'null'
+        target_version_expected:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Version Expected
+        target_version_observed:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Version Observed
+        target_build_hash_expected:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Build Hash Expected
+        target_build_hash_observed:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Build Hash Observed
+        target_boot_id_observed:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Boot Id Observed
+        previous_boot_stage:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Previous Boot Stage
+        previous_reset_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Previous Reset Reason
+        rollback_state:
+          type: string
+          title: Rollback State
+        exact_failure_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Exact Failure Code
+        blocking_critical_alert_count:
+          type: integer
+          minimum: 0.0
+          title: Blocking Critical Alert Count
+        verification_heartbeat_count:
+          type: integer
+          minimum: 0.0
+          title: Verification Heartbeat Count
+        verification_heartbeat_required:
+          type: integer
+          minimum: 1.0
+          title: Verification Heartbeat Required
+        last_sensor_activity_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Sensor Activity At
+        last_report_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Report At
+        stabilization_elapsed_seconds:
+          type: integer
+          minimum: 0.0
+          title: Stabilization Elapsed Seconds
+        stabilization_required_seconds:
+          type: integer
+          minimum: 0.0
+          title: Stabilization Required Seconds
+      additionalProperties: false
+      type: object
+      required:
+      - checks
+      - rollback_state
+      - blocking_critical_alert_count
+      - verification_heartbeat_count
+      - verification_heartbeat_required
+      - stabilization_elapsed_seconds
+      - stabilization_required_seconds
+      title: FirmwareVerificationStatus
     FleetSummary:
       properties:
         site_id:
@@ -16284,7 +16466,7 @@ components:
         pzem:
           $ref: '#/components/schemas/SubsystemHealth'
         sd:
-          $ref: '#/components/schemas/SubsystemHealth'
+          $ref: '#/components/schemas/StorageSubsystemHealth'
         oldest_stored_sequence:
           type: integer
           minimum: 0.0
@@ -16295,6 +16477,12 @@ components:
             minimum: 0.0
           - type: 'null'
           title: Oldest Syncable Sequence
+        newest_syncable_sequence:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Newest Syncable Sequence
         newest_stored_sequence:
           type: integer
           minimum: 0.0
@@ -16303,6 +16491,12 @@ components:
           type: integer
           minimum: 0.0
           title: Server Ack Sequence
+        server_maximum_seen_sequence:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Server Maximum Seen Sequence
         backlog_estimate:
           type: integer
           minimum: 0.0
@@ -16714,6 +16908,12 @@ components:
           minimum: 1.0
           title: Page Size
           default: 250
+        continuation_token:
+          anyOf:
+          - type: string
+            maxLength: 32768
+          - type: 'null'
+          title: Continuation Token
       additionalProperties: false
       type: object
       required:
@@ -16782,6 +16982,11 @@ components:
           - type: integer
           - type: 'null'
           title: Next Page
+        next_continuation_token:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Continuation Token
       additionalProperties: false
       type: object
       required:
@@ -20762,6 +20967,39 @@ components:
       required:
       - reason
       title: StorageActionRequest
+    StorageHealthDetails:
+      properties:
+        history_integrity_verified:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: History Integrity Verified
+        reading_index_integrity_verified:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Reading Index Integrity Verified
+        event_log_integrity_verified:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Event Log Integrity Verified
+        event_log_integrity_status:
+          anyOf:
+          - type: string
+            enum:
+            - verified
+            - not_scanned
+            - unavailable
+            - event_record_corruption_detected
+            - event_log_open_failed
+          - type: 'null'
+          title: Event Log Integrity Status
+      additionalProperties: true
+      type: object
+      title: StorageHealthDetails
+      description: Typed storage-integrity evidence with forward-compatible extra
+        fields.
     StoragePolicyWrite:
       properties:
         retention_mode:
@@ -20842,6 +21080,26 @@ components:
       required:
       - reason
       title: StoragePolicyWrite
+    StorageSubsystemHealth:
+      properties:
+        ok:
+          type: boolean
+          title: Ok
+        status:
+          type: string
+          title: Status
+        error_count:
+          type: integer
+          minimum: 0.0
+          title: Error Count
+          default: 0
+        details:
+          $ref: '#/components/schemas/StorageHealthDetails'
+      type: object
+      required:
+      - ok
+      - status
+      title: StorageSubsystemHealth
     SubsystemHealth:
       properties:
         ok:

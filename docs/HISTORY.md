@@ -23,6 +23,13 @@ extend a contiguous range. The resulting energy, cost, weighted rate, power,
 coverage, and TOU breakdown are recalculated by the server rather than summed
 as browser-authoritative money.
 
+Paged cost results are one immutable query snapshot. A signed, session-bound
+continuation token fixes the reading cutoff, summary, effective assignments,
+exact tariff inputs, billing-cycle recalculation, and tier allocations used by
+page one. If any of those pricing inputs changes before a later page is loaded,
+the server returns HTTP 409 and the browser restarts from page one instead of
+combining buckets calculated under different rates.
+
 Tooltips and the table show local start/end, UTC offset, included and
 contributing sensor counts, energy, average and peak power, TOU period, rate,
 energy cost, rate plan/version, coverage, and quality flags. Repeated fall-DST

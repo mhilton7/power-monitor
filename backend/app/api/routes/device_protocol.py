@@ -33,6 +33,7 @@ from app.db.models import (
     Site,
     SyncCursor,
 )
+from app.firmware_lifecycle import transition_firmware_deployment
 from app.ingestion.service import ingest_readings
 from app.network_policy import effective_client_ip, evaluate_site_address
 from app.ota import (
@@ -54,6 +55,7 @@ from app.schemas import (
     HeartbeatResponse,
     OtaManifestUnavailable,
     OtaManifestV2,
+    Reading,
     ReadingBatch,
     ReadingBatchResponse,
     SequenceCursorResponse,
@@ -109,9 +111,8 @@ async def _complete_firmware_if_stable(
     )
     if critical_alert is not None:
         return
-    deployment.state = deployment.status = "completed"
+    transition_firmware_deployment(deployment, "completed", now)
     deployment.progress = 100
-    deployment.revision += 1
     deployment.validated_at = deployment.validated_at or now
 
 
@@ -125,6 +126,7 @@ async def _reconcile_firmware_heartbeat(
             FirmwareDeployment.state.in_(
                 [
                     "manifest_authenticated",
+                    "waiting_for_schedule",
                     "download_started",
                     "downloading",
                     "binary_verified",
@@ -133,6 +135,13 @@ async def _reconcile_firmware_heartbeat(
                     "post_boot_validation",
                     "validated",
                     "awaiting_heartbeat",
+                    # A target heartbeat carrying strictly newer persisted
+                    # evidence may correct a delayed terminal report from the
+                    # source boot. The reconciliation below remains fail-closed
+                    # unless deployment, attempt, boot, and sequence all prove
+                    # that the heartbeat supersedes that report.
+                    "failed",
+                    "rolled_back",
                 ]
             ),
         )
@@ -156,15 +165,79 @@ async def _reconcile_firmware_heartbeat(
     resources = payload.resources if isinstance(payload.resources, dict) else {}
     recovery = resources.get("ota_recovery", {})
     recovery = recovery if isinstance(recovery, dict) else {}
+    recovery_deployment_id = recovery.get("deployment_id")
+    recovery_attempt = recovery.get("attempt")
+    recovery_evidence_sequence = recovery.get("evidence_sequence")
+    recovery_identity_matches = (
+        recovery_deployment_id == deployment.id
+        and isinstance(recovery_attempt, int)
+        and not isinstance(recovery_attempt, bool)
+        and recovery_attempt == deployment.attempt
+    )
+    if (
+        not recovery_identity_matches
+        or not isinstance(recovery_evidence_sequence, int)
+        or isinstance(recovery_evidence_sequence, bool)
+        or not 0 <= recovery_evidence_sequence <= (2**64 - 1)
+    ):
+        # Evidence ordering is meaningful only within one persisted deployment
+        # attempt. Ignore legacy or mismatched identities and fail closed later
+        # if a delayed report cannot otherwise be ordered safely.
+        recovery_evidence_sequence = None
+
+    terminal_report = (
+        deployment.last_report_payload if isinstance(deployment.last_report_payload, dict) else {}
+    )
+    terminal_report_sequence = terminal_report.get("evidence_sequence")
+    terminal_report_boot_id = terminal_report.get("boot_id")
+    target_supersedes_terminal_report = bool(
+        deployment.state in {"failed", "rolled_back"}
+        and target_identity
+        and recovery_identity_matches
+        and recovery_evidence_sequence is not None
+        and isinstance(terminal_report_sequence, int)
+        and not isinstance(terminal_report_sequence, bool)
+        and recovery_evidence_sequence > terminal_report_sequence
+        and isinstance(terminal_report_boot_id, str)
+        and payload.boot_id != terminal_report_boot_id
+    )
+
+    if deployment.state in {"failed", "rolled_back"} and not target_supersedes_terminal_report:
+        return
 
     if not target_identity:
+        retained_evidence = (
+            deployment.interruption_evidence
+            if isinstance(deployment.interruption_evidence, dict)
+            else {}
+        )
+        target_heartbeat_boot_id = retained_evidence.get("target_heartbeat_boot_id")
+        target_heartbeat_sequence = retained_evidence.get("target_heartbeat_evidence_sequence")
         target_was_observed = bool(
             deployment.installed_at
             or deployment.validated_version
             or deployment.state in {"post_boot_validation", "validated", "awaiting_heartbeat"}
         )
-        if target_was_observed and source_identity:
-            deployment.state = deployment.status = "rolled_back"
+        rollback_boot_is_new = bool(
+            payload.boot_id
+            and payload.boot_id != deployment.source_boot_id
+            and payload.boot_id != (target_heartbeat_boot_id or deployment.last_boot_id)
+        )
+        rollback_evidence_is_new = bool(
+            recovery_identity_matches
+            and recovery_evidence_sequence is not None
+            and isinstance(target_heartbeat_sequence, int)
+            and recovery_evidence_sequence > target_heartbeat_sequence
+        )
+        if (
+            target_was_observed
+            and source_identity
+            and rollback_boot_is_new
+            and rollback_evidence_is_new
+        ):
+            transition_firmware_deployment(
+                deployment, "rolled_back", now, evidence_reconciliation=True
+            )
             deployment.rollback_at = now
             deployment.rollback_version = payload.firmware_version
             deployment.rollback_build_hash = payload.firmware_build_hash
@@ -174,10 +247,11 @@ async def _reconcile_firmware_heartbeat(
             )
             deployment.interruption_evidence = {
                 "reason": "target_then_source_identity",
-                "boot_id_changed": payload.boot_id != deployment.last_boot_id,
+                "boot_id_changed": True,
+                "target_heartbeat_boot_id": target_heartbeat_boot_id,
+                "target_heartbeat_evidence_sequence": target_heartbeat_sequence,
                 "ota_recovery": recovery,
             }
-            deployment.revision += 1
             session.add(
                 audit_event(
                     action="firmware.deployment_rollback_reconciled",
@@ -234,7 +308,7 @@ async def _reconcile_firmware_heartbeat(
             and (boot_changed or interrupted_stage or recovery.get("previous_boot_update_open"))
         ):
             interrupted_state = deployment.state
-            deployment.state = deployment.status = "failed"
+            transition_firmware_deployment(deployment, "failed", now)
             deployment.failure_code = "ota_interrupted_before_install"
             deployment.failure_summary = (
                 "The sensor rebooted during the download workflow and returned "
@@ -248,7 +322,6 @@ async def _reconcile_firmware_heartbeat(
                 "ota_recovery": recovery,
             }
             deployment.last_boot_id = payload.boot_id
-            deployment.revision += 1
             session.add(
                 audit_event(
                     action="firmware.deployment_interrupted_reconciled",
@@ -263,8 +336,16 @@ async def _reconcile_firmware_heartbeat(
 
     # A target identity is authoritative evidence that installation occurred,
     # even if the final pre-reboot progress report was lost.
+    was_stabilizing = deployment.state in {"validated", "awaiting_heartbeat"}
+    previous_target_boot_id = deployment.last_boot_id
     if deployment.state not in {"validated", "awaiting_heartbeat"}:
-        deployment.state = deployment.status = "awaiting_heartbeat"
+        transition_firmware_deployment(
+            deployment,
+            "awaiting_heartbeat",
+            now,
+            evidence_reconciliation=True,
+            supersede_terminal_evidence=target_supersedes_terminal_report,
+        )
         deployment.progress = 100
         deployment.bytes_received = max(deployment.bytes_received, release.size_bytes)
         deployment.installed_at = deployment.installed_at or now
@@ -272,7 +353,13 @@ async def _reconcile_firmware_heartbeat(
         deployment.validated_build_hash = payload.firmware_build_hash
         deployment.stabilization_started_at = deployment.stabilization_started_at or now
         deployment.last_boot_id = payload.boot_id
-        deployment.revision += 1
+        if target_supersedes_terminal_report:
+            deployment.failure_code = None
+            deployment.failure_summary = None
+            deployment.failure_reason = None
+            deployment.rollback_at = None
+            deployment.rollback_version = None
+            deployment.rollback_build_hash = None
         session.add(
             audit_event(
                 action="firmware.deployment_target_reconciled",
@@ -283,19 +370,87 @@ async def _reconcile_firmware_heartbeat(
                 details={"state": "awaiting_heartbeat", "ota_recovery": recovery},
             )
         )
-    if not payload.pzem.ok or not payload.sd.ok or not payload.time.trusted:
+    elif was_stabilizing and previous_target_boot_id and previous_target_boot_id != payload.boot_id:
+        # Stabilization evidence is continuous-boot evidence. A reboot of the
+        # target image starts a new proof window; heartbeats and a durable
+        # reading from the previous target boot cannot complete this attempt.
+        deployment.verification_heartbeats = 0
+        deployment.stabilization_started_at = now
+        deployment.reading_confirmed_at = None
+        # This is a material same-state lifecycle revision: it invalidates all
+        # continuous-boot proof gathered so far and restarts the post-boot
+        # timeout window. Clients must not mistake it for unchanged evidence.
+        deployment.revision += 1
+        deployment.state_changed_at = now
+        session.add(
+            audit_event(
+                action="firmware.deployment_target_restarted",
+                actor_type="device",
+                actor_id=payload.device_id,
+                object_type="firmware_deployment",
+                object_id=deployment.id,
+                details={
+                    "previous_boot_id": previous_target_boot_id,
+                    "observed_boot_id": payload.boot_id,
+                    "state": deployment.state,
+                },
+            )
+        )
+    # Persist the exact authenticated target boot even when one of its health
+    # checks fails. Keep the latest *healthy* target evidence separately so a
+    # delayed same-boot failure report cannot erase newer proof merely because
+    # an unhealthy heartbeat was observed afterwards.
+    deployment.last_boot_id = payload.boot_id
+    target_heartbeat_healthy = payload.pzem.ok and payload.sd.ok and payload.time.trusted
+    retained_evidence = dict(deployment.interruption_evidence or {})
+    retained_evidence.update(
+        {
+            "target_heartbeat_boot_id": payload.boot_id,
+            "target_heartbeat_received_at": now.isoformat(),
+            "target_heartbeat_healthy": target_heartbeat_healthy,
+        }
+    )
+    if recovery_evidence_sequence is not None:
+        retained_evidence["target_heartbeat_deployment_id"] = deployment.id
+        retained_evidence["target_heartbeat_attempt"] = deployment.attempt
+        previous_sequence = retained_evidence.get("target_heartbeat_evidence_sequence")
+        if not isinstance(previous_sequence, int) or recovery_evidence_sequence > previous_sequence:
+            retained_evidence["target_heartbeat_evidence_sequence"] = recovery_evidence_sequence
+    if target_heartbeat_healthy:
+        retained_evidence.update(
+            {
+                "target_healthy_heartbeat_boot_id": payload.boot_id,
+                "target_healthy_heartbeat_received_at": now.isoformat(),
+            }
+        )
+        if recovery_evidence_sequence is not None:
+            previous_healthy_sequence = retained_evidence.get(
+                "target_healthy_heartbeat_evidence_sequence"
+            )
+            if (
+                not isinstance(previous_healthy_sequence, int)
+                or recovery_evidence_sequence > previous_healthy_sequence
+            ):
+                retained_evidence["target_healthy_heartbeat_evidence_sequence"] = (
+                    recovery_evidence_sequence
+                )
+    deployment.interruption_evidence = retained_evidence
+    if not target_heartbeat_healthy:
         return
     if deployment.state == "validated":
-        deployment.state = deployment.status = "awaiting_heartbeat"
+        transition_firmware_deployment(deployment, "awaiting_heartbeat", now)
         deployment.stabilization_started_at = deployment.stabilization_started_at or now
-        deployment.revision += 1
     deployment.verification_heartbeats += 1
-    deployment.last_boot_id = payload.boot_id
     await _complete_firmware_if_stable(session, deployment, settings, now)
 
 
 async def _confirm_firmware_reading(
-    session: DbSession, device_id: str, settings: Any, now: datetime
+    session: DbSession,
+    device_id: str,
+    readings: list[Reading],
+    durably_confirmed_sequences: set[int],
+    settings: Any,
+    now: datetime,
 ) -> None:
     deployment = await session.scalar(
         select(FirmwareDeployment)
@@ -305,8 +460,19 @@ async def _confirm_firmware_reading(
         )
         .order_by(FirmwareDeployment.scheduled_at.desc())
         .limit(1)
+        .with_for_update()
     )
     if deployment is None:
+        return
+    # A previous boot's backlog may be durably accepted immediately after an
+    # OTA. It remains valid History data, but is not proof that the target
+    # image can acquire and synchronize a reading.
+    if not any(
+        reading.sequence in durably_confirmed_sequences
+        and reading.boot_id == deployment.last_boot_id
+        and reading.firmware_version == deployment.validated_version
+        for reading in readings
+    ):
         return
     deployment.reading_confirmed_at = deployment.reading_confirmed_at or now
     await _complete_firmware_if_stable(session, deployment, settings, now)
@@ -649,11 +815,18 @@ def _status_from_heartbeat(payload: Heartbeat) -> str:
         return "time_unsynchronized"
     if not payload.pzem.ok:
         return "api_healthy_meter_failed"
-    if not payload.sd.ok:
-        if payload.sd.status == "sequence_reconciling" or payload.sd.details.get(
-            "sequence_reconciliation_in_progress"
-        ):
-            return "online_storage_reconciling"
+    if payload.sd.status == "sequence_reconciling" or payload.sd.details.get(
+        "sequence_reconciliation_in_progress"
+    ):
+        return "online_storage_reconciling"
+    # Current firmware deliberately keeps ``sd.ok`` true when the card remains
+    # mounted and writable but either the reading index or the independent
+    # event log fails an integrity check. Preserve Online semantics while still
+    # surfacing the signed degradation instead of flattening it to synchronized.
+    if not payload.sd.ok or payload.sd.status in {
+        "reading_index_integrity_degraded",
+        "event_log_integrity_degraded",
+    }:
         return "online_storage_degraded"
     if payload.backlog_estimate > 0:
         return "online_with_backlog"
@@ -715,6 +888,11 @@ async def heartbeat(
                 "heartbeat": True,
                 "pzem": payload.pzem.status,
                 "sd": payload.sd.status,
+                "reading_index_integrity_verified": (
+                    payload.sd.details.effective_reading_index_integrity_verified
+                ),
+                "event_log_integrity_verified": (payload.sd.details.event_log_integrity_verified),
+                "event_log_integrity_status": payload.sd.details.event_log_integrity_status,
                 "time_trusted": payload.time.trusted,
                 "backlog": payload.backlog_estimate,
             },
@@ -971,8 +1149,20 @@ async def reading_batch(
         unavailable_sequence_ranges=payload.unavailable_sequence_ranges,
         maximum_clock_skew_seconds=settings.max_device_clock_skew_seconds,
     )
-    if result.accepted:
-        await _confirm_firmware_reading(session, verified.device.id, settings, datetime.now(UTC))
+    # An identical duplicate is cryptographic proof that the exact record is
+    # already durable. It is valid post-update evidence when its boot and
+    # firmware identity match the authenticated target; a lost HTTP response
+    # must not strand an otherwise healthy deployment forever.
+    durably_confirmed = set(result.accepted) | set(result.duplicates)
+    if durably_confirmed:
+        await _confirm_firmware_reading(
+            session,
+            verified.device.id,
+            payload.readings,
+            durably_confirmed,
+            settings,
+            datetime.now(UTC),
+        )
     await session.commit()
     logger.info(
         "history.normalization_completed",
@@ -1301,7 +1491,6 @@ async def firmware_manifest(
         for index in range(len(secret_buffer)):
             secret_buffer[index] = 0
     if deployment.state == "scheduled":
-        deployment.state = deployment.status = "offered"
-        deployment.revision += 1
+        transition_firmware_deployment(deployment, "offered", now)
     await session.commit()
     return manifest

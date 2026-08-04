@@ -7,11 +7,13 @@ import struct
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api.routes.firmware import _advisory_lock_key, _lock_firmware_scope
 from app.db.models import Device, FirmwareDeployment, FirmwareRelease
 from app.firmware_images import FirmwareImageError, parse_esp32s3_application_image
 from app.ota import (
@@ -194,10 +196,12 @@ def _report(
     bytes_received: int = 0,
     current_version: str = "1.0.10",
     current_build_hash: str = "old-build",
+    boot_id: str = BOOT_ID,
     failure_code: str | None = None,
     failure_summary: str | None = None,
+    evidence_sequence: int | None = None,
 ) -> dict[str, Any]:
-    return {
+    report = {
         "device_id": device_id,
         "deployment_id": deployment_id,
         "release_id": release["id"],
@@ -210,10 +214,13 @@ def _report(
         "bytes_received": bytes_received,
         "image_size": release["size_bytes"],
         "progress": progress,
-        "boot_id": BOOT_ID,
+        "boot_id": boot_id,
         "failure_code": failure_code,
         "failure_summary": failure_summary,
     }
+    if evidence_sequence is not None:
+        report["evidence_sequence"] = evidence_sequence
+    return report
 
 
 def _heartbeat(
@@ -399,12 +406,46 @@ def test_report_schema_requires_complete_verified_image() -> None:
         bytes_received=100,
     )
     assert FirmwareDeploymentReport.model_validate(base).state == "binary_verified"
+    waiting = FirmwareDeploymentReport.model_validate(
+        {
+            **base,
+            "state": "waiting_for_schedule",
+            "progress": 0,
+            "bytes_received": 0,
+            "evidence_sequence": 4,
+        }
+    )
+    assert waiting.state == "waiting_for_schedule"
+    assert waiting.evidence_sequence == 4
+    with pytest.raises(ValueError, match="greater than or equal to 0"):
+        FirmwareDeploymentReport.model_validate({**base, "evidence_sequence": -1})
+    with pytest.raises(ValueError, match="less than or equal to"):
+        FirmwareDeploymentReport.model_validate({**base, "evidence_sequence": 2**64})
     with pytest.raises(ValueError, match="complete image"):
         FirmwareDeploymentReport.model_validate({**base, "bytes_received": 99})
     with pytest.raises(ValueError, match="requires failure_code"):
         FirmwareDeploymentReport.model_validate(
             {**base, "state": "failed", "bytes_received": 0, "progress": 0}
         )
+
+
+@pytest.mark.asyncio
+async def test_firmware_scope_lock_uses_stable_postgres_advisory_transaction_lock() -> None:
+    session = MagicMock()
+    session.execute = AsyncMock()
+    bind = MagicMock()
+    bind.dialect.name = "postgresql"
+    session.get_bind.return_value = bind
+
+    await _lock_firmware_scope(session, "rollout:group-one")
+
+    statement, parameters = session.execute.await_args.args
+    assert str(statement) == "SELECT pg_advisory_xact_lock(:lock_key)"
+    assert parameters == {
+        "lock_key": _advisory_lock_key("power-monitor:firmware:rollout:group-one")
+    }
+    assert _advisory_lock_key("scope-a") == _advisory_lock_key("scope-a")
+    assert _advisory_lock_key("scope-a") != _advisory_lock_key("scope-b")
 
 
 @pytest.mark.asyncio
@@ -690,6 +731,7 @@ async def test_manifest_download_reports_retry_and_final_heartbeat_verification(
 
     milestones = [
         ("manifest_authenticated", 0, 0, "1.0.10", "old-build"),
+        ("waiting_for_schedule", 0, 0, "1.0.10", "old-build"),
         ("download_started", 0, 0, "1.0.10", "old-build"),
         ("downloading", 50, release["size_bytes"] // 2, "1.0.10", "old-build"),
         ("binary_verified", 100, release["size_bytes"], "1.0.10", "old-build"),
@@ -735,6 +777,54 @@ async def test_manifest_download_reports_retry_and_final_heartbeat_verification(
         deployment.stabilization_started_at = datetime.now(UTC) - timedelta(seconds=20)
         await session.commit()
 
+    # Commit the first target-build reading before the target heartbeat moves
+    # the deployment into its post-boot gate. Re-sending these exact bytes
+    # afterwards exercises the lost-response path: ingestion returns a
+    # cryptographically identical duplicate, which is still durable proof.
+    interval_end = datetime.now(UTC)
+    target_batch = {
+        "protocol_version": PROTOCOL,
+        "schema_version": "reading-batch/1.0.0",
+        "device_id": device_id,
+        "readings": [
+            {
+                "sequence": 1,
+                "boot_id": BOOT_ID,
+                "interval_start": (interval_end - timedelta(minutes=1)).isoformat(),
+                "interval_end": interval_end.isoformat(),
+                "time_trusted": True,
+                "voltage_avg": "120.0",
+                "current_avg": "0.01",
+                "power_avg": "1.0",
+                "power_factor": "0.83",
+                "frequency_hz": "60.0",
+                "interval_energy_wh": "0.0166667",
+                "energy_method": "power_integration",
+                "ct_rating_amps": "100",
+                "quality_flags": [],
+                "firmware_version": release["version"],
+            }
+        ],
+    }
+    reading_target = "/api/v1/device-readings/batch"
+    target_batch_body = json.dumps(target_batch, separators=(",", ":")).encode()
+    first_target_batch = await client.post(
+        reading_target,
+        content=target_batch_body,
+        headers={
+            **_signed_headers(
+                secret,
+                device_id,
+                "POST",
+                reading_target,
+                target_batch_body,
+            ),
+            "Content-Type": "application/json",
+        },
+    )
+    assert first_target_batch.status_code == 200, first_target_batch.text
+    assert first_target_batch.json()["accepted"] == [1]
+
     heartbeat_target = "/api/v1/device-heartbeats"
     heartbeat = {
         "protocol_version": PROTOCOL,
@@ -779,22 +869,132 @@ async def test_manifest_download_reports_retry_and_final_heartbeat_verification(
         deployment = await session.get(FirmwareDeployment, deployment_id)
         assert deployment is not None
         assert deployment.state == "awaiting_heartbeat"
-        deployment.reading_confirmed_at = datetime.now(UTC)
-        await session.commit()
-    body = json.dumps(heartbeat, separators=(",", ":")).encode()
-    final_heartbeat = await client.post(
-        heartbeat_target,
-        content=body,
+        assert deployment.reading_confirmed_at is None
+
+    duplicate_target_batch = await client.post(
+        reading_target,
+        content=target_batch_body,
         headers={
-            **_signed_headers(secret, device_id, "POST", heartbeat_target, body),
+            **_signed_headers(
+                secret,
+                device_id,
+                "POST",
+                reading_target,
+                target_batch_body,
+            ),
             "Content-Type": "application/json",
         },
     )
-    assert final_heartbeat.status_code == 200
+    assert duplicate_target_batch.status_code == 200, duplicate_target_batch.text
+    assert duplicate_target_batch.json()["duplicates"] == [1]
     history = await client.get("/api/v1/firmware-deployments", params={"device_id": device_id})
     assert history.status_code == 200
     assert history.json()[0]["state"] == "completed"
-    assert history.json()[0]["verification_heartbeats"] == 11
+    assert history.json()[0]["verification_heartbeats"] == 10
+    assert history.json()[0]["reading_confirmed_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_report_evidence_sequence_allows_equal_missed_milestone_replay(
+    api_client: Any,
+    test_settings: Any,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    client: httpx.AsyncClient = api_client
+    test_settings.firmware_path = tmp_path / "firmware"
+    site_id = await _bootstrap(client)
+    device_id, secret = await _enroll(client, site_id, "missed-milestones")
+    release_response = await _upload(client, esp32s3_image(variant=b"m"))
+    assert release_response.status_code == 201, release_response.text
+    release = release_response.json()
+
+    created = await client.post(
+        "/api/v1/firmware-deployments",
+        headers=_csrf(client),
+        json={
+            "firmware_release_id": release["id"],
+            "device_ids": [device_id],
+            "scheduled_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+            "idempotency_key": "ota-missed-milestone-replay-0001",
+        },
+    )
+    assert created.status_code == 201, created.text
+    deployment_id = created.json()["deployment_ids"][0]
+    manifest_path = "/api/v1/device-firmware/manifest"
+    manifest_response = await client.get(
+        manifest_path,
+        headers=_signed_headers(secret, device_id, "GET", manifest_path),
+    )
+    assert manifest_response.status_code == 200, manifest_response.text
+
+    # A sensor that persisted several checkpoints while the server was
+    # unavailable replays those missed milestones with its latest retained
+    # evidence sequence. The sequence orders durable state; it is not a unique
+    # HTTP-report counter.
+    evidence_sequence = 17
+    replay = [
+        ("manifest_authenticated", 0, 0),
+        ("download_started", 0, 0),
+        ("downloading", 25, release["size_bytes"] // 4),
+        ("downloading", 50, release["size_bytes"] // 2),
+        ("binary_verified", 100, release["size_bytes"]),
+    ]
+    last_payload: dict[str, Any] | None = None
+    for state, progress, bytes_received in replay:
+        last_payload = _report(
+            device_id=device_id,
+            deployment_id=deployment_id,
+            release=release,
+            state=state,
+            progress=progress,
+            bytes_received=bytes_received,
+            evidence_sequence=evidence_sequence,
+        )
+        response = await _signed_report(client, secret, last_payload)
+        assert response.status_code == 200, response.text
+        assert response.json()["state"] == state
+
+    assert last_payload is not None
+    duplicate = await _signed_report(client, secret, last_payload)
+    assert duplicate.status_code == 200, duplicate.text
+    assert duplicate.json()["duplicate"] is True
+
+    # A delayed failure from older durable evidence is stale even though Failed
+    # would otherwise be a legal graph transition from binary_verified.
+    delayed_failure = _report(
+        device_id=device_id,
+        deployment_id=deployment_id,
+        release=release,
+        state="failed",
+        progress=50,
+        bytes_received=release["size_bytes"] // 2,
+        failure_code="download_transport_failed",
+        failure_summary="Delayed report retained before later verification",
+        evidence_sequence=evidence_sequence - 1,
+    )
+    stale = await _signed_report(client, secret, delayed_failure)
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["code"] == "firmware_report_stale"
+
+    async with session_factory_fixture() as session:
+        deployment = await session.get(FirmwareDeployment, deployment_id)
+        assert deployment is not None
+        assert deployment.state == "binary_verified"
+        assert deployment.last_report_payload["evidence_sequence"] == evidence_sequence
+
+    next_milestone = _report(
+        device_id=device_id,
+        deployment_id=deployment_id,
+        release=release,
+        state="partition_written",
+        progress=100,
+        bytes_received=release["size_bytes"],
+        evidence_sequence=evidence_sequence,
+    )
+    accepted = await _signed_report(client, secret, next_milestone)
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["state"] == "partition_written"
 
 
 @pytest.mark.asyncio
@@ -920,6 +1120,22 @@ async def test_target_heartbeat_reconciles_lost_final_reports_after_install(
         deployment.last_report_at = datetime.now(UTC)
         await session.commit()
 
+    source_failure_before_target = _report(
+        device_id=device_id,
+        deployment_id=deployment_id,
+        release=release,
+        state="failed",
+        current_version="1.0.10",
+        current_build_hash="source-build-10",
+        boot_id=BOOT_ID,
+        failure_code="ota_transport_failed",
+        failure_summary="Queued source-boot report arrived before the target heartbeat",
+        evidence_sequence=9,
+    )
+    recorded_source_failure = await _signed_report(client, secret, source_failure_before_target)
+    assert recorded_source_failure.status_code == 200, recorded_source_failure.text
+    assert recorded_source_failure.json()["state"] == "failed"
+
     installed = await _signed_heartbeat(
         client,
         secret,
@@ -933,6 +1149,9 @@ async def test_target_heartbeat_reconciles_lost_final_reports_after_install(
                     "previous_boot_stage": "reboot_scheduled",
                     "previous_boot_update_open": False,
                     "previous_boot_reboot_expected": True,
+                    "deployment_id": deployment_id,
+                    "attempt": 1,
+                    "evidence_sequence": 10,
                 }
             },
         ),
@@ -946,6 +1165,108 @@ async def test_target_heartbeat_reconciles_lost_final_reports_after_install(
     assert deployment["bytes_received"] == release["size_bytes"]
     assert deployment["progress_mode"] == "determinate"
     assert deployment["validated_version"] == release["version"]
+    assert deployment["failure_code"] is None
+
+    delayed_source_failure = _report(
+        device_id=device_id,
+        deployment_id=deployment_id,
+        release=release,
+        state="failed",
+        current_version="1.0.10",
+        current_build_hash="source-build-10",
+        boot_id="323e4567-e89b-12d3-a456-426614174099",
+        failure_code="ota_transport_failed",
+        failure_summary="Queued source-boot report arrived late",
+    )
+    mismatched_attempt_failure = {
+        **delayed_source_failure,
+        "attempt": 999,
+        "current_firmware_version": release["version"],
+        "current_build_hash": release["build_hash"],
+        "evidence_sequence": 999,
+    }
+    mismatched = await _signed_report(client, secret, mismatched_attempt_failure)
+    assert mismatched.status_code == 409, mismatched.text
+    assert mismatched.json()["code"] == "firmware_report_mismatch"
+
+    ordered_heartbeat = await _signed_heartbeat(
+        client,
+        secret,
+        _heartbeat(
+            device_id=device_id,
+            firmware_version=release["version"],
+            firmware_build_hash=release["build_hash"],
+            boot_id="323e4567-e89b-12d3-a456-426614174099",
+            resources={
+                "ota_recovery": {
+                    "deployment_id": deployment_id,
+                    "attempt": 1,
+                    "evidence_sequence": 10,
+                }
+            },
+        ),
+    )
+    assert ordered_heartbeat.status_code == 200, ordered_heartbeat.text
+
+    delayed_source_heartbeat = await _signed_heartbeat(
+        client,
+        secret,
+        _heartbeat(
+            device_id=device_id,
+            firmware_version="1.0.10",
+            firmware_build_hash="source-build-10",
+            boot_id=BOOT_ID,
+            resources={
+                "ota_recovery": {
+                    "deployment_id": deployment_id,
+                    "attempt": 1,
+                    "evidence_sequence": 10,
+                }
+            },
+        ),
+    )
+    assert delayed_source_heartbeat.status_code == 200, delayed_source_heartbeat.text
+    after_delayed_heartbeat = await client.get(
+        "/api/v1/firmware-deployments", params={"device_id": device_id}
+    )
+    assert after_delayed_heartbeat.status_code == 200, after_delayed_heartbeat.text
+    assert after_delayed_heartbeat.json()[0]["state"] == "awaiting_heartbeat"
+    assert after_delayed_heartbeat.json()[0]["rollback_at"] is None
+
+    stale = await _signed_report(client, secret, delayed_source_failure)
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["code"] == "firmware_report_stale"
+    unchanged = await client.get("/api/v1/firmware-deployments", params={"device_id": device_id})
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()[0]["state"] == "awaiting_heartbeat"
+
+    explicitly_older_failure = {
+        **delayed_source_failure,
+        "current_firmware_version": release["version"],
+        "current_build_hash": release["build_hash"],
+        "evidence_sequence": 9,
+    }
+    older = await _signed_report(client, secret, explicitly_older_failure)
+    assert older.status_code == 409, older.text
+    assert older.json()["code"] == "firmware_report_stale"
+
+    equal_evidence_failure = {
+        **explicitly_older_failure,
+        "evidence_sequence": 10,
+    }
+    equal = await _signed_report(client, secret, equal_evidence_failure)
+    assert equal.status_code == 409, equal.text
+    assert equal.json()["code"] == "firmware_report_stale"
+
+    later_target_failure = {
+        **explicitly_older_failure,
+        "evidence_sequence": 11,
+        "failure_code": "ota_post_boot_health_failed",
+        "failure_summary": "A newer retained target-boot health failure",
+    }
+    later = await _signed_report(client, secret, later_target_failure)
+    assert later.status_code == 200, later.text
+    assert later.json()["state"] == "failed"
 
 
 @pytest.mark.asyncio
@@ -1005,6 +1326,7 @@ async def test_bootstrap_canary_cancel_retry_stale_report_and_integrity_quaranti
     test_settings: Any,
     session_factory_fixture: async_sessionmaker[AsyncSession],
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client: httpx.AsyncClient = api_client
     test_settings.firmware_path = tmp_path / "firmware"
@@ -1033,23 +1355,53 @@ async def test_bootstrap_canary_cancel_retry_stale_report_and_integrity_quaranti
     assert blocked.status_code == 422
     assert blocked.json()["code"] == "firmware_bootstrap_required"
 
+    rollout_payload = {
+        "firmware_release_id": release["id"],
+        "device_ids": [canary_id, follower_id],
+        "scheduled_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+        "idempotency_key": "ota-canary-request-0001",
+        "canary_first": True,
+        "maximum_concurrency": 1,
+    }
     created = await client.post(
         "/api/v1/firmware-deployments",
         headers=_csrf(client),
-        json={
-            "firmware_release_id": release["id"],
-            "device_ids": [canary_id, follower_id],
-            "scheduled_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
-            "idempotency_key": "ota-canary-request-0001",
-            "canary_first": True,
-            "maximum_concurrency": 1,
-        },
+        json=rollout_payload,
     )
     assert created.status_code == 201, created.text
     canary, follower = created.json()["deployments"]
     assert canary["state"] == "scheduled"
     assert follower["state"] == "waiting_canary"
     assert canary["rollout_group_id"] == follower["rollout_group_id"]
+
+    replayed = await client.post(
+        "/api/v1/firmware-deployments",
+        headers=_csrf(client),
+        json=rollout_payload,
+    )
+    assert replayed.status_code == 201, replayed.text
+    assert replayed.json()["deployment_ids"] == [canary["id"], follower["id"]]
+    assert {item["rollout_group_id"] for item in replayed.json()["deployments"]} == {
+        canary["rollout_group_id"]
+    }
+
+    conflicting_reuse = await client.post(
+        "/api/v1/firmware-deployments",
+        headers=_csrf(client),
+        json={**rollout_payload, "device_ids": [canary_id]},
+    )
+    assert conflicting_reuse.status_code == 409
+    assert conflicting_reuse.json()["code"] == "idempotency_conflict"
+
+    locked_groups: list[str] = []
+
+    async def record_rollout_lock(_session: Any, rollout_group_id: str) -> None:
+        locked_groups.append(rollout_group_id)
+
+    monkeypatch.setattr(
+        "app.api.routes.firmware._lock_rollout_group",
+        record_rollout_lock,
+    )
 
     cancelled = await client.post(
         f"/api/v1/firmware-deployments/{canary['id']}/cancel",
@@ -1102,6 +1454,7 @@ async def test_bootstrap_canary_cancel_retry_stale_report_and_integrity_quaranti
     assert promoted.status_code == 200, promoted.text
     assert promoted.json()["deployment"]["id"] == follower["id"]
     assert promoted.json()["deployment"]["state"] == "scheduled"
+    assert locked_groups == [canary["rollout_group_id"]] * 3
 
     manifest_path = "/api/v1/device-firmware/manifest"
     manifest = await client.get(

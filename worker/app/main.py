@@ -7,13 +7,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from sqlalchemy import text
-
 from app.bills.service import due_retention_deletions
 from app.config import get_settings
 from app.db.models import WorkerState
 from app.db.session import session_factory
+from app.firmware_lifecycle import reconcile_stale_firmware_deployments
 from app.logging import configure_logging
+from sqlalchemy import text
+
 from worker.app.polling import poll_due_devices
 from worker.app.rate_sync import (
     activate_due_versions,
@@ -48,6 +49,14 @@ async def _unlock(session: Any) -> None:
 
 
 async def _process_work(session: Any, factory: Any, settings: Any) -> dict[str, Any]:
+    firmware_reconciliation = await reconcile_stale_firmware_deployments(
+        session, settings
+    )
+    # Reconciliation owns row locks on active deployments. Persist and release
+    # them before unrelated normalization, notification, or network polling
+    # work so a later worker failure cannot roll back an OTA terminal outcome
+    # or block an authenticated sensor report for the duration of the loop.
+    await session.commit()
     history_normalization = await reconcile_missing_normalized_intervals(session)
     alerts = await evaluate_alerts(session, settings)
     notifications = await process_notification_jobs(session, settings)
@@ -82,6 +91,7 @@ async def _process_work(session: Any, factory: Any, settings: Any) -> dict[str, 
         "exports_completed": exports,
         "reports_completed": reports,
         "history_normalization": history_normalization,
+        "firmware_reconciliation": firmware_reconciliation,
         "cost_runs_completed": costs,
         "tier_recalculations_completed": tier_recalculations,
         "rollups": rollups,

@@ -8,6 +8,8 @@ import httpx
 import pytest
 
 from app.access import BUILTIN_ROLE_PERMISSIONS
+from app.api.routes.device_protocol import _status_from_heartbeat
+from app.schemas import Heartbeat
 from app.security.protocol import PROTOCOL, sign_headers
 
 
@@ -24,6 +26,103 @@ def test_builtin_storage_permissions_are_read_only_for_viewers() -> None:
     assert "storage.view" in BUILTIN_ROLE_PERMISSIONS["rate-manager"]
     assert "storage.manage" not in BUILTIN_ROLE_PERMISSIONS["rate-manager"]
     assert {"storage.view", "storage.manage"}.issubset(BUILTIN_ROLE_PERMISSIONS["admin"])
+
+
+def test_storage_integrity_heartbeat_parser_is_backward_and_forward_compatible() -> None:
+    payload = {
+        "protocol_version": PROTOCOL,
+        "device_id": "device-storage-parser",
+        "boot_id": "boot-storage-parser",
+        "firmware_version": "1.0.15",
+        "firmware_build_hash": "storage-parser-build",
+        "uptime_seconds": 60,
+        "reboot_reason": "power_on",
+        "connection_mode": "push",
+        "pzem": {"ok": True, "status": "ok"},
+        "sd": {
+            "ok": True,
+            "status": "ok",
+            "details": {
+                "history_integrity_verified": False,
+                "future_storage_counter": 7,
+            },
+        },
+        "oldest_stored_sequence": 1,
+        "newest_stored_sequence": 1,
+        "server_ack_sequence": 0,
+        "backlog_estimate": 1,
+        "configuration_version": 1,
+        "time": {"trusted": True, "source": "sntp"},
+    }
+    legacy = Heartbeat.model_validate(payload)
+    assert legacy.sd.details.effective_reading_index_integrity_verified is False
+    assert legacy.model_dump(mode="json")["sd"]["details"]["future_storage_counter"] == 7
+
+    current_payload = {
+        **payload,
+        "sd": {
+            # The card remains mounted/writable; only the independent event
+            # ledger is degraded in current firmware.
+            "ok": True,
+            "status": "event_log_integrity_degraded",
+            "details": {
+                "history_integrity_verified": True,
+                "reading_index_integrity_verified": True,
+                "event_log_integrity_verified": False,
+                "event_log_integrity_status": "event_record_corruption_detected",
+            },
+        },
+    }
+    current = Heartbeat.model_validate(current_payload)
+    assert current.sd.details.effective_reading_index_integrity_verified is True
+    assert current.sd.details.event_log_integrity_status == ("event_record_corruption_detected")
+    assert _status_from_heartbeat(current) == "online_storage_degraded"
+
+    for expected_status in ("not_scanned", "unavailable"):
+        additive_payload = {
+            **current_payload,
+            "sd": {
+                **current_payload["sd"],
+                "details": {
+                    **current_payload["sd"]["details"],
+                    "event_log_integrity_status": expected_status,
+                },
+            },
+        }
+        parsed = Heartbeat.model_validate(additive_payload)
+        assert parsed.sd.details.event_log_integrity_status == expected_status
+
+    reading_index_payload = {
+        **payload,
+        "sd": {
+            "ok": True,
+            "status": "reading_index_integrity_degraded",
+            "details": {
+                "history_integrity_verified": True,
+                "reading_index_integrity_verified": False,
+                "event_log_integrity_verified": True,
+                "event_log_integrity_status": "verified",
+            },
+        },
+    }
+    reading_index = Heartbeat.model_validate(reading_index_payload)
+    # The explicit new reading-index field takes precedence over its legacy
+    # alias, including a meaningful False value.
+    assert reading_index.sd.details.effective_reading_index_integrity_verified is False
+    assert _status_from_heartbeat(reading_index) == "online_storage_degraded"
+
+    invalid = {
+        **current_payload,
+        "sd": {
+            **current_payload["sd"],
+            "details": {
+                **current_payload["sd"]["details"],
+                "event_log_integrity_status": "unknown_corruption_state",
+            },
+        },
+    }
+    with pytest.raises(ValueError, match="event_log_integrity_status"):
+        Heartbeat.model_validate(invalid)
 
 
 async def enroll(client: httpx.AsyncClient) -> tuple[str, bytes]:
@@ -189,6 +288,9 @@ async def test_storage_status_policy_cleanup_and_safe_removal(api_client: Any) -
                 "storage_cleanup_target_percent": 10,
                 "storage_cleanup_target_bytes": 1024**3,
                 "event_retention_days": 730,
+                "reading_index_integrity_verified": True,
+                "event_log_integrity_verified": False,
+                "event_log_integrity_status": "event_record_corruption_detected",
             },
         },
         "oldest_stored_sequence": 10,
@@ -215,6 +317,9 @@ async def test_storage_status_policy_cleanup_and_safe_removal(api_client: Any) -
     assert details["estimated_bytes_per_day"] == 2 * 1024**2
     assert details["event_segment_count"] == 3
     assert details["temporary_artifact_count"] == 4
+    assert details["reading_index_integrity_verified"] is True
+    assert details["event_log_integrity_verified"] is False
+    assert details["event_log_integrity_status"] == "event_record_corruption_detected"
     assert status.json()["effective_policy"]["retention_mode"] == "strict_age"
     assert status.json()["desired_policy"]["retention_days"] == 365
     assert status.json()["policy_pending"] is False

@@ -12,11 +12,219 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  packages: read
+
+concurrency:
+  # Serialize every publication for this repository. This closes the race where
+  # tag and manual runs spell the same version as `v1.2.3` and `1.2.3`.
+  group: publish-immutable-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
-  publish:
+  preflight:
     runs-on: ubuntu-latest
+    outputs:
+      image_prefix: ${{ steps.release.outputs.image_prefix }}
+      version: ${{ steps.release.outputs.version }}
+      migration_revision: ${{ steps.release.outputs.migration_revision }}
+      source_commit: ${{ steps.release.outputs.source_commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: release
+        name: Validate release identity
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version || github.ref_name }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          version="${REQUESTED_VERSION#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version must be strict semver" >&2
+            exit 1
+          fi
+
+          readarray -t metadata < <(python - <<'PY'
+          import json
+          data = json.load(open("release/versions.json", encoding="utf-8"))
+          print(data.get("version", ""))
+          print(data.get("migration_revision", ""))
+          print(data.get("git_commit", ""))
+          print(data.get("protocol", ""))
+          PY
+          )
+          metadata_version="${metadata[0]}"
+          migration_revision="${metadata[1]}"
+          source_commit="${metadata[2]}"
+          protocol="${metadata[3]}"
+          if [[ "$version" != "$metadata_version" ]]; then
+            echo "requested version $version does not match release/versions.json version $metadata_version" >&2
+            exit 1
+          fi
+          if [[ ! "$migration_revision" =~ ^[0-9]{8}_[0-9]{4}$ ]]; then
+            echo "release metadata has an invalid migration revision" >&2
+            exit 1
+          fi
+          if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "release metadata has an invalid source commit" >&2
+            exit 1
+          fi
+          if [[ "$protocol" != "pm-protocol/1.0.0" ]]; then
+            echo "release metadata protocol is not pm-protocol/1.0.0" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$source_commit" HEAD; then
+            echo "release metadata source commit is not an ancestor of this release" >&2
+            exit 1
+          fi
+          if ! git diff --quiet "$source_commit" HEAD -- . ':(exclude)release'; then
+            echo "application source changed after the tested release commit" >&2
+            git diff --name-only "$source_commit" HEAD -- . ':(exclude)release' >&2
+            exit 1
+          fi
+
+          owner="${REPOSITORY_OWNER,,}"
+          repository="${REPOSITORY_NAME,,}"
+          if [[ -z "$owner" || -z "$repository" ]]; then
+            echo "GitHub repository owner and name are required" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "image_prefix=ghcr.io/${owner}/${repository}" >> "$GITHUB_OUTPUT"
+          echo "migration_revision=$migration_revision" >> "$GITHUB_OUTPUT"
+          echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
+      - name: Reject an existing immutable release tag
+        shell: bash
+        env:
+          IMAGE_PREFIX: ${{ steps.release.outputs.image_prefix }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          for component in api frontend backup; do
+            image="${IMAGE_PREFIX}-${component}:${RELEASE_VERSION}"
+            set +e
+            inspection="$(docker buildx imagetools inspect "$image" 2>&1)"
+            status=$?
+            set -e
+
+            if [[ $status -eq 0 ]]; then
+              echo "immutable release tag already exists: $image" >&2
+              exit 1
+            fi
+            if ! grep -Eqi '(not found|manifest unknown|404)' <<< "$inspection"; then
+              echo "could not prove that immutable release tag is unused: $image" >&2
+              echo "$inspection" >&2
+              exit 1
+            fi
+            echo "confirmed unused release tag: $image"
+          done
+
+  source-validation:
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.4.0"
+      - name: Install locked validation dependencies
+        run: uv sync --project backend --frozen --extra dev
+      - name: Validate contracts, Compose, migrations, and TrueNAS tooling
+        env:
+          RUN_LOAD_TEST: "1"
+          RUN_POSTGRES_INTEGRATION: "1"
+          RUN_HISTORY_PERFORMANCE: "1"
+        run: |
+          python_bin=backend/.venv/bin/python
+          "$python_bin" -m ruff check backend worker simulator scripts tools
+          "$python_bin" -m ruff format --check backend worker simulator scripts tools
+          (cd backend && .venv/bin/python -m mypy app)
+          MYPYPATH=backend "$python_bin" -m mypy worker/app simulator/simulated_device --explicit-package-bases
+          "$python_bin" scripts/validate_contracts.py
+          "$python_bin" scripts/validate_compose_static.py
+          "$python_bin" tools/validate-truenas-compose.py
+          "$python_bin" scripts/verify_release_checksums.py \
+            --expected-version '${{ needs.preflight.outputs.version }}' \
+            --expected-migration '${{ needs.preflight.outputs.migration_revision }}' \
+            --expected-commit '${{ needs.preflight.outputs.source_commit }}'
+          test "$(node --version)" = 'v24.4.0'
+          test "$(npm --version)" = '11.4.2'
+          "$python_bin" -m pytest -q -p no:cacheprovider
+
+  frontend-validation:
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.4.0"
+          cache: npm
+          cache-dependency-path: frontend-next/package-lock.json
+      - name: Validate the production frontend
+        working-directory: frontend-next
+        run: |
+          test "$(node --version)" = 'v24.4.0'
+          test "$(npm --version)" = '11.4.2'
+          npm ci
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+
+  build-validation:
+    needs: [preflight, source-validation, frontend-validation]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - component: api
+            dockerfile: deploy/docker/backend.Dockerfile
+          - component: frontend
+            dockerfile: deploy/docker/frontend.Dockerfile
+          - component: backup
+            dockerfile: deploy/docker/backup.Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build release image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: false
+          tags: ${{ needs.preflight.outputs.image_prefix }}-${{ matrix.component }}:${{ needs.preflight.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.preflight.outputs.source_commit }}
+            org.opencontainers.image.version=${{ needs.preflight.outputs.version }}
+          build-args: |
+            APP_VERSION=${{ needs.preflight.outputs.version }}
+            RELEASE_COMMIT=${{ needs.preflight.outputs.source_commit }}
+          cache-from: type=gha,scope=release-${{ matrix.component }}-${{ github.sha }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.component }}-${{ github.sha }}
+
+  publish:
+    needs: [preflight, source-validation, frontend-validation, build-validation]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: true
       matrix:
@@ -35,30 +243,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - id: image
-        name: Resolve canonical GHCR namespace
-        shell: bash
-        env:
-          REPOSITORY_OWNER: ${{ github.repository_owner }}
-          REPOSITORY_NAME: ${{ github.event.repository.name }}
-        run: |
-          owner="${REPOSITORY_OWNER,,}"
-          repository="${REPOSITORY_NAME,,}"
-          if [[ -z "$owner" || -z "$repository" ]]; then
-            echo "GitHub repository owner and name are required" >&2
-            exit 1
-          fi
-          echo "prefix=ghcr.io/${owner}/${repository}" >> "$GITHUB_OUTPUT"
-      - id: version
-        shell: bash
-        run: |
-          version="${{ inputs.version || github.ref_name }}"
-          version="${version#v}"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "version must be strict semver" >&2
-            exit 1
-          fi
-          echo "value=$version" >> "$GITHUB_OUTPUT"
       - id: build
         uses: docker/build-push-action@v6
         with:
@@ -68,14 +252,15 @@ jobs:
           provenance: mode=max
           sbom: true
           push: true
-          tags: ${{ steps.image.outputs.prefix }}-${{ matrix.component }}:${{ steps.version.outputs.value }}
+          tags: ${{ needs.preflight.outputs.image_prefix }}-${{ matrix.component }}:${{ needs.preflight.outputs.version }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.version.outputs.value }}
+            org.opencontainers.image.revision=${{ needs.preflight.outputs.source_commit }}
+            org.opencontainers.image.version=${{ needs.preflight.outputs.version }}
           build-args: |
-            APP_VERSION=${{ steps.version.outputs.value }}
-            RELEASE_COMMIT=${{ github.sha }}
+            APP_VERSION=${{ needs.preflight.outputs.version }}
+            RELEASE_COMMIT=${{ needs.preflight.outputs.source_commit }}
+          cache-from: type=gha,scope=release-${{ matrix.component }}-${{ github.sha }}
       - shell: bash
         run: |
-          echo '${{ matrix.component }}=${{ steps.image.outputs.prefix }}-${{ matrix.component }}:${{ steps.version.outputs.value }}@${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+          echo '${{ matrix.component }}=${{ needs.preflight.outputs.image_prefix }}-${{ matrix.component }}:${{ needs.preflight.outputs.version }}@${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"

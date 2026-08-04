@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     firmware_verification_heartbeat_count: int = 10
     firmware_download_stale_seconds: int = 10 * 60
     firmware_interruption_grace_seconds: int = 45
+    firmware_sensor_return_timeout_seconds: int = 5 * 60
+    firmware_post_boot_timeout_seconds: int = 15 * 60
+    firmware_legacy_evidence_timeout_seconds: int = 24 * 60 * 60
+    firmware_reconcile_batch_size: int = 100
     firmware_bootstrap_offset: str = "0x20000"
     report_path: Path = Path("/data/reports")
     rate_sync_artifact_path: Path = Path("/app/data/rate-source-artifacts")

@@ -44,8 +44,20 @@ export function chartTickTimestamps(
     .filter(Number.isFinite)
     .sort((left, right) => left - right)
     .filter((value, index, values) => index === 0 || value !== values[index - 1])
-  const requestedStart = Date.parse(rangeStart ?? '')
-  const requestedEnd = Date.parse(rangeEnd ?? '')
+  return chartTickTimestampsFromEpochs(
+    pointTimestamps,
+    Date.parse(rangeStart ?? ''),
+    Date.parse(rangeEnd ?? ''),
+    maximum,
+  )
+}
+
+export function chartTickTimestampsFromEpochs(
+  pointTimestamps: number[],
+  requestedStart: number,
+  requestedEnd: number,
+  maximum = 12,
+): number[] {
   const first = Number.isFinite(requestedStart) ? requestedStart : pointTimestamps[0]
   const last = Number.isFinite(requestedEnd) ? requestedEnd : pointTimestamps.at(-1)
   const minimumSeparation = first !== undefined && last !== undefined
@@ -78,8 +90,27 @@ export function chartAvailabilityMessage(
   const firstAvailable = points
     .filter((point) => !point.missing && Number.isFinite(Date.parse(point.start)))
     .sort((left, right) => Date.parse(left.start) - Date.parse(right.start))[0]
-  if (!firstAvailable || Date.parse(firstAvailable.start) - requestedStart < 60_000) return undefined
-  const beginning = zoned(firstAvailable.start, timezone, {
+  return chartAvailabilityMessageFromEpoch(
+    firstAvailable?.start,
+    firstAvailable ? Date.parse(firstAvailable.start) : undefined,
+    requestedStart,
+    timezone,
+  )
+}
+
+export function chartAvailabilityMessageFromEpoch(
+  firstAvailableStart: string | undefined,
+  firstAvailableMs: number | undefined,
+  requestedStart: number,
+  timezone: string,
+): string | undefined {
+  if (
+    !firstAvailableStart
+    || firstAvailableMs === undefined
+    || !Number.isFinite(requestedStart)
+    || firstAvailableMs - requestedStart < 60_000
+  ) return undefined
+  const beginning = zoned(firstAvailableStart, timezone, {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })
   return `Data begins ${beginning}`

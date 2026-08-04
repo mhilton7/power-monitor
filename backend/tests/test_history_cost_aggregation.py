@@ -1,30 +1,34 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
-from decimal import Decimal
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import (
     AggregateMember,
     AggregateSet,
+    BillingCycle,
     Circuit,
     Device,
     NormalizedInterval,
     RateAssignment,
     RatePlan,
+    RateTierDefinition,
     RateVersion,
     RawReading,
     Site,
+    TierAllocationSegment,
     User,
     UserSite,
     Utility,
     UtilityAccount,
 )
+from app.history import TierSegmentIndex
 from app.ingestion.service import ingest_readings
 from app.main import app
 from app.schemas import Reading
@@ -47,6 +51,20 @@ async def bootstrap(client: httpx.AsyncClient) -> None:
         },
     )
     assert response.status_code == 201, response.text
+
+
+def canonical_numeric_values(value: Any) -> Any:
+    """Compare JSON numerics by exact value, independent of Decimal exponent."""
+    if isinstance(value, dict):
+        return {key: canonical_numeric_values(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [canonical_numeric_values(item) for item in value]
+    if isinstance(value, str):
+        try:
+            return Decimal(value)
+        except InvalidOperation:
+            return value
+    return value
 
 
 def flat_rate_document() -> dict[str, Any]:
@@ -222,6 +240,146 @@ async def seed_two_sensor_history(
         return site.id, devices[0].id, devices[1].id, version.id
 
 
+def tier_rate_document() -> dict[str, Any]:
+    document = flat_rate_document()
+    document.update(
+        {
+            "pricing_model": "tiered",
+            "flat_rate_per_kwh": None,
+            "seasons": [],
+            "billing_cycle": {
+                "expected_start_day": 1,
+                "threshold": {
+                    "basis": "fixed_cycle_kwh",
+                    "daily_baseline_kwh": None,
+                    "baseline_region": None,
+                    "baseline_category": None,
+                    "rounding_policy": "none",
+                    "seasonal_baselines": [],
+                    "source_citation": "History equivalence fixture",
+                },
+            },
+            "tiers": [
+                {
+                    "tier_id": "tier-1",
+                    "name": "Tier 1",
+                    "order": 0,
+                    "lower_bound_inclusive_kwh": "0",
+                    "upper_bound_exclusive_kwh": "1",
+                    "lower_bound_multiplier": None,
+                    "upper_bound_multiplier": None,
+                    "price_per_kwh": "0.30",
+                    "tou_prices": {},
+                    "season": None,
+                    "source_citation": "History equivalence fixture",
+                },
+                {
+                    "tier_id": "tier-2",
+                    "name": "Tier 2",
+                    "order": 1,
+                    "lower_bound_inclusive_kwh": "1",
+                    "upper_bound_exclusive_kwh": None,
+                    "lower_bound_multiplier": None,
+                    "upper_bound_multiplier": None,
+                    "price_per_kwh": "0.40",
+                    "tou_prices": {},
+                    "season": None,
+                    "source_citation": "History equivalence fixture",
+                },
+            ],
+            "hybrid_pricing": None,
+        }
+    )
+    return document
+
+
+async def convert_seed_to_tiered_history(
+    factory: async_sessionmaker[AsyncSession], version_id: str
+) -> None:
+    async with factory() as session:
+        version = await session.get(RateVersion, version_id)
+        assert version
+        version.pricing_model = "tiered"
+        version.normalized_payload = tier_rate_document()
+        account = await session.scalar(
+            select(UtilityAccount).where(UtilityAccount.active_rate_version_id == version_id)
+        )
+        assert account
+        definitions = [
+            RateTierDefinition(
+                rate_version_id=version_id,
+                stable_tier_id="tier-1",
+                name="Tier 1",
+                display_order=0,
+                lower_bound_kwh=Decimal("0"),
+                upper_bound_kwh=Decimal("1"),
+                price_per_kwh=Decimal("0.30"),
+            ),
+            RateTierDefinition(
+                rate_version_id=version_id,
+                stable_tier_id="tier-2",
+                name="Tier 2",
+                display_order=1,
+                lower_bound_kwh=Decimal("1"),
+                upper_bound_kwh=None,
+                price_per_kwh=Decimal("0.40"),
+            ),
+        ]
+        cycle = BillingCycle(
+            utility_account_id=account.id,
+            starts_at=datetime(2026, 7, 1, tzinfo=UTC),
+            ends_at=datetime(2026, 8, 1, tzinfo=UTC),
+            status="confirmed",
+            recalculation_version=1,
+        )
+        session.add_all([*definitions, cycle])
+        await session.flush()
+        intervals = list(
+            await session.scalars(
+                select(NormalizedInterval)
+                .where(
+                    NormalizedInterval.device_id.in_(
+                        select(Device.id).where(Device.utility_account_id == account.id)
+                    )
+                )
+                .order_by(NormalizedInterval.interval_start, NormalizedInterval.device_id)
+            )
+        )
+        assert len(intervals) == 4
+        for index, interval in enumerate(intervals):
+            tier_index = 0 if index == 0 else 1
+            tier = definitions[tier_index]
+            cumulative = Decimal(index)
+            for recalculation_version, cost_multiplier in (
+                (0, Decimal("100")),
+                (1, Decimal("1")),
+            ):
+                session.add(
+                    TierAllocationSegment(
+                        billing_cycle_id=cycle.id,
+                        utility_account_id=account.id,
+                        normalized_interval_id=interval.id,
+                        segment_order=0,
+                        interval_start=interval.interval_start,
+                        interval_end=interval.interval_end,
+                        rate_version_id=version_id,
+                        tier_definition_id=tier.id,
+                        tier_stable_id=tier.stable_tier_id,
+                        tier_name=tier.name,
+                        tou_period=None,
+                        cumulative_start_kwh=cumulative,
+                        cumulative_end_kwh=cumulative + Decimal("1"),
+                        segment_energy_kwh=Decimal("1"),
+                        price_per_kwh=tier.price_per_kwh,
+                        unrounded_energy_charge=(tier.price_per_kwh * cost_multiplier),
+                        usage_authority_type="sensor_measurements",
+                        recalculation_version=recalculation_version,
+                        created_at=datetime(2026, 7, 21, tzinfo=UTC),
+                    )
+                )
+        await session.commit()
+
+
 @pytest.mark.asyncio
 async def test_history_combines_two_sensors_and_calculates_exact_range_cost(
     api_client: object,
@@ -236,7 +394,14 @@ async def test_history_combines_two_sensors_and_calculates_exact_range_cost(
     payload = {
         "scope": {"type": "devices", "device_ids": [first_id, second_id]},
         "display_mode": "combined_plus_individual",
-        "metrics": ["power_w", "energy_kwh", "energy_cost", "usage_cost"],
+        "metrics": [
+            "power_w",
+            "energy_kwh",
+            "energy_cost",
+            "usage_cost",
+            "voltage_v",
+            "current_a",
+        ],
         "start_utc": "2026-07-21T03:00:00Z",
         "end_utc": "2026-07-21T05:00:00Z",
         "bucket": "1h",
@@ -687,3 +852,424 @@ async def test_history_enforces_site_scope_cross_site_and_query_limits(
     )
     assert cross_site.status_code == 422
     assert cross_site.json()["code"] == "history_cross_site"
+
+
+@pytest.mark.asyncio
+async def test_history_execution_plan_skips_unrequested_cost_work_and_series(
+    api_client: object,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = api_client
+    assert isinstance(client, httpx.AsyncClient)
+    await bootstrap(client)
+    _, first_id, _, _ = await seed_two_sensor_history(session_factory_fixture)
+
+    def unexpected_individual_bucket(**_kwargs: object) -> None:
+        raise AssertionError("combined-only history constructed an individual series")
+
+    monkeypatch.setattr("app.history._individual_bucket", unexpected_individual_bucket)
+    engine = session_factory_fixture.kw["bind"]
+    statements: list[str] = []
+
+    def capture_statement(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: object,
+    ) -> None:
+        statements.append(statement.lower())
+
+    event.listen(engine.sync_engine, "before_cursor_execute", capture_statement)
+    try:
+        base = {
+            "scope": {"type": "device", "device_id": first_id},
+            "display_mode": "combined",
+            "start_utc": "2026-07-21T03:00:00Z",
+            "end_utc": "2026-07-21T05:00:00Z",
+            "bucket": "1h",
+            "timezone": "America/Los_Angeles",
+        }
+        power_response = await client.post(
+            "/api/v1/history/query",
+            headers=csrf(client),
+            json={**base, "metrics": ["power_w"]},
+        )
+        assert power_response.status_code == 200, power_response.text
+        assert power_response.json()["individual"] == []
+        assert any("raw_readings" in statement for statement in statements)
+        assert not any("normalized_intervals" in statement for statement in statements)
+        assert not any("rate_assignments" in statement for statement in statements)
+        assert not any("rate_versions" in statement for statement in statements)
+        assert not any("tier_allocation_segments" in statement for statement in statements)
+
+        statements.clear()
+        energy_response = await client.post(
+            "/api/v1/history/query",
+            headers=csrf(client),
+            json={**base, "metrics": ["energy_kwh"]},
+        )
+        assert energy_response.status_code == 200, energy_response.text
+        assert any("normalized_intervals" in statement for statement in statements)
+        assert not any("rate_assignments" in statement for statement in statements)
+        assert not any("rate_versions" in statement for statement in statements)
+        assert not any("tier_allocation_segments" in statement for statement in statements)
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", capture_statement)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("metrics", "display_mode"),
+    [
+        (["power_w"], "combined"),
+        (["energy_kwh"], "individual"),
+        (
+            ["power_w", "energy_kwh", "energy_cost", "usage_cost"],
+            "combined_plus_individual",
+        ),
+    ],
+)
+async def test_coarse_history_is_exactly_equivalent_to_raw_history(
+    api_client: object,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    metrics: list[str],
+    display_mode: str,
+) -> None:
+    client = api_client
+    assert isinstance(client, httpx.AsyncClient)
+    await bootstrap(client)
+    _, first_id, second_id, _ = await seed_two_sensor_history(session_factory_fixture)
+    payload = {
+        "scope": {"type": "devices", "device_ids": [first_id, second_id]},
+        "display_mode": display_mode,
+        "metrics": metrics,
+        "start_utc": "2026-07-21T03:00:00Z",
+        "end_utc": "2026-07-21T05:00:00Z",
+        "bucket": "1h",
+        "timezone": "America/Los_Angeles",
+        "selection_start_utc": "2026-07-21T03:30:00Z",
+        "selection_end_utc": "2026-07-21T04:30:00Z",
+        "page_size": 1,
+    }
+    monkeypatch.setattr("app.history.COARSE_HISTORY_BUCKETS", set())
+    raw_response = await client.post("/api/v1/history/query", headers=csrf(client), json=payload)
+    assert raw_response.status_code == 200, raw_response.text
+
+    monkeypatch.setattr("app.history.COARSE_HISTORY_BUCKETS", {"1h", "1d"})
+    coarse_response = await client.post("/api/v1/history/query", headers=csrf(client), json=payload)
+    assert coarse_response.status_code == 200, coarse_response.text
+    coarse_payload = coarse_response.json()
+    raw_payload = raw_response.json()
+    assert coarse_payload.pop("next_continuation_token")
+    assert raw_payload.pop("next_continuation_token")
+    assert canonical_numeric_values(coarse_payload) == canonical_numeric_values(raw_payload)
+
+
+@pytest.mark.asyncio
+async def test_history_continuation_reuses_exact_summary_and_bounds_detail_work(
+    api_client: object,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.history as history_module
+
+    client = api_client
+    assert isinstance(client, httpx.AsyncClient)
+    await bootstrap(client)
+    _, first_id, second_id, _ = await seed_two_sensor_history(session_factory_fixture)
+    payload = {
+        "scope": {"type": "devices", "device_ids": [first_id, second_id]},
+        "display_mode": "combined_plus_individual",
+        "metrics": ["power_w", "energy_kwh", "energy_cost"],
+        "start_utc": "2026-07-21T03:00:00Z",
+        "end_utc": "2026-07-21T05:00:00Z",
+        "bucket": "1h",
+        "timezone": "America/Los_Angeles",
+        "page_size": 1,
+    }
+    observed_window_counts: list[int] = []
+    original_loader = history_module._load_coarse_measurements
+
+    async def observed_loader(*args: Any, **kwargs: Any) -> Any:
+        observed_window_counts.append(len(kwargs["boundaries"]) - 1)
+        return await original_loader(*args, **kwargs)
+
+    monkeypatch.setattr(history_module, "_load_coarse_measurements", observed_loader)
+    first_response = await client.post("/api/v1/history/query", headers=csrf(client), json=payload)
+    assert first_response.status_code == 200, first_response.text
+    first = first_response.json()
+    assert observed_window_counts == [2]
+    assert first["next_page"] == 2
+    token = first["next_continuation_token"]
+    assert token
+
+    missing_token = await client.post(
+        "/api/v1/history/query",
+        headers=csrf(client),
+        json={**payload, "page": 2},
+    )
+    assert missing_token.status_code == 409
+    assert missing_token.json()["code"] == "history_continuation_required"
+
+    observed_window_counts.clear()
+    second_response = await client.post(
+        "/api/v1/history/query",
+        headers=csrf(client),
+        json={**payload, "page": 2, "continuation_token": token},
+    )
+    assert second_response.status_code == 200, second_response.text
+    second = second_response.json()
+    assert observed_window_counts == [1]
+    assert second["summary"] == first["summary"]
+    assert second["selected_summary"] == first["selected_summary"]
+    assert second["rate_versions_used"] == first["rate_versions_used"]
+    assert second["warnings"] == first["warnings"]
+    assert second["combined"][0]["interval_start_utc"] == "2026-07-21T04:00:00Z"
+    assert second["next_page"] is None
+    assert second["next_continuation_token"] is None
+
+    tampered = await client.post(
+        "/api/v1/history/query",
+        headers=csrf(client),
+        json={**payload, "page": 2, "continuation_token": f"{token}x"},
+    )
+    assert tampered.status_code == 409
+    assert tampered.json()["code"] == "history_continuation_invalid"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "changed_input",
+    ["rate_assignment", "rate_version", "billing_cycle_recalculation"],
+)
+async def test_history_continuation_rejects_changed_pricing_snapshot(
+    api_client: object,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    changed_input: str,
+) -> None:
+    client = api_client
+    assert isinstance(client, httpx.AsyncClient)
+    await bootstrap(client)
+    _, first_id, second_id, version_id = await seed_two_sensor_history(session_factory_fixture)
+    if changed_input == "billing_cycle_recalculation":
+        await convert_seed_to_tiered_history(session_factory_fixture, version_id)
+
+    payload = {
+        "scope": {"type": "devices", "device_ids": [first_id, second_id]},
+        "display_mode": "combined_plus_individual",
+        "metrics": ["energy_kwh", "energy_cost"],
+        "start_utc": "2026-07-21T03:00:00Z",
+        "end_utc": "2026-07-21T05:00:00Z",
+        "bucket": "1h",
+        "timezone": "America/Los_Angeles",
+        "page_size": 1,
+    }
+    first_response = await client.post("/api/v1/history/query", headers=csrf(client), json=payload)
+    assert first_response.status_code == 200, first_response.text
+    token = first_response.json()["next_continuation_token"]
+    assert token
+
+    async with session_factory_fixture() as session:
+        if changed_input == "rate_assignment":
+            assignment = await session.scalar(
+                select(RateAssignment).where(RateAssignment.rate_version_id == version_id)
+            )
+            assert assignment
+            assignment.effective_to = datetime(2026, 7, 21, 4, tzinfo=UTC)
+        elif changed_input == "rate_version":
+            version = await session.get(RateVersion, version_id)
+            assert version
+            changed_document = flat_rate_document()
+            changed_document["seasons"][0]["schedules"][0]["periods"][0]["price_per_kwh"] = (
+                "2.00000000"
+            )
+            version.normalized_payload = changed_document
+            version.content_hash = "b" * 64
+        else:
+            cycle = await session.scalar(
+                select(BillingCycle).where(BillingCycle.recalculation_version == 1)
+            )
+            assert cycle
+            cycle.recalculation_version = 0
+        await session.commit()
+
+    continuation = await client.post(
+        "/api/v1/history/query",
+        headers=csrf(client),
+        json={**payload, "page": 2, "continuation_token": token},
+    )
+    assert continuation.status_code == 409, continuation.text
+    problem = continuation.json()
+    assert problem["code"] == "history_continuation_pricing_changed"
+    assert problem["detail"] == "Restart the History query from page 1"
+
+
+@pytest.mark.asyncio
+async def test_coarse_history_uses_only_current_exact_tier_allocations(
+    api_client: object,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = api_client
+    assert isinstance(client, httpx.AsyncClient)
+    await bootstrap(client)
+    _, first_id, second_id, version_id = await seed_two_sensor_history(session_factory_fixture)
+    await convert_seed_to_tiered_history(session_factory_fixture, version_id)
+    payload = {
+        "scope": {"type": "devices", "device_ids": [first_id, second_id]},
+        "display_mode": "combined_plus_individual",
+        "metrics": ["energy_kwh", "energy_cost"],
+        "start_utc": "2026-07-21T03:00:00Z",
+        "end_utc": "2026-07-21T05:00:00Z",
+        "bucket": "1h",
+        "timezone": "America/Los_Angeles",
+    }
+
+    monkeypatch.setattr("app.history.COARSE_HISTORY_BUCKETS", set())
+    raw_response = await client.post("/api/v1/history/query", headers=csrf(client), json=payload)
+    assert raw_response.status_code == 200, raw_response.text
+    raw = raw_response.json()
+    assert Decimal(raw["summary"]["energy_cost"]) == Decimal("1.50")
+    assert {
+        item["recalculation_version"]
+        for point in raw["combined"]
+        for item in point["rate_contributions"]
+    } == {1}
+
+    monkeypatch.setattr("app.history.COARSE_HISTORY_BUCKETS", {"1h", "1d"})
+    coarse_response = await client.post("/api/v1/history/query", headers=csrf(client), json=payload)
+    assert coarse_response.status_code == 200, coarse_response.text
+    assert canonical_numeric_values(coarse_response.json()) == canonical_numeric_values(raw)
+
+
+@pytest.mark.asyncio
+async def test_coarse_history_falls_back_for_account_level_tier_segments(
+    api_client: object,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = api_client
+    assert isinstance(client, httpx.AsyncClient)
+    await bootstrap(client)
+    _, first_id, second_id, version_id = await seed_two_sensor_history(session_factory_fixture)
+    await convert_seed_to_tiered_history(session_factory_fixture, version_id)
+    async with session_factory_fixture() as session:
+        segments = list(await session.scalars(select(TierAllocationSegment)))
+        assert segments
+        for segment in segments:
+            segment.normalized_interval_id = None
+        await session.commit()
+    payload = {
+        "scope": {"type": "devices", "device_ids": [first_id, second_id]},
+        "display_mode": "combined_plus_individual",
+        "metrics": ["energy_kwh", "energy_cost"],
+        "start_utc": "2026-07-21T03:00:00Z",
+        "end_utc": "2026-07-21T05:00:00Z",
+        "bucket": "1h",
+        "timezone": "America/Los_Angeles",
+    }
+    monkeypatch.setattr("app.history.COARSE_HISTORY_BUCKETS", set())
+    raw_response = await client.post("/api/v1/history/query", headers=csrf(client), json=payload)
+    assert raw_response.status_code == 200, raw_response.text
+    monkeypatch.setattr("app.history.COARSE_HISTORY_BUCKETS", {"1h", "1d"})
+    fallback_response = await client.post(
+        "/api/v1/history/query", headers=csrf(client), json=payload
+    )
+    assert fallback_response.status_code == 200, fallback_response.text
+    assert canonical_numeric_values(fallback_response.json()) == canonical_numeric_values(
+        raw_response.json()
+    )
+
+
+@pytest.mark.asyncio
+async def test_coarse_history_matches_raw_across_dst_fold_and_partial_buckets(
+    api_client: object,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = api_client
+    assert isinstance(client, httpx.AsyncClient)
+    await bootstrap(client)
+    _, first_id, second_id, _ = await seed_two_sensor_history(session_factory_fixture)
+    async with session_factory_fixture() as session:
+        readings = list(
+            await session.scalars(
+                select(RawReading)
+                .where(RawReading.device_id.in_([first_id, second_id]))
+                .order_by(RawReading.device_id, RawReading.sequence)
+            )
+        )
+        for reading in readings:
+            offset = reading.sequence - 1
+            reading.interval_start = datetime(2026, 11, 1, 7, 30, tzinfo=UTC) + offset * timedelta(
+                hours=1
+            )
+            reading.interval_end = reading.interval_start + timedelta(hours=1)
+            normalized = await session.scalar(
+                select(NormalizedInterval).where(NormalizedInterval.raw_reading_id == reading.id)
+            )
+            assert normalized
+            normalized.interval_start = reading.interval_start
+            normalized.interval_end = reading.interval_end
+        await session.commit()
+
+    payload = {
+        "scope": {"type": "devices", "device_ids": [first_id, second_id]},
+        "display_mode": "combined_plus_individual",
+        "metrics": ["power_w", "energy_kwh", "energy_cost"],
+        "start_utc": "2026-11-01T07:30:00Z",
+        "end_utc": "2026-11-01T10:30:00Z",
+        "bucket": "1h",
+        "timezone": "America/Los_Angeles",
+    }
+    monkeypatch.setattr("app.history.COARSE_HISTORY_BUCKETS", set())
+    raw_response = await client.post("/api/v1/history/query", headers=csrf(client), json=payload)
+    assert raw_response.status_code == 200, raw_response.text
+    monkeypatch.setattr("app.history.COARSE_HISTORY_BUCKETS", {"1h", "1d"})
+    coarse_response = await client.post("/api/v1/history/query", headers=csrf(client), json=payload)
+    assert coarse_response.status_code == 200, coarse_response.text
+    assert canonical_numeric_values(coarse_response.json()) == canonical_numeric_values(
+        raw_response.json()
+    )
+    local_starts = [item["local_start"] for item in coarse_response.json()["combined"]]
+    assert any("-07:00" in value for value in local_starts)
+    assert any("-08:00" in value for value in local_starts)
+
+
+def test_tier_segment_index_prefers_exact_interval_and_bounds_fallback_search() -> None:
+    start = datetime(2026, 7, 21, tzinfo=UTC)
+    segments = [
+        TierAllocationSegment(
+            rate_version_id="version-1",
+            normalized_interval_id=f"interval-{index}",
+            interval_start=start.replace(minute=index),
+            interval_end=start.replace(minute=index + 1),
+            segment_order=index,
+        )
+        for index in range(30)
+    ]
+    index = TierSegmentIndex.build(segments)
+    exact, used_fallback = index.overlapping(
+        version_id="version-1",
+        normalized_interval_id="interval-17",
+        start=start.replace(minute=17),
+        end=start.replace(minute=18),
+    )
+    assert not used_fallback
+    assert [item.segment.normalized_interval_id for item in exact] == ["interval-17"]
+
+    fallback, used_fallback = index.overlapping(
+        version_id="version-1",
+        normalized_interval_id="missing",
+        start=start.replace(minute=17, second=30),
+        end=start.replace(minute=18, second=30),
+    )
+    assert used_fallback
+    assert [item.segment.normalized_interval_id for item in fallback] == [
+        "interval-17",
+        "interval-18",
+    ]

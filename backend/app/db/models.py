@@ -839,6 +839,12 @@ class RawReading(Base):
             "power_factor IS NULL OR (power_factor >= 0 AND power_factor <= 1)", name="power_factor"
         ),
         Index("ix_raw_device_time", "device_id", "interval_start"),
+        Index(
+            "ix_raw_device_time_end",
+            "device_id",
+            "interval_end",
+            "interval_start",
+        ),
         Index("ix_raw_site_time", "site_id", "interval_start"),
     )
 
@@ -861,6 +867,14 @@ class NormalizedInterval(Base):
     validation_result: Mapped[str] = mapped_column(String(32))
     validation_reason: Mapped[str] = mapped_column(String(500))
     algorithm_version: Mapped[str] = mapped_column(String(32), default="energy-normalizer/1")
+    __table_args__ = (
+        Index(
+            "ix_normalized_device_time_end",
+            "device_id",
+            "interval_end",
+            "interval_start",
+        ),
+    )
 
 
 class DailyDeviceRollup(Base):
@@ -1920,6 +1934,40 @@ class TierAllocationSegment(Base):
             "cumulative_end_kwh >= cumulative_start_kwh",
             name="tier_segment_cumulative_order",
         ),
+        Index(
+            "ix_tier_segment_account_time_recalc",
+            "utility_account_id",
+            "interval_start",
+            "interval_end",
+            "recalculation_version",
+        ),
+        Index(
+            "ix_tier_segment_version_time",
+            "rate_version_id",
+            "interval_start",
+            "interval_end",
+        ),
+        Index(
+            "ix_tier_segment_history_cover",
+            "utility_account_id",
+            "rate_version_id",
+            "interval_start",
+            "interval_end",
+            postgresql_include=[
+                "billing_cycle_id",
+                "normalized_interval_id",
+                "recalculation_version",
+                "tier_stable_id",
+                "tier_name",
+                "tou_period",
+                "cumulative_start_kwh",
+                "cumulative_end_kwh",
+                "segment_energy_kwh",
+                "price_per_kwh",
+                "unrounded_energy_charge",
+                "usage_authority_type",
+            ],
+        ),
     )
 
 
@@ -2230,6 +2278,10 @@ class FirmwareDeployment(Base):
     stabilization_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reading_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rollback_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    state_changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
@@ -2240,6 +2292,7 @@ class FirmwareDeployment(Base):
         ),
         CheckConstraint(
             "state IN ('waiting_canary','scheduled','offered','manifest_authenticated',"
+            "'waiting_for_schedule',"
             "'download_started',"
             "'downloading','binary_verified','partition_written','rebooting',"
             "'post_boot_validation','validated','awaiting_heartbeat','completed','failed',"
@@ -2258,6 +2311,8 @@ class FirmwareDeployment(Base):
             postgresql_where=text("state NOT IN ('completed','failed','cancelled','rolled_back')"),
             sqlite_where=text("state NOT IN ('completed','failed','cancelled','rolled_back')"),
         ),
+        Index("ix_firmware_deployment_state_changed", "state", "state_changed_at"),
+        Index("ix_firmware_deployment_state_expires", "state", "expires_at"),
     )
 
 

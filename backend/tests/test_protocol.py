@@ -9,6 +9,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Device, DeviceCredential, Site
+from app.schemas import Heartbeat
 from app.security.protocol import (
     ProtocolAuthError,
     SecretCipher,
@@ -22,6 +23,18 @@ from app.security.protocol import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_exact_sensor_heartbeat_fixture_matches_runtime_model() -> None:
+    payload = json.loads(
+        (ROOT / "shared" / "fixtures" / "valid-heartbeat.json").read_text(encoding="utf-8")
+    )
+    heartbeat = Heartbeat.model_validate(payload)
+    assert heartbeat.protocol_version == "pm-protocol/1.0.0"
+    assert heartbeat.schema_version == "heartbeat/1.0.0"
+    assert heartbeat.latest is not None
+    assert heartbeat.latest.power_w == 1
+    assert heartbeat.resources["ota_recovery"]["evidence_sequence"] == 9
 
 
 def test_shared_hmac_vectors() -> None:

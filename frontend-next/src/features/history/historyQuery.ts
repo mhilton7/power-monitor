@@ -5,6 +5,31 @@ import type { HistoryFilters, Home } from '../../types/models'
 // but no longer delivering reading events.
 export const HISTORY_REFETCH_INTERVAL_MS = 60_000
 
+export function historyQueryKey(
+  filters: HistoryFilters,
+  homeId?: string,
+  cycleStart?: string,
+  cycleEnd?: string,
+  window?: HistoryWindow,
+): readonly unknown[] {
+  const key: unknown[] = [
+    'history',
+    'page',
+    homeId ?? null,
+    filters.range,
+    filters.metric,
+    filters.scope,
+    filters.sensorId ?? null,
+    filters.customStart ?? null,
+    filters.customEnd ?? null,
+    window?.start.toISOString() ?? null,
+    window?.end.toISOString() ?? null,
+    window?.bucket ?? null,
+  ]
+  if (filters.range === 'cycle') key.push(cycleStart ?? null, cycleEnd ?? null)
+  return key
+}
+
 export interface HistoryWindow {
   start: Date
   end: Date
@@ -27,8 +52,13 @@ function zonedDateTime(value: string, timezone: string): Date {
   return new Date(result)
 }
 
-export function historyWindow(filters: HistoryFilters, cycleStart?: string, cycleEnd?: string, timezone = 'UTC'): HistoryWindow {
-  const now = new Date()
+export function historyWindow(
+  filters: HistoryFilters,
+  cycleStart?: string,
+  cycleEnd?: string,
+  timezone = 'UTC',
+  now = new Date(),
+): HistoryWindow {
   if (filters.range === 'today') {
     const parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now)
     const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? ''
@@ -50,15 +80,16 @@ export function historyPayload(
   home: Home,
   cycleStart?: string,
   cycleEnd?: string,
+  requestWindow?: HistoryWindow,
 ): Record<string, unknown> {
-  const window = historyWindow(filters, cycleStart, cycleEnd, home.timezone)
+  const window = requestWindow ?? historyWindow(filters, cycleStart, cycleEnd, home.timezone)
   const metrics = filters.metric === 'power'
     ? ['power_w']
     : filters.metric === 'energy'
-      ? ['energy_kwh']
+      ? ['energy_kwh', 'power_w']
       : filters.metric === 'cost'
-        ? ['energy_cost']
-        : ['energy_kwh', 'energy_cost']
+        ? ['energy_cost', 'power_w']
+        : ['energy_kwh', 'energy_cost', 'power_w']
   return {
     scope: filters.scope === 'sensor'
       ? { type: 'device', device_id: filters.sensorId }

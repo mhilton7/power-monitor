@@ -43,6 +43,51 @@ def validate_schemas() -> None:
         Draft202012Validator(schema, format_checker=FormatChecker()).validate(
             examples[name]
         )
+    heartbeat_schema = json.loads(
+        (ROOT / "shared" / "schemas" / "heartbeat.schema.json").read_text()
+    )
+    heartbeat_validator = Draft202012Validator(
+        heartbeat_schema,
+        format_checker=FormatChecker(),
+    )
+    exact_heartbeat = json.loads(
+        (ROOT / "shared" / "fixtures" / "valid-heartbeat.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    heartbeat_validator.validate(exact_heartbeat)
+    for details in examples.get("storage_integrity_status_examples", {}).values():
+        heartbeat_validator.validate(
+            {
+                **examples["heartbeat"],
+                "sd": {
+                    **examples["heartbeat"]["sd"],
+                    "details": details,
+                },
+            }
+        )
+    heartbeat_validator.validate(
+        {
+            **examples["heartbeat"],
+            "resources": {
+                **examples["heartbeat"]["resources"],
+                "ota_recovery": examples["ota_recovery_evidence_example"],
+            },
+        }
+    )
+
+    sensor_root = ROOT.parent / "power-monitor-sensor"
+    sensor_schema_path = sensor_root / "shared/schemas/heartbeat.schema.json"
+    sensor_fixture_path = sensor_root / "shared/fixtures/valid-heartbeat.json"
+    if sensor_schema_path.exists() and sensor_fixture_path.exists():
+        sensor_schema = json.loads(sensor_schema_path.read_text(encoding="utf-8"))
+        sensor_fixture = json.loads(sensor_fixture_path.read_text(encoding="utf-8"))
+        if heartbeat_schema != sensor_schema:
+            raise AssertionError("server and sensor heartbeat schemas diverged")
+        if exact_heartbeat != sensor_fixture:
+            raise AssertionError(
+                "server and sensor exact-wire heartbeat fixtures diverged"
+            )
     rate_schema = json.loads(
         (ROOT / "shared" / "schemas" / "power-monitor-rate-plan-1.0.json").read_text()
     )

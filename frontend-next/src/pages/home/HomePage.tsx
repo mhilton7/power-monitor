@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -21,7 +22,11 @@ import { CoverageExplanation } from '../../components/data-display/CoverageExpla
 import { Metric, StatusDot, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, LoadingState } from '../../components/feedback/States'
 import { Page, PageHeader, StatGrid } from '../../components/layout/Layout'
-import { HISTORY_REFETCH_INTERVAL_MS, historyPayload } from '../../features/history/historyQuery'
+import {
+  HISTORY_REFETCH_INTERVAL_MS,
+  historyPayload,
+  historyWindow,
+} from '../../features/history/historyQuery'
 import { ConfigurationStatusChip } from '../../features/configuration/ConfigurationStatusSurface'
 import { isCurrentAttentionNotification } from '../../features/alerts/notificationSelectors'
 import { SensorHealthEntry } from '../../features/sensors/SensorHealthEntry'
@@ -53,15 +58,32 @@ export function HomePage() {
   const testMode = useTestMode()
   const home = resolution?.state === 'ready' ? resolution.home : undefined
   const attentionAlerts = alerts.filter(isCurrentAttentionNotification)
+  const [historyClock, setHistoryClock] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => { setHistoryClock(Date.now()) }, HISTORY_REFETCH_INTERVAL_MS)
+    return () => { window.clearInterval(timer) }
+  }, [])
+  const dailyWindow = useMemo(() => home
+    ? historyWindow(todayFilters, undefined, undefined, home.timezone, new Date(historyClock))
+    : undefined, [historyClock, home])
   const dailyHistory = useQuery({
-    queryKey: ['history', 'home-daily', home?.id],
+    queryKey: [
+      'history',
+      'home-daily',
+      home?.id,
+      dailyWindow?.start.toISOString() ?? null,
+      dailyWindow?.end.toISOString() ?? null,
+    ],
     queryFn: () => {
       if (!home) throw new Error('The home is unavailable.')
-      return request('/api/v1/history/query', json('POST', historyPayload(todayFilters, home)), adaptHistory)
+      return request(
+        '/api/v1/history/query',
+        json('POST', historyPayload(todayFilters, home, undefined, undefined, dailyWindow)),
+        adaptHistory,
+      )
     },
     enabled: Boolean(home && sensors.length),
     retry: 1,
-    refetchInterval: HISTORY_REFETCH_INTERVAL_MS,
   })
 
   if (loading && !summary) return <LoadingState label="Preparing your home…" />

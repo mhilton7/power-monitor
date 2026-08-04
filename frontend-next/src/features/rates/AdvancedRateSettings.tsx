@@ -376,7 +376,7 @@ function PagedVersionList({
             {effectiveChoice === 'custom' && <label><span>Effective from</span><input type="datetime-local" value={customEffective} onChange={(event) => { setCustomEffective(event.target.value) }} /></label>}
             <label className="wide"><span>Reason</span><input value={assignmentReason} onChange={(event) => { setAssignmentReason(event.target.value) }} /></label>
           </div>
-          <button type="button" className="button primary" disabled={makeCurrent.isPending || assignmentReason.trim().length < 8} onClick={() => { makeCurrent.mutate(assignmentTarget) }}>{makeCurrent.isPending ? 'Applyingâ€¦' : service.currentPlan ? 'Replace current' : 'Make current'}</button>
+          <button type="button" className="button primary" disabled={makeCurrent.isPending || assignmentReason.trim().length < 8} onClick={() => { makeCurrent.mutate(assignmentTarget) }}>{makeCurrent.isPending ? 'Applying…' : service.currentPlan ? 'Replace current' : 'Make current'}</button>
         </section>
       )}
       {selected && (

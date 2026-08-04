@@ -97,7 +97,7 @@ verification, and artifact integrity. Binary responses are streamed with exact
 `X-Content-Type-Options: nosniff` headers.
 
 Device milestone reports use normal request HMAC and the states
-`manifest_authenticated`, `download_started`, `downloading`, `binary_verified`,
+`manifest_authenticated`, `waiting_for_schedule`, `download_started`, `downloading`, `binary_verified`,
 `partition_written`, `rebooting`, `post_boot_validation`, `validated`,
 `failed`, `rollback_detected`, and `rolled_back`. Reports are transition-checked,
 attempt-aware, and idempotent. Download completion alone is never success.
@@ -105,9 +105,12 @@ attempt-aware, and idempotent. Download completion alone is never success.
 After local validation, the server moves the deployment to
 `awaiting_heartbeat`. It marks `completed` only after the target version and
 build hash remain healthy on the same boot for at least ten authenticated
-heartbeats, one reading batch succeeds, and no critical alert or rollback is
-present. Multi-sensor deployments default to a sequential canary rollout with
-maximum concurrency one; promotion applies the same evidence gates.
+heartbeats, one target-boot reading is durably accepted (including a
+content-identical retry whose original response was lost), and no critical
+alert or rollback is present. Multi-sensor deployments default to a sequential
+canary rollout with maximum concurrency one; promotion applies the same
+evidence gates. Shared PostgreSQL advisory locks serialize promotion and Retry
+for the complete rollout group across API workers.
 
 Back up content-addressed artifacts with the database. Preserve historical
 legacy records and nullable signing evidence, but new dashboard deployments use

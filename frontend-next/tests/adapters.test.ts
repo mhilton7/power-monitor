@@ -29,6 +29,7 @@ import {
   adaptTestMode,
   adaptTestModeHistory,
   adaptTestModeSensors,
+  mergeHistoryPages,
   resolveSingleHome,
 } from '../src/api/adapters'
 
@@ -59,6 +60,81 @@ describe('typed homeowner adapters', () => {
       progressMode: 'indeterminate',
       displayState: 'starting_download',
       sourceVersion: '1.0.11',
+    })
+  })
+
+  it('preserves the authoritative OTA blocker, checklist, and retained identity evidence', () => {
+    const [deployment] = adaptFirmwareDeployments([{
+      id: 'deployment-1',
+      firmware_release_id: 'release-1',
+      device_id: 'sensor-1',
+      state: 'awaiting_heartbeat',
+      revision: 7,
+      attempt: 2,
+      progress: 100,
+      bytes_received: 1_650_000,
+      progress_mode: 'determinate',
+      scheduled_at: '2026-08-03T20:00:00Z',
+      expires_at: '2026-08-03T21:00:00Z',
+      installed_at: '2026-08-03T20:04:00Z',
+      state_changed_at: '2026-08-03T20:05:00Z',
+      target_version: '1.0.16',
+      target_build_hash: 'target-build',
+      validated_version: '1.0.16',
+      validated_build_hash: 'target-build',
+      verification_heartbeats: 4,
+      source_version: '1.0.15',
+      source_build_hash: 'source-build',
+      source_boot_id: 'boot-source',
+      interruption_evidence: { ota_recovery: { previous_boot_stage: 'reboot_scheduled', previous_reset_reason: 'software_reset' } },
+      verification: {
+        checks: [{
+          key: 'post_update_reading',
+          label: 'Post-update reading',
+          status: 'pending',
+          detail: 'Waiting for the first durable reading.',
+        }],
+        blocker: {
+          code: 'ota_waiting_post_update_reading',
+          state: 'awaiting_heartbeat',
+          title: 'Post-update reading',
+          detail: 'Waiting for the first durable reading.',
+          action: 'wait',
+        },
+        target_version_expected: '1.0.16',
+        target_version_observed: '1.0.16',
+        target_build_hash_expected: 'target-build',
+        target_build_hash_observed: 'target-build',
+        target_boot_id_observed: 'boot-target',
+        previous_boot_stage: 'reboot_scheduled',
+        previous_reset_reason: 'software_reset',
+        rollback_state: 'not_detected',
+        exact_failure_code: null,
+        blocking_critical_alert_count: 0,
+        verification_heartbeat_count: 4,
+        verification_heartbeat_required: 10,
+        last_sensor_activity_at: '2026-08-03T20:06:00Z',
+        last_report_at: '2026-08-03T20:05:00Z',
+        stabilization_elapsed_seconds: 45,
+        stabilization_required_seconds: 90,
+      },
+    }])
+
+    expect(deployment).toMatchObject({
+      progressMode: 'determinate',
+      targetBuildHash: 'target-build',
+      validatedVersion: '1.0.16',
+      sourceBuildHash: 'source-build',
+      verification: {
+        blocker: { code: 'ota_waiting_post_update_reading', action: 'wait' },
+        targetBootIdObserved: 'boot-target',
+        previousResetReason: 'software_reset',
+        blockingCriticalAlertCount: 0,
+        verificationHeartbeatCount: 4,
+        verificationHeartbeatRequired: 10,
+        stabilizationElapsedSeconds: 45,
+        stabilizationRequiredSeconds: 90,
+      },
     })
   })
 
@@ -432,12 +508,80 @@ describe('typed homeowner adapters', () => {
         contributing_sensor_count: 1,
         included_sensor_count: 2,
       }],
+      individual: [{
+        device_id: 'sensor-1',
+        name: 'Indoor AC',
+        points: [{
+          interval_start_utc: '2026-07-24T00:00:00Z',
+          interval_end_utc: '2026-07-24T00:15:00Z',
+          energy_kwh: '0.5',
+          coverage_percent: '100',
+          contributing_sensor_count: 1,
+          included_sensor_count: 1,
+        }],
+      }, {
+        device_id: 'sensor-2',
+        name: 'Outdoor AC',
+        points: [{
+          interval_start_utc: '2026-07-24T00:00:00Z',
+          interval_end_utc: '2026-07-24T00:15:00Z',
+          energy_kwh: '0.734567',
+          coverage_percent: '100',
+          contributing_sensor_count: 1,
+          included_sensor_count: 1,
+        }],
+      }],
       warnings: [{ message: 'Partial coverage' }],
+      total_buckets: 2,
+      page: 1,
+      page_size: 1,
+      next_page: 2,
+      next_continuation_token: 'signed-page-snapshot',
     })
 
     expect(history.energyKwh).toBe('1.234567')
     expect(history.cost).toBe('0.456789')
     expect(history.points[0]).toMatchObject({ energyKwh: '1.234567', cost: '0.456789', missing: true })
+    expect(history.series.map((series) => series.id)).toEqual(['combined', 'sensor-1', 'sensor-2'])
+    expect(history.pagination).toEqual({
+      totalBuckets: 2,
+      page: 1,
+      pageSize: 1,
+      nextPage: 2,
+      continuationToken: 'signed-page-snapshot',
+    })
+
+    const continuation = adaptHistory({
+      scope: { display_name: 'Whole Home' },
+      summary: {},
+      combined: [{
+        interval_start_utc: '2026-07-24T00:15:00Z',
+        interval_end_utc: '2026-07-24T00:30:00Z',
+        coverage_percent: '100',
+        contributing_sensor_count: 2,
+        included_sensor_count: 2,
+      }],
+      individual: [{
+        device_id: 'sensor-1',
+        name: 'Indoor AC',
+        points: [{
+          interval_start_utc: '2026-07-24T00:15:00Z',
+          interval_end_utc: '2026-07-24T00:30:00Z',
+          coverage_percent: '100',
+          contributing_sensor_count: 1,
+          included_sensor_count: 1,
+        }],
+      }],
+      total_buckets: 2,
+      page: 2,
+      page_size: 1,
+      next_page: null,
+    })
+    const merged = mergeHistoryPages(history, continuation)
+    expect(merged.points).toHaveLength(2)
+    expect(merged.series.find((series) => series.id === 'sensor-1')?.points).toHaveLength(2)
+    expect(merged.series.find((series) => series.id === 'sensor-2')?.points).toHaveLength(1)
+    expect(merged.pagination.nextPage).toBeUndefined()
   })
 
   it('preserves user lifecycle and actual custom role identifiers', () => {

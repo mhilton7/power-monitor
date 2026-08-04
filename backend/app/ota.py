@@ -30,6 +30,7 @@ ACTIVE_DEPLOYMENT_STATES = frozenset(
         "scheduled",
         "offered",
         "manifest_authenticated",
+        "waiting_for_schedule",
         "download_started",
         "downloading",
         "binary_verified",
@@ -44,6 +45,7 @@ ACTIVE_DEPLOYMENT_STATES = frozenset(
 DEVICE_REPORT_STATES = frozenset(
     {
         "manifest_authenticated",
+        "waiting_for_schedule",
         "download_started",
         "downloading",
         "binary_verified",
@@ -60,7 +62,10 @@ DEPLOYMENT_TRANSITIONS: dict[str, frozenset[str]] = {
     "waiting_canary": frozenset({"scheduled", "cancelled"}),
     "scheduled": frozenset({"offered", "cancelled"}),
     "offered": frozenset({"manifest_authenticated", "failed", "cancelled"}),
-    "manifest_authenticated": frozenset({"download_started", "failed", "cancelled"}),
+    "manifest_authenticated": frozenset(
+        {"waiting_for_schedule", "download_started", "failed", "cancelled"}
+    ),
+    "waiting_for_schedule": frozenset({"download_started", "failed", "cancelled"}),
     "download_started": frozenset({"downloading", "failed", "cancelled"}),
     "downloading": frozenset({"binary_verified", "failed", "cancelled"}),
     "binary_verified": frozenset({"partition_written", "failed", "cancelled"}),

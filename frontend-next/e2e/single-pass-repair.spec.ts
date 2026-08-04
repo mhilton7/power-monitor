@@ -811,7 +811,23 @@ test('Billing rate-plan menus close predictably before lifecycle confirmation', 
   await expect(trigger).toBeFocused()
 
   await trigger.click()
-  await page.getByRole('menuitem', { name: 'Remove plan' }).click()
+  const menu = page.getByRole('menu', { name: 'Rate plan actions' })
+  const removePlan = page.getByRole('menuitem', { name: 'Remove plan' })
+  const menuBounds = await menu.boundingBox()
+  const viewport = page.viewportSize()
+  expect(menuBounds).not.toBeNull()
+  expect(viewport).not.toBeNull()
+  if (!menuBounds || !viewport) throw new Error('Rate plan menu must have viewport bounds')
+  expect(menuBounds.y).toBeGreaterThanOrEqual(0)
+  expect(menuBounds.y + menuBounds.height).toBeLessThanOrEqual(viewport.height)
+  const mobileNavigation = page.getByRole('navigation', { name: 'Primary mobile' })
+  if (await mobileNavigation.isVisible()) {
+    const navigationBounds = await mobileNavigation.boundingBox()
+    expect(navigationBounds).not.toBeNull()
+    if (!navigationBounds) throw new Error('Visible mobile navigation must have viewport bounds')
+    expect(menuBounds.y + menuBounds.height).toBeLessThanOrEqual(navigationBounds.y)
+  }
+  await removePlan.click()
   await expect(page.getByRole('menu')).toHaveCount(0)
   await expect(page.getByRole('dialog', { name: 'Remove rate plan' })).toBeVisible()
   await page.getByRole('button', { name: 'Cancel' }).click()
@@ -1088,11 +1104,12 @@ test('History preserves intentional no-data and configured layouts', async ({ pa
   await expect(page.getByRole('heading', { name: 'Whole Home', exact: true })).toBeVisible()
   // The configured view renders the normalized coverage in the summary,
   // explanation, chart/table metadata, and export evidence surfaces.
-  await expect(page.getByText('60.34%')).toHaveCount(6)
+  await expect(page.getByText('60.34%')).toHaveCount(4)
   await expect(page.getByText('60.3444444444444%', { exact: true })).toHaveCount(0)
   await expect(page.getByText(/Data begins Jul 25, 8:15 AM/)).toBeVisible()
   await expect(page.getByText(/Each point represents one 15-minute interval/)).toBeVisible()
   await page.getByText('View accessible data table').click()
+  await expect(page.getByText('60.34%')).toHaveCount(6)
   await expect(page.getByRole('rowheader', { name: 'Jul 25, 8:15–8:30 AM' })).toBeVisible()
   await expect(page.getByRole('rowheader', { name: 'Jul 25, 8:30–8:45 AM' })).toBeVisible()
   await expect(page.getByRole('cell', { name: '60.34%' }).first()).toBeVisible()

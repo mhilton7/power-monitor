@@ -13,10 +13,13 @@ import { useAuth } from '../../state/AuthContext'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import type { FirmwareDeploymentSummary, FirmwareReleaseSummary } from '../../types/models'
 import { fileSize, statusLabel } from '../../utils/format'
-
-const terminalStates = new Set(['completed', 'failed', 'rolled_back', 'cancelled'])
-const retryableStates = new Set(['failed', 'rolled_back', 'cancelled'])
-const cancellableStates = new Set(['waiting_canary', 'scheduled', 'offered', 'manifest_authenticated', 'download_started', 'downloading', 'binary_verified'])
+import {
+  FirmwareDeploymentStatus,
+  firmwareCancellableStates,
+  firmwareDeploymentLabel,
+  firmwareRetryableStates,
+  firmwareTerminalStates,
+} from './FirmwareDeploymentStatus'
 
 function adaptCreated(value: unknown): FirmwareDeploymentSummary[] {
   if (Array.isArray(value)) return adaptFirmwareDeployments(value)
@@ -47,7 +50,7 @@ export function FirmwareFleetWorkflow() {
   const deployments = useQuery({
     queryKey: ['firmware-deployments'],
     queryFn: () => request('/api/v1/firmware-deployments', {}, adaptFirmwareDeployments),
-    refetchInterval: (query) => query.state.data?.some((item) => !terminalStates.has(item.state)) ? 5_000 : false,
+    refetchInterval: (query) => query.state.data?.some((item) => !firmwareTerminalStates.has(item.state)) ? 5_000 : false,
   })
 
   const upload = useMutation({
@@ -139,7 +142,7 @@ export function FirmwareFleetWorkflow() {
                 </label>
               })}
               <div className="firmware-rollout-policy"><span><strong>Rollout policy</strong><small>Canary first · maximum concurrency 1</small></span><span className="pill success">Safe default</span></div>
-              <p>The first selected sensor is the canary. Additional sensors remain waiting until the server confirms 10 successful heartbeats, one reading batch, no rollback, and no critical alert.</p>
+              <p>The first selected sensor is the canary. Additional sensors remain waiting until the server confirms the required healthy heartbeats, one reading batch, no rollback, and no critical alert.</p>
               <button className="button primary" type="button" disabled={selected.length === 0 || deploy.isPending} onClick={() => { deploy.mutate() }}>{deploy.isPending ? 'Scheduling…' : `Install on ${selected.length} sensor${selected.length === 1 ? '' : 's'}`}</button>
             </fieldset>}
           </>}
@@ -162,26 +165,33 @@ export function FirmwareFleetWorkflow() {
       <section aria-labelledby="firmware-deployments-title">
         <h3 id="firmware-deployments-title">Recent deployments</h3>
         {deployments.isLoading ? <LoadingState /> : deployments.error ? <ErrorState error={deployments.error} retry={() => void deployments.refetch()} /> : deployments.data?.length ? deployments.data.map((item) => (
-          <div className="list-row firmware-deployment-row" key={item.id}>
-            <RefreshCw className={terminalStates.has(item.state) ? '' : 'spin'} />
-            <span>
-              <strong>{statusLabel(item.displayState ?? item.state)}</strong>
-              <small>
-                {sensors.find((sensor) => sensor.id === item.deviceId)?.name ?? item.deviceId}
-                {' · '}attempt {item.attempt}
-                {' · '}{item.progressMode === 'determinate'
-                  ? `${item.progress}% · ${fileSize(item.bytesReceived)}`
-                  : 'Waiting for authenticated progress'}
-                {item.rolloutOrder !== undefined ? ` · rollout ${item.rolloutOrder + 1}` : ''}
-              </small>
-            </span>
-            <span className={`pill ${item.state === 'completed' ? 'success' : item.state === 'failed' || item.state === 'rolled_back' ? 'danger' : ''}`}>{item.targetVersion ?? 'Pending'}</span>
-            {canDeploy && <div className="inline-actions">
-              {cancellableStates.has(item.state) && <button className="button secondary compact" type="button" disabled={action.isPending} onClick={() => { action.mutate({ id: item.id, verb: 'cancel' }) }}>Cancel</button>}
-              {retryableStates.has(item.state) && <button className="button secondary compact" type="button" disabled={action.isPending} onClick={() => { action.mutate({ id: item.id, verb: 'retry' }) }}>Retry</button>}
-              {item.state === 'completed' && item.rolloutGroupId && <button className="button primary compact" type="button" disabled={action.isPending || item.verificationHeartbeats < 10 || !item.readingConfirmedAt} onClick={() => { action.mutate({ id: item.id, verb: 'promote' }) }}>Promote next</button>}
-            </div>}
-          </div>
+          <article className="firmware-deployment-card" key={item.id}>
+            <div className="list-row firmware-deployment-row">
+              <RefreshCw className={firmwareTerminalStates.has(item.state) ? '' : 'spin'} />
+              <span>
+                <strong>{firmwareDeploymentLabel(item)}</strong>
+                <small>
+                  {sensors.find((sensor) => sensor.id === item.deviceId)?.name ?? item.deviceId}
+                  {' · '}attempt {item.attempt}
+                  {' · '}{item.progressMode === 'determinate'
+                    ? `${item.progress}% · ${fileSize(item.bytesReceived)}`
+                    : firmwareTerminalStates.has(item.state) ? 'Terminal outcome recorded' : 'Waiting for authenticated progress'}
+                  {item.rolloutOrder !== undefined ? ` · rollout ${item.rolloutOrder + 1}` : ''}
+                </small>
+              </span>
+              <span className={`pill ${item.state === 'completed' ? 'success' : item.state === 'failed' || item.state === 'rolled_back' ? 'danger' : ''}`}>{item.targetVersion ?? 'Pending'}</span>
+              {canDeploy && <div className="inline-actions">
+                {firmwareCancellableStates.has(item.state) && <button className="button secondary compact" type="button" disabled={action.isPending} onClick={() => { action.mutate({ id: item.id, verb: 'cancel' }) }}>Cancel</button>}
+                {firmwareRetryableStates.has(item.state) && <button className="button secondary compact" type="button" disabled={action.isPending} onClick={() => { action.mutate({ id: item.id, verb: 'retry' }) }}>Retry</button>}
+                {item.state === 'completed' && item.rolloutGroupId && <button className="button primary compact" type="button" disabled={action.isPending || !item.readingConfirmedAt || (item.verification
+                  ? item.verification.verificationHeartbeatRequired === undefined
+                    || item.verification.verificationHeartbeatCount < item.verification.verificationHeartbeatRequired
+                    || item.verification.checks.some((check) => check.status !== 'passed')
+                  : item.verificationHeartbeats < 10)} onClick={() => { action.mutate({ id: item.id, verb: 'promote' }) }}>Promote next</button>}
+              </div>}
+            </div>
+            <FirmwareDeploymentStatus deployment={item} compact />
+          </article>
         )) : <p>No deployment records.</p>}
       </section>
     </div>

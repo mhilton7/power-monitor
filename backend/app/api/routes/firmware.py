@@ -12,7 +12,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Query, Request, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
@@ -36,6 +36,14 @@ from app.db.models import (
     new_uuid,
 )
 from app.firmware_images import FirmwareImageError, parse_esp32s3_application_image
+from app.firmware_lifecycle import (
+    VerificationContext,
+    build_firmware_verification,
+    is_superseded_target_report,
+    load_verification_contexts,
+    reconcile_stale_firmware_deployments,
+    transition_firmware_deployment,
+)
 from app.ota import (
     ACTIVE_DEPLOYMENT_STATES,
     DEPLOYMENT_TRANSITIONS,
@@ -143,6 +151,35 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
+def _advisory_lock_key(scope: str) -> int:
+    """Return a stable signed int64 key for a PostgreSQL advisory xact lock."""
+
+    return int.from_bytes(hashlib.sha256(scope.encode("utf-8")).digest()[:8], "big", signed=True)
+
+
+async def _lock_firmware_scope(session: DbSession, scope: str) -> None:
+    """Serialize a firmware mutation across API workers for this transaction."""
+
+    bind = session.get_bind()
+    if bind.dialect.name == "postgresql":
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": _advisory_lock_key(f"power-monitor:firmware:{scope}")},
+        )
+
+
+async def _lock_rollout_group(session: DbSession, rollout_group_id: str) -> None:
+    # The advisory lock protects even an empty/not-yet-materialized group and
+    # therefore closes the gap that SELECT ... FOR UPDATE alone cannot cover.
+    await _lock_firmware_scope(session, f"rollout:{rollout_group_id}")
+    await session.execute(
+        select(FirmwareDeployment.id)
+        .where(FirmwareDeployment.rollout_group_id == rollout_group_id)
+        .order_by(FirmwareDeployment.rollout_order, FirmwareDeployment.id)
+        .with_for_update()
+    )
+
+
 async def _verified_artifact(release: FirmwareRelease, session: DbSession, settings: Any) -> Path:
     path = _resolve_artifact(release, settings)
     try:
@@ -206,7 +243,10 @@ def _release_payload(release: FirmwareRelease, *, duplicate: bool = False) -> di
 
 
 def _deployment_payload(
-    deployment: FirmwareDeployment, release: FirmwareRelease | None = None
+    deployment: FirmwareDeployment,
+    settings: Any,
+    release: FirmwareRelease | None = None,
+    verification_context: VerificationContext | None = None,
 ) -> dict[str, Any]:
     determinate = bool(
         release
@@ -229,6 +269,7 @@ def _deployment_payload(
         "scheduled": "waiting_for_schedule",
         "offered": "waiting_for_sensor",
         "manifest_authenticated": "preparing_download",
+        "waiting_for_schedule": "waiting_for_update_window",
         "download_started": "starting_download",
         "downloading": "downloading",
         "failed": "failed",
@@ -265,6 +306,8 @@ def _deployment_payload(
         "rollback_build_hash": deployment.rollback_build_hash,
         "verification_heartbeats": deployment.verification_heartbeats,
         "reading_confirmed_at": deployment.reading_confirmed_at,
+        "state_changed_at": deployment.state_changed_at,
+        "terminal_at": deployment.terminal_at,
         "created_at": deployment.created_at,
         "target_version": release.version if release else None,
         "target_sha256": release.sha256 if release else None,
@@ -273,57 +316,10 @@ def _deployment_payload(
         "source_build_hash": deployment.source_build_hash,
         "source_boot_id": deployment.source_boot_id,
         "interruption_evidence": deployment.interruption_evidence,
+        "verification": build_firmware_verification(
+            deployment, release, settings, verification_context
+        ),
     }
-
-
-async def _reconcile_stale_deployments(session: DbSession, settings: Any, now: datetime) -> None:
-    cutoff = now - timedelta(seconds=settings.firmware_download_stale_seconds)
-    candidates = list(
-        await session.scalars(
-            select(FirmwareDeployment).where(
-                FirmwareDeployment.state.in_(
-                    [
-                        "manifest_authenticated",
-                        "download_started",
-                        "downloading",
-                        "binary_verified",
-                    ]
-                ),
-                FirmwareDeployment.scheduled_at < cutoff,
-            )
-        )
-    )
-    changed = False
-    for deployment in candidates:
-        last_activity = deployment.last_report_at or deployment.downloaded_at
-        if last_activity is not None and _aware(last_activity) >= cutoff:
-            continue
-        interrupted_state = deployment.state
-        deployment.state = deployment.status = "failed"
-        deployment.failure_code = "ota_update_timed_out"
-        deployment.failure_summary = (
-            "The sensor stopped reporting during the OTA download workflow; "
-            "the previous firmware remains authoritative until Retry is requested."
-        )
-        deployment.interruption_evidence = {
-            "reason": "authenticated_report_timeout",
-            "last_state": interrupted_state,
-            "last_report_at": last_activity.isoformat() if last_activity else None,
-        }
-        deployment.revision += 1
-        session.add(
-            audit_event(
-                action="firmware.deployment_timed_out",
-                actor_type="system",
-                actor_id=None,
-                object_type="firmware_deployment",
-                object_id=deployment.id,
-                details=deployment.interruption_evidence,
-            )
-        )
-        changed = True
-    if changed:
-        await session.commit()
 
 
 @router.get("/firmware-releases", response_model=list[FirmwareReleaseView])
@@ -604,7 +600,52 @@ async def create_deployments(
         seconds=settings.firmware_manifest_ttl_seconds
     )
     deployments: list[FirmwareDeployment] = []
-    rollout_group_id = new_uuid() if len(payload.device_ids) > 1 else None
+    prior_by_device: dict[str, FirmwareDeployment] = {}
+    rollout_group_id: str | None = None
+    if payload.idempotency_key:
+        # One idempotency key identifies the complete ordered rollout request,
+        # not one independently replayable device row. Serialize lookup/create
+        # across API workers so a partial prior request can never be combined
+        # with freshly allocated rows in a different rollout group.
+        await _lock_firmware_scope(session, f"create:{payload.idempotency_key}")
+        priors = list(
+            await session.scalars(
+                select(FirmwareDeployment)
+                .where(FirmwareDeployment.idempotency_key == payload.idempotency_key)
+                .order_by(FirmwareDeployment.rollout_order, FirmwareDeployment.id)
+                .with_for_update()
+            )
+        )
+        if priors:
+            prior_by_device = {item.device_id: item for item in priors}
+            ordered_prior_ids = [item.device_id for item in priors]
+            prior_groups = {item.rollout_group_id for item in priors}
+            if (
+                ordered_prior_ids != payload.device_ids
+                or any(item.firmware_release_id != release.id for item in priors)
+                or any(item.allow_downgrade != payload.allow_downgrade for item in priors)
+                or any(_aware(item.scheduled_at) != payload.scheduled_at for item in priors)
+                or (
+                    payload.expires_at is not None
+                    and any(
+                        item.expires_at is None or _aware(item.expires_at) != payload.expires_at
+                        for item in priors
+                    )
+                )
+                or len(prior_groups) != 1
+                or (len(payload.device_ids) > 1 and None in prior_groups)
+            ):
+                raise ProblemError(
+                    409,
+                    "Idempotency conflict",
+                    "Idempotency key belongs to a different complete firmware rollout",
+                    "idempotency_conflict",
+                )
+            rollout_group_id = next(iter(prior_groups))
+        else:
+            rollout_group_id = new_uuid() if len(payload.device_ids) > 1 else None
+    else:
+        rollout_group_id = new_uuid() if len(payload.device_ids) > 1 else None
     for rollout_order, device_id in enumerate(payload.device_ids):
         device = await session.get(Device, device_id)
         capability = await session.get(DeviceCapability, device_id)
@@ -613,6 +654,10 @@ async def create_deployments(
                 422, "Invalid target", f"Sensor {device_id} is unavailable", "device_missing"
             )
         _site_allowed(principal, device)
+        prior = prior_by_device.get(device.id)
+        if prior is not None:
+            deployments.append(prior)
+            continue
         compatibility = release_compatibility(device, capability, release)
         blocking_reasons = set(compatibility["reasons"])
         blocking_reasons.discard("already_current")
@@ -649,23 +694,6 @@ async def create_deployments(
                 "Older firmware requires explicit downgrade confirmation",
                 "firmware_downgrade_blocked",
             )
-        if payload.idempotency_key:
-            prior = await session.scalar(
-                select(FirmwareDeployment).where(
-                    FirmwareDeployment.device_id == device.id,
-                    FirmwareDeployment.idempotency_key == payload.idempotency_key,
-                )
-            )
-            if prior is not None:
-                if prior.firmware_release_id != release.id:
-                    raise ProblemError(
-                        409,
-                        "Idempotency conflict",
-                        "Idempotency key was already used for another release",
-                        "idempotency_conflict",
-                    )
-                deployments.append(prior)
-                continue
         active = await session.scalar(
             select(FirmwareDeployment).where(
                 FirmwareDeployment.device_id == device.id,
@@ -673,13 +701,16 @@ async def create_deployments(
             )
         )
         if active is not None:
-            if active.firmware_release_id == release.id:
+            if active.firmware_release_id == release.id and len(payload.device_ids) == 1:
                 deployments.append(active)
                 continue
             raise ProblemError(
                 409,
                 "Firmware deployment active",
-                f"Sensor {device_id} already has an active firmware deployment",
+                (
+                    f"Sensor {device_id} already has an active firmware deployment; "
+                    "a multi-sensor rollout must be created as one atomic group"
+                ),
                 "firmware_deployment_active",
             )
         deployment = FirmwareDeployment(
@@ -706,6 +737,7 @@ async def create_deployments(
                 .limit(1)
             ),
             interruption_evidence={},
+            state_changed_at=now,
             created_by=principal.user.id,
             created_at=now,
         )
@@ -735,7 +767,7 @@ async def create_deployments(
     return {
         "deployment_ids": [item.id for item in deployments],
         "scheduled": len(deployments),
-        "deployments": [_deployment_payload(item, release) for item in deployments],
+        "deployments": [_deployment_payload(item, settings, release) for item in deployments],
     }
 
 
@@ -747,7 +779,11 @@ async def list_deployments(
     device_id: Annotated[str | None, Query()] = None,
 ) -> list[dict[str, Any]]:
     _operator(principal, "firmware.view")
-    await _reconcile_stale_deployments(session, settings, datetime.now(UTC))
+    await reconcile_stale_firmware_deployments(session, settings, datetime.now(UTC))
+    # The reconciler selects active rows FOR UPDATE. Always end that short
+    # transaction before the read-side response queries, including when no row
+    # was terminalized.
+    await session.commit()
     query = select(FirmwareDeployment)
     if device_id is not None:
         query = query.where(FirmwareDeployment.device_id == device_id)
@@ -768,8 +804,14 @@ async def list_deployments(
             select(Device).where(Device.id.in_({item.device_id for item in deployments}))
         )
     }
+    verification_contexts = await load_verification_contexts(session, deployments)
     return [
-        _deployment_payload(item, releases.get(item.firmware_release_id))
+        _deployment_payload(
+            item,
+            settings,
+            releases.get(item.firmware_release_id),
+            verification_contexts.get(item.id),
+        )
         for item in deployments
         if (device := devices.get(item.device_id)) is not None
         and principal.can_access_site(device.site_id)
@@ -785,6 +827,7 @@ async def cancel_deployment(
     request: Request,
     principal: CsrfPrincipal,
     session: DbSession,
+    settings: AppSettings,
 ) -> dict[str, Any]:
     _operator(principal, "firmware.deploy")
     deployment = await session.get(FirmwareDeployment, deployment_id)
@@ -795,12 +838,18 @@ async def cancel_deployment(
             "Deployment does not exist",
             "firmware_missing",
         )
+    if deployment.rollout_group_id is not None:
+        await _lock_rollout_group(session, deployment.rollout_group_id)
+    deployment = await session.scalar(
+        select(FirmwareDeployment).where(FirmwareDeployment.id == deployment_id).with_for_update()
+    )
+    assert deployment is not None
     device = await session.get(Device, deployment.device_id)
     if device is None:
         raise ProblemError(404, "Sensor not found", "Sensor does not exist", "device_missing")
     _site_allowed(principal, device)
     if deployment.state in TERMINAL_DEPLOYMENT_STATES:
-        return _deployment_payload(deployment)
+        return _deployment_payload(deployment, settings)
     if "cancelled" not in DEPLOYMENT_TRANSITIONS.get(deployment.state, frozenset()):
         raise ProblemError(
             409,
@@ -808,8 +857,7 @@ async def cancel_deployment(
             "Deployment can no longer be safely cancelled",
             "firmware_transition_invalid",
         )
-    deployment.state = deployment.status = "cancelled"
-    deployment.revision += 1
+    transition_firmware_deployment(deployment, "cancelled", datetime.now(UTC))
     session.add(
         audit_event(
             action="firmware.deployment_cancelled",
@@ -821,7 +869,7 @@ async def cancel_deployment(
         )
     )
     await session.commit()
-    return _deployment_payload(deployment)
+    return _deployment_payload(deployment, settings)
 
 
 @router.post(
@@ -844,6 +892,12 @@ async def retry_deployment(
             "Deployment does not exist",
             "firmware_missing",
         )
+    if deployment.rollout_group_id is not None:
+        await _lock_rollout_group(session, deployment.rollout_group_id)
+    deployment = await session.scalar(
+        select(FirmwareDeployment).where(FirmwareDeployment.id == deployment_id).with_for_update()
+    )
+    assert deployment is not None
     device = await session.get(Device, deployment.device_id)
     if device is None:
         raise ProblemError(404, "Sensor not found", "Sensor does not exist", "device_missing")
@@ -887,9 +941,8 @@ async def retry_deployment(
                 "firmware_rollout_busy",
             )
     now = datetime.now(UTC)
-    deployment.state = deployment.status = "scheduled"
+    transition_firmware_deployment(deployment, "scheduled", now, retry=True)
     deployment.attempt += 1
-    deployment.revision += 1
     deployment.progress = 0
     deployment.bytes_received = 0
     deployment.scheduled_at = now
@@ -899,6 +952,8 @@ async def retry_deployment(
     deployment.failure_summary = None
     deployment.last_report_at = None
     deployment.last_report_payload = {}
+    deployment.downloaded_at = None
+    deployment.installed_at = None
     deployment.validated_at = None
     deployment.validated_version = None
     deployment.validated_build_hash = None
@@ -906,7 +961,18 @@ async def retry_deployment(
     deployment.rollback_version = None
     deployment.rollback_build_hash = None
     deployment.verification_heartbeats = 0
+    deployment.stabilization_started_at = None
     deployment.reading_confirmed_at = None
+    deployment.last_boot_id = None
+    deployment.interruption_evidence = {}
+    deployment.source_version = device.firmware_version
+    deployment.source_build_hash = device.firmware_build_hash
+    deployment.source_boot_id = await session.scalar(
+        select(DeviceHeartbeat.boot_id)
+        .where(DeviceHeartbeat.device_id == device.id)
+        .order_by(DeviceHeartbeat.received_at.desc())
+        .limit(1)
+    )
     session.add(
         audit_event(
             action="firmware.deployment_retried",
@@ -919,7 +985,7 @@ async def retry_deployment(
         )
     )
     await session.commit()
-    return _deployment_payload(deployment)
+    return _deployment_payload(deployment, settings)
 
 
 @router.post("/device-firmware/report", response_model=FirmwareDeploymentReportResponse)
@@ -978,10 +1044,93 @@ async def report_deployment(
             "Report firmware target does not match the authenticated deployment",
             "firmware_report_mismatch",
         )
+    # Once an authenticated target heartbeat owns post-boot verification, a
+    # queued report from an earlier source/target boot in the same attempt is
+    # stale. In particular, an old boot's delayed `failed` report must not move
+    # a newer healthy target boot backwards to Failed.
+    if (
+        deployment.state in {"awaiting_heartbeat", "completed"}
+        and deployment.last_boot_id
+        and payload.boot_id != deployment.last_boot_id
+    ):
+        raise ProblemError(
+            409,
+            "Stale boot report",
+            "Report boot identity was superseded by a newer authenticated target boot",
+            "firmware_report_stale",
+        )
+    retained_evidence = (
+        deployment.interruption_evidence
+        if isinstance(deployment.interruption_evidence, dict)
+        else {}
+    )
+    target_heartbeat_boot_id = retained_evidence.get("target_healthy_heartbeat_boot_id")
+    target_heartbeat_sequence = retained_evidence.get("target_healthy_heartbeat_evidence_sequence")
+    if (
+        deployment.state == "awaiting_heartbeat"
+        and payload.state in {"failed", "rollback_detected", "rolled_back"}
+        and target_heartbeat_boot_id == payload.boot_id
+        and (
+            payload.evidence_sequence is None
+            or not isinstance(target_heartbeat_sequence, int)
+            or payload.evidence_sequence <= target_heartbeat_sequence
+        )
+    ):
+        # A signed healthy target heartbeat is newer authoritative evidence
+        # than an ambiguously ordered legacy failure report. Current firmware
+        # supplies a persisted sequence so a genuinely later failure remains
+        # admissible without allowing a queued report to erase healthy proof.
+        raise ProblemError(
+            409,
+            "Stale firmware evidence",
+            "Failure report was superseded by newer authenticated target-heartbeat evidence",
+            "firmware_report_stale",
+        )
     report_data = payload.model_dump(mode="json")
+    if payload.evidence_sequence is None:
+        # Preserve byte-for-byte idempotency with reports retained before this
+        # optional ordering field was introduced.
+        report_data.pop("evidence_sequence", None)
     if report_data == deployment.last_report_payload:
         # Device authentication persists replay protection in this transaction even
         # when the milestone itself is an idempotent duplicate.
+        await session.commit()
+        return {
+            "recorded": True,
+            "duplicate": True,
+            "state": deployment.state,
+            "revision": deployment.revision,
+            "attempt": deployment.attempt,
+        }
+    previous_report = (
+        deployment.last_report_payload if isinstance(deployment.last_report_payload, dict) else {}
+    )
+    previous_evidence_sequence = previous_report.get("evidence_sequence")
+    if (
+        payload.evidence_sequence is not None
+        and isinstance(previous_evidence_sequence, int)
+        and not isinstance(previous_evidence_sequence, bool)
+        and payload.evidence_sequence < previous_evidence_sequence
+    ):
+        raise ProblemError(
+            409,
+            "Stale firmware evidence",
+            "Report evidence sequence is older than the accepted deployment evidence",
+            "firmware_report_stale",
+        )
+    # The evidence sequence orders durable device state, not individual HTTP
+    # reports. After an outage, the sensor may replay several missed, legal
+    # forward milestones using the same latest durable sequence. Equal evidence
+    # therefore continues through the state graph below. Exact duplicates were
+    # handled above; same-state non-duplicates remain limited to monotonic
+    # download progress.
+    if is_superseded_target_report(
+        deployment,
+        release,
+        state=payload.state,
+        current_firmware_version=payload.current_firmware_version,
+        current_build_hash=payload.current_build_hash,
+    ):
         await session.commit()
         return {
             "recorded": True,
@@ -1017,8 +1166,10 @@ async def report_deployment(
         )
 
     now = datetime.now(UTC)
-    deployment.state = deployment.status = payload.state
-    deployment.revision += 1
+    if payload.state == deployment.state:
+        deployment.revision += 1
+    else:
+        transition_firmware_deployment(deployment, payload.state, now)
     deployment.progress = max(deployment.progress, payload.progress)
     deployment.bytes_received = max(deployment.bytes_received, payload.bytes_received)
     deployment.last_report_at = now
@@ -1075,6 +1226,9 @@ async def promote_canary(
     settings: AppSettings,
 ) -> dict[str, Any]:
     _operator(principal, "firmware.deploy")
+    # Resolve the group first, then acquire one shared transaction-scoped lock
+    # before locking any member row. Locking only the completed canary row does
+    # not serialize calls made through two different completed members.
     canary = await session.get(FirmwareDeployment, deployment_id)
     if canary is None:
         raise ProblemError(
@@ -1083,6 +1237,12 @@ async def promote_canary(
             "Deployment does not exist",
             "firmware_missing",
         )
+    if canary.rollout_group_id is not None:
+        await _lock_rollout_group(session, canary.rollout_group_id)
+    canary = await session.scalar(
+        select(FirmwareDeployment).where(FirmwareDeployment.id == deployment_id).with_for_update()
+    )
+    assert canary is not None
     device = await session.get(Device, canary.device_id)
     if device is None:
         raise ProblemError(404, "Sensor not found", "Sensor does not exist", "device_missing")
@@ -1140,6 +1300,7 @@ async def promote_canary(
         .with_for_update()
     )
     if next_deployment is None:
+        await session.commit()
         return {"promoted": False, "rollout_complete": True}
     next_device = await session.get(Device, next_deployment.device_id)
     if next_device is None or not principal.can_access_site(next_device.site_id):
@@ -1150,11 +1311,10 @@ async def promote_canary(
             "forbidden",
         )
     now = datetime.now(UTC)
-    next_deployment.state = next_deployment.status = "scheduled"
+    transition_firmware_deployment(next_deployment, "scheduled", now)
     next_deployment.scheduled_at = now
     next_deployment.expires_at = now + timedelta(seconds=settings.firmware_manifest_ttl_seconds)
     next_deployment.promoted_at = now
-    next_deployment.revision += 1
     session.add(
         audit_event(
             action="firmware.canary_promoted",
@@ -1176,7 +1336,7 @@ async def promote_canary(
     return {
         "promoted": True,
         "rollout_complete": False,
-        "deployment": _deployment_payload(next_deployment, release),
+        "deployment": _deployment_payload(next_deployment, settings, release),
     }
 
 
@@ -1194,6 +1354,7 @@ async def device_download_firmware(
     eligible_states = {
         "offered",
         "manifest_authenticated",
+        "waiting_for_schedule",
         "download_started",
         "downloading",
         "binary_verified",

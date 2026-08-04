@@ -197,6 +197,11 @@
   .firmware-device-summary, .firmware-verification dl { grid-template-columns: 1fr; }
   .firmware-verification dl > div, .firmware-verification dl > div:nth-child(2n) { border-right: 0; }
   .firmware-verification dl > div.wide { grid-column: auto; }
+  .firmware-verification-evidence { grid-template-columns: 1fr; }
+  .firmware-verification-evidence > div, .firmware-verification-evidence > div:nth-child(2n) { border-right: 0; }
+  .firmware-check { grid-template-columns: auto minmax(0, 1fr); }
+  .firmware-check > .pill { grid-column: 2; justify-self: start; }
+  .firmware-activity-timeline li > span { display: block; min-width: 0; }
   .firmware-file-picker { grid-template-columns: auto minmax(0, 1fr); }
   .firmware-file-picker > .pill { grid-column: 1 / -1; }
   .firmware-bootstrap { grid-template-columns: 1fr; }

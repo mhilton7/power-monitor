@@ -1,14 +1,19 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CalendarRange, Download, FlaskConical, Gauge, Layers3 } from 'lucide-react'
-import { useState } from 'react'
-import { adaptHistory, adaptTestModeHistory } from '../../api/adapters'
+import { useEffect, useMemo, useState } from 'react'
+import { adaptHistory, adaptTestModeHistory, mergeHistoryPages } from '../../api/adapters'
 import { download, errorMessage, json, request, saveBlob } from '../../api/client'
 import { EnergyChart } from '../../components/charts/EnergyChart'
 import { CoverageExplanation, coverageSummary } from '../../components/data-display/CoverageExplanation'
 import { Metric, Surface } from '../../components/data-display/Surface'
 import { EmptyState, ErrorState, InlineNotice, LoadingState } from '../../components/feedback/States'
 import { Page, PageHeader, SegmentedControl, StatGrid } from '../../components/layout/Layout'
-import { HISTORY_REFETCH_INTERVAL_MS, historyPayload } from '../../features/history/historyQuery'
+import {
+  HISTORY_REFETCH_INTERVAL_MS,
+  historyPayload,
+  historyQueryKey,
+  historyWindow,
+} from '../../features/history/historyQuery'
 import { useLiveHome } from '../../state/LiveHomeContext'
 import { useSingleHome } from '../../state/SingleHomeContext'
 import { useTestMode } from '../../state/TestModeContext'
@@ -16,6 +21,39 @@ import type { HistoryFilters, HistoryMetric, HistoryRange, HistoryScope } from '
 import { energy, money, percentage, power, rate } from '../../utils/format'
 import { hasPermission } from '../../access/permissions'
 import { useAuth } from '../../state/AuthContext'
+
+async function loadHistoryPages(
+  payload: Record<string, unknown>,
+  signal: AbortSignal,
+) {
+  let result: ReturnType<typeof adaptHistory> | undefined
+  let page = 1
+  let continuationToken: string | undefined
+  const visited = new Set<number>()
+  while (!visited.has(page)) {
+    visited.add(page)
+    const pageResult = await request(
+      '/api/v1/history/query',
+      {
+        ...json('POST', {
+          ...payload,
+          page,
+          ...(continuationToken ? { continuation_token: continuationToken } : {}),
+        }),
+        signal,
+      },
+      adaptHistory,
+    )
+    result = result ? mergeHistoryPages(result, pageResult) : pageResult
+    if (!pageResult.pagination.nextPage) return result
+    page = pageResult.pagination.nextPage
+    continuationToken = pageResult.pagination.continuationToken
+    if (!continuationToken) {
+      throw new Error('The History server omitted its signed continuation token.')
+    }
+  }
+  throw new Error('The History server returned a repeated continuation page.')
+}
 
 const ranges: Array<{ value: HistoryRange; label: string }> = [
   { value: 'today', label: 'Today' },
@@ -45,17 +83,42 @@ export function HistoryPage() {
     metric: canViewCosts ? 'energy_cost' : 'energy',
     scope: 'home',
   })
+  const [historyClock, setHistoryClock] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => { setHistoryClock(Date.now()) }, HISTORY_REFETCH_INTERVAL_MS)
+    return () => { window.clearInterval(timer) }
+  }, [])
   const validScope = filters.scope === 'home' || Boolean(filters.sensorId)
+  const requestWindow = useMemo(() => home
+    ? historyWindow(
+        filters,
+        cycle?.startsAt,
+        cycle?.endsAt,
+        home.timezone,
+        new Date(historyClock),
+      )
+    : undefined, [cycle?.endsAt, cycle?.startsAt, filters, historyClock, home])
   const history = useQuery({
-    queryKey: ['history', 'page', home?.id, filters, cycle?.startsAt, cycle?.endsAt],
-    queryFn: () => {
+    queryKey: historyQueryKey(
+      filters,
+      home?.id,
+      cycle?.startsAt,
+      cycle?.endsAt,
+      requestWindow,
+    ),
+    queryFn: ({ signal }) => {
       if (!home) throw new Error('The default home is unavailable.')
-      const currentPayload = historyPayload(filters, home, cycle?.startsAt, cycle?.endsAt)
-      return request('/api/v1/history/query', json('POST', currentPayload), adaptHistory)
+      const currentPayload = historyPayload(
+        filters,
+        home,
+        cycle?.startsAt,
+        cycle?.endsAt,
+        requestWindow,
+      )
+      return loadHistoryPages(currentPayload, signal)
     },
     enabled: Boolean(home && validScope),
     placeholderData: (previous) => previous,
-    refetchInterval: HISTORY_REFETCH_INTERVAL_MS,
   })
   const testHistory = useQuery({
     queryKey: ['sensor-test-mode-history'],
@@ -66,7 +129,13 @@ export function HistoryPage() {
   const exportHistory = useMutation({
     mutationFn: async () => {
       if (!home) throw new Error('The default home is unavailable.')
-      const currentPayload = historyPayload(filters, home, cycle?.startsAt, cycle?.endsAt)
+      const currentPayload = historyPayload(
+        filters,
+        home,
+        cycle?.startsAt,
+        cycle?.endsAt,
+        requestWindow,
+      )
       const blob = await download('/api/v1/history/export', json('POST', currentPayload))
       saveBlob(blob, `power-monitor-${filters.range}-history.csv`)
     },
@@ -103,6 +172,11 @@ export function HistoryPage() {
         </Surface>
       )}
       {exportHistory.error && <InlineNotice tone="danger">{errorMessage(exportHistory.error)}</InlineNotice>}
+      {history.error && history.data && (
+        <InlineNotice tone="warning">
+          Stored results remain visible, but the latest History refresh failed. {errorMessage(history.error)}
+        </InlineNotice>
+      )}
 
       <Surface className="history-controls-surface">
         <SegmentedControl label="History range" value={filters.range} items={ranges} onChange={(range) => { setFilters((current) => ({ ...current, range })); }} />

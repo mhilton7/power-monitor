@@ -20,6 +20,7 @@ import type {
   FirmwareReadinessSummary,
   FirmwareReleaseSummary,
   PermissionOption,
+  HistoryPoint,
   HistoryView,
   Home,
   HomeResolution,
@@ -145,13 +146,14 @@ export function adaptFirmwareDeployments(value: unknown): FirmwareDeploymentSumm
   return records(value, 'firmware deployments').map((source) => {
     const state = stringValue(source.state, stringValue(source.status, 'scheduled'))
     const bytesReceived = numberValue(source.bytes_received)
-    const progressMode = source.progress_mode === 'determinate'
-      ? 'determinate'
-      : source.progress_mode === 'indeterminate'
-        ? 'indeterminate'
-        : bytesReceived > 0 && !['scheduled', 'offered', 'manifest_authenticated', 'download_started'].includes(state)
-          ? 'determinate'
-          : 'indeterminate'
+    const progressMode = source.progress_mode === 'determinate' ? 'determinate' : 'indeterminate'
+    const verification = source.verification && typeof source.verification === 'object' && !Array.isArray(source.verification)
+      ? record(source.verification, 'firmware verification')
+      : undefined
+    const blocker = verification?.blocker && typeof verification.blocker === 'object' && !Array.isArray(verification.blocker)
+      ? record(verification.blocker, 'firmware verification blocker')
+      : undefined
+    const validCheckStatuses = new Set(['pending', 'passed', 'failed', 'unavailable'])
     return {
       id: stringValue(source.id),
       firmwareReleaseId: stringValue(source.firmware_release_id),
@@ -164,11 +166,21 @@ export function adaptFirmwareDeployments(value: unknown): FirmwareDeploymentSumm
       progressMode,
       displayState: stringValue(source.display_state, state),
       scheduledAt: optionalString(source.scheduled_at),
+      expiresAt: optionalString(source.expires_at),
       downloadedAt: optionalString(source.downloaded_at),
+      installedAt: optionalString(source.installed_at),
+      validatedAt: optionalString(source.validated_at),
+      stateChangedAt: optionalString(source.state_changed_at),
+      terminalAt: optionalString(source.terminal_at),
+      createdAt: optionalString(source.created_at),
       targetVersion: optionalString(source.target_version),
       targetSha256: optionalString(source.target_sha256),
+      targetBuildHash: optionalString(source.target_build_hash),
+      validatedVersion: optionalString(source.validated_version),
+      validatedBuildHash: optionalString(source.validated_build_hash),
       failureCode: optionalString(source.failure_code),
       failureSummary: optionalString(source.failure_summary ?? source.failure_reason),
+      rollbackAt: optionalString(source.rollback_at),
       rollbackVersion: optionalString(source.rollback_version),
       rollbackBuildHash: optionalString(source.rollback_build_hash),
       lastReportAt: optionalString(source.last_report_at),
@@ -177,9 +189,49 @@ export function adaptFirmwareDeployments(value: unknown): FirmwareDeploymentSumm
       verificationHeartbeats: numberValue(source.verification_heartbeats),
       readingConfirmedAt: optionalString(source.reading_confirmed_at),
       sourceVersion: optionalString(source.source_version),
+      sourceBuildHash: optionalString(source.source_build_hash),
+      sourceBootId: optionalString(source.source_boot_id),
       interruptionEvidence: source.interruption_evidence && typeof source.interruption_evidence === 'object'
         ? source.interruption_evidence as Record<string, unknown>
         : undefined,
+      verification: verification ? {
+        checks: records(verification.checks ?? [], 'firmware verification checks').map((check) => {
+          const status = stringValue(check.status, 'unavailable')
+          return {
+            key: stringValue(check.key),
+            label: stringValue(check.label),
+            status: (validCheckStatuses.has(status) ? status : 'unavailable') as 'pending' | 'passed' | 'failed' | 'unavailable',
+            detail: stringValue(check.detail),
+            observedAt: optionalString(check.observed_at),
+          }
+        }),
+        blocker: blocker ? {
+          code: stringValue(blocker.code),
+          state: stringValue(blocker.state, state),
+          title: stringValue(blocker.title),
+          detail: stringValue(blocker.detail),
+          action: stringValue(blocker.action),
+        } : undefined,
+        targetVersionExpected: optionalString(verification.target_version_expected),
+        targetVersionObserved: optionalString(verification.target_version_observed),
+        targetBuildHashExpected: optionalString(verification.target_build_hash_expected),
+        targetBuildHashObserved: optionalString(verification.target_build_hash_observed),
+        targetBootIdObserved: optionalString(verification.target_boot_id_observed),
+        previousBootStage: optionalString(verification.previous_boot_stage),
+        previousResetReason: optionalString(verification.previous_reset_reason),
+        rollbackState: optionalString(verification.rollback_state),
+        exactFailureCode: optionalString(verification.exact_failure_code),
+        blockingCriticalAlertCount: numberValue(verification.blocking_critical_alert_count),
+        verificationHeartbeatCount: numberValue(
+          verification.verification_heartbeat_count,
+          numberValue(source.verification_heartbeats),
+        ),
+        verificationHeartbeatRequired: optionalNumber(verification.verification_heartbeat_required),
+        lastSensorActivityAt: optionalString(verification.last_sensor_activity_at),
+        lastReportAt: optionalString(verification.last_report_at),
+        stabilizationElapsedSeconds: numberValue(verification.stabilization_elapsed_seconds),
+        stabilizationRequiredSeconds: numberValue(verification.stabilization_required_seconds),
+      } : undefined,
     }
   })
 }
@@ -978,28 +1030,48 @@ export function adaptHistory(value: unknown): HistoryView {
   const summary = record(source.summary, 'history summary')
   const combined = objectList(source.combined)
   const individual = objectList(source.individual)
-  const points = combined.length
-    ? combined
-    : individual.flatMap((series) => objectList(series.points))
   const bucketValue = stringValue(source.bucket, '15m')
   const bucket = ['5m', '15m', '1h', '1d'].includes(bucketValue) ? bucketValue as HistoryView['bucket'] : '15m'
+  const adaptPoint = (point: Record<string, unknown>): HistoryPoint => ({
+    start: stringValue(point.interval_start_utc),
+    end: stringValue(point.interval_end_utc),
+    label: stringValue(point.local_start, stringValue(point.interval_start_utc)),
+    powerW: optionalString(point.average_power_w),
+    energyKwh: optionalString(point.energy_kwh),
+    cost: optionalString(point.energy_cost),
+    rate: optionalString(point.rate_per_kwh),
+    period: optionalString(point.tou_period),
+    tier: objectList(point.rate_contributions)[0]
+      ? optionalString(objectList(point.rate_contributions)[0]?.tier_name)
+      : undefined,
+    coveragePercent: stringValue(point.coverage_percent, '0'),
+    missing: numberValue(point.contributing_sensor_count) < numberValue(point.included_sensor_count),
+  })
+  const combinedPoints = combined.map(adaptPoint)
+  const individualSeries = individual.map((item) => ({
+    id: stringValue(item.device_id),
+    deviceId: stringValue(item.device_id),
+    name: stringValue(item.name, 'Sensor'),
+    points: objectList(item.points).map(adaptPoint),
+  }))
+  const series = [
+    ...(combinedPoints.length > 0 ? [{
+      id: 'combined',
+      name: stringValue(scope.display_name, 'Whole Home'),
+      points: combinedPoints,
+    }] : []),
+    ...individualSeries,
+  ]
+  const points = combinedPoints.length > 0
+    ? combinedPoints
+    : individualSeries.length === 1
+      ? individualSeries[0]?.points ?? []
+      : []
+  const nextPage = numberValue(source.next_page)
   return {
     title: stringValue(scope.display_name, 'Whole Home'),
-    points: points.map((point) => ({
-      start: stringValue(point.interval_start_utc),
-      end: stringValue(point.interval_end_utc),
-      label: stringValue(point.local_start, stringValue(point.interval_start_utc)),
-      powerW: optionalString(point.average_power_w),
-      energyKwh: optionalString(point.energy_kwh),
-      cost: optionalString(point.energy_cost),
-      rate: optionalString(point.rate_per_kwh),
-      period: optionalString(point.tou_period),
-      tier: objectList(point.rate_contributions)[0]
-        ? optionalString(objectList(point.rate_contributions)[0]?.tier_name)
-        : undefined,
-      coveragePercent: stringValue(point.coverage_percent, '0'),
-      missing: numberValue(point.contributing_sensor_count) < numberValue(point.included_sensor_count),
-    })),
+    points,
+    series,
     energyKwh: optionalString(summary.energy_kwh),
     cost: optionalString(summary.energy_cost),
     averagePowerW: optionalString(summary.average_power_w),
@@ -1011,8 +1083,37 @@ export function adaptHistory(value: unknown): HistoryView {
     ratePlans: objectList(source.rate_versions_used).map((version) => stringValue(version.rate_plan_name)).filter(Boolean),
     bucket,
     timezone: stringValue(scope.timezone, 'UTC'),
-    rangeStart: stringValue(summary.start_utc, points[0] ? stringValue(points[0].interval_start_utc) : ''),
-    rangeEnd: stringValue(summary.end_utc, points.at(-1) ? stringValue(points.at(-1)?.interval_end_utc) : ''),
+    rangeStart: stringValue(summary.start_utc, points[0]?.start ?? ''),
+    rangeEnd: stringValue(summary.end_utc, points.at(-1)?.end ?? ''),
+    pagination: {
+      totalBuckets: numberValue(source.total_buckets, points.length),
+      page: numberValue(source.page, 1),
+      pageSize: numberValue(source.page_size, points.length),
+      nextPage: nextPage > 0 ? nextPage : undefined,
+      continuationToken: optionalString(source.next_continuation_token),
+    },
+  }
+}
+
+export function mergeHistoryPages(
+  current: HistoryView,
+  next: HistoryView,
+): HistoryView {
+  const seriesById = new Map(
+    current.series.map((series) => [series.id, { ...series, points: [...series.points] }]),
+  )
+  for (const series of next.series) {
+    const existing = seriesById.get(series.id)
+    if (existing) existing.points.push(...series.points)
+    else seriesById.set(series.id, { ...series, points: [...series.points] })
+  }
+  return {
+    ...current,
+    points: [...current.points, ...next.points],
+    series: [...seriesById.values()],
+    warnings: [...new Set([...current.warnings, ...next.warnings])],
+    ratePlans: [...new Set([...current.ratePlans, ...next.ratePlans])],
+    pagination: next.pagination,
   }
 }
 

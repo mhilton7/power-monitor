@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Download, FileUp, RefreshCw, ShieldCheck, TriangleAlert, X } from 'lucide-react'
+import { Download, FileUp, ShieldCheck, TriangleAlert, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import {
   adaptFirmwareDeployments,
@@ -9,39 +9,12 @@ import {
 import { errorMessage, json, request } from '../../api/client'
 import { InlineNotice } from '../../components/feedback/States'
 import type { FirmwareDeploymentSummary, FirmwareReleaseSummary, SensorSummary } from '../../types/models'
-
-const terminalStates = new Set(['completed', 'failed', 'rolled_back', 'cancelled'])
-const cancellableStates = new Set([
-  'waiting_canary',
-  'scheduled',
-  'offered',
-  'manifest_authenticated',
-  'download_started',
-  'downloading',
-  'binary_verified',
-])
-const retryableStates = new Set(['failed', 'rolled_back', 'cancelled'])
-
-const stateLabels: Record<string, string> = {
-  waiting_canary: 'Waiting for canary verification',
-  scheduled: 'Scheduled',
-  offered: 'Waiting for sensor',
-  manifest_authenticated: 'Manifest authenticated',
-  download_started: 'Starting download',
-  downloading: 'Downloading',
-  binary_verified: 'Verifying hash',
-  partition_written: 'Writing firmware',
-  rebooting: 'Rebooting',
-  post_boot_validation: 'Validating',
-  validated: 'Installed · awaiting verification',
-  waiting_for_heartbeat: 'Waiting for heartbeat',
-  awaiting_heartbeat: 'Waiting for heartbeat',
-  completed: 'Installed and verified',
-  failed: 'Update failed',
-  rollback_detected: 'Rollback detected',
-  rolled_back: 'Update failed · previous firmware restored',
-  cancelled: 'Cancelled',
-}
+import {
+  FirmwareDeploymentStatus,
+  firmwareCancellableStates,
+  firmwareRetryableStates,
+  firmwareTerminalStates,
+} from './FirmwareDeploymentStatus'
 
 function bytes(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return '0 B'
@@ -76,40 +49,6 @@ function mergeDeployments(
   return [...updated, ...(current ?? []).filter((item) => !updatedIds.has(item.id))]
 }
 
-function DeploymentProgress({ deployment }: { deployment: FirmwareDeploymentSummary }) {
-  const label = stateLabels[deployment.state] ?? deployment.state.replaceAll('_', ' ')
-  const failed = deployment.state === 'failed' || deployment.state === 'rolled_back'
-  const complete = deployment.state === 'completed'
-  const stopped = deployment.state === 'cancelled'
-  const determinate = deployment.progressMode === 'determinate'
-    || (deployment.progressMode === undefined && deployment.bytesReceived > 0)
-  const progress = Math.max(0, Math.min(100, deployment.progress))
-  const activityAt = deployment.lastReportAt ?? deployment.downloadedAt ?? deployment.scheduledAt
-  return (
-    <div className={`firmware-progress ${failed ? 'failed' : complete ? 'complete' : ''}`} aria-live="polite">
-      <div className="firmware-progress-heading">
-        <span>{complete ? <Check /> : failed ? <TriangleAlert /> : stopped ? <X /> : <RefreshCw className="spin" />}</span>
-        <div><strong>{label}</strong><small>Attempt {deployment.attempt} · revision {deployment.revision}</small></div>
-        <span>{determinate ? `${progress}%` : '…'}</span>
-      </div>
-      {determinate ? <progress max={100} value={progress} /> : <progress max={100} />}
-      {!determinate && <small>Waiting for the next authenticated sensor progress report.</small>}
-      {activityAt && <small>Last sensor activity {new Date(activityAt).toLocaleString()}</small>}
-      {deployment.bytesReceived > 0 && <small>{bytes(deployment.bytesReceived)} received</small>}
-      {failed && (
-        <InlineNotice tone="danger">
-          <strong>Failed stage:</strong> {label}.{' '}
-          <strong>{deployment.failureCode ?? 'firmware_update_failed'}</strong>{' '}
-          {deployment.failureSummary ?? 'The sensor preserved its existing firmware.'}{' '}
-          {deployment.rollbackVersion
-            ? <>Rollback state: previous firmware {deployment.rollbackVersion} was restored. Recommended action: verify sensor health, then Retry.</>
-            : <>Existing firmware remains protected. Recommended action: review sensor diagnostics, then Retry.</>}
-        </InlineNotice>
-      )}
-    </div>
-  )
-}
-
 export function FirmwareUpdateDialog({
   sensor,
   onClose,
@@ -129,13 +68,13 @@ export function FirmwareUpdateDialog({
     queryFn: () => request(`/api/v1/firmware-deployments?device_id=${encodeURIComponent(sensor.id)}`, {}, adaptFirmwareDeployments),
     refetchInterval: (query) => {
       const values = query.state.data
-      return values?.some((item) => item.deviceId === sensor.id && !terminalStates.has(item.state)) ? 2_500 : false
+      return values?.some((item) => item.deviceId === sensor.id && !firmwareTerminalStates.has(item.state)) ? 2_500 : false
     },
   })
   const deployment = useMemo(() => {
     const matching = deployments.data?.filter((item) => item.deviceId === sensor.id) ?? []
     return matching.find((item) => item.id === deploymentId)
-      ?? matching.find((item) => !terminalStates.has(item.state))
+      ?? matching.find((item) => !firmwareTerminalStates.has(item.state))
       ?? (ignorePreviousDeployment ? undefined : matching[0])
   }, [deploymentId, deployments.data, ignorePreviousDeployment, sensor.id])
 
@@ -308,16 +247,16 @@ export function FirmwareUpdateDialog({
           </div>
         )}
 
-        {deployment && <DeploymentProgress deployment={deployment} />}
+        {deployment && <FirmwareDeploymentStatus deployment={deployment} />}
         {errors && <InlineNotice tone="danger">{errorMessage(errors)}</InlineNotice>}
       </div>
       <footer>
         <button className="button secondary" type="button" disabled={busy} onClick={onClose}>Close</button>
         {!release && !deployment && <button className="button primary" type="button" disabled={!file || upload.isPending} onClick={() => { upload.mutate() }}>{upload.isPending ? 'Server verification…' : 'Verify firmware'}</button>}
         {release && !deployment && !bootstrapRequired && <button className="button primary" type="button" disabled={!installReady || install.isPending} onClick={() => { install.mutate() }}>{install.isPending ? 'Scheduling…' : 'Install'}</button>}
-        {deployment && cancellableStates.has(deployment.state) && <button className="button danger" type="button" disabled={busy} onClick={() => { cancel.mutate(deployment.id) }}>Cancel update</button>}
-        {deployment && retryableStates.has(deployment.state) && <button className="button primary" type="button" disabled={busy} onClick={() => { retry.mutate(deployment.id) }}>Retry</button>}
-        {deployment && terminalStates.has(deployment.state) && <button className="button secondary" type="button" disabled={busy} onClick={startAnother}>Start another update</button>}
+        {deployment && firmwareCancellableStates.has(deployment.state) && <button className="button danger" type="button" disabled={busy} onClick={() => { cancel.mutate(deployment.id) }}>Cancel update</button>}
+        {deployment && firmwareRetryableStates.has(deployment.state) && <button className="button primary" type="button" disabled={busy} onClick={() => { retry.mutate(deployment.id) }}>Retry</button>}
+        {deployment && firmwareTerminalStates.has(deployment.state) && <button className="button secondary" type="button" disabled={busy} onClick={startAnother}>Start another update</button>}
       </footer>
     </section>
   )

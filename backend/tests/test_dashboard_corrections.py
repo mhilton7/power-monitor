@@ -573,12 +573,10 @@ async def test_live_measurement_is_consistent_between_devices_and_fleet(
     event_stream = _sse_stream(device["site_id"], None, test_settings)
     try:
         heartbeat_event = await anext(event_stream)
-        reading_event = await anext(event_stream)
         status_event = await anext(event_stream)
     finally:
         await event_stream.aclose()
     assert heartbeat_event.startswith("event: heartbeat\n")
-    assert reading_event.startswith("event: reading\n")
     assert status_event.startswith("event: device_status\n")
     assert device_id in heartbeat_event
     assert '"measurement_freshness":"live"' in heartbeat_event

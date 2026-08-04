@@ -987,11 +987,52 @@ class LiveMeasurement(DeviceProtocolModel):
     _aware = field_validator("measured_at")(require_aware)
 
 
+class StorageHealthDetails(BaseModel):
+    """Typed storage-integrity evidence with forward-compatible extra fields."""
+
+    model_config = ConfigDict(extra="allow")
+
+    # ``history_integrity_verified`` is the original firmware field. New
+    # firmware names the same reading-index proof explicitly; retain both so
+    # older enrolled sensors remain valid throughout rolling upgrades.
+    history_integrity_verified: bool | None = None
+    reading_index_integrity_verified: bool | None = None
+    event_log_integrity_verified: bool | None = None
+    event_log_integrity_status: (
+        Literal[
+            "verified",
+            "not_scanned",
+            "unavailable",
+            "event_record_corruption_detected",
+            "event_log_open_failed",
+        ]
+        | None
+    ) = None
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Preserve the mapping-style access used by legacy heartbeat code."""
+
+        return getattr(self, key, default)
+
+    @property
+    def effective_reading_index_integrity_verified(self) -> bool | None:
+        if self.reading_index_integrity_verified is not None:
+            return self.reading_index_integrity_verified
+        return self.history_integrity_verified
+
+
 class SubsystemHealth(DeviceProtocolModel):
     ok: bool
     status: str
     error_count: int = Field(default=0, ge=0)
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class StorageSubsystemHealth(DeviceProtocolModel):
+    ok: bool
+    status: str
+    error_count: int = Field(default=0, ge=0)
+    details: StorageHealthDetails = Field(default_factory=StorageHealthDetails)
 
 
 class TimeHealth(DeviceProtocolModel):
@@ -1016,11 +1057,13 @@ class Heartbeat(DeviceProtocolModel):
     connection_mode: Literal["pull", "push", "hybrid"]
     latest: LiveMeasurement | None = None
     pzem: SubsystemHealth
-    sd: SubsystemHealth
+    sd: StorageSubsystemHealth
     oldest_stored_sequence: int = Field(ge=0)
     oldest_syncable_sequence: int | None = Field(default=None, ge=0)
+    newest_syncable_sequence: int | None = Field(default=None, ge=0)
     newest_stored_sequence: int = Field(ge=0)
     server_ack_sequence: int = Field(ge=0)
+    server_maximum_seen_sequence: int | None = Field(default=None, ge=0)
     backlog_estimate: int = Field(ge=0)
     configuration_version: int = Field(ge=0)
     time: TimeHealth
@@ -1040,6 +1083,17 @@ class Heartbeat(DeviceProtocolModel):
             and self.oldest_syncable_sequence > self.newest_stored_sequence
         ):
             raise ValueError("oldest_syncable_sequence exceeds newest_stored_sequence")
+        if (
+            self.newest_syncable_sequence is not None
+            and self.newest_syncable_sequence > self.newest_stored_sequence
+        ):
+            raise ValueError("newest_syncable_sequence exceeds newest_stored_sequence")
+        if (
+            self.oldest_syncable_sequence is not None
+            and self.newest_syncable_sequence is not None
+            and self.oldest_syncable_sequence > self.newest_syncable_sequence
+        ):
+            raise ValueError("oldest_syncable_sequence exceeds newest_syncable_sequence")
         return self
 
 
@@ -1765,6 +1819,7 @@ class FirmwareDeploymentReport(DeviceProtocolModel):
     attempt: int = Field(ge=1)
     state: Literal[
         "manifest_authenticated",
+        "waiting_for_schedule",
         "download_started",
         "downloading",
         "binary_verified",
@@ -1784,6 +1839,11 @@ class FirmwareDeploymentReport(DeviceProtocolModel):
     image_size: int = Field(gt=0)
     progress: int = Field(ge=0, le=100)
     boot_id: str = Field(min_length=1, max_length=80)
+    # Monotonic, deployment-attempt-scoped retained evidence. Legacy firmware
+    # may omit this additive field; current firmware persists it alongside each
+    # OTA state transition so delayed reports can be ordered against signed
+    # heartbeat evidence from the same boot.
+    evidence_sequence: int | None = Field(default=None, ge=0, le=2**64 - 1)
     failure_code: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_]{0,79}$")
     failure_summary: str | None = Field(default=None, max_length=500)
 
@@ -1806,6 +1866,43 @@ class FirmwareDeploymentReport(DeviceProtocolModel):
         ):
             raise ValueError("failure evidence is accepted only for failure or rollback reports")
         return self
+
+
+class FirmwareVerificationCheck(ApiModel):
+    key: str
+    label: str
+    status: Literal["pending", "passed", "failed", "unavailable"]
+    detail: str
+    observed_at: datetime | None = None
+
+
+class FirmwareVerificationBlocker(ApiModel):
+    code: str
+    state: str
+    title: str
+    detail: str
+    action: str
+
+
+class FirmwareVerificationStatus(ApiModel):
+    checks: list[FirmwareVerificationCheck]
+    blocker: FirmwareVerificationBlocker | None = None
+    target_version_expected: str | None = None
+    target_version_observed: str | None = None
+    target_build_hash_expected: str | None = None
+    target_build_hash_observed: str | None = None
+    target_boot_id_observed: str | None = None
+    previous_boot_stage: str | None = None
+    previous_reset_reason: str | None = None
+    rollback_state: str
+    exact_failure_code: str | None = None
+    blocking_critical_alert_count: int = Field(ge=0)
+    verification_heartbeat_count: int = Field(ge=0)
+    verification_heartbeat_required: int = Field(ge=1)
+    last_sensor_activity_at: datetime | None = None
+    last_report_at: datetime | None = None
+    stabilization_elapsed_seconds: int = Field(ge=0)
+    stabilization_required_seconds: int = Field(ge=0)
 
 
 class FirmwareReleaseCompatibilityView(ApiModel):
@@ -1896,6 +1993,8 @@ class FirmwareDeploymentView(ApiModel):
     rollback_build_hash: str | None
     verification_heartbeats: int
     reading_confirmed_at: datetime | None
+    state_changed_at: datetime
+    terminal_at: datetime | None
     created_at: datetime
     target_version: str | None
     target_sha256: str | None
@@ -1904,6 +2003,7 @@ class FirmwareDeploymentView(ApiModel):
     source_build_hash: str | None
     source_boot_id: str | None
     interruption_evidence: dict[str, Any]
+    verification: FirmwareVerificationStatus
 
 
 class FirmwareDeploymentCreateResponse(ApiModel):
@@ -2049,6 +2149,7 @@ class HistoryQueryRequest(ApiModel):
     selection_end_utc: datetime | None = None
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=250, ge=1, le=500)
+    continuation_token: str | None = Field(default=None, max_length=32_768)
 
     @model_validator(mode="after")
     def valid_range(self) -> HistoryQueryRequest:
@@ -2180,6 +2281,7 @@ class HistoryQueryResponse(ApiModel):
     page: int
     page_size: int
     next_page: int | None = None
+    next_continuation_token: str | None = None
 
 
 class FleetSummary(ApiModel):

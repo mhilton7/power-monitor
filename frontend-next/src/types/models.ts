@@ -178,6 +178,45 @@ export interface FirmwareReleaseSummary {
   active: boolean
 }
 
+export type FirmwareVerificationCheckStatus = 'pending' | 'passed' | 'failed' | 'unavailable'
+
+export interface FirmwareVerificationCheck {
+  key: string
+  label: string
+  status: FirmwareVerificationCheckStatus
+  detail: string
+  observedAt?: string
+}
+
+export interface FirmwareVerificationBlocker {
+  code: string
+  state: string
+  title: string
+  detail: string
+  action: string
+}
+
+export interface FirmwareVerificationStatus {
+  checks: FirmwareVerificationCheck[]
+  blocker?: FirmwareVerificationBlocker
+  targetVersionExpected?: string
+  targetVersionObserved?: string
+  targetBuildHashExpected?: string
+  targetBuildHashObserved?: string
+  targetBootIdObserved?: string
+  previousBootStage?: string
+  previousResetReason?: string
+  rollbackState?: string
+  exactFailureCode?: string
+  blockingCriticalAlertCount: number
+  verificationHeartbeatCount: number
+  verificationHeartbeatRequired?: number
+  lastSensorActivityAt?: string
+  lastReportAt?: string
+  stabilizationElapsedSeconds: number
+  stabilizationRequiredSeconds: number
+}
+
 export interface FirmwareDeploymentSummary {
   id: string
   firmwareReleaseId: string
@@ -190,11 +229,21 @@ export interface FirmwareDeploymentSummary {
   progressMode?: 'determinate' | 'indeterminate'
   displayState?: string
   scheduledAt?: string
+  expiresAt?: string
   downloadedAt?: string
+  installedAt?: string
+  validatedAt?: string
+  stateChangedAt?: string
+  terminalAt?: string
+  createdAt?: string
   targetVersion?: string
   targetSha256?: string
+  targetBuildHash?: string
+  validatedVersion?: string
+  validatedBuildHash?: string
   failureCode?: string
   failureSummary?: string
+  rollbackAt?: string
   rollbackVersion?: string
   rollbackBuildHash?: string
   lastReportAt?: string
@@ -203,7 +252,10 @@ export interface FirmwareDeploymentSummary {
   verificationHeartbeats: number
   readingConfirmedAt?: string
   sourceVersion?: string
+  sourceBuildHash?: string
+  sourceBootId?: string
   interruptionEvidence?: Record<string, unknown>
+  verification?: FirmwareVerificationStatus
 }
 
 export interface SensorStoragePolicy {
@@ -805,11 +857,27 @@ export interface HistoryPoint {
   missing: boolean
 }
 
+export interface HistorySeries {
+  id: string
+  name: string
+  deviceId?: string
+  points: HistoryPoint[]
+}
+
+export interface HistoryPagination {
+  totalBuckets: number
+  page: number
+  pageSize: number
+  nextPage?: number
+  continuationToken?: string
+}
+
 export type HistoryBucket = '5m' | '15m' | '1h' | '1d'
 
 export interface HistoryView {
   title: string
   points: HistoryPoint[]
+  series: HistorySeries[]
   energyKwh?: string
   cost?: string
   averagePowerW?: string
@@ -823,6 +891,7 @@ export interface HistoryView {
   timezone: string
   rangeStart: string
   rangeEnd: string
+  pagination: HistoryPagination
 }
 
 export type FamilyRole = 'Owner' | 'Family Member' | 'Viewer'

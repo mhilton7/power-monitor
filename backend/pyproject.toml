@@ -11,7 +11,9 @@ dependencies = [
   "alembic==1.16.4",
   "argon2-cffi==25.1.0",
   "asyncpg==0.30.0",
-  "cryptography==49.0.0",
+  # 50.0.0 fixes GHSA-g6cj-pr64-35w5; the full authentication, HMAC, TLS,
+  # firmware-signature, PDF, and migration suites are release gates.
+  "cryptography==50.0.0",
   "email-validator==2.2.0",
   "fastapi==0.139.2",
   "httpx==0.28.1",

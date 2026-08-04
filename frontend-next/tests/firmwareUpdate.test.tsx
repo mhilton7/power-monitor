@@ -180,7 +180,7 @@ describe('existing-trust firmware workflow', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([deployment('completed')]), { status: 200, headers: jsonHeaders })))
     const user = userEvent.setup()
     view(sensor({ firmware: '1.0.11' }))
-    expect(await screen.findByText('Installed and verified')).toBeVisible()
+    expect((await screen.findAllByText('Completed'))[0]).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Start another update' }))
     expect(screen.getByText('Choose firmware.bin')).toBeVisible()
   })
@@ -196,7 +196,7 @@ describe('existing-trust firmware workflow', () => {
     }]), { status: 200, headers: jsonHeaders })))
     view(sensor())
 
-    expect(await screen.findByText('Starting download')).toBeVisible()
+    expect(await screen.findByText('Downloading')).toBeVisible()
     expect(screen.getByText('Waiting for the next authenticated sensor progress report.')).toBeVisible()
     expect(screen.queryByText('0%')).not.toBeInTheDocument()
     expect(screen.getByRole('progressbar')).not.toHaveAttribute('value')
@@ -225,10 +225,84 @@ describe('existing-trust firmware workflow', () => {
     }]), { status: 200, headers: jsonHeaders })))
     view(sensor())
 
-    expect(await screen.findByText('Update failed · previous firmware restored')).toBeVisible()
+    expect((await screen.findAllByText('Rolled back'))[0]).toBeVisible()
     expect(screen.getByText('post_boot_validation_failed')).toBeVisible()
-    expect(screen.getByText(/previous firmware 1.0.10 was restored/)).toBeVisible()
+    expect(screen.getByText(/previous firmware 1.0.10 was restored/i)).toBeVisible()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
+  })
+
+  it('renders the authoritative post-update checklist and exact current blocker', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([{
+      ...deployment('awaiting_heartbeat'),
+      progress: 100,
+      progress_mode: 'determinate',
+      validated_version: '1.0.11',
+      validated_build_hash: 'build-11',
+      target_build_hash: 'build-11',
+      verification_heartbeats: 4,
+      last_report_at: '2026-08-03T20:05:00Z',
+      verification: {
+        checks: [
+          { key: 'target_identity', label: 'Target firmware identity', status: 'passed', detail: 'Verified 1.0.11.', observed_at: '2026-08-03T20:04:00Z' },
+          { key: 'pzem', label: 'PZEM measurement hardware', status: 'passed', detail: 'PZEM health passed.' },
+          { key: 'storage', label: 'microSD storage', status: 'passed', detail: 'Storage health passed.' },
+          { key: 'trusted_time', label: 'Trusted time', status: 'passed', detail: 'Time trust passed.' },
+          { key: 'verification_heartbeats', label: 'Healthy verification heartbeats', status: 'pending', detail: '4 of 10 received.' },
+          { key: 'post_update_reading', label: 'Post-update reading', status: 'pending', detail: 'Waiting for the first durable reading.' },
+        ],
+        blocker: {
+          code: 'ota_waiting_post_update_reading', state: 'awaiting_heartbeat',
+          title: 'Post-update reading', detail: 'Waiting for the first durable reading.', action: 'wait',
+        },
+        target_version_expected: '1.0.11', target_version_observed: '1.0.11',
+        target_build_hash_expected: 'build-11', target_build_hash_observed: 'build-11',
+        target_boot_id_observed: 'boot-target', previous_boot_stage: 'reboot_scheduled',
+        previous_reset_reason: 'software_reset', rollback_state: 'not_detected',
+        exact_failure_code: null, blocking_critical_alert_count: 0,
+        verification_heartbeat_count: 4, verification_heartbeat_required: 10,
+        last_sensor_activity_at: '2026-08-03T20:06:00Z', last_report_at: '2026-08-03T20:05:00Z',
+        stabilization_elapsed_seconds: 45, stabilization_required_seconds: 90,
+      },
+    }]), { status: 200, headers: jsonHeaders })))
+    view(sensor())
+
+    expect(await screen.findByText('Waiting for first reading')).toBeVisible()
+    expect(screen.getByText('Post-update verification')).toBeVisible()
+    expect(screen.getByText('ota_waiting_post_update_reading')).toBeVisible()
+    expect(screen.getByText('PZEM measurement hardware')).toBeVisible()
+    expect(screen.getByText('boot-target')).toBeVisible()
+    expect(screen.getByText('45 of 90 seconds')).toBeVisible()
+    expect(screen.getByText('Software Reset')).toBeVisible()
+  })
+
+  it('terminalizes a timed-out update without an infinite spinner and keeps Retry actionable', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([{
+      ...deployment('failed'),
+      progress: 0,
+      bytes_received: 0,
+      progress_mode: 'indeterminate',
+      terminal_at: '2026-08-03T21:00:00Z',
+      failure_code: 'ota_sensor_did_not_return',
+      failure_summary: 'The sensor did not return within the recovery window.',
+      verification: {
+        checks: [],
+        blocker: {
+          code: 'ota_sensor_did_not_return', state: 'failed', title: 'Firmware update did not complete',
+          detail: 'The sensor did not return within the recovery window.', action: 'retry',
+        },
+        blocking_critical_alert_count: 0,
+        verification_heartbeat_count: 0,
+        verification_heartbeat_required: 10,
+        stabilization_elapsed_seconds: 0, stabilization_required_seconds: 90,
+      },
+    }]), { status: 200, headers: jsonHeaders })))
+    const { container } = view(sensor())
+
+    expect((await screen.findAllByText('Failed'))[0]).toBeVisible()
+    expect(screen.getAllByText('ota_sensor_did_not_return')[0]).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(container.querySelector('.spin')).not.toBeInTheDocument()
   })
 
   it('cancels only while the current stage is safe and refreshes the persisted deployment', async () => {
@@ -247,7 +321,7 @@ describe('existing-trust firmware workflow', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Cancel update' }))
     await waitFor(() => { expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/cancel'), expect.objectContaining({ method: 'POST' })) })
-    expect(await screen.findByText('Cancelled')).toBeVisible()
+    expect((await screen.findAllByText('Cancelled'))[0]).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Cancel update' })).not.toBeInTheDocument()
   })
 

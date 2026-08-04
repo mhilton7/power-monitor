@@ -661,7 +661,7 @@ Run commands from the repository root unless a command starts with `cd`.
 cd backend && ../.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider
 .venv/Scripts/python.exe scripts/generate_openapi.py --check
 .venv/Scripts/python.exe scripts/validate_contracts.py
-cd backend && ../.venv/Scripts/python.exe -m alembic -c alembic.ini upgrade head --sql
+cd backend && ../.venv/Scripts/python.exe -m pytest tests/test_release_tooling.py::test_canonical_offline_migration_renderer_reaches_head_deterministically -q
 cd frontend && npm ci
 cd frontend && npm run lint
 cd frontend && npm run typecheck
@@ -672,6 +672,14 @@ cd frontend && npm run e2e
 .venv/Scripts/python.exe -m pip_audit -r backend/requirements.lock --no-deps
 cd frontend && npm audit --json
 ```
+
+The offline migration artifact must be rendered through the canonical release
+renderer. Released revision `20260731_0022` intentionally reads migrated role
+data during an online upgrade, so raw `alembic upgrade head --sql` cannot render
+that immutable revision. The focused gate above runs the real segmented renderer,
+checks its deterministic compatibility SQL, and verifies that the artifact reaches
+the single current head. The Docker-backed PostgreSQL gate below remains
+authoritative for populated upgrades, downgrade/re-upgrade, and clean installs.
 
 The History gate includes deterministic two-sensor service-leg readings from
 8:00 PM–10:00 PM under a configured `$1.00/kWh` plan. It verifies 4.00 kWh and

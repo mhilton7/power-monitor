@@ -27,6 +27,16 @@ heartbeat. Storage details independently produce `online_storage_reconciling`
 or `online_storage_degraded`; neither is reported as offline. Durable History
 continues to depend on accepted reading batches.
 
+Current firmware reports separate signed integrity evidence in
+`sd.details.reading_index_integrity_verified`,
+`event_log_integrity_verified`, and `event_log_integrity_status`. The legacy
+`history_integrity_verified` field remains accepted as an alias for reading
+index integrity; when both are present, the explicit new field is authoritative,
+including a `false` value. Unknown detail fields remain forward-compatible.
+`reading_index_integrity_degraded` and `event_log_integrity_degraded` keep the
+sensor online while surfacing `online_storage_degraded`; they do not turn an
+accepted heartbeat into a network outage.
+
 Operators receive specific, actionable notifications for sequence
 reconciliation, continuity restoration on a blank or replaced card, and cursor
 conflicts. These conditions do not masquerade as network outages. The generic

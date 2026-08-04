@@ -98,6 +98,43 @@ describe('shared dropdown menu', () => {
     expect(action).toHaveBeenCalledTimes(2)
   })
 
+  it('places the menu above its trigger when a fixed bottom control would cover an action', async () => {
+    const user = userEvent.setup()
+    const rectangle = (top: number, height: number, width = 180): DOMRect => ({
+      x: 0,
+      y: top,
+      top,
+      bottom: top + height,
+      left: 0,
+      right: width,
+      width,
+      height,
+      toJSON: () => ({}),
+    })
+    const bounds = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.dataset.dropdownViewportObstruction === 'bottom') return rectangle(700, 68, 768)
+        if (this.getAttribute('role') === 'menu') return rectangle(690, 150)
+        if (this.getAttribute('aria-label') === 'Placement actions') return rectangle(650, 40)
+        return rectangle(0, 0, 0)
+      })
+
+    render(
+      <BrowserRouter>
+        <DropdownMenu label="Placement actions" trigger="Actions">
+          <DropdownMenuItem onSelect={() => undefined}>Remove plan</DropdownMenuItem>
+        </DropdownMenu>
+        <nav data-dropdown-viewport-obstruction="bottom" aria-label="Mobile navigation" />
+      </BrowserRouter>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Placement actions' }))
+    await vi.waitFor(() => {
+      expect(screen.getByRole('menu', { name: 'Placement actions' })).toHaveAttribute('data-placement', 'above')
+    })
+    bounds.mockRestore()
+  })
+
   it('removes global listeners safely when the owner unmounts', async () => {
     const user = userEvent.setup()
     const view = render(<Harness />)

@@ -13,7 +13,7 @@ import structlog
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, func, or_, select, text
 
 from app.api.deps import Admin, AppSettings, DbSession, Viewer
 from app.config import Settings, get_settings
@@ -659,7 +659,9 @@ async def _sse_stream(
     last_heartbeat_ids: dict[str, str] = {}
     last_reading_sequences: dict[str, int] = {}
     last_statuses: dict[str, str] = {}
+    reading_baselined = False
     while True:
+        reading_window: dict[str, str | None] | None = None
         async with session_factory()() as session:
             query = select(Device).where(Device.lifecycle_status == "active")
             if site_id:
@@ -695,6 +697,40 @@ async def _sse_stream(
             ]
             heartbeat_ids = {key: item.id for key, item in heartbeats.items()}
             reading_sequences = {key: item.sequence for key, item in readings.items()}
+            if not reading_baselined:
+                # Existing durable readings are the stream baseline, not a new
+                # mutation. Emitting them as a reading event races the page's
+                # initial History request and causes an equivalent second POST.
+                last_reading_sequences = reading_sequences
+                reading_baselined = True
+            changed_sequences = {
+                device_id: sequence
+                for device_id, sequence in reading_sequences.items()
+                if last_reading_sequences.get(device_id) != sequence
+            }
+            if changed_sequences:
+                sequence_filters = [
+                    and_(
+                        RawReading.device_id == device_id,
+                        RawReading.sequence > last_reading_sequences.get(device_id, sequence - 1),
+                        RawReading.sequence <= sequence,
+                    )
+                    for device_id, sequence in changed_sequences.items()
+                ]
+                changed_rows = (
+                    await session.execute(
+                        select(
+                            func.min(RawReading.interval_start),
+                            func.max(RawReading.interval_end),
+                            func.max(RawReading.ingested_at),
+                        ).where(or_(*sequence_filters))
+                    )
+                ).one()
+                reading_window = {
+                    "interval_start": _iso_or_none(changed_rows[0]),
+                    "interval_end": _iso_or_none(changed_rows[1]),
+                    "event_watermark": _iso_or_none(changed_rows[2]),
+                }
             statuses = {
                 device.id: (
                     f"{device.status}:{measurements[device.id].heartbeat_freshness}:"
@@ -714,7 +750,12 @@ async def _sse_stream(
             logger.info("SSE_EVENT_PUBLISHED", event_name="heartbeat", site_id=site_id)
         if reading_sequences != last_reading_sequences:
             payload = json.dumps(
-                {"type": "reading", "site_id": site_id, "devices": compact},
+                {
+                    "type": "reading",
+                    "site_id": site_id,
+                    "devices": compact,
+                    **(reading_window or {}),
+                },
                 separators=(",", ":"),
             )
             yield f"event: reading\ndata: {payload}\n\n"

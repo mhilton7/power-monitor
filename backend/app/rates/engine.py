@@ -417,6 +417,10 @@ class RateEngine:
             prior_offset = next_offset
         return sorted(item for item in candidates if start_utc <= item <= end_utc)
 
+    def calculation_boundaries(self, start: datetime, end: datetime) -> tuple[datetime, ...]:
+        """Return the exact immutable tariff boundaries used for interval pricing."""
+        return tuple(self._boundaries(start, end))
+
     def billing_cycle_bounds(self, instant: datetime) -> tuple[datetime, datetime]:
         if instant.tzinfo is None:
             raise ValueError("instant must be timezone-aware")

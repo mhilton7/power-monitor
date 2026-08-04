@@ -127,8 +127,30 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                   AND conname LIKE '%firmware_release_trust_mode'
                 """
             )
-            assert revision == "20260803_0027"
+            history_indexes = {
+                row["indexname"]: row["indexdef"]
+                for row in await connection.fetch(
+                    """
+                    SELECT indexname, indexdef
+                    FROM pg_indexes
+                    WHERE schemaname = 'public'
+                      AND indexname IN (
+                        'ix_raw_device_time_end',
+                        'ix_normalized_device_time_end',
+                        'ix_tier_segment_account_time_recalc',
+                        'ix_tier_segment_version_time'
+                      )
+                    """
+                )
+            }
+            assert revision == "20260803_0030"
             assert table_count == 102
+            assert set(history_indexes) == {
+                "ix_raw_device_time_end",
+                "ix_normalized_device_time_end",
+                "ix_tier_segment_account_time_recalc",
+                "ix_tier_segment_version_time",
+            }
             assert ota_active_index is not None
             assert "WHERE" in ota_active_index
             assert "state" in ota_active_index
@@ -191,7 +213,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260803_0027"
+                "20260803_0030"
             )
 
             await connection.execute("DROP SCHEMA public CASCADE")
@@ -251,7 +273,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260803_0027"
+                "20260803_0030"
             )
             assert (
                 await connection.fetchval(

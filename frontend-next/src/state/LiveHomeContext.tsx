@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import {
   adaptNotificationPage,
   adaptBillingCycle,
@@ -23,6 +23,7 @@ import { useSingleHome } from './SingleHomeContext'
 import { useAuth } from './AuthContext'
 import { hasAnyPermission, hasPermission } from '../access/permissions'
 import { countCurrentAttentionNotifications } from '../features/alerts/notificationSelectors'
+import { useLocation } from '../app/router'
 
 interface LiveHomeValue {
   summary?: HomeSummary
@@ -38,9 +39,49 @@ interface LiveHomeValue {
 }
 
 const LiveHomeContext = createContext<LiveHomeValue | undefined>(undefined)
+const HISTORY_SSE_COALESCE_MS = 750
+
+interface HistoryReadingEventPayload {
+  site_id?: string
+  interval_start?: string
+  interval_end?: string
+  event_watermark?: string
+}
+
+function validEpoch(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+export function historyReadingEventTouchesQuery(
+  queryKey: readonly unknown[],
+  payload: HistoryReadingEventPayload,
+  now = Date.now(),
+): boolean {
+  const kind = typeof queryKey[1] === 'string' ? queryKey[1] : ''
+  const queryStart = validEpoch(kind === 'home-daily' ? queryKey[3] : queryKey[9])
+  const queryEnd = validEpoch(kind === 'home-daily' ? queryKey[4] : queryKey[10])
+  const eventStart = validEpoch(payload.interval_start)
+  const eventEnd = validEpoch(payload.interval_end)
+  if (
+    queryStart === undefined
+    || queryEnd === undefined
+    || eventStart === undefined
+    || eventEnd === undefined
+  ) return true
+  if (eventStart < queryEnd && eventEnd > queryStart) return true
+  const rolling = kind === 'home-daily'
+    || (kind === 'page' && ['today', '7d', '30d'].includes(String(queryKey[3])))
+  return rolling && eventEnd > queryStart && eventStart <= now + 60_000
+}
 
 export function LiveHomeProvider({ children }: { children: ReactNode }) {
   const client = useQueryClient()
+  const historyRefreshTimer = useRef<number | undefined>(undefined)
+  const lastHistoryEventWatermark = useRef<number | undefined>(undefined)
+  const location = useLocation()
+  const onHistoryRoute = location.pathname === '/history'
   const { session } = useAuth()
   const { resolution } = useSingleHome()
   const homeId = resolution?.state === 'ready' ? resolution.home.id : undefined
@@ -62,7 +103,7 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     queryFn: () => request('/api/v1/utility-accounts', {}, adaptElectricServices),
     enabled: Boolean(homeId && canViewServices),
     select: (items) => items.filter((item) => item.homeId === homeId && item.status === 'active'),
-    refetchInterval: 60_000,
+    refetchInterval: onHistoryRoute ? false : 60_000,
   })
   const configuration = useQuery({
     queryKey: ['configuration-status', boundary, homeId],
@@ -73,7 +114,7 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     ),
     enabled: Boolean(homeId && canViewOverview),
     retry: 1,
-    refetchInterval: 60_000,
+    refetchInterval: onHistoryRoute ? false : 60_000,
   })
   const currentAssignment = useQuery({
     queryKey: ['current-rate-assignment', boundary, homeId],
@@ -84,7 +125,7 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     ),
     enabled: Boolean(homeId && canViewRates),
     retry: 1,
-    refetchInterval: 60_000,
+    refetchInterval: onHistoryRoute ? false : 60_000,
   })
   const activeService = services.data?.[0]
   const cycle = useQuery({
@@ -92,7 +133,7 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     queryFn: () => request(`/api/v1/utility-accounts/${activeService?.id ?? ''}/tier-status`, {}, adaptBillingCycle),
     enabled: Boolean(activeService?.id && canViewCosts),
     retry: 1,
-    refetchInterval: 60_000,
+    refetchInterval: onHistoryRoute ? false : 60_000,
   })
   const fleet = useQuery({
     queryKey: ['home-summary', boundary, homeId],
@@ -109,14 +150,48 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!homeId || !canViewOverview || typeof EventSource === 'undefined') return
+    lastHistoryEventWatermark.current = undefined
     const source = new EventSource(`/api/v1/events/stream?site_id=${encodeURIComponent(homeId)}`)
     const refreshLive = () => {
       void client.invalidateQueries({ queryKey: ['home-summary', boundary, homeId] })
       void client.invalidateQueries({ queryKey: ['sensors', boundary, homeId] })
     }
-    const refreshHistory = () => {
+    const refreshHistory = (event: Event) => {
+      let payload: HistoryReadingEventPayload = {}
+      if (event instanceof MessageEvent) {
+        try {
+          payload = JSON.parse(String(event.data)) as HistoryReadingEventPayload
+          if (payload.site_id && payload.site_id !== homeId) return
+          const watermark = validEpoch(payload.event_watermark)
+          if (
+            watermark !== undefined
+            && lastHistoryEventWatermark.current !== undefined
+            && watermark <= lastHistoryEventWatermark.current
+          ) return
+          if (watermark !== undefined) lastHistoryEventWatermark.current = watermark
+        } catch {
+          // The stream is already scoped by URL. A malformed optional payload
+          // must not disable the bounded polling fallback.
+        }
+      }
       refreshLive()
-      void client.invalidateQueries({ queryKey: ['history'] })
+      if (historyRefreshTimer.current !== undefined) {
+        window.clearTimeout(historyRefreshTimer.current)
+      }
+      historyRefreshTimer.current = window.setTimeout(() => {
+        historyRefreshTimer.current = undefined
+        void client.refetchQueries(
+          {
+            type: 'active',
+            predicate: (query) => query.getObserversCount() > 0
+              && query.queryKey[0] === 'history'
+              && ['page', 'home-daily'].includes(String(query.queryKey[1]))
+              && query.queryKey[2] === homeId
+              && historyReadingEventTouchesQuery(query.queryKey, payload),
+          },
+          { cancelRefetch: false },
+        )
+      }, HISTORY_SSE_COALESCE_MS)
     }
     source.addEventListener('heartbeat', refreshLive)
     source.addEventListener('reading', refreshHistory)
@@ -130,6 +205,10 @@ export function LiveHomeProvider({ children }: { children: ReactNode }) {
     }
     return () => {
       source.close()
+      if (historyRefreshTimer.current !== undefined) {
+        window.clearTimeout(historyRefreshTimer.current)
+        historyRefreshTimer.current = undefined
+      }
     }
   }, [boundary, canViewOverview, client, homeId])
 

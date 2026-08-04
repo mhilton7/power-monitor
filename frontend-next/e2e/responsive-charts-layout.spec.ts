@@ -339,6 +339,8 @@ test('History preserves every metric, gap, range, and axis while resizing withou
   await mockServer(page, requests)
   await page.goto('/history')
   await expect(page.getByText(/1 missing interval shown as gaps/)).toBeVisible()
+  await page.waitForTimeout(1_000)
+  expect(requests).toHaveLength(1)
 
   const metric = page.getByLabel('Metric')
   for (const label of ['Power', 'Energy', 'Cost', 'Energy + cost']) {

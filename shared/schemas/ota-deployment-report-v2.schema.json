@@ -28,6 +28,7 @@
     "state": {
       "enum": [
         "manifest_authenticated",
+        "waiting_for_schedule",
         "download_started",
         "downloading",
         "binary_verified",
@@ -51,6 +52,11 @@
     "image_size": {"type": "integer", "minimum": 1, "maximum": 33554432},
     "progress": {"type": "integer", "minimum": 0, "maximum": 100},
     "boot_id": {"type": "string", "format": "uuid"},
+    "evidence_sequence": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 18446744073709551615
+    },
     "failure_code": {
       "type": ["string", "null"],
       "pattern": "^[a-z0-9][a-z0-9_]{0,79}$"

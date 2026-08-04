@@ -15,14 +15,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE = ROOT / "release"
-DEFAULT_RELEASE_VERSION = "1.0.29"
-DEFAULT_MIGRATION_REVISION = "20260803_0027"
+DEFAULT_RELEASE_VERSION = "1.0.30"
+DEFAULT_MIGRATION_REVISION = "20260803_0030"
 SEMVER_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 MIGRATION_PATTERN = re.compile(r"^[0-9]{8}_[0-9]{4}$")
 OTA_V2_ARTIFACTS = (
     "shared/schemas/ota-manifest-v2.schema.json",
     "shared/schemas/ota-deployment-report-v2.schema.json",
     "shared/auth-test-vectors/ota-manifest-v2.json",
+)
+OTA_MIGRATION_REVISIONS = (
+    "20260802_0026",
+    "20260803_0027",
+    "20260803_0028",
+    "20260803_0030",
 )
 OFFLINE_COMPATIBILITY_REVISION = "20260731_0022"
 OFFLINE_COMPATIBILITY_PARENT = "20260730_0021"
@@ -115,6 +121,32 @@ def command_version(command: list[str]) -> str:
         return "unavailable"
 
 
+def _release_commit(expected: str | None = None) -> str:
+    commit = command_version(["git", "rev-parse", "HEAD"])
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("could not resolve the exact source commit")
+    if expected is not None and commit != expected.lower():
+        raise ValueError(
+            f"release commit {expected!r} does not match checked-out HEAD {commit}"
+        )
+    return commit
+
+
+def _node_toolchain(node_bin: str, npm_bin: str) -> tuple[str, str]:
+    node = command_version([node_bin, "--version"])
+    npm = command_version([npm_bin, "--version"])
+    if node != "v24.4.0":
+        raise ValueError(
+            "release evidence requires pinned Node.js v24.4.0; "
+            f"{node_bin!r} returned {node!r}"
+        )
+    if npm != "11.4.2":
+        raise ValueError(
+            f"release evidence requires pinned npm 11.4.2; {npm_bin!r} returned {npm!r}"
+        )
+    return node, npm
+
+
 def _artifact_evidence(relative_path: str) -> dict[str, str]:
     path = ROOT / relative_path
     if not path.is_file():
@@ -179,12 +211,22 @@ def validate_release_inputs(version: str, migration_revision: str) -> None:
         raise ValueError("migration revision must use YYYYMMDD_NNNN")
     for relative_path in OTA_V2_ARTIFACTS:
         _artifact_evidence(relative_path)
+    for revision in OTA_MIGRATION_REVISIONS:
+        _migration_evidence(revision)
     _migration_evidence(migration_revision)
     _validate_migration_head(migration_revision)
 
 
-def versions(version: str, migration_revision: str) -> None:
-    git = command_version(["git", "rev-parse", "HEAD"])
+def versions(
+    version: str,
+    migration_revision: str,
+    *,
+    release_commit: str | None = None,
+    node_bin: str = "node",
+    npm_bin: str = "npm",
+) -> None:
+    git = _release_commit(release_commit)
+    node, npm = _node_toolchain(node_bin, npm_bin)
     payload = {
         "product": "Power Monitor Server",
         "version": version,
@@ -195,9 +237,34 @@ def versions(version: str, migration_revision: str) -> None:
             "offline_sql": _release_artifact_evidence("migration-offline.sql"),
         },
         "python": platform.python_version(),
-        "node": command_version(["node", "--version"]),
-        "npm": command_version(["npm.cmd" if os.name == "nt" else "npm", "--version"]),
+        "node": node,
+        "npm": npm,
+        "toolchains": {
+            "release_host": {
+                "python": platform.python_version(),
+                "node": node,
+                "npm": npm,
+            },
+            "container_builders": {
+                "backend": "python:3.13.5-slim-bookworm",
+                "frontend": "node:24.4.0-alpine",
+                "frontend_runtime": "nginxinc/nginx-unprivileged:1.29.0-alpine",
+                "backup": "postgres:17.5-bookworm",
+            },
+        },
         "git_commit": git,
+        "dependency_audits": {
+            "backend": {
+                "lock": _artifact_evidence("backend/requirements.lock"),
+                "report": _release_artifact_evidence("backend-audit.json"),
+                "format": "pip-audit/json",
+            },
+            "frontend": {
+                "lock": _artifact_evidence("frontend-next/package-lock.json"),
+                "report": _release_artifact_evidence("frontend-audit.json"),
+                "format": "npm-audit/json",
+            },
+        },
         "images": {
             "api": f"power-monitor-api:{version}",
             "frontend": f"power-monitor-frontend:{version}",
@@ -210,7 +277,10 @@ def versions(version: str, migration_revision: str) -> None:
             "authentication": "existing_device_hmac",
             "artifacts": [
                 *[_artifact_evidence(path) for path in OTA_V2_ARTIFACTS],
-                _migration_evidence(migration_revision),
+                *[
+                    _migration_evidence(revision)
+                    for revision in OTA_MIGRATION_REVISIONS
+                ],
             ],
         },
         "truenas": {
@@ -356,6 +426,19 @@ def parse_args() -> argparse.Namespace:
         "--migration-revision",
         default=os.environ.get("MIGRATION_REVISION", DEFAULT_MIGRATION_REVISION),
     )
+    parser.add_argument(
+        "--release-commit",
+        default=os.environ.get("RELEASE_COMMIT"),
+        help="exact clean source commit represented by this evidence",
+    )
+    parser.add_argument(
+        "--node-bin",
+        default=os.environ.get("NODE_BIN", "node"),
+    )
+    parser.add_argument(
+        "--npm-bin",
+        default=os.environ.get("NPM_BIN", "npm.cmd" if os.name == "nt" else "npm"),
+    )
     return parser.parse_args()
 
 
@@ -366,5 +449,11 @@ if __name__ == "__main__":
     backend_licenses()
     frontend_licenses()
     migration_offline_sql(args.migration_revision)
-    versions(args.version, args.migration_revision)
+    versions(
+        args.version,
+        args.migration_revision,
+        release_commit=args.release_commit,
+        node_bin=args.node_bin,
+        npm_bin=args.npm_bin,
+    )
     checksums()

@@ -51,7 +51,7 @@ components:
         deployment_id: {type: string, format: uuid}
         release_id: {type: string, format: uuid}
         attempt: {type: integer, minimum: 1}
-        state: {type: string, enum: [manifest_authenticated, download_started, downloading, binary_verified, partition_written, rebooting, post_boot_validation, validated, failed, rollback_detected, rolled_back]}
+        state: {type: string, enum: [manifest_authenticated, waiting_for_schedule, download_started, downloading, binary_verified, partition_written, rebooting, post_boot_validation, validated, failed, rollback_detected, rolled_back]}
         current_firmware_version: {type: string, minLength: 1, maxLength: 80}
         current_build_hash: {type: string, minLength: 1, maxLength: 128}
         target_version: {type: string, minLength: 1, maxLength: 80}
@@ -60,6 +60,7 @@ components:
         image_size: {type: integer, minimum: 1}
         progress: {type: integer, minimum: 0, maximum: 100}
         boot_id: {type: string, format: uuid}
+        evidence_sequence: {type: [integer, 'null'], minimum: 0, maximum: 18446744073709551615}
         failure_code: {type: [string, 'null']}
         failure_summary: {type: [string, 'null'], maxLength: 500}
       additionalProperties: false
