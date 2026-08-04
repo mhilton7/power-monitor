@@ -8,9 +8,10 @@ only the exact same `firmware.bin` after the canary passes. No erase, factory
 reset, re-enrollment, certificate replacement, microSD format, or deletion of
 unacknowledged readings is permitted.
 
-This record is intentionally `PENDING` until the final candidate is built from
-the recorded source commits and its SHA-256 is known. Automated builds and
-simulations are not substitutes for these hardware-sensitive gates.
+The exact 1.0.16 canary artifact is built and recorded below. The physical
+stages remain `PENDING`: automated builds and simulations are not substitutes
+for these hardware-sensitive gates, and the artifact must not be promoted to
+the stable channel until all four stages pass.
 
 ## Automated pre-canary evidence
 
@@ -64,13 +65,39 @@ is not authoritative.
 
 | Evidence | Value |
 | --- | --- |
-| Sensor source commit | PENDING |
-| Server source commit | PENDING |
-| Firmware semantic version | PENDING |
-| `firmware.bin` SHA-256 | PENDING |
-| `firmware.elf` SHA-256 | PENDING |
-| Build hash | PENDING |
-| Application offset | `0x20000` (must be revalidated from final flash layout) |
+| Sensor source commit | `68adaa423bd010b19d90a10f40b41b753453de4d` |
+| Sensor release-record commit | `429b2f014f982fb847d26b7cceea162260a6caf1` (the later metadata-only record marks the same bytes as canary) |
+| Server source commit | The authoritative generated value in `release/versions.json` |
+| Firmware semantic version | `1.0.16` (canary; not promoted stable) |
+| `firmware.bin` SHA-256 | `8986804382cffdd995ff0f3e11b020e85b52c93d991b911d6ea6f9a3a4b0b0c7` |
+| `firmware.elf` SHA-256 / application build hash | `2982873bc8f22c089181c0edc378ca9ffd46489a825195e650c1b9d35a57d506` |
+| Build-input fingerprint | `568431db9413da79e9d3c48fba8f5162a2f45c39750733033d2741382f979846` |
+| Application offset | `0x20000`, revalidated from the final `flash-layout.json` and build provenance |
+
+The final `firmware.bin` is 1,616,784 bytes. Regenerating the release metadata
+from the verified build changed only its channel and release notes from
+`stable` to `canary`; the firmware and ELF bytes and hashes above did not
+change.
+
+## Current external hardware blocker
+
+On 2026-08-04, Windows enumerated no COM port and no ESP32 USB/JTAG or UART
+device, so the required non-erasing bootstrap, partition backup, and serial
+evidence collection could not begin. One bounded read-only LAN health request
+to the identified Indoor-AC sensor succeeded and showed firmware 1.0.15,
+`pm-protocol/1.0.0`, Wi-Fi/time/storage/PZEM health, 55,000 bytes free internal
+heap, a 32,756-byte largest block, and 2,204 TLS heap-admission deferrals. Its
+acknowledgement was 5,472, newest durable sequence 5,581, and backlog 109, so
+the unacknowledged history remains preserved. This confirms that the sensor is
+powered and that the 1.0.16 bootstrap is still needed; it is not evidence that
+the 1.0.16 physical canary passed.
+
+The next safe action is to connect exactly one intended canary by USB. After a
+COM port appears, back up NVS (`0x9000`, `0x8000` bytes), OTA selector
+(`0x11000`, `0x2000` bytes), and project configuration/certificate storage
+(`0x14000`, `0xC000` bytes), then request fresh approval for the exact detected
+port using: `I authorize the non-erasing application-only flash of firmware
+1.0.16 to COMx.` Only `firmware.bin` at `0x20000` may then be written.
 
 ## Stage 1 - baseline and local Web UI load (10 minutes)
 
