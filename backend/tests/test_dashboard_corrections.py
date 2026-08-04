@@ -562,9 +562,15 @@ async def test_live_measurement_is_consistent_between_devices_and_fleet(
     assert series[0]["device_id"] == device_id
     points = series[0]["points"]
     assert points
-    assert all(Decimal(point["average_power_w"]) == Decimal("1.0") for point in points)
-    assert all(Decimal(point["voltage_avg_v"]) == Decimal("120.4") for point in points)
-    assert all(Decimal(point["current_a"]) == Decimal("0.01") for point in points)
+    # Raw History deliberately preserves empty buckets as null-valued gaps. The
+    # one-second guard around this reading can cross a bucket boundary depending
+    # on the runner clock, so validate committed readings without converting an
+    # intentional gap to Decimal (or silently treating it as zero).
+    measured_points = [point for point in points if point["average_power_w"] is not None]
+    assert measured_points
+    assert all(Decimal(point["average_power_w"]) == Decimal("1.0") for point in measured_points)
+    assert all(Decimal(point["voltage_avg_v"]) == Decimal("120.4") for point in measured_points)
+    assert all(Decimal(point["current_a"]) == Decimal("0.01") for point in measured_points)
 
     monkeypatch.setattr(
         "app.api.routes.system.session_factory",
