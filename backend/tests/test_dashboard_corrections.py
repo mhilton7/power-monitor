@@ -146,7 +146,7 @@ async def test_log_export_defaults_zip_manifest_hashes_redaction_and_cleanup(
     assert b"must-not-export" not in downloaded.content
     with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
         manifest = json.loads(archive.read("manifest.json"))
-        assert manifest["application_version"] == "1.0.0"
+        assert manifest["application_version"] == test_settings.power_monitor_version
         assert manifest["log_format_version"] == "pm-log/1.0.0"
         assert manifest["requesting_administrator_id"]
         assert len(manifest["files"]) == 2
