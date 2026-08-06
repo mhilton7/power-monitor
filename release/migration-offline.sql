@@ -3846,4 +3846,280 @@ ALTER TABLE firmware_deployments ADD CONSTRAINT ck_firmware_deployments_firmware
 
 UPDATE alembic_version SET version_num='20260803_0030' WHERE alembic_version.version_num = '20260803_0029';
 
+-- Running upgrade 20260803_0030 -> 20260806_0031
+
+ALTER TABLE raw_readings ALTER COLUMN sequence TYPE BIGINT;
+
+ALTER TABLE sync_cursors ALTER COLUMN highest_contiguous_sequence TYPE BIGINT;
+
+ALTER TABLE sync_cursors ALTER COLUMN maximum_seen_sequence TYPE BIGINT;
+
+ALTER TABLE device_heartbeats ALTER COLUMN newest_sequence TYPE BIGINT;
+
+ALTER TABLE sequence_gaps ALTER COLUMN start_sequence TYPE BIGINT;
+
+ALTER TABLE sequence_gaps ALTER COLUMN end_sequence TYPE BIGINT;
+
+ALTER TABLE device_events ALTER COLUMN event_sequence TYPE BIGINT;
+
+ALTER TABLE device_event_sync_cursors ALTER COLUMN highest_contiguous_sequence TYPE BIGINT;
+
+ALTER TABLE device_event_sync_cursors ALTER COLUMN maximum_seen_sequence TYPE BIGINT;
+
+ALTER TABLE billing_cycles DROP CONSTRAINT ck_billing_cycles_billing_cycle_boundary_source;
+
+ALTER TABLE billing_cycles ADD CONSTRAINT ck_billing_cycles_billing_cycle_boundary_source CHECK (boundary_source IN ('generated','manual_override','utility_import','external_feed','data_reset'));
+
+CREATE TABLE data_reset_plans (
+    id VARCHAR(36) NOT NULL,
+    site_id VARCHAR(36) NOT NULL,
+    requested_by VARCHAR(36),
+    requested_categories JSON DEFAULT '[]' NOT NULL,
+    delete_imported_bill_documents BOOLEAN DEFAULT false NOT NULL,
+    disconnected_sensor_policy VARCHAR(32) DEFAULT 'defer_until_reconnect' NOT NULL,
+    plan_snapshot JSON DEFAULT '{}' NOT NULL,
+    plan_fingerprint VARCHAR(64) NOT NULL,
+    revision INTEGER DEFAULT '1' NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    invalidated_at TIMESTAMP WITH TIME ZONE,
+    invalidation_reason VARCHAR(160),
+    CONSTRAINT pk_data_reset_plans PRIMARY KEY (id),
+    CONSTRAINT ck_data_reset_plans_data_reset_plan_revision_positive CHECK (revision > 0),
+    CONSTRAINT ck_data_reset_plans_data_reset_plan_expiration_after_creation CHECK (expires_at > created_at),
+    CONSTRAINT ck_data_reset_plans_data_reset_plan_disconnected_policy CHECK (disconnected_sensor_policy IN ('block','defer_until_reconnect')),
+    CONSTRAINT fk_data_reset_plans_site_id_sites FOREIGN KEY(site_id) REFERENCES sites (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_data_reset_plans_requested_by_users FOREIGN KEY(requested_by) REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_data_reset_plans_site_id ON data_reset_plans (site_id);
+
+CREATE INDEX ix_data_reset_plans_requested_by ON data_reset_plans (requested_by);
+
+CREATE INDEX ix_data_reset_plans_plan_fingerprint ON data_reset_plans (plan_fingerprint);
+
+CREATE INDEX ix_data_reset_plans_created_at ON data_reset_plans (created_at);
+
+CREATE INDEX ix_data_reset_plans_expires_at ON data_reset_plans (expires_at);
+
+CREATE INDEX ix_data_reset_plans_invalidated_at ON data_reset_plans (invalidated_at);
+
+CREATE TABLE data_reset_operations (
+    id VARCHAR(36) NOT NULL,
+    plan_id VARCHAR(36) NOT NULL,
+    site_id VARCHAR(36) NOT NULL,
+    requested_by VARCHAR(36),
+    state VARCHAR(64) DEFAULT 'awaiting_confirmation' NOT NULL,
+    revision INTEGER DEFAULT '1' NOT NULL,
+    reset_generation INTEGER NOT NULL,
+    reset_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+    requested_categories JSON DEFAULT '[]' NOT NULL,
+    delete_imported_bill_documents BOOLEAN DEFAULT false NOT NULL,
+    disconnected_sensor_policy VARCHAR(32) DEFAULT 'defer_until_reconnect' NOT NULL,
+    backup_mode VARCHAR(32) DEFAULT 'verified_backup' NOT NULL,
+    backup_run_id VARCHAR(36),
+    backup_reference VARCHAR(500),
+    backup_checksum VARCHAR(64),
+    backup_verified_at TIMESTAMP WITH TIME ZONE,
+    reason VARCHAR(500) NOT NULL,
+    idempotency_key VARCHAR(160) NOT NULL,
+    request_fingerprint VARCHAR(64) NOT NULL,
+    plan_revision INTEGER NOT NULL,
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    central_commit_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    failure_code VARCHAR(80),
+    failure_summary VARCHAR(500),
+    final_evidence JSON DEFAULT '{}' NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    CONSTRAINT pk_data_reset_operations PRIMARY KEY (id),
+    CONSTRAINT ck_data_reset_operations_data_reset_operation_revision_positive CHECK (revision > 0),
+    CONSTRAINT ck_data_reset_operations_data_reset_operation_generatio_8138 CHECK (reset_generation > 0),
+    CONSTRAINT ck_data_reset_operations_data_reset_operation_plan_revi_82d0 CHECK (plan_revision > 0),
+    CONSTRAINT ck_data_reset_operations_data_reset_operation_backup_mode CHECK (backup_mode IN ('verified_backup','permanent_without_backup')),
+    CONSTRAINT ck_data_reset_operations_data_reset_operation_disconnec_9812 CHECK (disconnected_sensor_policy IN ('block','defer_until_reconnect')),
+    CONSTRAINT ck_data_reset_operations_data_reset_operation_state CHECK (state IN ('planning','awaiting_confirmation','preparing_sensors','sensors_prepared','backup_running','backup_verified','database_reset_running','database_reset_committed','sensor_commit_running','verification_running','completed','completed_with_resets_pending_on_reconnect','partial_failure','attention_required','cancelled','failed_before_commit')),
+    CONSTRAINT fk_data_reset_operations_plan_id_data_reset_plans FOREIGN KEY(plan_id) REFERENCES data_reset_plans (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_data_reset_operations_site_id_sites FOREIGN KEY(site_id) REFERENCES sites (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_data_reset_operations_requested_by_users FOREIGN KEY(requested_by) REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT fk_data_reset_operations_backup_run_id_backup_runs FOREIGN KEY(backup_run_id) REFERENCES backup_runs (id) ON DELETE SET NULL,
+    CONSTRAINT uq_data_reset_operation_plan UNIQUE (plan_id),
+    CONSTRAINT uq_data_reset_operation_idempotency UNIQUE (site_id, idempotency_key)
+);
+
+CREATE INDEX ix_data_reset_operations_site_id ON data_reset_operations (site_id);
+
+CREATE INDEX ix_data_reset_operations_requested_by ON data_reset_operations (requested_by);
+
+CREATE INDEX ix_data_reset_operations_state ON data_reset_operations (state);
+
+CREATE INDEX ix_data_reset_operations_reset_timestamp ON data_reset_operations (reset_timestamp);
+
+CREATE INDEX ix_data_reset_operations_backup_run_id ON data_reset_operations (backup_run_id);
+
+CREATE INDEX ix_data_reset_operations_started_at ON data_reset_operations (started_at);
+
+CREATE INDEX ix_data_reset_operations_central_commit_at ON data_reset_operations (central_commit_at);
+
+CREATE INDEX ix_data_reset_operations_completed_at ON data_reset_operations (completed_at);
+
+CREATE UNIQUE INDEX uq_data_reset_operation_active_site ON data_reset_operations (site_id) WHERE state NOT IN ('completed','cancelled','failed_before_commit');
+
+CREATE TABLE data_reset_participants (
+    operation_id VARCHAR(36) NOT NULL,
+    device_id VARCHAR(36) NOT NULL,
+    state VARCHAR(48) DEFAULT 'pending' NOT NULL,
+    planned_classification VARCHAR(24) NOT NULL,
+    reset_generation INTEGER NOT NULL,
+    reset_boundary BIGINT NOT NULL,
+    old_sequence_floor BIGINT DEFAULT '0' NOT NULL,
+    old_next_sequence BIGINT DEFAULT '1' NOT NULL,
+    new_sequence_floor BIGINT,
+    new_next_sequence BIGINT,
+    server_highest_contiguous BIGINT DEFAULT '0' NOT NULL,
+    server_maximum_seen BIGINT DEFAULT '0' NOT NULL,
+    sensor_ack_sequence BIGINT,
+    sensor_newest_sequence BIGINT,
+    boot_id VARCHAR(80),
+    firmware_version VARCHAR(80),
+    firmware_build_hash VARCHAR(128),
+    card_generation VARCHAR(128),
+    prepare_receipt_safe JSON DEFAULT '{}' NOT NULL,
+    commit_receipt_safe JSON DEFAULT '{}' NOT NULL,
+    prepare_receipt_digest VARCHAR(64),
+    commit_receipt_digest VARCHAR(64),
+    preservation_hash_before VARCHAR(64),
+    preservation_hash_after VARCHAR(64),
+    failure_code VARCHAR(80),
+    failure_summary VARCHAR(500),
+    last_attempt_at TIMESTAMP WITH TIME ZONE,
+    prepared_at TIMESTAMP WITH TIME ZONE,
+    commit_authorized_at TIMESTAMP WITH TIME ZONE,
+    committed_at TIMESTAMP WITH TIME ZONE,
+    verified_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    CONSTRAINT pk_data_reset_participants PRIMARY KEY (operation_id, device_id),
+    CONSTRAINT ck_data_reset_participants_data_reset_participant_gener_6420 CHECK (reset_generation > 0),
+    CONSTRAINT ck_data_reset_participants_data_reset_participant_old_s_d14f CHECK (reset_boundary >= 0 AND old_sequence_floor >= 0 AND old_next_sequence > 0),
+    CONSTRAINT ck_data_reset_participants_data_reset_participant_new_f_1b3f CHECK (new_sequence_floor IS NULL OR new_sequence_floor >= reset_boundary),
+    CONSTRAINT ck_data_reset_participants_data_reset_participant_new_n_add2 CHECK (new_next_sequence IS NULL OR new_next_sequence > reset_boundary),
+    CONSTRAINT ck_data_reset_participants_data_reset_participant_state CHECK (state IN ('pending','unreachable','unsupported','prepare_requested','prepared','commit_requested','committed','verified','pending_reconnect','failed','attention_required','not_applicable')),
+    CONSTRAINT ck_data_reset_participants_data_reset_participant_plann_409e CHECK (planned_classification IN ('connected','authentication_failed','disconnected','unsupported','revoked','removed')),
+    CONSTRAINT fk_data_reset_participants_operation_id_data_reset_operations FOREIGN KEY(operation_id) REFERENCES data_reset_operations (id) ON DELETE CASCADE,
+    CONSTRAINT fk_data_reset_participants_device_id_devices FOREIGN KEY(device_id) REFERENCES devices (id) ON DELETE RESTRICT
+);
+
+CREATE INDEX ix_data_reset_participants_state ON data_reset_participants (state);
+
+CREATE INDEX ix_data_reset_participant_device_state ON data_reset_participants (device_id, state);
+
+CREATE TABLE site_data_states (
+    site_id VARCHAR(36) NOT NULL,
+    data_generation INTEGER DEFAULT '0' NOT NULL,
+    history_revision INTEGER DEFAULT '0' NOT NULL,
+    last_reset_operation_id VARCHAR(36),
+    last_reset_at TIMESTAMP WITH TIME ZONE,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    CONSTRAINT pk_site_data_states PRIMARY KEY (site_id),
+    CONSTRAINT ck_site_data_states_site_data_generation_nonnegative CHECK (data_generation >= 0),
+    CONSTRAINT ck_site_data_states_site_history_revision_nonnegative CHECK (history_revision >= 0),
+    CONSTRAINT fk_site_data_states_site_id_sites FOREIGN KEY(site_id) REFERENCES sites (id) ON DELETE CASCADE,
+    CONSTRAINT fk_site_data_states_last_reset_operation_id_data_reset__a2ce FOREIGN KEY(last_reset_operation_id) REFERENCES data_reset_operations (id) ON DELETE SET NULL
+);
+
+CREATE TABLE device_data_states (
+    device_id VARCHAR(36) NOT NULL,
+    site_id VARCHAR(36) NOT NULL,
+    data_generation INTEGER DEFAULT '0' NOT NULL,
+    reset_boundary BIGINT DEFAULT '0' NOT NULL,
+    ingestion_gate VARCHAR(32) DEFAULT 'open' NOT NULL,
+    reset_required_on_reconnect BOOLEAN DEFAULT false NOT NULL,
+    active_operation_id VARCHAR(36),
+    last_completed_operation_id VARCHAR(36),
+    last_reset_at TIMESTAMP WITH TIME ZONE,
+    generation_updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    CONSTRAINT pk_device_data_states PRIMARY KEY (device_id),
+    CONSTRAINT ck_device_data_states_device_data_generation_nonnegative CHECK (data_generation >= 0),
+    CONSTRAINT ck_device_data_states_device_reset_boundary_nonnegative CHECK (reset_boundary >= 0),
+    CONSTRAINT ck_device_data_states_device_data_ingestion_gate CHECK (ingestion_gate IN ('open','preparing','blocked','pending_reconnect','committing','verifying','attention_required')),
+    CONSTRAINT fk_device_data_states_device_id_devices FOREIGN KEY(device_id) REFERENCES devices (id) ON DELETE CASCADE,
+    CONSTRAINT fk_device_data_states_site_id_sites FOREIGN KEY(site_id) REFERENCES sites (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_device_data_states_active_operation_id_data_reset_operations FOREIGN KEY(active_operation_id) REFERENCES data_reset_operations (id) ON DELETE SET NULL,
+    CONSTRAINT fk_device_data_states_last_completed_operation_id_data__e59a FOREIGN KEY(last_completed_operation_id) REFERENCES data_reset_operations (id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_device_data_states_site_id ON device_data_states (site_id);
+
+CREATE INDEX ix_device_data_states_ingestion_gate ON device_data_states (ingestion_gate);
+
+CREATE INDEX ix_device_data_states_reset_required_on_reconnect ON device_data_states (reset_required_on_reconnect);
+
+CREATE INDEX ix_device_data_states_active_operation_id ON device_data_states (active_operation_id);
+
+CREATE TABLE data_reset_pricing_baselines (
+    id VARCHAR(36) NOT NULL,
+    operation_id VARCHAR(36) NOT NULL,
+    utility_account_id VARCHAR(36) NOT NULL,
+    rate_plan_id VARCHAR(36) NOT NULL,
+    rate_version_id VARCHAR(36) NOT NULL,
+    rate_assignment_id VARCHAR(36) NOT NULL,
+    billing_cycle_id VARCHAR(36),
+    data_generation INTEGER NOT NULL,
+    effective_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    pricing_configuration_hash VARCHAR(64) NOT NULL,
+    pricing_snapshot JSON DEFAULT '{}' NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    CONSTRAINT pk_data_reset_pricing_baselines PRIMARY KEY (id),
+    CONSTRAINT ck_data_reset_pricing_baselines_data_reset_pricing_gene_b2bf CHECK (data_generation > 0),
+    CONSTRAINT fk_data_reset_pricing_baselines_operation_id_data_reset_85a6 FOREIGN KEY(operation_id) REFERENCES data_reset_operations (id) ON DELETE CASCADE,
+    CONSTRAINT fk_data_reset_pricing_baselines_utility_account_id_util_1290 FOREIGN KEY(utility_account_id) REFERENCES utility_accounts (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_data_reset_pricing_baselines_rate_plan_id_rate_plans FOREIGN KEY(rate_plan_id) REFERENCES rate_plans (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_data_reset_pricing_baselines_rate_version_id_rate_versions FOREIGN KEY(rate_version_id) REFERENCES rate_versions (id) ON DELETE RESTRICT,
+    CONSTRAINT uq_data_reset_pricing_baseline_account UNIQUE (operation_id, utility_account_id)
+);
+
+CREATE INDEX ix_data_reset_pricing_baselines_operation_id ON data_reset_pricing_baselines (operation_id);
+
+CREATE INDEX ix_data_reset_pricing_baselines_utility_account_id ON data_reset_pricing_baselines (utility_account_id);
+
+CREATE INDEX ix_data_reset_pricing_baselines_rate_plan_id ON data_reset_pricing_baselines (rate_plan_id);
+
+CREATE INDEX ix_data_reset_pricing_baselines_rate_version_id ON data_reset_pricing_baselines (rate_version_id);
+
+CREATE INDEX ix_data_reset_pricing_baselines_rate_assignment_id ON data_reset_pricing_baselines (rate_assignment_id);
+
+CREATE INDEX ix_data_reset_pricing_baselines_billing_cycle_id ON data_reset_pricing_baselines (billing_cycle_id);
+
+CREATE INDEX ix_data_reset_pricing_baselines_effective_at ON data_reset_pricing_baselines (effective_at);
+
+ALTER TABLE raw_readings ADD COLUMN data_generation INTEGER DEFAULT '0' NOT NULL;
+
+ALTER TABLE raw_readings ADD CONSTRAINT ck_raw_readings_raw_data_generation_nonnegative CHECK (data_generation >= 0);
+
+CREATE INDEX ix_raw_device_generation_time ON raw_readings (device_id, data_generation, interval_start);
+
+ALTER TABLE sync_cursors ADD COLUMN data_generation INTEGER DEFAULT '0' NOT NULL;
+
+ALTER TABLE sync_cursors ADD COLUMN reset_boundary BIGINT DEFAULT '0' NOT NULL;
+
+ALTER TABLE sync_cursors ADD CONSTRAINT ck_sync_cursors_sync_cursor_generation_nonnegative CHECK (data_generation >= 0);
+
+ALTER TABLE sync_cursors ADD CONSTRAINT ck_sync_cursors_sync_cursor_boundary_nonnegative CHECK (reset_boundary >= 0);
+
+ALTER TABLE device_heartbeats ADD COLUMN data_generation INTEGER DEFAULT '0' NOT NULL;
+
+ALTER TABLE device_heartbeats ADD CONSTRAINT ck_device_heartbeats_device_heartbeat_generation_nonnegative CHECK (data_generation >= 0);
+
+INSERT INTO site_data_states (site_id, data_generation, history_revision, updated_at) SELECT id, 0, 0, CURRENT_TIMESTAMP FROM sites;
+
+INSERT INTO device_data_states (device_id, site_id, data_generation, reset_boundary, ingestion_gate, reset_required_on_reconnect, generation_updated_at, updated_at) SELECT id, site_id, 0, 0, 'open', false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM devices;
+
+INSERT INTO permissions (code, group_name, label, description, high_risk) SELECT 'system.data_reset', 'Administration', 'Reset readings and pricing history', 'Coordinate a protected data-only reset across the server and assigned sensors.', true WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE code = 'system.data_reset');
+
+INSERT INTO role_permissions (role_name, permission_code) SELECT 'admin', 'system.data_reset' WHERE EXISTS (SELECT 1 FROM roles WHERE name = 'admin') AND NOT EXISTS (SELECT 1 FROM role_permissions WHERE role_name = 'admin' AND permission_code = 'system.data_reset');
+
+UPDATE alembic_version SET version_num='20260806_0031' WHERE alembic_version.version_num = '20260803_0030';
+
 COMMIT;
