@@ -4122,4 +4122,63 @@ INSERT INTO role_permissions (role_name, permission_code) SELECT 'admin', 'syste
 
 UPDATE alembic_version SET version_num='20260806_0031' WHERE alembic_version.version_num = '20260803_0030';
 
+-- Running upgrade 20260806_0031 -> 20260806_0032
+
+CREATE TABLE headless_agent_boots (
+    device_id VARCHAR(36) NOT NULL,
+    boot_id VARCHAR(36) NOT NULL,
+    highest_counter BIGINT NOT NULL,
+    active BOOLEAN DEFAULT true NOT NULL,
+    first_seen_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    last_seen_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    CONSTRAINT pk_headless_agent_boots PRIMARY KEY (device_id, boot_id),
+    CONSTRAINT ck_headless_agent_boots_headless_agent_counter_positive CHECK (highest_counter > 0),
+    CONSTRAINT fk_headless_agent_boots_device_id_devices FOREIGN KEY(device_id) REFERENCES devices (id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_headless_agent_boots_active ON headless_agent_boots (active);
+
+CREATE INDEX ix_headless_agent_boots_last_seen_at ON headless_agent_boots (last_seen_at);
+
+CREATE UNIQUE INDEX uq_headless_agent_active_boot ON headless_agent_boots (device_id) WHERE active;
+
+CREATE TABLE device_commands (
+    id VARCHAR(36) NOT NULL,
+    device_id VARCHAR(36) NOT NULL,
+    command_type VARCHAR(40) NOT NULL,
+    state VARCHAR(24) DEFAULT 'queued' NOT NULL,
+    payload JSON NOT NULL,
+    result JSON,
+    expected_state JSON NOT NULL,
+    idempotency_key VARCHAR(160) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    delivered_at TIMESTAMP WITH TIME ZONE,
+    accepted_at TIMESTAMP WITH TIME ZONE,
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    delivery_attempts INTEGER DEFAULT '0' NOT NULL,
+    failure_code VARCHAR(80),
+    CONSTRAINT pk_device_commands PRIMARY KEY (id),
+    CONSTRAINT ck_device_commands_device_command_type CHECK (command_type IN ('apply_configuration','reboot','data_reset_prepare','data_reset_commit','data_reset_cancel','data_reset_status','ota_update','sync_now')),
+    CONSTRAINT ck_device_commands_device_command_state CHECK (state IN ('queued','delivered','accepted','running','completed','failed','expired','cancelled')),
+    CONSTRAINT ck_device_commands_device_command_attempts_nonnegative CHECK (delivery_attempts >= 0),
+    CONSTRAINT fk_device_commands_device_id_devices FOREIGN KEY(device_id) REFERENCES devices (id) ON DELETE CASCADE,
+    CONSTRAINT uq_device_commands_idempotency_key UNIQUE (idempotency_key)
+);
+
+CREATE INDEX ix_device_commands_device_id ON device_commands (device_id);
+
+CREATE INDEX ix_device_commands_command_type ON device_commands (command_type);
+
+CREATE INDEX ix_device_commands_state ON device_commands (state);
+
+CREATE INDEX ix_device_commands_created_at ON device_commands (created_at);
+
+CREATE INDEX ix_device_commands_expires_at ON device_commands (expires_at);
+
+CREATE INDEX ix_device_commands_delivery ON device_commands (device_id, state, created_at);
+
+UPDATE alembic_version SET version_num='20260806_0032' WHERE alembic_version.version_num = '20260806_0031';
+
 COMMIT;
