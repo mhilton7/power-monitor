@@ -267,6 +267,54 @@ def validate_vectors() -> None:
     if reset_digest != reset["receipt_digest_hex"]:
         raise AssertionError("data-reset receipt HMAC mismatch")
 
+    agent = json.loads(
+        (ROOT / "shared" / "auth-test-vectors" / "pm-agent-hmac-v2.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    agent_secret = bytes.fromhex(agent["secret_hex"])
+    agent_extract = hmac.new(bytes(32), agent_secret, hashlib.sha256).digest()
+    device_key = hmac.new(
+        agent_extract,
+        agent["device_to_server_hkdf_info_utf8"].encode() + b"\x01",
+        hashlib.sha256,
+    ).digest()
+    server_key = hmac.new(
+        agent_extract,
+        agent["server_to_device_hkdf_info_utf8"].encode() + b"\x01",
+        hashlib.sha256,
+    ).digest()
+    if device_key.hex() != agent["device_to_server_key_hex"]:
+        raise AssertionError("pm-agent device-to-server HKDF vector mismatch")
+    if server_key.hex() != agent["server_to_device_key_hex"]:
+        raise AssertionError("pm-agent server-to-device HKDF vector mismatch")
+    request = agent["request"]
+    if (
+        hashlib.sha256(request["body_utf8"].encode()).hexdigest()
+        != request["body_sha256"]
+    ):
+        raise AssertionError("pm-agent request body digest mismatch")
+    if (
+        hmac.new(
+            device_key, request["canonical_utf8"].encode(), hashlib.sha256
+        ).hexdigest()
+        != request["signature_hex"]
+    ):
+        raise AssertionError("pm-agent request signature mismatch")
+    response = agent["response"]
+    if (
+        hashlib.sha256(response["body_utf8"].encode()).hexdigest()
+        != response["body_sha256"]
+    ):
+        raise AssertionError("pm-agent response body digest mismatch")
+    if (
+        hmac.new(
+            server_key, response["canonical_utf8"].encode(), hashlib.sha256
+        ).hexdigest()
+        != response["signature_hex"]
+    ):
+        raise AssertionError("pm-agent response signature mismatch")
+
 
 if __name__ == "__main__":
     validate_openapi()

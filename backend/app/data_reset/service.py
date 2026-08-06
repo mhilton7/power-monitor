@@ -18,6 +18,7 @@ from app.config import Settings
 from app.data_reset.sensor_client import (
     SensorResetCommunicationError,
     probe_sensor_storage,
+    validate_sensor_storage_snapshot,
 )
 from app.db.models import (
     AccountReconciliationAdjustment,
@@ -837,11 +838,14 @@ async def _device_plan_snapshot(
         probe_status = "skipped_stale_heartbeat"
     elif settings is not None:
         try:
-            probe = await probe_sensor_storage(
-                session,
-                device=device,
-                settings=settings,
-            )
+            if device.protocol_version == "pm-agent/2.0.0":
+                probe = validate_sensor_storage_snapshot(payload.get("reset_projection"))
+            else:
+                probe = await probe_sensor_storage(
+                    session,
+                    device=device,
+                    settings=settings,
+                )
         except SensorResetCommunicationError as exc:
             probe_status = exc.code
             if exc.code == "sensor_probe_projection_busy":

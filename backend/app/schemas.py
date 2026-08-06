@@ -814,6 +814,21 @@ class MaintenanceWindow(ApiModel):
     _aware = field_validator("until")(require_aware)
 
 
+class DeviceCommandCreate(ApiModel):
+    command_type: Literal[
+        "apply_configuration",
+        "reboot",
+        "ota_update",
+        "sync_now",
+    ]
+    payload: dict[str, Any] = Field(default_factory=dict)
+    expected_current_state: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str | None = Field(
+        default=None, min_length=8, max_length=160, pattern=r"^[A-Za-z0-9._:-]+$"
+    )
+    expires_in_seconds: int = Field(default=1800, ge=30, le=86400)
+
+
 class NotificationChannelWrite(ApiModel):
     name: str = Field(min_length=1, max_length=120)
     channel_type: Literal["smtp", "https_webhook", "in_app"]

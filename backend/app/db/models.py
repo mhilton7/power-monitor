@@ -807,6 +807,67 @@ class DeviceNonce(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class HeadlessAgentBoot(Base):
+    """Replay boundary for one outbound-only agent boot."""
+
+    __tablename__ = "headless_agent_boots"
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True
+    )
+    boot_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    highest_counter: Mapped[int] = mapped_column(BigInteger)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    __table_args__ = (
+        CheckConstraint("highest_counter > 0", name="headless_agent_counter_positive"),
+        Index(
+            "uq_headless_agent_active_boot",
+            "device_id",
+            unique=True,
+            postgresql_where=text("active"),
+            sqlite_where=text("active = 1"),
+        ),
+    )
+
+
+class DeviceCommand(Base):
+    """Bounded durable command delivered to an outbound headless agent."""
+
+    __tablename__ = "device_commands"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    command_type: Mapped[str] = mapped_column(String(40), index=True)
+    state: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    expected_state: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    idempotency_key: Mapped[str] = mapped_column(String(160), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivery_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    failure_code: Mapped[str | None] = mapped_column(String(80))
+    __table_args__ = (
+        CheckConstraint(
+            "command_type IN ('apply_configuration','reboot','data_reset_prepare',"
+            "'data_reset_commit','data_reset_cancel','data_reset_status','ota_update',"
+            "'sync_now')",
+            name="device_command_type",
+        ),
+        CheckConstraint(
+            "state IN ('queued','delivered','accepted','running','completed','failed',"
+            "'expired','cancelled')",
+            name="device_command_state",
+        ),
+        CheckConstraint("delivery_attempts >= 0", name="device_command_attempts_nonnegative"),
+        Index("ix_device_commands_delivery", "device_id", "state", "created_at"),
+    )
+
+
 class RawReading(Base):
     __tablename__ = "raw_readings"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)

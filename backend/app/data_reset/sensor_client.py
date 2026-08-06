@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
 import httpx
@@ -15,6 +15,7 @@ from app.config import Settings
 from app.db.models import (
     Device,
     DeviceAddress,
+    DeviceCommand,
     DeviceCredential,
     SensorNetworkCidr,
     SensorNetworkPolicy,
@@ -555,6 +556,89 @@ async def request_sensor_reset(
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
+    if device.protocol_version == "pm-agent/2.0.0":
+        command: DeviceCommand | None = None
+        if action == "status":
+            command = await session.scalar(
+                select(DeviceCommand)
+                .where(
+                    DeviceCommand.device_id == device.id,
+                    DeviceCommand.idempotency_key.like(
+                        f"data-reset:{operation_id}:{target_generation}:%"
+                    ),
+                )
+                .order_by(DeviceCommand.created_at.desc(), DeviceCommand.id.desc())
+                .limit(1)
+                .with_for_update()
+            )
+        else:
+            idempotency_key = f"data-reset:{operation_id}:{target_generation}:{action}"
+            command = await session.scalar(
+                select(DeviceCommand)
+                .where(DeviceCommand.idempotency_key == idempotency_key)
+                .with_for_update()
+            )
+            if command is None:
+                command = DeviceCommand(
+                    device_id=device.id,
+                    command_type=f"data_reset_{action}",
+                    state="queued",
+                    payload=payload
+                    or {
+                        "protocol": "data-reset/1.0.0",
+                        "operation_id": operation_id,
+                        "device_id": device.id,
+                        "target_generation": target_generation,
+                    },
+                    result=None,
+                    expected_state={
+                        "operation_id": operation_id,
+                        "target_generation": target_generation,
+                    },
+                    idempotency_key=idempotency_key,
+                    created_at=now,
+                    expires_at=now + timedelta(minutes=30),
+                    delivery_attempts=0,
+                )
+                session.add(command)
+                await session.flush()
+        if command is None:
+            return {"state": "none"}
+        if command.state in {"completed", "cancelled"} and isinstance(command.result, dict):
+            credential = await _credential(session, device.id, now)
+            if credential is None:
+                raise SensorResetCommunicationError(
+                    "sensor_reset_authentication_failed",
+                    "No current headless agent credential is available",
+                    retryable=False,
+                    request_may_have_reached_sensor=False,
+                )
+            try:
+                secret = SecretCipher(settings.app_master_key).decrypt(credential.encrypted_secret)
+            except RuntimeError as exc:
+                raise SensorResetCommunicationError(
+                    "sensor_reset_authentication_failed",
+                    "The headless agent credential could not be used",
+                    retryable=False,
+                    request_may_have_reached_sensor=False,
+                ) from exc
+            return verify_reset_response(
+                response=command.result,
+                secret=secret,
+                device_id=device.id,
+                operation_id=operation_id,
+                target_generation=target_generation,
+            )
+        if command.state == "failed":
+            return {
+                "state": "attention_required",
+                "failure_code": command.failure_code or "sensor_reset_attention_required",
+            }
+        return {
+            "state": (
+                "commit_authorized" if command.command_type == "data_reset_commit" else "preparing"
+            )
+        }
     address = await _address(session, device.id)
     credential = await _credential(session, device.id, now)
     site = await session.get(Site, device.site_id)

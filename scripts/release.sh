@@ -4,7 +4,7 @@ set -Eeuo pipefail
 python_bin=${PYTHON_BIN:-.venv/bin/python}
 : "${RELEASE_VERSION:?set RELEASE_VERSION to a new X.Y.Z version}"
 release_version=$RELEASE_VERSION
-migration_revision=${MIGRATION_REVISION:-20260806_0031}
+migration_revision=${MIGRATION_REVISION:-20260806_0032}
 release_commit=${RELEASE_COMMIT:-$(git rev-parse HEAD)}
 node_bin=${NODE_BIN:-node}
 npm_bin=${NPM_BIN:-npm}

@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.routes import (
     access_control,
     account_network,
+    agent_protocol,
     auth,
     bill_imports,
     data_reset,
@@ -160,6 +161,7 @@ app.add_middleware(FirmwareUploadLimitMiddleware)
 
 for router in (
     auth.router,
+    agent_protocol.router,
     interface_text.router,
     access_control.router,
     account_network.router,

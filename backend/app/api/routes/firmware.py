@@ -31,6 +31,7 @@ from app.db.models import (
     AlertInstance,
     Device,
     DeviceCapability,
+    DeviceCommand,
     DeviceHeartbeat,
     FirmwareDeployment,
     FirmwareRelease,
@@ -69,6 +70,53 @@ from app.schemas import (
 router = APIRouter(prefix="/api/v1", tags=["firmware"])
 UPLOAD_CHUNK_BYTES = 64 * 1024
 _SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _queue_headless_ota_command(
+    session: DbSession,
+    *,
+    deployment: FirmwareDeployment,
+    device: Device,
+    release: FirmwareRelease,
+    now: datetime,
+) -> None:
+    if device.protocol_version != "pm-agent/2.0.0":
+        return
+    if release.build_hash is None:
+        raise ProblemError(
+            503,
+            "Firmware unavailable",
+            "The headless release is missing its verified build identity",
+            "firmware_integrity_failure",
+        )
+    session.add(
+        DeviceCommand(
+            device_id=device.id,
+            command_type="ota_update",
+            state="queued",
+            payload={
+                "deployment_id": deployment.id,
+                "release_id": release.id,
+                "target_version": release.version,
+                "target_build_hash": release.build_hash,
+                "image_size": release.size_bytes,
+                "firmware_sha256": release.sha256,
+                "hardware_target": release.hardware_target,
+                "project_name": release.project_name,
+                "protocol_marker": "pm-agent/2.0.0",
+                "allow_downgrade": deployment.allow_downgrade,
+            },
+            result=None,
+            expected_state={
+                "firmware_version": deployment.source_version,
+                "firmware_build_hash": deployment.source_build_hash,
+            },
+            idempotency_key=f"ota:{deployment.id}:{deployment.attempt}",
+            created_at=deployment.scheduled_at,
+            expires_at=deployment.expires_at or now,
+            delivery_attempts=0,
+        )
+    )
 
 
 def _operator(principal: Principal, permission: str = "firmware.manage") -> None:
@@ -745,6 +793,14 @@ async def create_deployments(
         )
         session.add(deployment)
         await session.flush()
+        if rollout_order == 0:
+            _queue_headless_ota_command(
+                session,
+                deployment=deployment,
+                device=device,
+                release=release,
+                now=now,
+            )
         deployments.append(deployment)
     release.active = True
     session.add(
@@ -975,6 +1031,18 @@ async def retry_deployment(
         .where(DeviceHeartbeat.device_id == device.id)
         .order_by(DeviceHeartbeat.received_at.desc())
         .limit(1)
+    )
+    release = await session.get(FirmwareRelease, deployment.firmware_release_id)
+    if release is None:
+        raise ProblemError(
+            404, "Release not found", "Firmware release does not exist", "firmware_missing"
+        )
+    _queue_headless_ota_command(
+        session,
+        deployment=deployment,
+        device=device,
+        release=release,
+        now=now,
     )
     session.add(
         audit_event(
@@ -1320,6 +1388,18 @@ async def promote_canary(
     next_deployment.scheduled_at = now
     next_deployment.expires_at = now + timedelta(seconds=settings.firmware_manifest_ttl_seconds)
     next_deployment.promoted_at = now
+    release = await session.get(FirmwareRelease, next_deployment.firmware_release_id)
+    if release is None:
+        raise ProblemError(
+            404, "Release not found", "Firmware release does not exist", "firmware_missing"
+        )
+    _queue_headless_ota_command(
+        session,
+        deployment=next_deployment,
+        device=next_device,
+        release=release,
+        now=now,
+    )
     session.add(
         audit_event(
             action="firmware.canary_promoted",
@@ -1337,7 +1417,6 @@ async def promote_canary(
         )
     )
     await session.commit()
-    release = await session.get(FirmwareRelease, next_deployment.firmware_release_id)
     return {
         "promoted": True,
         "rollout_complete": False,

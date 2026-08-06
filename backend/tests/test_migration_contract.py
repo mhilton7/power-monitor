@@ -70,6 +70,8 @@ def test_initial_migration_is_frozen_and_covers_metadata() -> None:
         "site_data_states",
         "device_data_states",
         "data_reset_pricing_baselines",
+        "headless_agent_boots",
+        "device_commands",
     }
     assert "CREATE UNIQUE INDEX" in schema
     assert "ix_raw_site_time" in schema

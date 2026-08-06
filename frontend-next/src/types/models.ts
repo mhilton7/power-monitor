@@ -115,6 +115,7 @@ export interface SensorSummary {
     monitoredCircuit: string
     includedInDefault: boolean
     backlog: number
+  protocolVersion?: string
   ctRatingAmps: string
   measurementRole: string
   firmwareOta?: FirmwareOtaCapability

@@ -46,15 +46,15 @@ def test_release_defaults_track_head_and_ota_evidence_is_explicit(
 ) -> None:
     reports = _load_script("generate_release_reports.py", "release_reports_test")
     assert reports.DEFAULT_RELEASE_VERSION == "1.0.38"
-    assert reports.DEFAULT_MIGRATION_REVISION == "20260806_0031"
+    assert reports.DEFAULT_MIGRATION_REVISION == "20260806_0032"
     assert reports.OTA_MIGRATION_REVISIONS == (
         "20260802_0026",
         "20260803_0027",
         "20260803_0028",
         "20260803_0030",
     )
-    assert "20260806_0031" in (ROOT / "scripts" / "release.ps1").read_text(encoding="utf-8")
-    assert "20260806_0031" in (ROOT / "scripts" / "release.sh").read_text(encoding="utf-8")
+    assert "20260806_0032" in (ROOT / "scripts" / "release.ps1").read_text(encoding="utf-8")
+    assert "20260806_0032" in (ROOT / "scripts" / "release.sh").read_text(encoding="utf-8")
     release = tmp_path / "release"
     release.mkdir()
     (release / "migration-offline.sql").write_text("-- migration\n", encoding="utf-8")

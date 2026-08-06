@@ -3,7 +3,7 @@ param(
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+$')]
     [string]$ReleaseVersion,
     [ValidatePattern('^[0-9]{8}_[0-9]{4}$')]
-    [string]$MigrationRevision = '20260806_0031',
+    [string]$MigrationRevision = '20260806_0032',
     [string]$ReleaseCommit = '',
     [string]$NodeBin = '',
     [string]$NpmBin = ''

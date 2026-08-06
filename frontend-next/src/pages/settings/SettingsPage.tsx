@@ -195,6 +195,7 @@ function SensorSettings() {
   const [assignmentSensor, setAssignmentSensor] = useState<SensorSummary>()
   const [storageSensor, setStorageSensor] = useState<SensorSummary>()
   const [firmwareSensor, setFirmwareSensor] = useState<SensorSummary>()
+  const [agentSensor, setAgentSensor] = useState<SensorSummary>()
   const assignmentRequested = new URLSearchParams(location.search).get('configuration') === 'measurement-assignment'
   const requestedSensor = assignmentRequested && !assignmentSensor
     ? sensors.find((sensor) => !sensor.circuitId || !sensor.utilityAccountId)
@@ -225,6 +226,19 @@ function SensorSettings() {
       }))
     },
   })
+  const agentCommand = useMutation({
+    mutationFn: ({ id, commandType }: { id: string; commandType: 'reboot' | 'sync_now' }) => request(
+      `/api/v1/devices/${id}/commands`,
+      json('POST', {
+        command_type: commandType,
+        idempotency_key: `ui:${id}:${commandType}:${crypto.randomUUID()}`,
+        expires_in_seconds: 1800,
+      }),
+    ),
+    onSuccess: async (_result, variables) => {
+      await client.invalidateQueries({ queryKey: ['agent-status', variables.id] })
+    },
+  })
   return (
     <>
       <Surface title="Sensors" subtitle="Monitor setup, connectivity, storage, and firmware." action={home && canEnroll && <button className="button primary" type="button" onClick={() => { setAdding(true); }}><Plus /> Add sensor</button>}>
@@ -239,6 +253,9 @@ function SensorSettings() {
               {canManageDevices && <DropdownMenuItem onSelect={() => { configure.mutate({ id: sensor.id, currentName: sensor.name, currentCt: sensor.ctRatingAmps }); }}><Gauge /> Edit name and CT rating</DropdownMenuItem>}
               {canManageDevices && <DropdownMenuItem onSelect={() => { maintenance.mutate({ id: sensor.id, enabled: true }); }}><Wrench /> Start maintenance test</DropdownMenuItem>}
               {canManageDevices && <DropdownMenuItem onSelect={() => { void request(`/api/v1/devices/${sensor.id}/credential-rotation`, json('POST', { overlap_seconds: 3600 })); }}><KeyRound /> Rotate credentials</DropdownMenuItem>}
+              {sensor.protocolVersion === 'pm-agent/2.0.0' && <DropdownMenuItem onSelect={() => { setAgentSensor(sensor) }}><Wifi /> Headless agent status</DropdownMenuItem>}
+              {canManageDevices && sensor.protocolVersion === 'pm-agent/2.0.0' && <DropdownMenuItem onSelect={() => { agentCommand.mutate({ id: sensor.id, commandType: 'sync_now' }) }}><RefreshCw /> Force sync</DropdownMenuItem>}
+              {canManageDevices && sensor.protocolVersion === 'pm-agent/2.0.0' && <DropdownMenuItem onSelect={() => { if (confirm(`Reboot ${sensor.name}? Measurements remain stored locally during recovery.`)) agentCommand.mutate({ id: sensor.id, commandType: 'reboot' }) }}><RotateCcw /> Reboot agent</DropdownMenuItem>}
               {canViewFirmware && canManageFirmware && canDeployFirmware && <DropdownMenuItem onSelect={() => { setFirmwareSensor(sensor) }}><RefreshCw /> Update firmware</DropdownMenuItem>}
               {canRemoveDevices && <DropdownMenuItem className="danger" onSelect={() => { if (confirm(`Remove ${sensor.name}? Historical readings will be preserved.`)) remove.mutate({ id: sensor.id, name: sensor.name }) }}><Trash2 /> Remove sensor</DropdownMenuItem>}
             </DropdownMenu>
@@ -288,6 +305,18 @@ function SensorSettings() {
           <FirmwareUpdateDialog sensor={firmwareSensor} onClose={() => { setFirmwareSensor(undefined) }} />
         </ModalLayer>
       )}
+      {agentSensor && (
+        <ModalLayer onRequestClose={() => { setAgentSensor(undefined) }}>
+          <HeadlessAgentStatusDialog
+            sensor={agentSensor}
+            commandPending={agentCommand.isPending}
+            commandError={agentCommand.error}
+            commandSucceeded={agentCommand.isSuccess}
+            onCommand={(commandType) => { agentCommand.mutate({ id: agentSensor.id, commandType }) }}
+            onClose={() => { setAgentSensor(undefined) }}
+          />
+        </ModalLayer>
+      )}
       {home && activeAssignmentSensor && (
         <ModalLayer onRequestClose={closeAssignment}>
           <MeasurementAssignmentDialog
@@ -323,6 +352,132 @@ function storageEstimate(status: SensorStorageStatus): string {
   if (days >= 365) return `Approximately ${Math.round(days / 30)} months`
   if (days < 7) return 'Less than 7 days'
   return `Approximately ${Math.round(days)} days`
+}
+
+interface HeadlessAgentStatus {
+  protocol: string
+  deviceId?: string
+  deviceStatus?: string
+  lastSeenAt?: string
+  heartbeat?: Record<string, unknown>
+  commands: Array<{
+    commandId: string
+    commandType: string
+    state: string
+    createdAt?: string
+    failureCode?: string
+  }>
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function optionalText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return undefined
+}
+
+function adaptHeadlessAgentStatus(value: unknown): HeadlessAgentStatus {
+  const source = asRecord(value)
+  const commands = Array.isArray(source.commands) ? source.commands : []
+  return {
+    protocol: optionalText(source.protocol) ?? 'unknown',
+    deviceId: optionalText(source.device_id),
+    deviceStatus: optionalText(source.device_status),
+    lastSeenAt: optionalText(source.last_seen_at),
+    heartbeat: source.heartbeat ? asRecord(source.heartbeat) : undefined,
+    commands: commands.map((item) => {
+      const command = asRecord(item)
+      return {
+        commandId: optionalText(command.command_id) ?? 'unknown',
+        commandType: optionalText(command.command_type) ?? 'unknown',
+        state: optionalText(command.state) ?? 'unknown',
+        createdAt: optionalText(command.created_at),
+        failureCode: optionalText(command.failure_code),
+      }
+    }),
+  }
+}
+
+function HeadlessAgentStatusDialog({
+  sensor,
+  commandPending,
+  commandError,
+  commandSucceeded,
+  onCommand,
+  onClose,
+}: {
+  sensor: SensorSummary
+  commandPending: boolean
+  commandError: unknown
+  commandSucceeded: boolean
+  onCommand: (commandType: 'reboot' | 'sync_now') => void
+  onClose: () => void
+}) {
+  const status = useQuery({
+    queryKey: ['agent-status', sensor.id],
+    queryFn: () => request(
+      `/api/v1/devices/${sensor.id}/agent-status`,
+      {},
+      adaptHeadlessAgentStatus,
+    ),
+    refetchInterval: 10_000,
+  })
+  const heartbeat = status.data?.heartbeat ?? {}
+  const wifi = asRecord(heartbeat.wifi)
+  const pzem = asRecord(heartbeat.pzem)
+  const sd = asRecord(heartbeat.sd)
+  const sequences = asRecord(heartbeat.sequences)
+  const resources = asRecord(heartbeat.resources)
+  const reset = asRecord(heartbeat.reset_operation)
+  const ota = asRecord(heartbeat.ota)
+  return (
+    <section className="modal-card storage-dialog" role="dialog" aria-modal="true" aria-labelledby="headless-agent-title">
+      <header className="modal-header">
+        <div><small>Outbound-only ESP32-S3</small><h2 id="headless-agent-title">{sensor.name} agent</h2></div>
+        <button type="button" className="icon-button" aria-label="Close agent status" onClick={onClose}><X /></button>
+      </header>
+      {status.isLoading ? <LoadingState label="Loading signed agent evidence…" /> : status.error ? <ErrorState error={status.error} retry={() => { void status.refetch() }} /> : (
+        <>
+          <div className="settings-grid two-column">
+            <div><small>Protocol</small><strong>{status.data?.protocol}</strong></div>
+            <div><small>Status</small><strong>{status.data?.deviceStatus ?? 'Unknown'}</strong></div>
+            <div><small>Firmware</small><strong>{optionalText(heartbeat.firmware_version) ?? 'Unknown'}</strong></div>
+            <div><small>Last heartbeat</small><strong>{relativeTime(status.data?.lastSeenAt)}</strong></div>
+            <div><small>Wi-Fi</small><strong>{optionalText(wifi.rssi_dbm) ?? '—'} dBm</strong></div>
+            <div><small>Uptime</small><strong>{optionalText(heartbeat.uptime_ms) ?? '—'} ms</strong></div>
+            <div><small>PZEM</small><strong>{optionalText(pzem.status) ?? optionalText(pzem.ok) ?? 'Unknown'}</strong></div>
+            <div><small>microSD</small><strong>{optionalText(sd.status) ?? optionalText(sd.ok) ?? 'Unknown'}</strong></div>
+            <div><small>Backlog</small><strong>{optionalText(sequences.backlog) ?? optionalText(heartbeat.backlog_estimate) ?? '0'}</strong></div>
+            <div><small>Next sequence</small><strong>{optionalText(sequences.next_sequence) ?? '—'}</strong></div>
+            <div><small>Configuration revision</small><strong>{optionalText(heartbeat.configuration_revision) ?? '—'}</strong></div>
+            <div><small>Reset generation</small><strong>{optionalText(heartbeat.reset_generation) ?? '—'}</strong></div>
+            <div><small>Free heap</small><strong>{optionalText(resources.free_heap_bytes) ?? '—'} bytes</strong></div>
+            <div><small>OTA</small><strong>{optionalText(ota.state) ?? 'Idle'}</strong></div>
+          </div>
+          {Object.keys(reset).length > 0 && <InlineNotice tone="info">Reset state: {optionalText(reset.state) ?? 'unknown'} · checkpoint {optionalText(reset.checkpoint) ?? 'unknown'}</InlineNotice>}
+          <Surface title="Recent commands" subtitle="Durable, signed command delivery and immutable terminal results.">
+            {status.data?.commands.length ? status.data.commands.slice(0, 8).map((command) => (
+              <div className="list-row" key={command.commandId}>
+                <span><strong>{command.commandType.replaceAll('_', ' ')}</strong><small>{relativeTime(command.createdAt)}{command.failureCode ? ` · ${command.failureCode}` : ''}</small></span>
+                <span className="pill">{command.state.replaceAll('_', ' ')}</span>
+              </div>
+            )) : <EmptyState compact title="No commands yet" message="Commands appear here after they are queued." />}
+          </Surface>
+          {commandError && <ErrorState error={commandError} />}
+          {commandSucceeded && <InlineNotice tone="success">Command queued for the next signed heartbeat.</InlineNotice>}
+          <footer className="modal-actions">
+            <button type="button" className="button secondary" disabled={commandPending} onClick={() => { onCommand('sync_now') }}><RefreshCw /> Force sync</button>
+            <button type="button" className="button secondary" disabled={commandPending} onClick={() => { if (confirm(`Reboot ${sensor.name}?`)) onCommand('reboot') }}><RotateCcw /> Reboot</button>
+          </footer>
+        </>
+      )}
+    </section>
+  )
 }
 
 function SensorStorageDialog({

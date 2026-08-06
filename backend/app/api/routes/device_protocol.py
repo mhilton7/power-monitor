@@ -577,11 +577,11 @@ async def claim_enrollment(
         raise ProblemError(
             401, "Enrollment denied", "Token has expired", "enrollment_token_expired"
         )
-    if payload.protocol_version != PROTOCOL:
+    if payload.protocol_version not in {PROTOCOL, "pm-agent/2.0.0"}:
         raise ProblemError(
             426,
             "Protocol upgrade required",
-            f"This server requires {PROTOCOL}",
+            f"This server requires {PROTOCOL} or pm-agent/2.0.0",
             "protocol_incompatible",
         )
     if not payload.capabilities.sd_present or not payload.capabilities.sd_required:
@@ -780,7 +780,7 @@ async def claim_enrollment(
         device.connection_mode = preassignment.get("connection_mode", "push")
         device.measurement_role = preassignment.get("measurement_role", "submeter")
         device.ct_rating_amps = preassignment.get("ct_rating_amps", "100")
-        device.protocol_version = PROTOCOL
+        device.protocol_version = payload.protocol_version
         device.status = "offline_last_known"
         device.last_seen_at = None
         device.revoked_at = None
@@ -825,7 +825,7 @@ async def claim_enrollment(
             # whole-home CT is never blindly summed with a submeter.
             include_in_default_site_total=existing_site_device is None,
             ct_rating_amps=preassignment.get("ct_rating_amps", "100"),
-            protocol_version=PROTOCOL,
+            protocol_version=payload.protocol_version,
         )
         session.add(device)
         config_version = 1
@@ -915,6 +915,14 @@ async def claim_enrollment(
     capability_features: dict[str, Any] = {
         "supported_endpoints": payload.capabilities.supported_endpoints
     }
+    if payload.protocol_version == "pm-agent/2.0.0":
+        capability_features.update(
+            {
+                "agent_protocol": "pm-agent/2.0.0",
+                "outbound_commands": True,
+                "runtime_http_listener": False,
+            }
+        )
     if advertised_reset_protocol is not None:
         capability_features["data_reset"] = advertised_reset_protocol
     if payload.capabilities.ota is not None:
@@ -987,7 +995,7 @@ async def claim_enrollment(
     )
     await session.commit()
     return EnrollmentClaimResponse(
-        protocol_version=PROTOCOL,
+        protocol_version=payload.protocol_version,
         device_id=device.id,
         enrollment_secret=secret_text,
         credential_fingerprint=fingerprint,

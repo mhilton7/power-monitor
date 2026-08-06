@@ -47,6 +47,7 @@ from app.db.models import (
     Device,
     DeviceAddress,
     DeviceCapability,
+    DeviceCommand,
     DeviceConfigVersion,
     DeviceCredential,
     DeviceEvent,
@@ -93,6 +94,7 @@ from app.schemas import (
     CredentialRotationRequest,
     DashboardAppearanceView,
     DashboardAppearanceWrite,
+    DeviceCommandCreate,
     DeviceConfigCreate,
     DeviceListItem,
     DeviceMeasurementAssignmentView,
@@ -1658,6 +1660,28 @@ async def rotate_credential(
             created_at=now,
         )
     )
+    if device.protocol_version == "pm-agent/2.0.0":
+        session.add(
+            DeviceCommand(
+                device_id=device.id,
+                command_type="apply_configuration",
+                state="queued",
+                payload={
+                    "configuration_revision": device.desired_config_version,
+                    "credential_rotation_id": credential.id,
+                    "credential_fingerprint": fingerprint,
+                    "overlap_seconds": payload.overlap_seconds,
+                },
+                result=None,
+                expected_state={
+                    "configuration_revision": device.effective_config_version,
+                },
+                idempotency_key=f"credential-rotation:{credential.id}",
+                created_at=now,
+                expires_at=now + timedelta(seconds=payload.overlap_seconds),
+                delivery_attempts=0,
+            )
+        )
     session.add(
         audit_event(
             action="device.credential_rotation_requested",
@@ -1910,6 +1934,140 @@ async def set_device_maintenance(
     return {"device_id": device.id, "status": device.status, "maintenance_until": payload.until}
 
 
+@router.post("/devices/{device_id}/commands", status_code=201)
+async def create_device_command(
+    device_id: str,
+    payload: DeviceCommandCreate,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _permission(principal, "devices.manage")
+    device = await session.get(Device, device_id)
+    if device is None or device.revoked_at is not None:
+        raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
+    if device.protocol_version != "pm-agent/2.0.0":
+        raise ProblemError(
+            409,
+            "Command delivery unavailable",
+            "This action requires a headless outbound agent",
+            "agent_protocol_required",
+        )
+    await ensure_device_reset_mutations_allowed(session, [device.id])
+    now = datetime.now(UTC)
+    idempotency_key = payload.idempotency_key or (
+        f"admin:{device.id}:{payload.command_type}:{new_uuid()}"
+    )
+    existing = await session.scalar(
+        select(DeviceCommand).where(DeviceCommand.idempotency_key == idempotency_key)
+    )
+    if existing is not None:
+        if existing.device_id != device.id or existing.command_type != payload.command_type:
+            raise ProblemError(
+                409,
+                "Idempotency conflict",
+                "The idempotency key already identifies another command",
+                "command_idempotency_conflict",
+            )
+        command = existing
+    else:
+        command = DeviceCommand(
+            device_id=device.id,
+            command_type=payload.command_type,
+            state="queued",
+            payload=payload.payload,
+            result=None,
+            expected_state=payload.expected_current_state,
+            idempotency_key=idempotency_key,
+            created_at=now,
+            expires_at=now + timedelta(seconds=payload.expires_in_seconds),
+            delivery_attempts=0,
+        )
+        session.add(command)
+        await session.flush()
+        session.add(
+            audit_event(
+                action="device.command_queued",
+                actor_type="user",
+                actor_id=principal.user.id,
+                request=request,
+                object_type="device_command",
+                object_id=command.id,
+                details={
+                    "device_id": device.id,
+                    "command_type": command.command_type,
+                    "expires_at": command.expires_at.isoformat(),
+                },
+            )
+        )
+    await session.commit()
+    return {
+        "command_id": command.id,
+        "device_id": command.device_id,
+        "command_type": command.command_type,
+        "state": command.state,
+        "created_at": command.created_at,
+        "expires_at": command.expires_at,
+        "idempotency_key": command.idempotency_key,
+    }
+
+
+@router.get("/devices/{device_id}/agent-status")
+async def get_device_agent_status(
+    device_id: str,
+    principal: Principal,
+    session: DbSession,
+) -> dict[str, Any]:
+    _permission(principal, "overview.view")
+    device = await session.get(Device, device_id)
+    if device is None or device.revoked_at is not None:
+        raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
+    _site_allowed(principal, device.site_id)
+    if device.protocol_version != "pm-agent/2.0.0":
+        raise ProblemError(
+            409,
+            "Agent status unavailable",
+            "This device does not use the headless agent protocol",
+            "agent_protocol_required",
+        )
+    heartbeat = await session.scalar(
+        select(DeviceHeartbeat)
+        .where(DeviceHeartbeat.device_id == device.id)
+        .order_by(DeviceHeartbeat.received_at.desc(), DeviceHeartbeat.id.desc())
+        .limit(1)
+    )
+    commands = list(
+        await session.scalars(
+            select(DeviceCommand)
+            .where(DeviceCommand.device_id == device.id)
+            .order_by(DeviceCommand.created_at.desc(), DeviceCommand.id.desc())
+            .limit(20)
+        )
+    )
+    return {
+        "protocol": device.protocol_version,
+        "device_id": device.id,
+        "device_status": device.status,
+        "last_seen_at": device.last_seen_at,
+        "heartbeat": heartbeat.payload if heartbeat is not None else None,
+        "commands": [
+            {
+                "command_id": command.id,
+                "command_type": command.command_type,
+                "state": command.state,
+                "created_at": command.created_at,
+                "expires_at": command.expires_at,
+                "delivered_at": command.delivered_at,
+                "completed_at": command.completed_at,
+                "failure_code": command.failure_code,
+                "result": command.result,
+            }
+            for command in commands
+        ],
+    }
+
+
 @router.delete("/devices/{device_id}/maintenance", status_code=204, response_class=Response)
 async def clear_device_maintenance(
     device_id: str, request: Request, principal: CsrfPrincipal, session: DbSession
@@ -1978,6 +2136,28 @@ async def create_device_config(
         created_at=datetime.now(UTC),
     )
     session.add(version)
+    if device.protocol_version == "pm-agent/2.0.0":
+        session.add(
+            DeviceCommand(
+                device_id=device.id,
+                command_type="apply_configuration",
+                state="queued",
+                payload={
+                    "configuration_revision": version.version,
+                    "configuration_hash": version.config_hash,
+                    "settings": payload.settings,
+                    "network_rollback_seconds": payload.network_rollback_seconds,
+                },
+                result=None,
+                expected_state={
+                    "configuration_revision": device.effective_config_version,
+                },
+                idempotency_key=f"configuration:{device.id}:{version.version}",
+                created_at=version.created_at,
+                expires_at=version.created_at + timedelta(hours=24),
+                delivery_attempts=0,
+            )
+        )
     session.add(
         audit_event(
             action="device.config_created",

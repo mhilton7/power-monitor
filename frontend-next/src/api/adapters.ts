@@ -519,6 +519,7 @@ export function adaptSensors(value: unknown): SensorSummary[] {
       monitoredCircuit: stringValue(source.circuit_name, 'Unassigned'),
       includedInDefault: booleanValue(source.included_in_default),
       backlog: numberValue(source.backlog),
+      protocolVersion: optionalString(source.protocol_version),
       ctRatingAmps: stringValue(source.ct_rating_amps, '100'),
       measurementRole: stringValue(source.measurement_role, 'submeter'),
       firmwareOta: adaptFirmwareOtaCapability(source.firmware_ota),

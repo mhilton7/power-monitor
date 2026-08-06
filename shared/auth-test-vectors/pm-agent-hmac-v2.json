@@ -1,0 +1,41 @@
+{
+  "protocol": "pm-agent/2.0.0",
+  "algorithm": "HMAC-SHA256",
+  "secret_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "device_to_server_hkdf_info_utf8": "pm-agent-device-to-server-v2",
+  "server_to_device_hkdf_info_utf8": "pm-agent-server-to-device-v2",
+  "device_to_server_key_hex": "416e1046db2c5a9ecf158b64ed149805413651ac045ca73cfb565e64b7ff766c",
+  "server_to_device_key_hex": "59fc391ea69bec218c5066c06ea5add09587b5807dcf86076a518e5f6ca169df",
+  "request": {
+    "device_id": "b09baa6a-273f-4338-88e1-af0b47989036",
+    "boot_id": "1b79f263-bd3a-4a53-9251-4c4278f5536a",
+    "counter": 42,
+    "nonce": "0123456789abcdef0123456789abcdef",
+    "method": "POST",
+    "target_input": "/api/v2/agent/heartbeat?z=last&a=hello%20world&a=&slash=%2F",
+    "canonical_target": "/api/v2/agent/heartbeat?a=&a=hello%20world&slash=%2F&z=last",
+    "body_utf8": "{\"boot_id\":\"1b79f263-bd3a-4a53-9251-4c4278f5536a\",\"device_id\":\"b09baa6a-273f-4338-88e1-af0b47989036\",\"protocol\":\"pm-agent/2.0.0\"}",
+    "body_sha256": "4b1855b815a7e21a0c1e21e11e472315dbba66aad0f79ab5c09495d295db25c4",
+    "canonical_utf8": "PM-AGENT-HMAC-SHA256-V2\npm-agent/2.0.0\nb09baa6a-273f-4338-88e1-af0b47989036\n1b79f263-bd3a-4a53-9251-4c4278f5536a\n42\n0123456789abcdef0123456789abcdef\nPOST\n/api/v2/agent/heartbeat?a=&a=hello%20world&slash=%2F&z=last\n4b1855b815a7e21a0c1e21e11e472315dbba66aad0f79ab5c09495d295db25c4",
+    "signature_hex": "53cd810726208553bdb94a48b81fb13858dfcc4a313c9eeb37c0bebf82783fcf"
+  },
+  "response": {
+    "request_nonce": "0123456789abcdef0123456789abcdef",
+    "request_counter": 42,
+    "status": 200,
+    "body_utf8": "{\"command\":null,\"next_sequence_floor\":91,\"required_reset_generation\":2,\"server_acknowledgement\":90}",
+    "body_sha256": "77df29dfcf402713dd5d4942236d6629076b85f8dd05cd5eb112b2d3e1a06f70",
+    "canonical_utf8": "PM-AGENT-HMAC-SHA256-V2\nRESPONSE\n0123456789abcdef0123456789abcdef\n42\n200\n77df29dfcf402713dd5d4942236d6629076b85f8dd05cd5eb112b2d3e1a06f70",
+    "signature_hex": "abc1694b671c0461d6e6e77ae0afb3d05743e750635e53e0f53e55045e2c9cfb"
+  },
+  "negative_cases": [
+    "body_tampering",
+    "nonce_replay",
+    "counter_replay",
+    "wrong_device",
+    "wrong_direction_key",
+    "wrong_http_status",
+    "empty_body",
+    "canonical_query_parameters"
+  ]
+}
