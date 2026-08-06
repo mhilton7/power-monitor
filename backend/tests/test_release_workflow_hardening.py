@@ -27,41 +27,29 @@ def test_truenas_gate_exports_the_caddy_ca_outside_the_caddy_bind_mount() -> Non
     assert "--ca-certificate /mnt/pmci/Power/power-monitor/caddy-data" not in workflow
 
 
-def test_publish_gate_rejects_version_reuse_before_build_or_publish() -> None:
+def test_publish_gate_rejects_version_reuse_before_direct_publish() -> None:
     workflow = (ROOT / ".github/workflows/publish-images.yml").read_text(encoding="utf-8")
 
     preflight_at = workflow.index("  preflight:")
-    source_validation_at = workflow.index("  source-validation:")
-    frontend_validation_at = workflow.index("  frontend-validation:")
-    build_validation_at = workflow.index("  build-validation:")
     publish_at = workflow.index("  publish:")
 
-    assert (
-        preflight_at
-        < source_validation_at
-        < frontend_validation_at
-        < build_validation_at
-        < publish_at
-    )
+    assert preflight_at < publish_at
     assert 'json.load(open("release/versions.json"' in workflow
     assert "does not match release/versions.json" in workflow
     assert "Reject an existing immutable release tag" in workflow
     assert "could not prove that immutable release tag is unused" in workflow
     assert "application source changed after the tested release commit" in workflow
-    assert "--expected-commit '${{ needs.preflight.outputs.source_commit }}'" in workflow
     assert (
         "org.opencontainers.image.revision=${{ needs.preflight.outputs.source_commit }}" in workflow
     )
-    assert (
-        "needs: [preflight, source-validation, frontend-validation, build-validation]" in workflow
-    )
-    assert 'RUN_POSTGRES_INTEGRATION: "1"' in workflow
-    assert 'RUN_HISTORY_PERFORMANCE: "1"' in workflow
-    source_validation = workflow[source_validation_at:frontend_validation_at]
-    assert "- uses: actions/checkout@v4\n        with:\n" in source_validation
-    assert "fetch-depth: 0" in source_validation
-    assert "push: false" in workflow[build_validation_at:publish_at]
+    assert "needs: preflight" in workflow[publish_at:]
+    assert "  source-validation:" not in workflow
+    assert "  frontend-validation:" not in workflow
+    assert "  build-validation:" not in workflow
+    assert "push: false" not in workflow[publish_at:]
     assert "push: true" in workflow[publish_at:]
+    assert "provenance: mode=max" in workflow[publish_at:]
+    assert "sbom: true" in workflow[publish_at:]
 
 
 def test_local_release_gates_regenerate_dependency_audits_before_evidence() -> None:
