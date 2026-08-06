@@ -26,6 +26,7 @@ from app.api.deps import (
     Viewer,
     audit_event,
 )
+from app.data_reset.service import ensure_device_reset_mutations_allowed
 from app.db.models import (
     AlertInstance,
     Device,
@@ -646,6 +647,7 @@ async def create_deployments(
             rollout_group_id = new_uuid() if len(payload.device_ids) > 1 else None
     else:
         rollout_group_id = new_uuid() if len(payload.device_ids) > 1 else None
+    await ensure_device_reset_mutations_allowed(session, payload.device_ids)
     for rollout_order, device_id in enumerate(payload.device_ids):
         device = await session.get(Device, device_id)
         capability = await session.get(DeviceCapability, device_id)
@@ -902,6 +904,7 @@ async def retry_deployment(
     if device is None:
         raise ProblemError(404, "Sensor not found", "Sensor does not exist", "device_missing")
     _site_allowed(principal, device)
+    await ensure_device_reset_mutations_allowed(session, [device.id])
     if deployment.state not in {"failed", "cancelled", "rolled_back"}:
         raise ProblemError(
             409,
@@ -1001,6 +1004,7 @@ async def report_deployment(
             "Signed header and report device IDs differ",
             "device_id_mismatch",
         )
+    await ensure_device_reset_mutations_allowed(session, [verified.device.id])
     deployment = await session.scalar(
         select(FirmwareDeployment)
         .where(FirmwareDeployment.id == payload.deployment_id)
@@ -1310,6 +1314,7 @@ async def promote_canary(
             "Next rollout sensor is outside your assigned sites",
             "forbidden",
         )
+    await ensure_device_reset_mutations_allowed(session, [next_device.id])
     now = datetime.now(UTC)
     transition_firmware_deployment(next_deployment, "scheduled", now)
     next_deployment.scheduled_at = now
@@ -1348,6 +1353,7 @@ async def device_download_firmware(
     settings: AppSettings,
     deployment_id: Annotated[str, Query(min_length=1)],
 ) -> FileResponse:
+    await ensure_device_reset_mutations_allowed(session, [verified.device.id])
     deployment = await session.get(FirmwareDeployment, deployment_id)
     release = await session.get(FirmwareRelease, release_id)
     now = datetime.now(UTC)

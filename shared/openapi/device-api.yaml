@@ -3,6 +3,7 @@ info:
   title: Power Monitor Sensor Agent local API
   version: 1.0.0
   description: Server-to-device half of pm-protocol/1.0.0. Every operation requires directional HMAC headers.
+  x-data-reset-protocol: data-reset/1.0.0
 servers:
   - url: https://device.local
 components:
@@ -13,6 +14,9 @@ components:
       name: X-PM-Signature
   schemas:
     JsonObject: {type: object, additionalProperties: true}
+    Sha256:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
     Problem:
       type: object
       required: [title, status, detail, code]
@@ -21,6 +25,73 @@ components:
         status: {type: integer}
         detail: {type: string}
         code: {type: string}
+    DataResetPrepareRequest:
+      type: object
+      additionalProperties: false
+      required: [protocol, operation_id, device_id, target_generation, reset_timestamp, plan_revision, plan_digest, categories, expected_boundary, server_highest_contiguous, server_maximum_seen, expected_firmware_version, expected_build_hash, expected_card_generation]
+      properties:
+        protocol: {const: data-reset/1.0.0}
+        operation_id: {type: string, format: uuid}
+        device_id: {type: string, format: uuid}
+        target_generation: {type: integer, minimum: 1}
+        reset_timestamp: {type: string, format: date-time, pattern: 'Z$'}
+        plan_revision: {type: integer, minimum: 1}
+        plan_digest: {$ref: '#/components/schemas/Sha256'}
+        categories:
+          type: array
+          minItems: 1
+          maxItems: 1
+          uniqueItems: true
+          items: {const: measurement_history}
+        expected_boundary: {type: integer, minimum: 0, maximum: 9223372036854775805}
+        server_highest_contiguous: {type: integer, minimum: 0, maximum: 9223372036854775805}
+        server_maximum_seen: {type: integer, minimum: 0, maximum: 9223372036854775805}
+        expected_firmware_version: {type: string, minLength: 1, maxLength: 32}
+        expected_build_hash: {type: [string, 'null'], pattern: '^[0-9a-f]{64}$', minLength: 64, maxLength: 64}
+        expected_card_generation: {type: [string, 'null'], pattern: '^[1-9][0-9]*$', maxLength: 20}
+    DataResetCommitRequest:
+      type: object
+      additionalProperties: false
+      required: [protocol, operation_id, device_id, target_generation, plan_revision, plan_digest, approved_boundary, prepared_receipt_digest]
+      properties:
+        protocol: {const: data-reset/1.0.0}
+        operation_id: {type: string, format: uuid}
+        device_id: {type: string, format: uuid}
+        target_generation: {type: integer, minimum: 1}
+        plan_revision: {type: integer, minimum: 1}
+        plan_digest: {$ref: '#/components/schemas/Sha256'}
+        approved_boundary: {type: integer, minimum: 0, maximum: 9223372036854775805}
+        prepared_receipt_digest: {$ref: '#/components/schemas/Sha256'}
+    DataResetCancelRequest:
+      type: object
+      additionalProperties: false
+      required: [protocol, operation_id, device_id, target_generation, plan_revision, plan_digest]
+      properties:
+        protocol: {const: data-reset/1.0.0}
+        operation_id: {type: string, format: uuid}
+        device_id: {type: string, format: uuid}
+        target_generation: {type: integer, minimum: 1}
+        plan_revision: {type: integer, minimum: 1}
+        plan_digest: {$ref: '#/components/schemas/Sha256'}
+    DataResetReceipt:
+      type: object
+      description: Authenticated durable status containing only canonical redacted receipt text and digests.
+      additionalProperties: false
+      required: [protocol, operation_id, device_id, target_generation, state, checkpoint]
+      properties:
+        protocol: {const: data-reset/1.0.0}
+        operation_id: {type: string, format: uuid}
+        device_id: {type: string, format: uuid}
+        target_generation: {type: integer, minimum: 1}
+        state: {type: string, enum: [preparing, prepared, commit_authorized, sequence_advanced, cursors_advanced, readings_cleared, baseline_installed, verified, completed, attention_required, cancelled]}
+        checkpoint: {type: string, enum: [preparing, prepared, commit_authorized, sequence_advanced, cursors_advanced, readings_cleared, baseline_installed, verified, completed, attention_required, cancelled]}
+        failure_code: {type: [string, 'null'], maxLength: 80, pattern: '^[a-z0-9][a-z0-9_]{0,79}$'}
+        prepared_receipt: {type: string, maxLength: 16384, description: Canonical JSON containing only safe receipt evidence.}
+        prepared_receipt_digest: {$ref: '#/components/schemas/Sha256'}
+        commit_receipt: {type: string, maxLength: 16384, description: Canonical JSON containing only safe receipt evidence.}
+        commit_receipt_digest: {$ref: '#/components/schemas/Sha256'}
+        configuration_preservation_digest_before: {$ref: '#/components/schemas/Sha256'}
+        configuration_preservation_digest_after: {$ref: '#/components/schemas/Sha256'}
 paths:
   /api/v1/health:
     get: {operationId: getHealth, security: [{pmHmac: []}], responses: {'200': {description: Health evidence, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}}}
@@ -69,3 +140,41 @@ paths:
       security: [{pmHmac: []}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/JsonObject'}}}}
       responses: {'202': {description: Compatible signed OTA accepted}}
+  /api/v1/data-reset/prepare:
+    post:
+      operationId: prepareDataReset
+      security: [{pmHmac: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DataResetPrepareRequest'}}}}
+      responses:
+        '200': {description: Idempotent durable prepare receipt, content: {application/json: {schema: {$ref: '#/components/schemas/DataResetReceipt'}}}}
+        '202': {description: Durable preparation is still in progress, content: {application/json: {schema: {$ref: '#/components/schemas/DataResetReceipt'}}}}
+        '409': {description: "Conflicting, stale, or unsafe reset request", content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /api/v1/data-reset/commit:
+    post:
+      operationId: commitDataReset
+      security: [{pmHmac: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DataResetCommitRequest'}}}}
+      responses:
+        '200': {description: Idempotent durable completion receipt, content: {application/json: {schema: {$ref: '#/components/schemas/DataResetReceipt'}}}}
+        '202': {description: Durable commit is still in progress, content: {application/json: {schema: {$ref: '#/components/schemas/DataResetReceipt'}}}}
+        '409': {description: "Conflicting, stale, or unsafe reset request", content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /api/v1/data-reset/status:
+    get:
+      operationId: getDataResetStatus
+      security: [{pmHmac: []}]
+      parameters:
+        - {name: operation_id, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: target_generation, in: query, required: true, schema: {type: integer, minimum: 1}}
+      responses:
+        '200': {description: Durable reset checkpoint and stored receipts, content: {application/json: {schema: {$ref: '#/components/schemas/DataResetReceipt'}}}}
+        '202': {description: Durable reset is complete or cancelled but live gates are still reopening, content: {application/json: {schema: {$ref: '#/components/schemas/DataResetReceipt'}}}}
+        '404': {description: Reset operation is unknown, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}
+  /api/v1/data-reset/cancel:
+    post:
+      operationId: cancelDataReset
+      security: [{pmHmac: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DataResetCancelRequest'}}}}
+      responses:
+        '200': {description: Prepared reset cancelled without deleting data, content: {application/json: {schema: {$ref: '#/components/schemas/DataResetReceipt'}}}}
+        '202': {description: Cancellation is durable but live gates are still reopening, content: {application/json: {schema: {$ref: '#/components/schemas/DataResetReceipt'}}}}
+        '409': {description: Cancellation is no longer safe, content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}}

@@ -6,6 +6,7 @@
     "boot_id": "264c9c49-3fd0-4eeb-ab24-3a61cc155759",
     "firmware_version": "1.0.0",
     "firmware_build_hash": "4cc90cf78c17",
+    "data_generation": 0,
     "uptime_seconds": 3600,
     "reboot_reason": "power_on",
     "current_ip": "192.168.50.20",
@@ -37,8 +38,10 @@
     "protocol_version": "pm-protocol/1.0.0",
     "schema_version": "reading-batch/1.0.0",
     "device_id": "c5db1c32-67ab-4bdd-9a18-7f0012f8bcc1",
+    "data_generation": 0,
     "unavailable_sequence_ranges": [],
     "readings": [{
+      "data_generation": 0,
       "sequence": 60,
       "boot_id": "264c9c49-3fd0-4eeb-ab24-3a61cc155759",
       "interval_start": "2026-07-20T06:00:00Z",

@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 
 from app.api.deps import AppSettings, CsrfPrincipal, DbSession, Principal, Viewer, audit_event
 from app.configuration_status import build_configuration_status
+from app.data_reset.service import ensure_site_reset_mutations_allowed
 from app.db.models import (
     AggregateMember,
     AggregateSet,
@@ -53,6 +54,7 @@ from app.rates.assignments import (
 )
 from app.rates.documents import engine_plan
 from app.rates.engine import RateEngine
+from app.rates.reset_barrier import ensure_account_rate_mutations_allowed
 from app.rates.service import version_document
 from app.schemas import (
     ConfigurationStatus,
@@ -86,6 +88,11 @@ def _permission(principal: Principal, permission: str) -> None:
 def _site_allowed(principal: Principal, site_id: str) -> None:
     if not principal.can_access_site(site_id):
         raise ProblemError(404, "Resource not found", "Resource does not exist", "resource_missing")
+
+
+async def _ensure_fleet_site_reset_mutations_allowed(session: DbSession) -> None:
+    site_ids = list(await session.scalars(select(Site.id).order_by(Site.id)))
+    await ensure_site_reset_mutations_allowed(session, site_ids)
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -203,6 +210,11 @@ async def _create_assignment(
     payload: RateAssignmentWrite,
     actor_id: str,
 ) -> tuple[RateAssignment, bool, list[str]]:
+    await ensure_account_rate_mutations_allowed(
+        session,
+        account.id,
+        extra_version_ids=[payload.rate_version_id],
+    )
     assignment, replaced, effective_now = await create_effective_assignment(
         session,
         account_id=account.id,
@@ -678,6 +690,7 @@ async def create_site_account(
             "Enable the site before creating new utility-account assignments",
             "site_not_assignable",
         )
+    await ensure_site_reset_mutations_allowed(session, [site.id])
     utility_name = (
         "Southern California Edison"
         if payload.utility_provider in {"sce", "cca", "direct_access"}
@@ -813,6 +826,7 @@ async def update_account(
 ) -> dict[str, Any]:
     _permission(principal, "utility_accounts.manage")
     account = await _account_or_404(session, principal, account_id)
+    await ensure_site_reset_mutations_allowed(session, [account.site_id])
     if account.revision != payload.revision:
         raise ProblemError(409, "Account changed", "Reload before saving", "stale_revision")
     for key, value in payload.model_dump(exclude={"revision"}, exclude_unset=True).items():
@@ -839,6 +853,7 @@ async def archive_account(
 ) -> dict[str, Any]:
     _permission(principal, "utility_accounts.manage")
     account = await _account_or_404(session, principal, account_id)
+    await ensure_site_reset_mutations_allowed(session, [account.site_id])
     if account.status != "archived":
         account.status = "archived"
         account.archived_at = datetime.now(UTC)
@@ -898,6 +913,7 @@ async def add_account_rate_assignment(
 ) -> dict[str, Any]:
     _permission(principal, "rates.assign")
     account = await _account_or_404(session, principal, account_id)
+    await ensure_site_reset_mutations_allowed(session, [account.site_id])
     assignment, effective_now, replaced_assignment_ids = await _create_assignment(
         session, account, payload, principal.user.id
     )
@@ -942,6 +958,7 @@ async def change_cost_scope(
 ) -> dict[str, Any]:
     _permission(principal, "utility_accounts.manage")
     account = await _account_or_404(session, principal, account_id)
+    await ensure_site_reset_mutations_allowed(session, [account.site_id])
     if account.revision != payload.revision:
         raise ProblemError(409, "Account changed", "Reload before saving", "stale_revision")
     if payload.cost_scope == "allocated_account_estimate" and not payload.allocation_method:
@@ -990,6 +1007,7 @@ async def recalculate_account_costs(
 ) -> dict[str, Any]:
     _permission(principal, "utility_accounts.manage")
     account = await _account_or_404(session, principal, account_id)
+    await ensure_site_reset_mutations_allowed(session, [account.site_id])
     finalized = list(
         await session.scalars(
             select(BillingCycle).where(
@@ -1071,6 +1089,7 @@ async def add_account_adjustment(
 ) -> dict[str, Any]:
     _permission(principal, "adjustments.manage")
     account = await _account_or_404(session, principal, account_id)
+    await ensure_site_reset_mutations_allowed(session, [account.site_id])
     item = UtilityAccountAdjustment(
         utility_account_id=account.id,
         component=payload.component,
@@ -1136,6 +1155,7 @@ async def update_account_adjustment(
 ) -> dict[str, Any]:
     _permission(principal, "adjustments.manage")
     account = await _account_or_404(session, principal, account_id)
+    await ensure_site_reset_mutations_allowed(session, [account.site_id])
     item = await session.get(UtilityAccountAdjustment, adjustment_id)
     if item is None or item.utility_account_id != account.id or item.status == "removed":
         raise ProblemError(
@@ -1211,6 +1231,7 @@ async def remove_account_adjustment(
 ) -> dict[str, Any]:
     _permission(principal, "adjustments.manage")
     account = await _account_or_404(session, principal, account_id)
+    await ensure_site_reset_mutations_allowed(session, [account.site_id])
     item = await session.get(UtilityAccountAdjustment, adjustment_id)
     if item is None or item.utility_account_id != account.id or item.status == "removed":
         raise ProblemError(
@@ -1444,6 +1465,7 @@ async def update_network_policy(
             "network_policy_missing",
         )
     _site_allowed(principal, policy.site_id)
+    await _ensure_fleet_site_reset_mutations_allowed(session)
     if policy.revision != payload.revision:
         raise ProblemError(409, "Policy changed", "Reload before saving", "stale_revision")
     if payload.mode not in POLICY_MODES:
@@ -1535,6 +1557,7 @@ async def add_network_cidr(
             "network_policy_missing",
         )
     _site_allowed(principal, policy.site_id)
+    await _ensure_fleet_site_reset_mutations_allowed(session)
     network = canonical_private_network(payload.network)
     existing = await session.scalar(
         select(SensorNetworkCidr).where(
@@ -1611,6 +1634,7 @@ async def update_network_cidr(
             "network_policy_missing",
         )
     _site_allowed(principal, policy.site_id)
+    await _ensure_fleet_site_reset_mutations_allowed(session)
     if payload.revision is None or item.revision != payload.revision:
         raise ProblemError(409, "CIDR changed", "Reload before saving", "stale_revision")
     network = canonical_private_network(payload.network)
@@ -1694,6 +1718,7 @@ async def delete_network_cidr(
     if policy is None:
         return Response(status_code=204)
     _site_allowed(principal, policy.site_id)
+    await _ensure_fleet_site_reset_mutations_allowed(session)
     if policy.mode == "allow_listed_private" and item.enabled:
         enabled_count = int(
             await session.scalar(

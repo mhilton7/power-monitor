@@ -36,6 +36,39 @@ SQL
 }
 trap record_failure ERR INT TERM
 
+abort_if_pinned() {
+  local pinned
+  pinned=$(psql --quiet --tuples-only --no-align \
+    -v ON_ERROR_STOP=1 -v run_id="$run_id" <<'SQL'
+SELECT CASE WHEN EXISTS (
+  SELECT 1
+  FROM data_reset_operations
+  WHERE backup_run_id=:'run_id'
+    AND state NOT IN ('completed','cancelled','failed_before_commit')
+) THEN 'true' ELSE 'false' END;
+SQL
+  )
+  [[ "$pinned" != "true" ]] && return 0
+  if [[ "$moved" == true && -n "${trash_path:-}" && -n "${completed_path:-}" &&
+        -d "$trash_path" && ! -e "$completed_path" ]]; then
+    mv -- "$trash_path" "$completed_path"
+    moved=false
+  fi
+  psql -v ON_ERROR_STOP=1 -v run_id="$run_id" <<'SQL'
+UPDATE backup_runs
+SET status=COALESCE(pre_deletion_status, 'deletion_failed'),
+    failed_stage='pin_recheck', safe_error_code='BACKUP_PINNED_BY_DATA_RESET',
+    safe_error_summary='The backup is pinned by an active coordinated data reset',
+    updated_at=now()
+WHERE id=:'run_id' AND status='deleting';
+SQL
+  write_application_log backup.delete_blocked warning
+  trap - ERR INT TERM
+  exit 75
+}
+
+abort_if_pinned
+
 backup_value=$(psql --quiet --tuples-only --no-align \
   -v ON_ERROR_STOP=1 -v run_id="$run_id" <<'SQL'
 SELECT COALESCE(path, '__missing__')
@@ -86,12 +119,14 @@ trash_root=$(realpath "$trash_root")
 [[ "$trash_root" == "$root/.trash" ]]
 trash_path="$trash_root/$identifier"
 
+abort_if_pinned
 if [[ "$source_path" != "$trash_path" ]]; then
   [[ ! -e "$trash_path" ]]
   mv -- "$source_path" "$trash_path"
 fi
 moved=true
 [[ "$trash_path" == "$root/.trash/$identifier" && ! -L "$trash_path" ]]
+abort_if_pinned
 rm -rf -- "$trash_path"
 moved=false
 

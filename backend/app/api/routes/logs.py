@@ -8,10 +8,12 @@ from typing import Any, NoReturn
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
+from sqlalchemy import select
 from starlette.background import BackgroundTask
 
 from app.api.deps import AppSettings, CsrfPrincipal, DbSession, Principal, audit_event
-from app.db.models import LogExportJob
+from app.data_reset.service import ensure_site_reset_mutations_allowed
+from app.db.models import LogExportJob, Site
 from app.logging import LOG_CATEGORIES, retention_boundary
 from app.problem import ProblemError
 from app.schemas import LogExportCreate
@@ -50,6 +52,11 @@ def _job_view(job: LogExportJob) -> dict[str, Any]:
             f"/api/v1/admin/logs/exports/{job.id}/download" if job.status == "ready" else None
         ),
     }
+
+
+async def _ensure_fleet_site_reset_mutations_allowed(session: DbSession) -> None:
+    site_ids = list(await session.scalars(select(Site.id).order_by(Site.id)))
+    await ensure_site_reset_mutations_allowed(session, site_ids)
 
 
 async def _reject_export(
@@ -160,6 +167,7 @@ async def create_export(
             services=services,
         )
 
+    await _ensure_fleet_site_reset_mutations_allowed(session)
     now = datetime.now(UTC)
     job = LogExportJob(
         requested_by=principal.user.id,
@@ -173,6 +181,25 @@ async def create_export(
     )
     session.add(job)
     await session.commit()
+
+    # The archive is built while every site row remains locked. A reset can
+    # therefore run either before this checkpoint (and invalidate the job) or
+    # after its ready state is durable, but never publish an artifact midway.
+    await _ensure_fleet_site_reset_mutations_allowed(session)
+    persisted_job = await session.scalar(
+        select(LogExportJob)
+        .where(LogExportJob.id == job.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if persisted_job is None:
+        raise ProblemError(
+            409,
+            "Log export invalidated",
+            "The export was removed by a coordinated data reset; create it again",
+            "data_reset_output_invalidated",
+        )
+    job = persisted_job
     try:
         built = await run_in_threadpool(
             build_log_export,

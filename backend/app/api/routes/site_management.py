@@ -8,6 +8,10 @@ from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CsrfPrincipal, DbSession, Principal, audit_event
+from app.data_reset.service import (
+    ensure_device_reset_mutations_allowed,
+    ensure_site_reset_mutations_allowed,
+)
 from app.db.models import (
     AlertInstance,
     AuditEvent,
@@ -547,6 +551,7 @@ async def update_admin_site(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "sites.edit")
+    await ensure_site_reset_mutations_allowed(session, [site_id])
     site = await _site(session, principal, site_id, lock=True)
     if site.lifecycle_state == "removed":
         raise ProblemError(
@@ -631,6 +636,13 @@ async def set_default_site(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "sites.set_default")
+    previous_default_id = await session.scalar(
+        select(Site.id).where(Site.is_default.is_(True), Site.id != site_id)
+    )
+    await ensure_site_reset_mutations_allowed(
+        session,
+        [site_id, *([previous_default_id] if previous_default_id else [])],
+    )
     site = await _site(session, principal, site_id, lock=True)
     if site.lifecycle_state != "active":
         raise ProblemError(
@@ -682,6 +694,7 @@ async def disable_site(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "sites.disable")
+    await ensure_site_reset_mutations_allowed(session, [site_id])
     site = await _site(session, principal, site_id, lock=True)
     if site.lifecycle_state == "disabled":
         return await _site_payload(session, site)
@@ -764,6 +777,7 @@ async def enable_site(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "sites.disable")
+    await ensure_site_reset_mutations_allowed(session, [site_id])
     site = await _site(session, principal, site_id, lock=True)
     if site.lifecycle_state == "active":
         return await _site_payload(session, site)
@@ -809,6 +823,20 @@ async def resolve_site_dependencies(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "sites.transfer_resources")
+    affected_site_ids = {site_id}
+    affected_site_ids.update(
+        str(item.target_site_id) for item in payload.sensors if item.target_site_id is not None
+    )
+    affected_site_ids.update(
+        str(item.target_site_id)
+        for item in payload.utility_accounts
+        if item.target_site_id is not None
+    )
+    await ensure_site_reset_mutations_allowed(session, affected_site_ids)
+    await ensure_device_reset_mutations_allowed(
+        session,
+        [item.device_id for item in payload.sensors],
+    )
     site = await _site(session, principal, site_id, lock=True)
     if site.lifecycle_state == "removed":
         raise ProblemError(
@@ -1102,6 +1130,7 @@ async def remove_site(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "sites.remove")
+    await ensure_site_reset_mutations_allowed(session, [site_id])
     site = await _site(session, principal, site_id, lock=True)
     if site.lifecycle_state == "removed":
         return await _site_payload(session, site)
@@ -1211,6 +1240,7 @@ async def restore_site(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "sites.restore")
+    await ensure_site_reset_mutations_allowed(session, [site_id])
     site = await _site(session, principal, site_id, lock=True)
     if site.lifecycle_state == "disabled" and site.restored_at:
         return await _site_payload(session, site)

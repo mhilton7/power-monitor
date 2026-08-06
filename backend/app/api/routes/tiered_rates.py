@@ -15,6 +15,7 @@ from app.billing_sources import (
     SENSOR_MEASUREMENTS,
     authority_calculation_role,
 )
+from app.data_reset.service import ensure_site_reset_mutations_allowed
 from app.db.models import (
     AccountReconciliationAdjustment,
     AccountUsageAuthority,
@@ -59,12 +60,20 @@ def _permission(principal: Principal, permission: str) -> None:
         )
 
 
-async def _account(session: DbSession, principal: Principal, account_id: str) -> UtilityAccount:
+async def _account(
+    session: DbSession,
+    principal: Principal,
+    account_id: str,
+    *,
+    for_mutation: bool = False,
+) -> UtilityAccount:
     account = await session.get(UtilityAccount, account_id)
     if account is None or not principal.can_access_site(account.site_id):
         raise ProblemError(
             404, "Utility account not found", "Resource does not exist", "account_missing"
         )
+    if for_mutation:
+        await ensure_site_reset_mutations_allowed(session, [account.site_id])
     return account
 
 
@@ -115,7 +124,7 @@ async def put_usage_authority(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "utility_accounts.manage")
-    account = await _account(session, principal, account_id)
+    account = await _account(session, principal, account_id, for_mutation=True)
     if payload.aggregate_set_id:
         aggregate = await session.get(AggregateSet, payload.aggregate_set_id)
         if (
@@ -228,7 +237,7 @@ async def enter_manual_usage(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "utility_accounts.manage")
-    account = await _account(session, principal, account_id)
+    account = await _account(session, principal, account_id, for_mutation=True)
     existing = await session.scalar(
         select(ManualAccountUsage).where(
             ManualAccountUsage.utility_account_id == account.id,
@@ -304,7 +313,12 @@ async def import_usage(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "usage_imports.manage")
-    account = await _account(session, principal, account_id)
+    account = await _account(
+        session,
+        principal,
+        account_id,
+        for_mutation=payload.commit,
+    )
     try:
         mapped_rows = _mapped_import_rows(payload.rows, payload.field_mapping)
         rows = normalized_import_rows(mapped_rows, payload.import_kind, payload.timezone)
@@ -511,7 +525,7 @@ async def reverse_usage_import(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "usage_imports.manage")
-    account = await _account(session, principal, account_id)
+    account = await _account(session, principal, account_id, for_mutation=True)
     item = await session.scalar(
         select(UtilityUsageImport)
         .where(
@@ -696,7 +710,7 @@ async def override_billing_cycle(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "utility_accounts.manage")
-    account = await _account(session, principal, account_id)
+    account = await _account(session, principal, account_id, for_mutation=True)
     overlapping = list(
         await session.scalars(
             select(BillingCycle)
@@ -826,7 +840,7 @@ async def create_reconciliation(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "utility_accounts.manage")
-    account = await _account(session, principal, account_id)
+    account = await _account(session, principal, account_id, for_mutation=True)
     cycle = await _cycle(session, account, cycle_id)
     adjustment = AccountReconciliationAdjustment(
         utility_account_id=account.id,
@@ -884,7 +898,7 @@ async def recalculate_current_cycle(
     """Create, lock, and recalculate the account's current mutable billing cycle."""
 
     _permission(principal, "costs.recalculate")
-    account = await _account(session, principal, account_id)
+    account = await _account(session, principal, account_id, for_mutation=True)
     current = await current_billing_cycle(
         session,
         account,
@@ -929,7 +943,7 @@ async def recalculate_cycle(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "costs.recalculate")
-    account = await _account(session, principal, account_id)
+    account = await _account(session, principal, account_id, for_mutation=True)
     cycle = await _cycle(session, account, cycle_id, lock=True)
     status = await calculate_cycle_tier_status(
         session,
@@ -966,7 +980,7 @@ async def finalize_cycle(
     session: DbSession,
 ) -> dict[str, Any]:
     _permission(principal, "costs.recalculate")
-    account = await _account(session, principal, account_id)
+    account = await _account(session, principal, account_id, for_mutation=True)
     cycle = await _cycle(session, account, cycle_id, lock=True)
     if cycle.finalized_at is not None:
         return _cycle_response(cycle)

@@ -15,8 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE = ROOT / "release"
-DEFAULT_RELEASE_VERSION = "1.0.34"
-DEFAULT_MIGRATION_REVISION = "20260803_0030"
+DEFAULT_RELEASE_VERSION = "1.0.38"
+DEFAULT_MIGRATION_REVISION = "20260806_0031"
 CANONICAL_RELEASE_TEXT_SUFFIXES = frozenset(
     {".csv", ".json", ".md", ".sha256", ".sql", ".txt"}
 )

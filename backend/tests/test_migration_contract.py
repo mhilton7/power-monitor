@@ -3,7 +3,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from app.db import models  # noqa: F401
+from sqlalchemy import BigInteger
+
+from app.db import models
 from app.db.base import Base
 
 
@@ -62,6 +64,12 @@ def test_initial_migration_is_frozen_and_covers_metadata() -> None:
         "notification_events",
         "dashboard_appearance",
         "device_event_sync_cursors",
+        "data_reset_plans",
+        "data_reset_operations",
+        "data_reset_participants",
+        "site_data_states",
+        "device_data_states",
+        "data_reset_pricing_baselines",
     }
     assert "CREATE UNIQUE INDEX" in schema
     assert "ix_raw_site_time" in schema
@@ -391,3 +399,69 @@ def test_ota_waiting_schedule_migration_extends_state_without_data_loss() -> Non
     assert "DELETE FROM" not in upgrade
     assert "DROP TABLE" not in upgrade
     assert "def downgrade()" in revision
+
+
+def test_data_only_reset_migration_is_additive_generation_safe_and_reversible() -> None:
+    root = Path(__file__).resolve().parents[1]
+    revision = (root / "alembic" / "versions" / "20260806_0031_data_only_reset.py").read_text()
+    upgrade = revision.split("def downgrade()", maxsplit=1)[0]
+    assert 'down_revision = "20260803_0030"' in revision
+    for table in (
+        "data_reset_plans",
+        "data_reset_operations",
+        "data_reset_participants",
+        "site_data_states",
+        "device_data_states",
+        "data_reset_pricing_baselines",
+    ):
+        assert f'"{table}"' in upgrade
+    assert "uq_data_reset_operation_active_site" in upgrade
+    assert "state NOT IN ('completed','cancelled','failed_before_commit')" in upgrade
+    assert "uq_raw_device_sequence" not in upgrade
+    assert "data_generation" in upgrade
+    assert "reset_boundary" in upgrade
+    assert "SELECT id, 0, 0, CURRENT_TIMESTAMP FROM sites" in upgrade
+    assert "system.data_reset" in upgrade
+    assert "'admin', 'system.data_reset'" in upgrade
+    assert "data_reset" in upgrade
+    assert "DELETE FROM raw_readings" not in upgrade
+    assert "DELETE FROM devices" not in upgrade
+    assert "erase_flash" not in revision
+    assert "Cannot downgrade data-reset state" in revision
+    sequence_columns = (
+        ("raw_readings", "sequence"),
+        ("sync_cursors", "highest_contiguous_sequence"),
+        ("sync_cursors", "maximum_seen_sequence"),
+        ("device_heartbeats", "newest_sequence"),
+        ("sequence_gaps", "start_sequence"),
+        ("sequence_gaps", "end_sequence"),
+        ("device_events", "event_sequence"),
+        ("device_event_sync_cursors", "highest_contiguous_sequence"),
+        ("device_event_sync_cursors", "maximum_seen_sequence"),
+    )
+    for table_name, column_name in sequence_columns:
+        assert f'("{table_name}", "{column_name}",' in revision
+    assert "_alter_protocol_sequence_columns(widening=True)" in upgrade
+    assert "_alter_protocol_sequence_columns(widening=False)" in revision
+    assert "sa.BigInteger() if widening else sa.Integer()" in revision
+    assert "NOT BETWEEN -2147483648 AND 2147483647" in revision
+    assert "a value exceeds INTEGER range" in revision
+    assert "DELETE FROM" not in upgrade
+    assert "sequence rewrite" in upgrade
+    assert 'drop_constraint("uq_raw_device_sequence"' not in revision
+
+
+def test_protocol_sequence_model_columns_use_signed_bigint_storage() -> None:
+    sequence_columns = (
+        (models.RawReading, "sequence"),
+        (models.SyncCursor, "highest_contiguous_sequence"),
+        (models.SyncCursor, "maximum_seen_sequence"),
+        (models.DeviceHeartbeat, "newest_sequence"),
+        (models.SequenceGap, "start_sequence"),
+        (models.SequenceGap, "end_sequence"),
+        (models.DeviceEvent, "event_sequence"),
+        (models.DeviceEventSyncCursor, "highest_contiguous_sequence"),
+        (models.DeviceEventSyncCursor, "maximum_seen_sequence"),
+    )
+    for model, column_name in sequence_columns:
+        assert isinstance(model.__table__.columns[column_name].type, BigInteger)

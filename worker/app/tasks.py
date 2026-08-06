@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import structlog
 from app.config import Settings
+from app.data_reset.service import ensure_site_reset_mutations_allowed
 from app.db.models import (
     AccountUsageAuthority,
     AggregateMember,
@@ -56,6 +57,7 @@ from app.db.models import (
 from app.ingestion.service import normalize_energy
 from app.notifications import catalog_entry
 from app.polling.ssrf import validate_poll_target
+from app.problem import ProblemError
 from app.rates.documents import engine_plan
 from app.rates.engine import RateEngine
 from app.rates.service import version_document
@@ -267,6 +269,8 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
     )
     completed = 0
     for job in jobs:
+        job_start = _aware(job.input_start)
+        job_end = _aware(job.input_end)
         job.status = "running"
         await session.flush()
         account = await session.get(UtilityAccount, job.utility_account_id)
@@ -431,8 +435,8 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
                     )
                 continue
             calculation = engine.calculate(
-                start=interval.interval_start,
-                end=interval.interval_end,
+                start=_aware(interval.interval_start),
+                end=_aware(interval.interval_end),
                 energy_kwh=energy_kwh,
                 cost_scope="energy_only",
             )
@@ -577,8 +581,8 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
             else Decimal("0")
         )
         preliminary = engine.calculate(
-            start=job.input_start,
-            end=job.input_end,
+            start=job_start,
+            end=job_end,
             energy_kwh=total_energy_kwh,
             cost_scope=effective_scope,
             baseline_allocation_kwh=account.baseline_allocation_kwh,
@@ -600,8 +604,8 @@ async def process_cost_jobs(session: AsyncSession, limit: int = 2) -> int:
         if percentage_amount:
             add_breakdown("tax_fee", percentage_amount)
         account_components = engine.calculate(
-            start=job.input_start,
-            end=job.input_end,
+            start=job_start,
+            end=job_end,
             energy_kwh=total_energy_kwh,
             cost_scope=effective_scope,
             baseline_allocation_kwh=account.baseline_allocation_kwh,
@@ -706,13 +710,44 @@ async def process_tier_recalculations(session: AsyncSession, limit: int = 4) -> 
 async def process_export_jobs(
     session: AsyncSession, settings: Settings, limit: int = 4
 ) -> int:
-    jobs = list(
+    candidates = list(
         await session.scalars(
             select(ExportJob)
             .where(ExportJob.status == "queued")
             .order_by(ExportJob.created_at)
             .limit(limit)
+        )
+    )
+    if not candidates:
+        await session.commit()
+        return 0
+
+    site_ids = {
+        str(site_id) for job in candidates if (site_id := job.query.get("site_id"))
+    }
+    if any(not job.query.get("site_id") for job in candidates):
+        site_ids.update(await session.scalars(select(Site.id).order_by(Site.id)))
+    try:
+        # Hold the sorted site locks through file creation and the completed
+        # row update. Reset activation then serializes on the whole artifact.
+        await ensure_site_reset_mutations_allowed(session, site_ids)
+    except ProblemError as exc:
+        if exc.code != "data_reset_site_mutation_blocked":
+            raise
+        await session.commit()
+        return 0
+
+    candidate_ids = [job.id for job in candidates]
+    jobs = list(
+        await session.scalars(
+            select(ExportJob)
+            .where(
+                ExportJob.id.in_(candidate_ids),
+                ExportJob.status == "queued",
+            )
+            .order_by(ExportJob.created_at)
             .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
         )
     )
     root = settings.report_path.resolve()
@@ -722,6 +757,9 @@ async def process_export_jobs(
         job.status = "running"
         await session.flush()
         query = select(RawReading).order_by(RawReading.device_id, RawReading.sequence)
+        site_id = job.query.get("site_id")
+        if site_id:
+            query = query.where(RawReading.site_id == str(site_id))
         device_id = job.query.get("device_id")
         if device_id:
             query = query.where(RawReading.device_id == device_id)
@@ -810,13 +848,63 @@ async def process_export_jobs(
 async def process_report_jobs(
     session: AsyncSession, settings: Settings, limit: int = 2
 ) -> int:
-    jobs = list(
+    candidates = list(
         await session.scalars(
             select(GeneratedReport)
             .where(GeneratedReport.status == "queued")
             .order_by(GeneratedReport.created_at)
             .limit(limit)
+        )
+    )
+    if not candidates:
+        await session.commit()
+        return 0
+    definition_ids = {
+        job.definition_id for job in candidates if job.definition_id is not None
+    }
+    definitions = {
+        item.id: item
+        for item in await session.scalars(
+            select(ReportDefinition).where(ReportDefinition.id.in_(definition_ids))
+        )
+    }
+    site_ids: set[str] = set()
+    requires_fleet_scope = False
+    for job in candidates:
+        definition = definitions.get(job.definition_id or "")
+        config = definition.configuration if definition is not None else {}
+        if config.get("site_id"):
+            site_ids.add(str(config["site_id"]))
+        elif config.get("device_id"):
+            site_id = await session.scalar(
+                select(Device.site_id).where(Device.id == str(config["device_id"]))
+            )
+            if site_id:
+                site_ids.add(site_id)
+            else:
+                requires_fleet_scope = True
+        else:
+            requires_fleet_scope = True
+    if requires_fleet_scope:
+        site_ids.update(await session.scalars(select(Site.id).order_by(Site.id)))
+    try:
+        await ensure_site_reset_mutations_allowed(session, site_ids)
+    except ProblemError as exc:
+        if exc.code != "data_reset_site_mutation_blocked":
+            raise
+        await session.commit()
+        return 0
+    candidate_ids = [job.id for job in candidates]
+    jobs = list(
+        await session.scalars(
+            select(GeneratedReport)
+            .where(
+                GeneratedReport.id.in_(candidate_ids),
+                GeneratedReport.status == "queued",
+            )
+            .order_by(GeneratedReport.created_at)
             .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
         )
     )
     root = settings.report_path.resolve()

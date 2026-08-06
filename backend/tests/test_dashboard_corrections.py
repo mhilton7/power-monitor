@@ -496,6 +496,8 @@ async def test_live_measurement_is_consistent_between_devices_and_fleet(
         "rejected": [],
         "highest_contiguous_accepted_sequence": 1,
         "missing_ranges": [],
+        "data_generation": 0,
+        "reset_boundary": 0,
     }
     duplicate = await client.post(
         "/api/v1/device-readings/batch",
@@ -862,6 +864,8 @@ async def test_signed_unavailable_sequence_ranges_advance_device_cursor(
         "rejected": [],
         "highest_contiguous_accepted_sequence": 11,
         "missing_ranges": [],
+        "data_generation": 0,
+        "reset_boundary": 0,
     }
 
 

@@ -223,6 +223,50 @@ def validate_vectors() -> None:
         signed_manifest
     )
 
+    reset = json.loads(
+        (
+            ROOT / "shared" / "auth-test-vectors" / "data-reset-receipt-v1.json"
+        ).read_text(encoding="utf-8")
+    )
+    reset_device_id = str(UUID(reset["device_id"]))
+    if reset_device_id != reset["receipt_hkdf_salt_utf8"]:
+        raise AssertionError(
+            "data-reset receipt HKDF salt is not the canonical device UUID"
+        )
+    reset_secret = bytes.fromhex(reset["secret_hex"])
+    reset_directional_prk = hmac.new(bytes(32), reset_secret, hashlib.sha256).digest()
+    reset_directional_key = hmac.new(
+        reset_directional_prk,
+        reset["directional_hkdf_info_utf8"].encode("utf-8") + b"\x01",
+        hashlib.sha256,
+    ).digest()
+    if reset_directional_key.hex() != reset["directional_key_hex"]:
+        raise AssertionError("data-reset directional key vector mismatch")
+    reset_receipt_prk = hmac.new(
+        reset_device_id.encode("utf-8"), reset_directional_key, hashlib.sha256
+    ).digest()
+    reset_receipt_key = hmac.new(
+        reset_receipt_prk,
+        reset["receipt_hkdf_info_utf8"].encode("utf-8") + b"\x01",
+        hashlib.sha256,
+    ).digest()
+    if reset_receipt_key.hex() != reset["receipt_key_hex"]:
+        raise AssertionError("data-reset receipt key vector mismatch")
+    reset_canonical = json.dumps(
+        reset["receipt_without_digest"],
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    if reset_canonical != reset["canonical_json_utf8"]:
+        raise AssertionError("data-reset receipt canonical JSON mismatch")
+    reset_digest = hmac.new(
+        reset_receipt_key, reset_canonical.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    if reset_digest != reset["receipt_digest_hex"]:
+        raise AssertionError("data-reset receipt HMAC mismatch")
+
 
 if __name__ == "__main__":
     validate_openapi()

@@ -53,6 +53,7 @@ from app.db.models import (
     RateVersion,
     RawReading,
     Site,
+    SiteDataState,
     TierAllocationSegment,
     UtilityAccount,
 )
@@ -327,6 +328,7 @@ def _history_request_fingerprint(
     resolved: ResolvedHistoryScope,
     bucket: str,
     source_strategy: str,
+    history_revision: int,
 ) -> str:
     canonical = {
         "request": request.model_dump(
@@ -336,6 +338,7 @@ def _history_request_fingerprint(
         "bucket": bucket,
         "source_strategy": source_strategy,
         "site_id": resolved.site.id,
+        "history_revision": history_revision,
         "device_ids": [device.id for device in resolved.devices],
         "allocations": {key: str(value) for key, value in sorted(resolved.allocations.items())},
     }
@@ -2969,11 +2972,14 @@ async def query_history(
             "history_page_invalid",
         )
     device_ids = [device.id for device in resolved.devices]
+    site_data_state = await session.get(SiteDataState, resolved.site.id)
+    history_revision = int(site_data_state.history_revision) if site_data_state is not None else 0
     fingerprint = _history_request_fingerprint(
         request,
         resolved,
         bucket,
         source_strategy,
+        history_revision,
     )
     if request.page == 1 and request.continuation_token is not None:
         raise ProblemError(

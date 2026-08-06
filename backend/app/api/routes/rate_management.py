@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from app.access import can_access_site
 from app.api.deps import CsrfPrincipal, DbSession, Principal, Viewer, audit_event
 from app.config import get_settings
+from app.data_reset.service import ensure_site_reset_mutations_allowed
 from app.db.models import (
     AuditEvent,
     BackgroundJob,
@@ -33,6 +34,7 @@ from app.db.models import (
     RateSyncConfiguration,
     RateVersion,
     RateVersionSource,
+    Site,
     UtilityAccount,
     UtilityBillImport,
 )
@@ -54,6 +56,10 @@ from app.rates.candidates import create_candidate_from_document
 from app.rates.documents import RatePlanDocument, engine_plan, validate_document
 from app.rates.engine import RateEngine
 from app.rates.notifications import emit_rate_alert
+from app.rates.reset_barrier import (
+    ensure_account_rate_mutations_allowed,
+    ensure_rate_plans_reset_mutations_allowed,
+)
 from app.rates.schedule import next_scheduled_time, schedule_parts
 from app.rates.service import (
     activate_version,
@@ -96,6 +102,105 @@ def _rate_manager(principal: Principal, permission: str = "rates.manage_custom")
             "forbidden",
             extra={"required_permission": permission},
         )
+
+
+async def _all_site_ids(session: DbSession) -> list[str]:
+    return list(await session.scalars(select(Site.id).order_by(Site.id)))
+
+
+async def _account_site_ids(session: DbSession, account_id: str) -> list[str]:
+    site_id = await session.scalar(
+        select(UtilityAccount.site_id).where(UtilityAccount.id == account_id)
+    )
+    return [site_id] if site_id else []
+
+
+async def _document_owner_site_ids(session: DbSession, document: RatePlanDocument) -> list[str]:
+    if document.ownership_scope == "site" and document.owner_id:
+        return [document.owner_id]
+    if document.ownership_scope == "utility_account" and document.owner_id:
+        return await _account_site_ids(session, document.owner_id)
+    return []
+
+
+async def _document_source_plans(session: DbSession, document: RatePlanDocument) -> list[RatePlan]:
+    if document.cloned_from_rate_version_id:
+        source = await session.get(RateVersion, document.cloned_from_rate_version_id)
+        if source is not None:
+            plan = await session.get(RatePlan, source.rate_plan_id)
+            if plan is not None:
+                return [plan]
+    return []
+
+
+async def _candidate_plans(session: DbSession, candidate: RateChangeCandidate) -> list[RatePlan]:
+    plan_ids: set[str] = set()
+    if candidate.rate_plan_id:
+        plan_ids.add(candidate.rate_plan_id)
+    for version_id in (
+        candidate.base_rate_version_id,
+        candidate.candidate_rate_version_id,
+    ):
+        if not version_id:
+            continue
+        plan_id = await session.scalar(
+            select(RateVersion.rate_plan_id).where(RateVersion.id == version_id)
+        )
+        if plan_id:
+            plan_ids.add(plan_id)
+    plans: list[RatePlan] = []
+    for plan_id in sorted(plan_ids):
+        plan = await session.get(RatePlan, plan_id)
+        if plan is not None:
+            plans.append(plan)
+    return plans
+
+
+async def _ensure_plan_reset_mutations_allowed(
+    session: DbSession,
+    plan: RatePlan,
+    *,
+    extra_site_ids: list[str] | None = None,
+) -> None:
+    await ensure_rate_plans_reset_mutations_allowed(
+        session,
+        [plan],
+        extra_site_ids=extra_site_ids or [],
+    )
+
+
+async def _ensure_version_reset_mutations_allowed(session: DbSession, version: RateVersion) -> None:
+    plan = await session.get(RatePlan, version.rate_plan_id)
+    if plan is not None:
+        await ensure_rate_plans_reset_mutations_allowed(session, [plan])
+
+
+async def _ensure_document_reset_mutations_allowed(
+    session: DbSession, document: RatePlanDocument
+) -> None:
+    plans = await _document_source_plans(session, document)
+    owner_site_ids = await _document_owner_site_ids(session, document)
+    if plans:
+        await ensure_rate_plans_reset_mutations_allowed(
+            session,
+            plans,
+            extra_site_ids=owner_site_ids,
+        )
+    else:
+        await ensure_site_reset_mutations_allowed(session, owner_site_ids)
+
+
+async def _ensure_candidate_reset_mutations_allowed(
+    session: DbSession, candidate: RateChangeCandidate
+) -> None:
+    await ensure_rate_plans_reset_mutations_allowed(
+        session,
+        await _candidate_plans(session, candidate),
+    )
+
+
+async def _ensure_fleet_reset_mutations_allowed(session: DbSession) -> None:
+    await ensure_site_reset_mutations_allowed(session, await _all_site_ids(session))
 
 
 def _version_summary(
@@ -602,6 +707,7 @@ async def delete_unused_rate_plan_draft(
     plan = await session.get(RatePlan, plan_id)
     if plan is None:
         return
+    await _ensure_plan_reset_mutations_allowed(session, plan)
     dependencies = await _rate_plan_dependencies(session, plan)
     if (
         payload.expected_dependency_token
@@ -677,6 +783,7 @@ async def remove_rate_plan(
         raise ProblemError(
             404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
         )
+    await _ensure_plan_reset_mutations_allowed(session, plan)
     if plan.status in {"removed", "retired"}:
         return {
             "idempotent": True,
@@ -766,6 +873,7 @@ async def retire_rate_plan(
         raise ProblemError(
             404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
         )
+    await _ensure_plan_reset_mutations_allowed(session, plan)
     if plan.status == "retired":
         return {
             "idempotent": True,
@@ -870,6 +978,11 @@ async def unassign_rate_plan(
             "The selected plan or electric service does not exist",
             "rate_assignment_missing",
         )
+    await ensure_account_rate_mutations_allowed(
+        session,
+        account.id,
+        extra_plan_ids=[plan.id],
+    )
     if not can_access_site(
         all_sites=principal.all_sites,
         site_ids=principal.site_ids,
@@ -1006,6 +1119,7 @@ async def restore_rate_plan(
         raise ProblemError(
             404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
         )
+    await _ensure_plan_reset_mutations_allowed(session, plan)
     if plan.status == "active":
         return {
             "idempotent": True,
@@ -1079,6 +1193,7 @@ async def create_rate_plan(
     session: DbSession,
 ) -> dict[str, Any]:
     _rate_manager(principal)
+    await _ensure_document_reset_mutations_allowed(session, payload)
     plan, version = await create_custom_plan(session, payload, principal.user.id)
     session.add(
         audit_event(
@@ -1127,6 +1242,11 @@ async def update_rate_plan(
         raise ProblemError(
             404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
         )
+    await _ensure_plan_reset_mutations_allowed(
+        session,
+        plan,
+        extra_site_ids=await _document_owner_site_ids(session, payload),
+    )
     if plan.status in {"removed", "retired"}:
         raise ProblemError(
             409,
@@ -1178,6 +1298,14 @@ async def clone_rate_plan(
         raise ProblemError(
             404, "Rate version not found", "Rate plan has no versions", "rate_version_missing"
         )
+    source_document = await version_document(session, version)
+    source_plan = await session.get(RatePlan, version.rate_plan_id)
+    if source_plan is not None:
+        await ensure_rate_plans_reset_mutations_allowed(
+            session,
+            [source_plan],
+            extra_site_ids=await _document_owner_site_ids(session, source_document),
+        )
     plan, clone = await clone_plan_version(session, version, principal.user.id)
     session.add(
         audit_event(
@@ -1206,11 +1334,12 @@ async def create_plan_version(
     session: DbSession,
 ) -> dict[str, Any]:
     _rate_manager(principal)
-    plan = await session.scalar(select(RatePlan).where(RatePlan.id == plan_id).with_for_update())
+    plan = await session.get(RatePlan, plan_id)
     if plan is None:
         raise ProblemError(
             404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
         )
+    await _ensure_plan_reset_mutations_allowed(session, plan)
     if plan.status in {"removed", "retired"}:
         raise ProblemError(
             409,
@@ -1395,6 +1524,16 @@ async def patch_rate_version(
         raise ProblemError(
             404, "Rate version not found", "Version does not exist", "rate_version_missing"
         )
+    plan = await session.get(RatePlan, version.rate_plan_id)
+    extra_site_ids = await _document_owner_site_ids(session, payload)
+    if plan is not None:
+        await _ensure_plan_reset_mutations_allowed(
+            session,
+            plan,
+            extra_site_ids=extra_site_ids,
+        )
+    else:
+        await ensure_site_reset_mutations_allowed(session, extra_site_ids)
     report = await update_draft_version(session, version, payload)
     session.add(
         audit_event(
@@ -1437,6 +1576,7 @@ async def activate_managed_version(
         raise ProblemError(
             404, "Rate version not found", "Version does not exist", "rate_version_missing"
         )
+    await _ensure_version_reset_mutations_allowed(session, version)
     status, report = await activate_version(session, version, principal.user.id)
     session.add(
         audit_event(
@@ -1470,6 +1610,7 @@ async def retire_managed_version(
         raise ProblemError(
             404, "Rate version not found", "Version does not exist", "rate_version_missing"
         )
+    await _ensure_version_reset_mutations_allowed(session, version)
     dependencies = await _rate_version_dependencies(session, version)
     if dependencies["current_assignments"] or dependencies["future_assignments"]:
         raise ProblemError(
@@ -1521,6 +1662,7 @@ async def delete_draft_version(
     version = await session.get(RateVersion, version_id)
     if version is None:
         return
+    await _ensure_version_reset_mutations_allowed(session, version)
     if version.status != "draft" or await version_usage_count(session, version.id):
         raise ProblemError(
             409,
@@ -1692,6 +1834,7 @@ async def remove_rate_version(
         raise ProblemError(
             404, "Rate version not found", "Version does not exist", "rate_version_missing"
         )
+    await _ensure_version_reset_mutations_allowed(session, version)
     if version.status == "removed":
         return {"idempotent": True, "version": _version_summary(version)}
     dependencies = await _rate_version_dependencies(session, version)
@@ -1744,6 +1887,7 @@ async def restore_rate_version(
         raise ProblemError(
             404, "Rate version not found", "Version does not exist", "rate_version_missing"
         )
+    await _ensure_version_reset_mutations_allowed(session, version)
     if version.status not in {"removed", "retired"}:
         return {"idempotent": True, "version": _version_summary(version)}
     if version.lifecycle_revision != payload.expected_revision:
@@ -1795,6 +1939,7 @@ async def delete_rate_version_draft(
     version = await session.get(RateVersion, version_id)
     if version is None:
         return
+    await _ensure_version_reset_mutations_allowed(session, version)
     dependencies = await _rate_version_dependencies(session, version)
     _validate_version_lifecycle(version, dependencies, payload)
     if not dependencies["delete_draft_eligible"]:
@@ -1861,6 +2006,7 @@ async def import_rate_plan(
             "The document does not match power-monitor-rate-plan/1.0",
             "rate_import_invalid",
         ) from exc
+    await _ensure_document_reset_mutations_allowed(session, document)
     report = validate_document(document)
     plan, version = await create_custom_plan(
         session, document, principal.user.id, duplicate_suffix=True
@@ -2044,6 +2190,11 @@ async def replace_current_assignment(
     session: DbSession,
 ) -> RateAssignmentResult:
     _rate_manager(principal, "rates.assign")
+    await ensure_account_rate_mutations_allowed(
+        session,
+        payload.utility_account_id,
+        extra_version_ids=[payload.rate_version_id],
+    )
     if payload.idempotency_key:
         existing = await session.scalar(
             select(RateAssignment).where(RateAssignment.idempotency_key == payload.idempotency_key)
@@ -2141,6 +2292,7 @@ async def end_current_rate_assignment(
     session: DbSession,
 ) -> dict[str, Any]:
     _rate_manager(principal, "rates.assign")
+    await ensure_account_rate_mutations_allowed(session, payload.utility_account_id)
     repeated = await _idempotent_operation(
         session,
         action="rate_assignment.ended",
@@ -2207,6 +2359,7 @@ async def repair_assignment_conflicts(
     session: DbSession,
 ) -> dict[str, Any]:
     _rate_manager(principal, "rates.assign")
+    await ensure_account_rate_mutations_allowed(session, payload.utility_account_id)
     repeated = await _idempotent_operation(
         session,
         action="rate_assignment.conflict_repaired",
@@ -2292,6 +2445,11 @@ async def create_rate_assignment(
             "Electric service and published rate version are required",
             "rate_assignment_invalid",
         )
+    account, _locked_plans = await ensure_account_rate_mutations_allowed(
+        session,
+        account.id,
+        extra_version_ids=[str(payload["rate_version_id"])],
+    )
     effective_from = datetime.fromisoformat(
         str(payload.get("effective_from") or datetime.now(UTC).isoformat())
     )
@@ -2402,6 +2560,17 @@ async def patch_rate_assignment(
         raise ProblemError(
             404, "Rate assignment not found", "Assignment does not exist", "rate_assignment_missing"
         )
+    await ensure_account_rate_mutations_allowed(session, assignment.utility_account_id)
+    assignment = await session.scalar(
+        select(RateAssignment)
+        .where(RateAssignment.id == assignment_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if assignment is None:
+        raise ProblemError(
+            404, "Rate assignment not found", "Assignment does not exist", "rate_assignment_missing"
+        )
     if assignment_state(assignment) == "historical":
         raise ProblemError(
             409,
@@ -2473,6 +2642,15 @@ async def delete_rate_assignment(
     _rate_manager(principal, "rates.assign")
     assignment = await session.get(RateAssignment, assignment_id)
     if assignment:
+        await ensure_account_rate_mutations_allowed(session, assignment.utility_account_id)
+        assignment = await session.scalar(
+            select(RateAssignment)
+            .where(RateAssignment.id == assignment_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if assignment is None:
+            return
         if assignment_state(assignment) != "scheduled":
             raise ProblemError(
                 409,
@@ -2679,6 +2857,7 @@ async def create_rate_source(
             "Enable or check the existing source instead of adding a duplicate",
             "rate_source_exists",
         )
+    await _ensure_fleet_reset_mutations_allowed(session)
     source = RateSource(
         name=name,
         url=normalized_url,
@@ -2856,6 +3035,7 @@ async def patch_rate_source(
         raise ProblemError(
             404, "Rate source not found", "Source does not exist", "rate_source_missing"
         )
+    await _ensure_fleet_reset_mutations_allowed(session)
     source.enabled = bool(payload["enabled"])
     source.updated_at = datetime.now(UTC)
     session.add(
@@ -2898,6 +3078,7 @@ async def patch_rate_settings(
         raise ProblemError(
             409, "Rate settings unavailable", "Run database initialization", "rate_settings_missing"
         )
+    await _ensure_fleet_reset_mutations_allowed(session)
     for key, value in payload.items():
         setattr(config, key, value)
     try:
@@ -3018,6 +3199,7 @@ async def check_all_sources(
     request: Request, principal: CsrfPrincipal, session: DbSession
 ) -> dict[str, Any]:
     _rate_manager(principal, "rates.check_sources")
+    await _ensure_fleet_reset_mutations_allowed(session)
     try:
         job, deduplicated = await _queue_check(
             session,
@@ -3078,6 +3260,7 @@ async def check_one_source(
             "Enable this managed source before checking it",
             "rate_source_disabled",
         )
+    await _ensure_fleet_reset_mutations_allowed(session)
     try:
         job, deduplicated = await _queue_check(
             session,
@@ -3265,6 +3448,7 @@ async def _decide_candidate(
         raise ProblemError(
             404, "Rate candidate not found", "Candidate does not exist", "rate_candidate_missing"
         )
+    await _ensure_candidate_reset_mutations_allowed(session, candidate)
     if candidate.status not in {"pending_review", "approved"}:
         raise ProblemError(
             409,
@@ -3382,6 +3566,7 @@ async def activate_candidate(
             "Approve a valid candidate before activation",
             "rate_candidate_not_approved",
         )
+    await _ensure_candidate_reset_mutations_allowed(session, candidate)
     version = await session.get(RateVersion, candidate.candidate_rate_version_id)
     if version is None:
         raise ProblemError(
@@ -3520,6 +3705,7 @@ async def upload_rate_artifact(
             "Uploaded evidence exceeds the configured limit",
             "rate_artifact_size",
         )
+    await _ensure_fleet_reset_mutations_allowed(session)
     job = BackgroundJob(
         job_type="rate_artifact_upload",
         status="succeeded",

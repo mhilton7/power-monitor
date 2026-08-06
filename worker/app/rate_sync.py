@@ -3,33 +3,57 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.config import Settings
+from app.data_reset.service import ensure_site_reset_mutations_allowed
 from app.db.models import (
     AuditEvent,
     BackgroundJob,
     RateChangeCandidate,
     RateExtractionResult,
+    RatePlan,
     RateSource,
     RateSourceArtifact,
     RateSourceCheckRun,
     RateSyncConfiguration,
     RateVersion,
+    Site,
 )
+from app.problem import ProblemError
 from app.rates.candidates import create_candidate_from_document, document_differences
 from app.rates.notifications import emit_rate_alert
+from app.rates.reset_barrier import ensure_rate_plans_reset_mutations_allowed
 from app.rates.schedule import latest_scheduled_time, next_scheduled_time
 from app.rates.service import activate_version
 from app.rates.sources import ADAPTERS, PARSER_VERSION, SourceFetchError, fetch_source
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 __all__ = ["document_differences", "latest_scheduled_time"]
+
+
+async def _all_site_ids(session: AsyncSession) -> list[str]:
+    return list(await session.scalars(select(Site.id).order_by(Site.id)))
+
+
+async def _ensure_fleet_reset_mutations_allowed(session: AsyncSession) -> None:
+    await ensure_site_reset_mutations_allowed(session, await _all_site_ids(session))
+
+
+async def _due_version_plans(
+    session: AsyncSession, versions: list[RateVersion]
+) -> list[RatePlan]:
+    plans: list[RatePlan] = []
+    plan_ids = sorted({version.rate_plan_id for version in versions})
+    for plan_id in plan_ids:
+        plan = await session.get(RatePlan, plan_id)
+        if plan is not None:
+            plans.append(plan)
+    return plans
 
 
 def _safe_artifact_path(root: Path, sha256: str, suffix: str) -> Path:
@@ -44,6 +68,7 @@ async def enqueue_scheduled_sync(session: AsyncSession, settings: Settings) -> b
     config = await session.get(RateSyncConfiguration, "default")
     if config is None or not config.enabled or not settings.rate_sync_enabled:
         return False
+    await _ensure_fleet_reset_mutations_allowed(session)
     now = datetime.now(UTC)
     scheduled = latest_scheduled_time(now, config.schedule_cron, config.timezone)
     jitter_limit = min(config.jitter_minutes, settings.rate_sync_jitter_minutes)
@@ -82,7 +107,14 @@ async def enqueue_scheduled_sync(session: AsyncSession, settings: Settings) -> b
 async def process_rate_sync_jobs(
     session: AsyncSession, settings: Settings, *, limit: int = 1
 ) -> dict[str, int]:
-    await enqueue_scheduled_sync(session, settings)
+    try:
+        await _ensure_fleet_reset_mutations_allowed(session)
+        await enqueue_scheduled_sync(session, settings)
+    except ProblemError as exc:
+        if exc.code != "data_reset_site_mutation_blocked":
+            raise
+        await session.rollback()
+        return {"jobs_completed": 0, "source_failures": 0, "candidates": 0}
     jobs = list(
         await session.scalars(
             select(BackgroundJob)
@@ -102,7 +134,23 @@ async def process_rate_sync_jobs(
     completed = 0
     failed = 0
     candidates = 0
+    if not jobs:
+        await session.commit()
+        return {"jobs_completed": 0, "source_failures": 0, "candidates": 0}
     for job in jobs:
+        try:
+            # A prior job commit releases the fleet rows. Reacquire them before
+            # the next job can mutate database state or publish artifact files.
+            await _ensure_fleet_reset_mutations_allowed(session)
+        except ProblemError as exc:
+            if exc.code != "data_reset_site_mutation_blocked":
+                raise
+            await session.rollback()
+            return {
+                "jobs_completed": completed,
+                "source_failures": failed,
+                "candidates": candidates,
+            }
         job_candidates = 0
         config = await session.get(RateSyncConfiguration, "default")
         job.status = "running"
@@ -142,7 +190,7 @@ async def process_rate_sync_jobs(
                 },
             )
         )
-        await session.commit()
+        await session.flush()
         for source_index, source in enumerate(sources):
             source_candidate_count = 0
             source_artifact_count = 0
@@ -172,7 +220,7 @@ async def process_rate_sync_jobs(
                     details={"job_id": job.id, "check_id": check.id},
                 )
             )
-            await session.commit()
+            await session.flush()
             try:
                 fetched = await fetch_source(
                     source.url,
@@ -227,7 +275,7 @@ async def process_rate_sync_jobs(
                             },
                         )
                     )
-                    await session.commit()
+                    await session.flush()
                     continue
                 digest = hashlib.sha256(fetched.content).hexdigest()
                 previous_sha = await session.scalar(
@@ -275,7 +323,7 @@ async def process_rate_sync_jobs(
                             },
                         )
                     )
-                    await session.commit()
+                    await session.flush()
                     continue
                 if config:
                     config.last_source_change = datetime.now(UTC)
@@ -441,7 +489,7 @@ async def process_rate_sync_jobs(
                         },
                     )
                 )
-                await session.commit()
+                await session.flush()
             except (SourceFetchError, ValueError, KeyError) as exc:
                 check.outcome = "failed"
                 check.error_code = getattr(exc, "code", "processing_error")
@@ -492,7 +540,7 @@ async def process_rate_sync_jobs(
                     },
                     dedupe_key=source.id,
                 )
-                await session.commit()
+                await session.flush()
         job.status = (
             "succeeded"
             if all(item["outcome"] != "failed" for item in outcomes)
@@ -578,10 +626,25 @@ async def activate_due_versions(session: AsyncSession) -> int:
             select(RateVersion).where(
                 # Backward-compatible cleanup for pre-migration scheduled candidates.
                 RateVersion.status == "approved",
-                RateVersion.effective_from <= date.today(),
+                RateVersion.effective_from <= datetime.now(UTC).date(),
             )
         )
     )
+    if not versions:
+        return 0
+    try:
+        await ensure_rate_plans_reset_mutations_allowed(
+            session,
+            await _due_version_plans(session, versions),
+        )
+    except ProblemError as exc:
+        if exc.code not in {
+            "data_reset_site_mutation_blocked",
+            "rate_plan_dependency_scope_changed",
+        }:
+            raise
+        await session.rollback()
+        return 0
     activated = 0
     for version in versions:
         status, _report = await activate_version(

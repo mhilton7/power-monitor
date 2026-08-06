@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+
+SIGNED_BIGINT_MAX = 2**63 - 1
+MAX_RESET_BOUNDARY = SIGNED_BIGINT_MAX - 2
+FAILURE_CODE_PATTERN = r"^[a-z0-9][a-z0-9_]{0,79}$"
+SignedSequence = Annotated[int, Field(ge=0, le=SIGNED_BIGINT_MAX)]
+PositiveSignedSequence = Annotated[int, Field(ge=1, le=SIGNED_BIGINT_MAX)]
+ResetBoundary = Annotated[int, Field(ge=0, le=MAX_RESET_BOUNDARY)]
 
 
 class ApiModel(BaseModel):
@@ -953,6 +961,7 @@ class DeviceCapabilities(DeviceProtocolModel):
     sd_present: bool
     sd_required: bool = True
     supported_endpoints: list[str] = Field(default_factory=list)
+    data_reset_protocol: Literal["data-reset/1.0.0"] | None = None
     ota: DeviceOtaCapability | None = None
 
 
@@ -1042,6 +1051,17 @@ class TimeHealth(DeviceProtocolModel):
     last_sync_at: datetime | None = None
 
 
+class HeartbeatDataResetStatus(DeviceProtocolModel):
+    protocol: Literal["data-reset/1.0.0"] = "data-reset/1.0.0"
+    state: str = Field(min_length=1, max_length=48)
+    checkpoint: str = Field(min_length=1, max_length=48)
+    operation_id: str | None = None
+    target_generation: int | None = Field(default=None, gt=0)
+    failure_code: str | None = Field(default=None, max_length=80, pattern=FAILURE_CODE_PATTERN)
+    reset_boundary: ResetBoundary | None = None
+    reset_required: bool = False
+
+
 class Heartbeat(DeviceProtocolModel):
     protocol_version: str
     schema_version: str = "heartbeat/1.0.0"
@@ -1049,6 +1069,7 @@ class Heartbeat(DeviceProtocolModel):
     boot_id: str
     firmware_version: str
     firmware_build_hash: str
+    data_generation: int = Field(default=0, ge=0)
     uptime_seconds: int = Field(ge=0)
     reboot_reason: str
     current_ip: str | None = None
@@ -1058,18 +1079,19 @@ class Heartbeat(DeviceProtocolModel):
     latest: LiveMeasurement | None = None
     pzem: SubsystemHealth
     sd: StorageSubsystemHealth
-    oldest_stored_sequence: int = Field(ge=0)
-    oldest_syncable_sequence: int | None = Field(default=None, ge=0)
-    newest_syncable_sequence: int | None = Field(default=None, ge=0)
-    newest_stored_sequence: int = Field(ge=0)
-    server_ack_sequence: int = Field(ge=0)
-    server_maximum_seen_sequence: int | None = Field(default=None, ge=0)
+    oldest_stored_sequence: SignedSequence
+    oldest_syncable_sequence: SignedSequence | None = None
+    newest_syncable_sequence: SignedSequence | None = None
+    newest_stored_sequence: SignedSequence
+    server_ack_sequence: SignedSequence
+    server_maximum_seen_sequence: SignedSequence | None = None
     backlog_estimate: int = Field(ge=0)
     configuration_version: int = Field(ge=0)
     time: TimeHealth
     resources: dict[str, Any] = Field(default_factory=dict)
     queue: dict[str, Any] = Field(default_factory=dict)
     ota: DeviceOtaCapability | None = None
+    data_reset: HeartbeatDataResetStatus | None = None
 
     @model_validator(mode="after")
     def valid_sequence_bounds(self) -> Heartbeat:
@@ -1098,16 +1120,18 @@ class Heartbeat(DeviceProtocolModel):
 
 
 class SequenceCursorResponse(ApiModel):
-    highest_contiguous_accepted_sequence: int = Field(ge=0)
-    maximum_seen_sequence: int = Field(ge=0)
-    next_sequence_floor: int = Field(ge=1)
+    highest_contiguous_accepted_sequence: SignedSequence
+    maximum_seen_sequence: SignedSequence
+    next_sequence_floor: PositiveSignedSequence
+    data_generation: int = Field(default=0, ge=0)
+    reset_boundary: ResetBoundary = 0
 
 
 class HeartbeatResponse(ApiModel):
     server_receive_time: datetime
-    highest_contiguous_accepted_sequence: int
+    highest_contiguous_accepted_sequence: SignedSequence
     sequence_cursor: SequenceCursorResponse
-    gap_ranges: list[tuple[int, int]]
+    gap_ranges: list[tuple[PositiveSignedSequence, PositiveSignedSequence]]
     desired_configuration_version: int
     firmware_release_available: bool
     recommended_heartbeat_interval_seconds: int
@@ -1115,7 +1139,8 @@ class HeartbeatResponse(ApiModel):
 
 
 class Reading(DeviceProtocolModel):
-    sequence: int = Field(gt=0)
+    data_generation: int = Field(default=0, ge=0)
+    sequence: PositiveSignedSequence
     boot_id: str
     interval_start: datetime
     interval_end: datetime
@@ -1154,8 +1179,8 @@ class Reading(DeviceProtocolModel):
 
 
 class UnavailableSequenceRange(DeviceProtocolModel):
-    start_sequence: int = Field(gt=0)
-    end_sequence: int = Field(gt=0)
+    start_sequence: PositiveSignedSequence
+    end_sequence: PositiveSignedSequence
 
     @model_validator(mode="after")
     def valid_bounds(self) -> UnavailableSequenceRange:
@@ -1168,6 +1193,7 @@ class ReadingBatch(DeviceProtocolModel):
     protocol_version: str
     schema_version: str = "reading-batch/1.0.0"
     device_id: str
+    data_generation: int = Field(default=0, ge=0)
     readings: list[Reading] = Field(default_factory=list, max_length=500)
     unavailable_sequence_ranges: list[UnavailableSequenceRange] = Field(
         default_factory=list,
@@ -1176,6 +1202,8 @@ class ReadingBatch(DeviceProtocolModel):
 
     @model_validator(mode="after")
     def valid_sequence_coverage(self) -> ReadingBatch:
+        if any(reading.data_generation != self.data_generation for reading in self.readings):
+            raise ValueError("every reading must match the batch data_generation")
         reading_sequences = {reading.sequence for reading in self.readings}
         if not reading_sequences and not self.unavailable_sequence_ranges:
             raise ValueError("a reading batch must contain readings or unavailable sequence ranges")
@@ -1197,17 +1225,468 @@ class ReadingBatch(DeviceProtocolModel):
 
 
 class RejectedReading(ApiModel):
-    sequence: int | None
+    sequence: PositiveSignedSequence | None
     code: str
     detail: str
 
 
 class ReadingBatchResponse(ApiModel):
-    accepted: list[int]
-    duplicates: list[int]
+    accepted: list[PositiveSignedSequence]
+    duplicates: list[PositiveSignedSequence]
     rejected: list[RejectedReading]
-    highest_contiguous_accepted_sequence: int
-    missing_ranges: list[tuple[int, int]]
+    highest_contiguous_accepted_sequence: SignedSequence
+    missing_ranges: list[tuple[PositiveSignedSequence, PositiveSignedSequence]]
+    data_generation: int = Field(default=0, ge=0)
+    reset_boundary: ResetBoundary = 0
+
+
+DataResetCategory = Literal[
+    "measurement_history",
+    "cost_history",
+    "pricing_history",
+    "generated_outputs",
+]
+DataResetDisconnectedSensorPolicy = Literal["block", "defer_until_reconnect"]
+DataResetBackupMode = Literal["verified_backup", "permanent_without_backup"]
+DataResetOperationState = Literal[
+    "planning",
+    "awaiting_confirmation",
+    "preparing_sensors",
+    "sensors_prepared",
+    "backup_running",
+    "backup_verified",
+    "database_reset_running",
+    "database_reset_committed",
+    "sensor_commit_running",
+    "verification_running",
+    "completed",
+    "completed_with_resets_pending_on_reconnect",
+    "partial_failure",
+    "attention_required",
+    "cancelled",
+    "failed_before_commit",
+]
+DataResetParticipantState = Literal[
+    "pending",
+    "unreachable",
+    "unsupported",
+    "prepare_requested",
+    "prepared",
+    "commit_requested",
+    "committed",
+    "verified",
+    "pending_reconnect",
+    "failed",
+    "attention_required",
+    "not_applicable",
+]
+
+
+class DataResetPlanRequest(ApiModel):
+    site_id: str = Field(min_length=1, max_length=36)
+    categories: list[DataResetCategory] = Field(min_length=1, max_length=4)
+    delete_imported_bill_documents: bool = False
+    disconnected_sensor_policy: DataResetDisconnectedSensorPolicy = "defer_until_reconnect"
+
+    @field_validator("categories")
+    @classmethod
+    def unique_categories(cls, value: list[DataResetCategory]) -> list[DataResetCategory]:
+        if len(value) != len(set(value)):
+            raise ValueError("reset categories must be unique")
+        required = {
+            "measurement_history",
+            "cost_history",
+            "pricing_history",
+            "generated_outputs",
+        }
+        if set(value) != required:
+            raise ValueError(
+                "data-only reset requires every history category; imported bill "
+                "documents are the only optional deletion scope"
+            )
+        return value
+
+
+class DataResetCountSummary(ApiModel):
+    raw_readings: int = Field(default=0, ge=0)
+    normalized_intervals: int = Field(default=0, ge=0)
+    rollups: int = Field(default=0, ge=0)
+    heartbeat_rows: int = Field(default=0, ge=0)
+    sequence_gaps: int = Field(default=0, ge=0)
+    cost_rows: int = Field(default=0, ge=0)
+    tier_rows: int = Field(default=0, ge=0)
+    historical_pricing_rows: int = Field(default=0, ge=0)
+    imported_bill_documents: int = Field(default=0, ge=0)
+    exports: int = Field(default=0, ge=0)
+    reports: int = Field(default=0, ge=0)
+    sensor_records: int = Field(default=0, ge=0)
+    estimated_database_bytes: int = Field(default=0, ge=0)
+
+
+class DataResetPlanParticipant(ApiModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    device_id: str
+    name: str
+    classification: Literal[
+        "connected",
+        "authentication_failed",
+        "disconnected",
+        "unsupported",
+        "revoked",
+        "removed",
+    ]
+    supported: bool
+    boundary: ResetBoundary
+    estimated_sensor_records: int | None = Field(default=None, ge=0)
+    local_record_count: int | None = Field(default=None, ge=0)
+    backlog_estimate: int | None = Field(default=None, ge=0)
+    record_count_status: Literal[
+        "exact_prepare_projection", "last_reported", "unavailable", "not_applicable"
+    ]
+    prepare_drain_records_projected: int = Field(default=0, ge=0, le=2)
+    prepare_drain_first_sequence_projected: SignedSequence | None = None
+    prepare_drain_last_sequence_projected: SignedSequence | None = None
+    prepare_drain_syncable_records_projected: int = Field(default=0, ge=0, le=2)
+    last_seen_at: datetime | None = None
+    firmware_version: str | None = None
+    firmware_build_hash: str | None = None
+    data_generation: int = Field(default=0, ge=0)
+    server_highest_contiguous: ResetBoundary = 0
+    server_maximum_seen: ResetBoundary = 0
+    sensor_ack_sequence: SignedSequence = 0
+    sensor_newest_sequence: SignedSequence = 0
+    old_sequence_floor: SignedSequence = 0
+    old_next_sequence: PositiveSignedSequence = 1
+    card_generation: str | None = None
+    card_identity_status: str | None = None
+    sd_status: str | None = None
+    probe_status: str | None = None
+
+    @model_validator(mode="after")
+    def validate_prepare_projection(self) -> DataResetPlanParticipant:
+        if self.record_count_status == "exact_prepare_projection" and (
+            self.local_record_count is None or self.backlog_estimate is None
+        ):
+            raise ValueError("an exact prepare projection requires record and backlog counts")
+        if self.prepare_drain_records_projected == 0:
+            if (
+                self.prepare_drain_first_sequence_projected is not None
+                or self.prepare_drain_last_sequence_projected is not None
+                or self.prepare_drain_syncable_records_projected != 0
+            ):
+                raise ValueError("an empty prepare drain cannot have sequence evidence")
+        elif (
+            self.prepare_drain_first_sequence_projected is None
+            or self.prepare_drain_first_sequence_projected <= 0
+            or self.prepare_drain_last_sequence_projected is None
+            or self.prepare_drain_last_sequence_projected
+            - self.prepare_drain_first_sequence_projected
+            + 1
+            != self.prepare_drain_records_projected
+            or self.prepare_drain_syncable_records_projected > self.prepare_drain_records_projected
+        ):
+            raise ValueError("a projected prepare drain requires sequence evidence")
+        return self
+
+
+class DataResetPricingPlan(ApiModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    utility_account_id: str
+    rate_plan_id: str
+    rate_version_id: str
+    rate_assignment_id: str | None = None
+    pricing_configuration_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class DataResetConfirmationPhrases(ApiModel):
+    verified_backup: Literal["RESET ALL READINGS AND PRICING HISTORY"] = (
+        "RESET ALL READINGS AND PRICING HISTORY"
+    )
+    permanent_without_backup: Literal[
+        "PERMANENTLY RESET ALL READINGS AND PRICING HISTORY WITHOUT BACKUP"
+    ] = "PERMANENTLY RESET ALL READINGS AND PRICING HISTORY WITHOUT BACKUP"
+
+
+class DataResetPlanView(ApiModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    plan_id: str
+    site: dict[str, Any]
+    categories: list[DataResetCategory]
+    delete_imported_bill_documents: bool
+    disconnected_sensor_policy: DataResetDisconnectedSensorPolicy
+    reset_timestamp: datetime
+    reset_generation: int = Field(gt=0)
+    counts: dict[str, int]
+    estimated_database_bytes: int = Field(ge=0)
+    estimated_sensor_records: int = Field(ge=0)
+    sensor_records_to_delete_now: int = Field(ge=0)
+    participants: list[DataResetPlanParticipant]
+    pricing: list[DataResetPricingPlan]
+    preserved: list[str]
+    confirmation_phrases: DataResetConfirmationPhrases
+    fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    revision: int = Field(gt=0)
+    created_at: datetime
+    expires_at: datetime
+
+
+class DataResetExecuteRequest(ApiModel):
+    plan_id: str = Field(min_length=1, max_length=36)
+    plan_revision: int = Field(gt=0)
+    idempotency_key: str = Field(min_length=8, max_length=160)
+    reason: str = Field(min_length=8, max_length=500)
+    backup_mode: DataResetBackupMode = "verified_backup"
+    confirmation_phrase: str = Field(min_length=1, max_length=240)
+    permanent_without_backup_acknowledged: bool = False
+
+    @model_validator(mode="after")
+    def validate_backup_acknowledgement(self) -> DataResetExecuteRequest:
+        if (
+            self.backup_mode == "permanent_without_backup"
+            and not self.permanent_without_backup_acknowledged
+        ):
+            raise ValueError("permanent reset without backup must be acknowledged")
+        if self.backup_mode == "verified_backup" and self.permanent_without_backup_acknowledged:
+            raise ValueError("no-backup acknowledgement is invalid when backup is enabled")
+        return self
+
+
+class DataResetRetryRequest(ApiModel):
+    idempotency_key: str = Field(min_length=8, max_length=160)
+    reason: str = Field(min_length=8, max_length=500)
+
+
+class DataResetCancelRequest(ApiModel):
+    idempotency_key: str = Field(min_length=8, max_length=160)
+    reason: str = Field(min_length=8, max_length=500)
+
+
+class DataResetParticipantView(ApiModel):
+    device_id: str
+    name: str
+    state: DataResetParticipantState
+    reset_generation: int = Field(gt=0)
+    reset_boundary: ResetBoundary
+    new_sequence_floor: SignedSequence | None = None
+    new_next_sequence: PositiveSignedSequence | None = None
+    firmware_version: str | None = None
+    failure_code: str | None = None
+    failure_summary: str | None = None
+    last_attempt_at: datetime | None = None
+    prepared_at: datetime | None = None
+    committed_at: datetime | None = None
+    verified_at: datetime | None = None
+
+
+class DataResetOperationView(ApiModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+
+    operation_id: str
+    plan_id: str
+    site_id: str
+    state: DataResetOperationState
+    stage: str | dict[str, Any]
+    revision: int = Field(gt=0)
+    reset_generation: int = Field(gt=0)
+    reset_timestamp: datetime
+    backup: dict[str, Any]
+    recoverability: str | dict[str, Any]
+    participants: list[DataResetParticipantView]
+    started_at: datetime
+    central_commit_at: datetime | None = None
+    completed_at: datetime | None = None
+    failure_code: str | None = None
+    failure_summary: str | None = None
+    final_evidence: dict[str, Any] = Field(default_factory=dict)
+
+
+class SensorDataResetPrepareRequest(DeviceProtocolModel):
+    protocol: Literal["data-reset/1.0.0"] = "data-reset/1.0.0"
+    operation_id: str
+    device_id: str
+    target_generation: int = Field(gt=0)
+    reset_timestamp: datetime
+    plan_revision: int = Field(gt=0)
+    plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    categories: list[Literal["measurement_history"]] = Field(min_length=1, max_length=1)
+    expected_boundary: ResetBoundary
+    server_highest_contiguous: ResetBoundary
+    server_maximum_seen: ResetBoundary
+    expected_firmware_version: str = Field(min_length=1, max_length=32)
+    expected_build_hash: str | None = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    expected_card_generation: str | None = Field(max_length=20, pattern=r"^[1-9][0-9]*$")
+
+    _aware_reset = field_validator("reset_timestamp")(require_aware)
+
+
+class SensorDataResetCommitRequest(DeviceProtocolModel):
+    protocol: Literal["data-reset/1.0.0"] = "data-reset/1.0.0"
+    operation_id: str
+    device_id: str
+    target_generation: int = Field(gt=0)
+    plan_revision: int = Field(gt=0)
+    plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    approved_boundary: ResetBoundary
+    prepared_receipt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+_DATA_RESET_SAFE_RECEIPT_FIELDS = frozenset(
+    {
+        "protocol",
+        "operation_id",
+        "device_id",
+        "target_generation",
+        "plan_revision",
+        "plan_digest",
+        "state",
+        "checkpoint",
+        "firmware_version",
+        "firmware_build_hash",
+        "boot_id",
+        "card_generation",
+        "sd_status",
+        "reset_boundary",
+        "sequence_floor",
+        "next_sequence",
+        "server_ack_sequence",
+        "server_maximum_seen",
+        "newest_stored_sequence",
+        "newest_syncable_sequence",
+        "local_records_before",
+        "local_records_after",
+        "backlog_before",
+        "backlog_after",
+        "prepare_drain_records_added",
+        "prepare_drain_first_sequence",
+        "prepare_drain_last_sequence",
+        "prepare_drain_syncable_records_added",
+        "measurement_pause_started_utc_ms",
+        "measurement_pause_ended_utc_ms",
+        "measurement_pause_evidenced",
+        "records_deleted",
+        "indexes_rebuilt",
+        "queues_cleared",
+        "exports_cleared",
+        "pzem_baseline_captured",
+        "prepared_pzem_energy_wh",
+        "commit_pzem_energy_wh",
+        "verified_pzem_energy_wh",
+        "prepared_receipt_digest",
+        "software_energy_baseline_before_wh",
+        "configuration_preservation_digest_before",
+        "configuration_preservation_digest_after",
+        "configuration_preserved",
+    }
+)
+
+
+class SensorDataResetResponse(ApiModel):
+    """Authenticated sensor status; persisted server audit copies redact energy values."""
+
+    protocol: Literal["data-reset/1.0.0"] = "data-reset/1.0.0"
+    operation_id: str
+    device_id: str
+    target_generation: int = Field(gt=0)
+    state: Literal[
+        "preparing",
+        "prepared",
+        "commit_authorized",
+        "sequence_advanced",
+        "cursors_advanced",
+        "readings_cleared",
+        "baseline_installed",
+        "verified",
+        "completed",
+        "attention_required",
+        "cancelled",
+    ]
+    checkpoint: Literal[
+        "preparing",
+        "prepared",
+        "commit_authorized",
+        "sequence_advanced",
+        "cursors_advanced",
+        "readings_cleared",
+        "baseline_installed",
+        "verified",
+        "completed",
+        "attention_required",
+        "cancelled",
+    ]
+    failure_code: str | None = Field(default=None, max_length=80, pattern=FAILURE_CODE_PATTERN)
+    prepared_receipt: str | None = Field(default=None, max_length=16_384)
+    prepared_receipt_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    commit_receipt: str | None = Field(default=None, max_length=16_384)
+    commit_receipt_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    configuration_preservation_digest_before: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    configuration_preservation_digest_after: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_explicit_null_receipt_evidence(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            for field in (
+                "prepared_receipt",
+                "prepared_receipt_digest",
+                "commit_receipt",
+                "commit_receipt_digest",
+                "configuration_preservation_digest_before",
+                "configuration_preservation_digest_after",
+            ):
+                if field in value and value[field] is None:
+                    raise ValueError(f"{field} must be omitted instead of null")
+        return value
+
+    @model_validator(mode="after")
+    def validate_redacted_receipts(self) -> SensorDataResetResponse:
+        pairs = (
+            (self.prepared_receipt, self.prepared_receipt_digest),
+            (self.commit_receipt, self.commit_receipt_digest),
+        )
+        if any((receipt is None) != (digest is None) for receipt, digest in pairs):
+            raise ValueError("a canonical reset receipt and its digest must appear together")
+        for receipt, _digest in pairs:
+            if receipt is None:
+                continue
+            try:
+                parsed = json.loads(receipt)
+            except json.JSONDecodeError as exc:
+                raise ValueError("reset receipt must be canonical JSON text") from exc
+            if not isinstance(parsed, dict) or not set(parsed) <= _DATA_RESET_SAFE_RECEIPT_FIELDS:
+                raise ValueError("reset receipt contains a non-redacted field")
+            canonical = json.dumps(
+                parsed,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+            if receipt != canonical:
+                raise ValueError("reset receipt is not canonical JSON")
+            if (
+                parsed.get("protocol") != self.protocol
+                or parsed.get("operation_id") != self.operation_id
+                or parsed.get("device_id") != self.device_id
+                or parsed.get("target_generation") != self.target_generation
+            ):
+                raise ValueError("reset receipt identity does not match the response")
+        return self
+
+
+class SensorDataResetCancelRequest(DeviceProtocolModel):
+    protocol: Literal["data-reset/1.0.0"] = "data-reset/1.0.0"
+    operation_id: str
+    device_id: str
+    target_generation: int = Field(gt=0)
+    plan_revision: int = Field(gt=0)
+    plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class DeviceEventInput(DeviceProtocolModel):
@@ -1229,11 +1708,24 @@ class DeviceEventInput(DeviceProtocolModel):
 
     _aware = field_validator("occurred_at")(require_aware)
 
+    @field_validator("evidence")
+    @classmethod
+    def valid_event_sequence_evidence(cls, value: dict[str, Any]) -> dict[str, Any]:
+        event_sequence = value.get("event_sequence")
+        if event_sequence is not None and (
+            isinstance(event_sequence, bool)
+            or not isinstance(event_sequence, int)
+            or not 1 <= event_sequence <= SIGNED_BIGINT_MAX
+        ):
+            raise ValueError("event_sequence must fit signed BIGINT storage")
+        return value
+
 
 class DeviceEventBatch(DeviceProtocolModel):
     protocol_version: str
     device_id: str
-    first_stored_event_sequence: int | None = Field(default=None, gt=0)
+    data_generation: int = Field(default=0, ge=0)
+    first_stored_event_sequence: PositiveSignedSequence | None = None
     events: list[DeviceEventInput] = Field(min_length=1, max_length=500)
 
 

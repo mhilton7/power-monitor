@@ -27,6 +27,10 @@ from app.access import (
     user_role_names,
 )
 from app.api.deps import AppSettings, CsrfPrincipal, DbSession, Principal, Viewer, audit_event
+from app.data_reset.service import (
+    ensure_device_reset_mutations_allowed,
+    ensure_site_reset_mutations_allowed,
+)
 from app.db.models import (
     AggregateMember,
     AggregateSet,
@@ -39,6 +43,7 @@ from app.db.models import (
     CostCalculationRun,
     CostIntervalResult,
     DashboardAppearance,
+    DataResetOperation,
     Device,
     DeviceAddress,
     DeviceCapability,
@@ -145,6 +150,78 @@ def _permission(principal: Principal, permission: str) -> None:
 def _site_allowed(principal: Principal, site_id: str) -> None:
     if not principal.can_access_site(site_id):
         raise ProblemError(404, "Resource not found", "Resource does not exist", "resource_missing")
+
+
+async def _history_scope_site_ids(
+    session: DbSession,
+    payload: HistoryQueryRequest,
+) -> list[str]:
+    scope = payload.scope
+    if scope.site_id:
+        return [scope.site_id]
+    if scope.device_id or scope.device_ids:
+        device_ids = [scope.device_id] if scope.device_id else list(scope.device_ids)
+        return sorted(
+            set(await session.scalars(select(Device.site_id).where(Device.id.in_(device_ids))))
+        )
+    if scope.circuit_id:
+        site_id = await session.scalar(
+            select(Circuit.site_id).where(Circuit.id == scope.circuit_id)
+        )
+        return [site_id] if site_id else []
+    if scope.aggregate_set_id:
+        site_id = await session.scalar(
+            select(AggregateSet.site_id).where(AggregateSet.id == scope.aggregate_set_id)
+        )
+        return [site_id] if site_id else []
+    return []
+
+
+async def _report_configuration_site_ids(
+    session: DbSession,
+    configuration: dict[str, Any],
+) -> list[str]:
+    site_ids: set[str] = set()
+    device_ids: set[str] = set()
+    circuit_ids: set[str] = set()
+    aggregate_ids: set[str] = set()
+
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                normalized = str(key).lower()
+                values = item if isinstance(item, list) else [item]
+                if normalized in {"site_id", "site_ids"}:
+                    site_ids.update(str(entry) for entry in values if entry)
+                elif normalized in {"device_id", "device_ids"}:
+                    device_ids.update(str(entry) for entry in values if entry)
+                elif normalized in {"circuit_id", "circuit_ids"}:
+                    circuit_ids.update(str(entry) for entry in values if entry)
+                elif normalized in {"aggregate_set_id", "aggregate_set_ids"}:
+                    aggregate_ids.update(str(entry) for entry in values if entry)
+                collect(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item)
+
+    collect(configuration)
+    if device_ids:
+        site_ids.update(
+            await session.scalars(select(Device.site_id).where(Device.id.in_(device_ids)))
+        )
+    if circuit_ids:
+        site_ids.update(
+            await session.scalars(select(Circuit.site_id).where(Circuit.id.in_(circuit_ids)))
+        )
+    if aggregate_ids:
+        site_ids.update(
+            await session.scalars(
+                select(AggregateSet.site_id).where(AggregateSet.id.in_(aggregate_ids))
+            )
+        )
+    if not site_ids:
+        site_ids.update(await session.scalars(select(Site.id).order_by(Site.id)))
+    return sorted(site_ids)
 
 
 async def _dashboard_appearance(session: DbSession, *, lock: bool = False) -> DashboardAppearance:
@@ -278,6 +355,7 @@ async def update_site(
 ) -> Site:
     _permission(principal, "sites.manage")
     _site_allowed(principal, site_id)
+    await ensure_site_reset_mutations_allowed(session, [site_id])
     site = await session.get(Site, site_id)
     if site is None:
         raise ProblemError(404, "Site not found", "Site does not exist", "site_missing")
@@ -381,6 +459,7 @@ async def create_utility_account(
             422, "Invalid account", "site_id and name are required", "invalid_account"
         )
     _site_allowed(principal, str(values["site_id"]))
+    await ensure_site_reset_mutations_allowed(session, [str(values["site_id"])])
     site = await session.get(Site, str(values["site_id"]))
     if site is None or site.lifecycle_state != "active":
         raise ProblemError(
@@ -434,6 +513,11 @@ async def update_utility_account(
     _site_allowed(principal, account.site_id)
     if payload.get("site_id"):
         _site_allowed(principal, str(payload["site_id"]))
+    target_site_id = str(payload.get("site_id") or account.site_id)
+    await ensure_site_reset_mutations_allowed(
+        session,
+        [account.site_id, target_site_id],
+    )
     allowed = {
         "site_id",
         "name",
@@ -472,6 +556,7 @@ async def delete_utility_account(
             404, "Account not found", "Utility account does not exist", "account_missing"
         )
     _site_allowed(principal, account.site_id)
+    await ensure_site_reset_mutations_allowed(session, [account.site_id])
     in_use = int(
         await session.scalar(
             select(func.count()).select_from(Device).where(Device.utility_account_id == account.id)
@@ -532,6 +617,7 @@ async def create_circuit(
 ) -> Circuit:
     _permission(principal, "topology.manage")
     _site_allowed(principal, payload.site_id)
+    await ensure_site_reset_mutations_allowed(session, [payload.site_id])
     site = await session.get(Site, payload.site_id)
     if site is None:
         raise ProblemError(
@@ -582,6 +668,10 @@ async def update_circuit(
         raise ProblemError(404, "Circuit not found", "Circuit does not exist", "circuit_missing")
     _site_allowed(principal, circuit.site_id)
     _site_allowed(principal, payload.site_id)
+    await ensure_site_reset_mutations_allowed(
+        session,
+        [circuit.site_id, payload.site_id],
+    )
     parents = {
         item.id: item.parent_id
         for item in await session.scalars(select(Circuit).where(Circuit.site_id == circuit.site_id))
@@ -615,6 +705,7 @@ async def delete_circuit(
     if circuit is None:
         raise ProblemError(404, "Circuit not found", "Circuit does not exist", "circuit_missing")
     _site_allowed(principal, circuit.site_id)
+    await ensure_site_reset_mutations_allowed(session, [circuit.site_id])
     child_count = int(
         await session.scalar(
             select(func.count()).select_from(Circuit).where(Circuit.parent_id == circuit.id)
@@ -693,6 +784,7 @@ async def create_aggregate_set(
 ) -> dict[str, Any]:
     _permission(principal, "topology.manage")
     _site_allowed(principal, payload.site_id)
+    await ensure_site_reset_mutations_allowed(session, [payload.site_id])
     circuits = {
         item.id: item
         for item in await session.scalars(select(Circuit).where(Circuit.site_id == payload.site_id))
@@ -766,6 +858,10 @@ async def update_aggregate_set(
         )
     _site_allowed(principal, aggregate.site_id)
     _site_allowed(principal, payload.site_id)
+    await ensure_site_reset_mutations_allowed(
+        session,
+        [aggregate.site_id, payload.site_id],
+    )
     circuits = {
         item.id: item
         for item in await session.scalars(select(Circuit).where(Circuit.site_id == payload.site_id))
@@ -842,6 +938,7 @@ async def delete_aggregate_set(
             404, "Aggregate not found", "Aggregate set does not exist", "aggregate_missing"
         )
     _site_allowed(principal, aggregate.site_id)
+    await ensure_site_reset_mutations_allowed(session, [aggregate.site_id])
     session.add(
         audit_event(
             action="aggregate.deleted",
@@ -874,6 +971,12 @@ async def create_enrollment_token(
     session: DbSession,
 ) -> EnrollmentTokenView:
     _permission(principal, "enrollment.manage")
+    enrollment_site_ids = (
+        [payload.site_id]
+        if payload.site_id
+        else list(await session.scalars(select(Site.id).order_by(Site.id)))
+    )
+    await ensure_site_reset_mutations_allowed(session, enrollment_site_ids)
     if payload.site_id:
         _site_allowed(principal, payload.site_id)
         site = await session.get(Site, payload.site_id)
@@ -1195,6 +1298,7 @@ async def update_device_measurement_assignment(
             "device_missing",
         )
     _site_allowed(principal, device.site_id)
+    await ensure_device_reset_mutations_allowed(session, [device.id])
 
     circuit: Circuit | None = None
     if payload.circuit_id is not None:
@@ -1519,6 +1623,7 @@ async def rotate_credential(
             404, "Device not active", "Device cannot rotate credentials", "device_missing"
         )
     _site_allowed(principal, device.site_id)
+    await ensure_device_reset_mutations_allowed(session, [device.id])
     now = datetime.now(UTC)
     old_credentials = list(
         await session.scalars(
@@ -1607,6 +1712,7 @@ async def _decommission_device(
     session: DbSession,
     audit_action: str = "device.unclaimed",
 ) -> None:
+    await ensure_device_reset_mutations_allowed(session, [device.id])
     now = datetime.now(UTC)
     prior_site_id = device.site_id
     prior_circuit_id = device.circuit_id
@@ -1698,6 +1804,7 @@ async def unclaim_device(
     if device is None:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
     _site_allowed(principal, device.site_id)
+    await ensure_device_reset_mutations_allowed(session, [device.id])
     if payload.confirmation not in {device.name, device.id}:
         raise ProblemError(
             409,
@@ -1841,6 +1948,7 @@ async def create_device_config(
     if device is None:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
     _site_allowed(principal, device.site_id)
+    await ensure_device_reset_mutations_allowed(session, [device.id])
     forbidden = {key for key in payload.settings if "pin" in key.lower() or "gpio" in key.lower()}
     if forbidden:
         raise ProblemError(
@@ -1895,6 +2003,7 @@ async def _queue_storage_configuration(
     principal: Principal,
     session: DbSession,
 ) -> DeviceConfigVersion:
+    await ensure_device_reset_mutations_allowed(session, [device.id])
     versions = list(
         await session.scalars(
             select(DeviceConfigVersion)
@@ -2367,6 +2476,12 @@ async def export_history_api(
     # below remains part of that endpoint-owned transaction.
     if session.in_transaction():
         await session.commit()
+    if session.bind is not None and session.bind.dialect.name == "postgresql":
+        await session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+    await ensure_site_reset_mutations_allowed(
+        session,
+        await _history_scope_site_ids(session, payload),
+    )
     export_payload = payload.model_copy(update={"page": 1, "page_size": MAX_HISTORY_BUCKETS})
     result = await query_history(session, principal, export_payload)
     session.add(
@@ -4395,6 +4510,14 @@ async def replace_all_backups_preview(
             "backup_replace_all_owner_required",
         )
     rows = list(await session.scalars(select(BackupRun).where(BackupRun.deleted_at.is_(None))))
+    pinned_ids = set(
+        await session.scalars(
+            select(DataResetOperation.backup_run_id).where(
+                DataResetOperation.backup_run_id.is_not(None),
+                DataResetOperation.state.not_in(["completed", "cancelled", "failed_before_commit"]),
+            )
+        )
+    )
     verified = sum(1 for row in rows if row.status == "verified" and row.verified_at is not None)
     incomplete_states = {
         "queued",
@@ -4408,13 +4531,19 @@ async def replace_all_backups_preview(
     incomplete = sum(1 for row in rows if row.status in incomplete_states)
     unverified = len(rows) - incomplete - verified
     storage_bytes = sum(int(row.size_bytes or row.original_size_bytes or 0) for row in rows)
+    reclaimable_bytes = sum(
+        int(row.size_bytes or row.original_size_bytes or 0)
+        for row in rows
+        if row.id not in pinned_ids
+    )
     return {
         "existing_backup_count": len(rows),
         "existing_storage_bytes": storage_bytes,
         "incomplete_backup_count": incomplete,
         "unverified_backup_count": unverified,
         "verified_backup_count": verified,
-        "estimated_reclaim_bytes": storage_bytes,
+        "pinned_backup_count": sum(row.id in pinned_ids for row in rows),
+        "estimated_reclaim_bytes": reclaimable_bytes,
     }
 
 
@@ -4468,6 +4597,22 @@ async def replace_all_backups(
             "An existing backup or restore operation must finish before replacement",
             "backup_replace_all_incompatible_state",
             extra={"backup_ids": [item.id for item in blocked]},
+        )
+    pinned_ids = set(
+        await session.scalars(
+            select(DataResetOperation.backup_run_id).where(
+                DataResetOperation.backup_run_id.in_([item.id for item in inventory]),
+                DataResetOperation.state.not_in(["completed", "cancelled", "failed_before_commit"]),
+            )
+        )
+    )
+    if pinned_ids:
+        raise ProblemError(
+            409,
+            "A backup is pinned by a data reset",
+            "Finish or safely cancel every coordinated data reset before replacing all backups",
+            "backup_pinned_by_data_reset",
+            extra={"backup_ids": sorted(str(item) for item in pinned_ids)},
         )
     replacement = BackupRun(
         id=new_uuid(),
@@ -4646,6 +4791,19 @@ async def delete_backup(
     if backup is None:
         raise ProblemError(
             404, "Backup not found", "The selected backup does not exist", "backup_missing"
+        )
+    active_reset = await session.scalar(
+        select(DataResetOperation.id).where(
+            DataResetOperation.backup_run_id == backup.id,
+            DataResetOperation.state.not_in(["completed", "cancelled", "failed_before_commit"]),
+        )
+    )
+    if active_reset is not None:
+        raise ProblemError(
+            409,
+            "Backup is pinned by a data reset",
+            "Finish or safely cancel the coordinated data reset before deleting its backup",
+            "backup_pinned_by_data_reset",
         )
     if payload.backup_id_confirmation not in {backup.id, backup.id[:8]}:
         raise ProblemError(
@@ -4860,6 +5018,10 @@ async def queue_report(
         raise ProblemError(
             404, "Definition not found", "Report definition does not exist", "report_missing"
         )
+    await ensure_site_reset_mutations_allowed(
+        session,
+        await _report_configuration_site_ids(session, definition.configuration),
+    )
     report = GeneratedReport(
         definition_id=definition.id,
         requested_by=principal.user.id,

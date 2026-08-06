@@ -9,10 +9,17 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from app.api.deps import AppSettings, CsrfPrincipal, DbSession, Principal, audit_event
-from app.db.models import ExportJob
+from app.data_reset.service import ensure_site_reset_mutations_allowed
+from app.db.models import ExportJob, Site
 from app.problem import ProblemError
 
 router = APIRouter(prefix="/api/v1", tags=["exports and reports"])
+
+
+async def _export_site_ids(session: DbSession, requested_site: object | None) -> list[str]:
+    if requested_site:
+        return [str(requested_site)]
+    return list(await session.scalars(select(Site.id).order_by(Site.id)))
 
 
 @router.post("/exports", status_code=202)
@@ -32,6 +39,10 @@ async def create_export(
         raise ProblemError(404, "Resource not found", "Resource does not exist", "resource_missing")
     if payload.get("format") not in {"csv", "json"}:
         raise ProblemError(422, "Invalid export", "Format must be csv or json", "invalid_export")
+    await ensure_site_reset_mutations_allowed(
+        session,
+        await _export_site_ids(session, requested_site),
+    )
     now = datetime.now(UTC)
     job = ExportJob(
         requested_by=principal.user.id,

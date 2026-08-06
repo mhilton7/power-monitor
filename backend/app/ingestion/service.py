@@ -13,12 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import (
     BillingCycle,
     Device,
+    DeviceDataState,
     DeviceEvent,
     NormalizedInterval,
     RawReading,
     SequenceGap,
     SyncCursor,
 )
+from app.problem import ProblemError
 from app.schemas import (
     Reading,
     ReadingBatchResponse,
@@ -129,12 +131,18 @@ def normalize_energy(
 
 
 def _to_raw(
-    device_id: str, site_id: str, reading: Reading, source: str, now: datetime
+    device_id: str,
+    site_id: str,
+    reading: Reading,
+    source: str,
+    now: datetime,
+    data_generation: int,
 ) -> RawReading:
     record_hash = reading.record_hash or reading_content_hash(reading)
     return RawReading(
         device_id=device_id,
         site_id=site_id,
+        data_generation=data_generation,
         sequence=reading.sequence,
         boot_id=reading.boot_id,
         interval_start=reading.interval_start,
@@ -166,13 +174,20 @@ def _to_raw(
     )
 
 
-async def _recalculate_cursor(session: AsyncSession, device_id: str, now: datetime) -> SyncCursor:
+async def _recalculate_cursor(
+    session: AsyncSession,
+    device_id: str,
+    now: datetime,
+    data_generation: int,
+) -> SyncCursor:
     cursor = await session.get(SyncCursor, device_id, with_for_update=True)
     if cursor is None:
         cursor = SyncCursor(
             device_id=device_id,
             highest_contiguous_sequence=0,
             maximum_seen_sequence=0,
+            data_generation=data_generation,
+            reset_boundary=0,
             updated_at=now,
         )
         session.add(cursor)
@@ -181,7 +196,10 @@ async def _recalculate_cursor(session: AsyncSession, device_id: str, now: dateti
         int(value)
         for value in await session.scalars(
             select(RawReading.sequence)
-            .where(RawReading.device_id == device_id)
+            .where(
+                RawReading.device_id == device_id,
+                RawReading.data_generation == data_generation,
+            )
             .where(RawReading.sequence > cursor.highest_contiguous_sequence)
             .order_by(RawReading.sequence)
         )
@@ -210,9 +228,12 @@ async def _recalculate_cursor(session: AsyncSession, device_id: str, now: dateti
         expected = max(expected, end_sequence + 1)
     cursor.highest_contiguous_sequence = expected - 1
     maximum = await session.scalar(
-        select(func.max(RawReading.sequence)).where(RawReading.device_id == device_id)
+        select(func.max(RawReading.sequence)).where(
+            RawReading.device_id == device_id,
+            RawReading.data_generation == data_generation,
+        )
     )
-    cursor.maximum_seen_sequence = int(maximum or 0)
+    cursor.maximum_seen_sequence = max(int(maximum or 0), int(cursor.reset_boundary))
     cursor.updated_at = now
 
     await session.execute(
@@ -246,6 +267,7 @@ async def _record_permanent_loss_ranges(
     device_id: str,
     ranges: list[UnavailableSequenceRange],
     now: datetime,
+    data_generation: int,
 ) -> None:
     if not ranges:
         return
@@ -262,6 +284,7 @@ async def _record_permanent_loss_ranges(
         for value in await session.scalars(
             select(RawReading.sequence).where(
                 RawReading.device_id == device_id,
+                RawReading.data_generation == data_generation,
                 RawReading.sequence.in_(declared_sequences),
             )
         )
@@ -303,12 +326,120 @@ async def _record_permanent_loss_ranges(
         )
 
 
+def _reading_generation(reading: Reading) -> int | None:
+    value = getattr(reading, "data_generation", None)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+async def enforce_data_generation_gate(
+    session: AsyncSession,
+    *,
+    device_id: str,
+    readings: list[Reading],
+    batch_generation: int | None,
+    unavailable_sequence_ranges: list[UnavailableSequenceRange] | None = None,
+) -> int:
+    """Return the accepted generation after enforcing the durable reset gate.
+
+    This check belongs in the shared ingestion service so push and pull have
+    identical behavior. Callers that performed network I/O must invoke it only
+    after receiving the response; the row lock closes the reset/ingestion race.
+    """
+
+    state = await session.get(DeviceDataState, device_id, with_for_update=True)
+    expected = int(state.data_generation) if state is not None else 0
+    boundary = int(state.reset_boundary) if state is not None else 0
+    if state is not None and (state.ingestion_gate != "open" or state.reset_required_on_reconnect):
+        raise ProblemError(
+            409,
+            "Sensor reset required",
+            "Reading synchronization is paused until the coordinated data reset completes",
+            "sensor_reset_required",
+            extra={"required_data_generation": expected, "reset_boundary": boundary},
+        )
+
+    reading_generations = {
+        value for reading in readings if (value := _reading_generation(reading)) is not None
+    }
+    if len(reading_generations) > 1:
+        raise ProblemError(
+            422,
+            "Mixed data generations",
+            "Every reading in a batch must use the same data generation",
+            "data_generation_mixed",
+        )
+    reading_generation = next(iter(reading_generations), None)
+    if (
+        batch_generation is not None
+        and reading_generation is not None
+        and batch_generation != reading_generation
+    ):
+        raise ProblemError(
+            422,
+            "Data generation mismatch",
+            "The batch and reading data generations must match",
+            "data_generation_mismatch",
+        )
+    supplied = batch_generation if batch_generation is not None else reading_generation
+    if supplied is None:
+        if expected > 0:
+            raise ProblemError(
+                422,
+                "Data generation required",
+                "This sensor must include the coordinated reset data generation",
+                "data_generation_required",
+                extra={"required_data_generation": expected},
+            )
+        supplied = 0
+    if supplied < expected:
+        raise ProblemError(
+            409,
+            "Obsolete data generation",
+            "Pre-reset readings cannot be accepted",
+            "data_generation_obsolete",
+            extra={"required_data_generation": expected, "received_data_generation": supplied},
+        )
+    if supplied > expected:
+        raise ProblemError(
+            409,
+            "Unknown data generation",
+            "The sensor generation is ahead of the server's committed generation",
+            "data_generation_ahead",
+            extra={"required_data_generation": expected, "received_data_generation": supplied},
+        )
+    offending = min(
+        (reading.sequence for reading in readings if reading.sequence <= boundary),
+        default=None,
+    )
+    if offending is None:
+        offending = min(
+            (
+                item.start_sequence
+                for item in unavailable_sequence_ranges or []
+                if item.start_sequence <= boundary
+            ),
+            default=None,
+        )
+    if offending is not None:
+        raise ProblemError(
+            409,
+            "Reading precedes reset boundary",
+            "A reading at or below the committed reset boundary cannot be accepted",
+            "reading_precedes_reset_boundary",
+            extra={"reset_boundary": boundary, "received_sequence": offending},
+        )
+    return expected
+
+
 async def ingest_readings(
     session: AsyncSession,
     *,
     device_id: str,
     readings: list[Reading],
     source: str,
+    data_generation: int | None = None,
     first_available_sequence: int | None = None,
     unavailable_sequence_ranges: list[UnavailableSequenceRange] | None = None,
     maximum_clock_skew_seconds: int = 300,
@@ -319,6 +450,13 @@ async def ingest_readings(
     device = await session.get(Device, device_id)
     if device is None:
         raise ValueError("device must exist before reading ingestion")
+    accepted_generation = await enforce_data_generation_gate(
+        session,
+        device_id=device_id,
+        readings=readings,
+        batch_generation=data_generation,
+        unavailable_sequence_ranges=unavailable_sequence_ranges,
+    )
     accepted: list[int] = []
     duplicates: list[int] = []
     rejected: list[RejectedReading] = []
@@ -330,6 +468,7 @@ async def ingest_readings(
         record_count=len(readings),
         first_sequence=min((item.sequence for item in readings), default=None),
         last_sequence=max((item.sequence for item in readings), default=None),
+        data_generation=accepted_generation,
     )
     cursor = await session.get(SyncCursor, device_id, with_for_update=True)
     if cursor is None:
@@ -337,12 +476,24 @@ async def ingest_readings(
             device_id=device_id,
             highest_contiguous_sequence=0,
             maximum_seen_sequence=0,
+            data_generation=accepted_generation,
+            reset_boundary=0,
             updated_at=now,
         )
         session.add(cursor)
         await session.flush()
+    if cursor.data_generation != accepted_generation:
+        raise ProblemError(
+            409,
+            "Sequence cursor generation mismatch",
+            "The server cursor is not aligned with the committed data generation",
+            "data_generation_cursor_mismatch",
+        )
     minimum_existing_sequence = await session.scalar(
-        select(func.min(RawReading.sequence)).where(RawReading.device_id == device_id)
+        select(func.min(RawReading.sequence)).where(
+            RawReading.device_id == device_id,
+            RawReading.data_generation == accepted_generation,
+        )
     )
     first_incoming = min((reading.sequence for reading in readings), default=None)
     if (
@@ -387,6 +538,7 @@ async def ingest_readings(
         device_id=device_id,
         ranges=unavailable_sequence_ranges or [],
         now=now,
+        data_generation=accepted_generation,
     )
     for reading in readings:
         if reading.interval_end > now + timedelta(seconds=maximum_clock_skew_seconds):
@@ -415,7 +567,9 @@ async def ingest_readings(
         incoming_hash = reading.record_hash or reading_content_hash(reading)
         existing = await session.scalar(
             select(RawReading).where(
-                RawReading.device_id == device_id, RawReading.sequence == reading.sequence
+                RawReading.device_id == device_id,
+                RawReading.data_generation == accepted_generation,
+                RawReading.sequence == reading.sequence,
             )
         )
         if existing is not None:
@@ -471,7 +625,14 @@ async def ingest_readings(
                     rejection_code="conflicting_duplicate",
                 )
             continue
-        raw = _to_raw(device_id, device.site_id, reading, source, now)
+        raw = _to_raw(
+            device_id,
+            device.site_id,
+            reading,
+            source,
+            now,
+            accepted_generation,
+        )
         session.add(raw)
         await session.flush()
         selected = normalize_energy(reading)
@@ -506,16 +667,15 @@ async def ingest_readings(
             sequence=reading.sequence,
             measured_at=reading.interval_end,
             source="committed_reading",
+            data_generation=accepted_generation,
         )
         logger.info(
             "server.reading_committed",
             device_id=device_id,
             site_id=device.site_id,
             sequence=reading.sequence,
-            measured_at=reading.interval_end,
-            power_watts=reading.power_avg,
-            interval_energy_wh=selected.selected_energy_wh,
             energy_source=selected.selected_method,
+            data_generation=accepted_generation,
         )
     if accepted_windows and device.utility_account_id:
         earliest = min(value[0] for value in accepted_windows)
@@ -535,7 +695,7 @@ async def ingest_readings(
         for cycle in affected_cycles:
             cycle.status = "recalculating"
             cycle.updated_at = now
-    cursor = await _recalculate_cursor(session, device_id, now)
+    cursor = await _recalculate_cursor(session, device_id, now, accepted_generation)
     await session.flush()
     gaps = list(
         await session.scalars(
@@ -566,4 +726,6 @@ async def ingest_readings(
         rejected=rejected,
         highest_contiguous_accepted_sequence=cursor.highest_contiguous_sequence,
         missing_ranges=[(gap.start_sequence, gap.end_sequence) for gap in gaps],
+        data_generation=accepted_generation,
+        reset_boundary=cursor.reset_boundary,
     )

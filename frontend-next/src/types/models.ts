@@ -4,6 +4,7 @@ export interface ApiProblem {
   status: number
   code: string
   errors?: Array<{ location: Array<string | number>; message: string }>
+  operation_id?: string
 }
 
 export interface UserSession {

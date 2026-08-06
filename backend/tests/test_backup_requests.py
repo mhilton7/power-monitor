@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import BackgroundJob, BackupRun
+from app.db.models import BackgroundJob, BackupRun, DataResetOperation
 
 
 def csrf(client: httpx.AsyncClient) -> dict[str, str]:
@@ -87,6 +87,96 @@ async def test_backup_create_is_global_single_flight(
             or 0
         )
         == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_active_data_reset_pins_its_backup_against_deletion(
+    api_client: Any,
+    session: AsyncSession,
+) -> None:
+    await bootstrap(api_client)
+    sites = await api_client.get("/api/v1/sites")
+    assert sites.status_code == 200, sites.text
+    site_id = sites.json()[0]["id"]
+    planned = await api_client.post(
+        "/api/v1/system/data-reset/plan",
+        headers=csrf(api_client),
+        json={
+            "site_id": site_id,
+            "categories": [
+                "measurement_history",
+                "cost_history",
+                "pricing_history",
+                "generated_outputs",
+            ],
+        },
+    )
+    assert planned.status_code == 201, planned.text
+    plan = planned.json()
+    reauthenticated = await api_client.post(
+        "/api/v1/auth/reauthenticate",
+        headers=csrf(api_client),
+        json={"password": "Backup-Owner-Password-2026!"},
+    )
+    assert reauthenticated.status_code == 200, reauthenticated.text
+    executed = await api_client.post(
+        "/api/v1/system/data-reset/execute",
+        headers=csrf(api_client),
+        json={
+            "plan_id": plan["plan_id"],
+            "plan_revision": plan["revision"],
+            "idempotency_key": "pin-reset-backup-0001",
+            "reason": "Verify reset backup retention",
+            "backup_mode": "verified_backup",
+            "confirmation_phrase": plan["confirmation_phrases"]["verified_backup"],
+        },
+    )
+    assert executed.status_code == 202, executed.text
+
+    now = datetime.now(UTC)
+    backup = BackupRun(
+        id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        started_at=now,
+        completed_at=now,
+        status="verified",
+        path="power-monitor-reset-pinned-aaaaaaaa",
+        manifest_hash="f" * 64,
+        verified_at=now,
+        verification_details={"table_count": 100},
+        size_bytes=4096,
+        encrypted=True,
+        verification_attempt_count=1,
+        updated_at=now,
+    )
+    session.add(backup)
+    operation = await session.get(DataResetOperation, executed.json()["operation_id"])
+    assert operation is not None
+    operation.backup_run_id = backup.id
+    await session.commit()
+
+    denied = await api_client.request(
+        "DELETE",
+        f"/api/v1/backups/{backup.id}",
+        headers=csrf(api_client),
+        json={
+            "confirmation": "DELETE",
+            "backup_id_confirmation": backup.id[:8],
+            "reason": "This must remain pinned while reset is active",
+        },
+    )
+    assert denied.status_code == 409, denied.text
+    assert denied.json()["code"] == "backup_pinned_by_data_reset"
+    assert (
+        int(
+            await session.scalar(
+                select(func.count())
+                .select_from(BackgroundJob)
+                .where(BackgroundJob.job_type == "backup_delete")
+            )
+            or 0
+        )
+        == 0
     )
 
 
@@ -295,6 +385,7 @@ async def test_replace_all_inventory_confirmation_idempotency_and_single_flight(
         "incomplete_backup_count": 0,
         "unverified_backup_count": 1,
         "verified_backup_count": 1,
+        "pinned_backup_count": 0,
         "estimated_reclaim_bytes": 6000,
     }
     invalid = await api_client.post(

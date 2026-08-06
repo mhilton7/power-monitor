@@ -23,6 +23,7 @@ from app.bills.extraction import (
     redact_sensitive_text,
 )
 from app.config import Settings
+from app.data_reset.service import ensure_site_reset_mutations_allowed
 from app.db.models import (
     BackgroundJob,
     BillingCycle,
@@ -55,6 +56,11 @@ from app.rates.documents import (
     validate_document,
 )
 from app.rates.engine import RateEngine
+from app.rates.reset_barrier import (
+    ensure_account_rate_mutations_allowed,
+    ensure_rate_plans_reset_mutations_allowed,
+    rate_owner_site_ids,
+)
 from app.rates.service import activate_version, create_custom_plan, update_draft_version
 
 logger = structlog.get_logger(__name__)
@@ -451,6 +457,15 @@ async def ensure_bill_rate_draft(
         await session.get(RatePlan, bill.rate_plan_id) if bill.rate_plan_id is not None else None
     )
     if reusable_plan is not None and reusable_plan.status == "draft":
+        await ensure_rate_plans_reset_mutations_allowed(
+            session,
+            [reusable_plan],
+            extra_site_ids=await rate_owner_site_ids(
+                session,
+                ownership_scope=document.ownership_scope,
+                owner_id=document.owner_id,
+            ),
+        )
         next_version = (
             int(
                 await session.scalar(
@@ -1623,6 +1638,11 @@ async def publish_and_assign(
             "Restore the linked draft before publishing or assigning it",
             "rate_plan_removed",
         )
+    account, _locked_plans = await ensure_account_rate_mutations_allowed(
+        session,
+        account.id,
+        extra_version_ids=[version.id],
+    )
     status, _report = await activate_version(session, version, user_id)
     current = list(
         await session.scalars(
@@ -1959,9 +1979,39 @@ async def due_retention_deletions(session: AsyncSession) -> int:
             )
         )
     )
+    account_ids = sorted(
+        {bill.utility_account_id for bill in bills if bill.utility_account_id is not None}
+    )
+    account_sites = {
+        account_id: site_id
+        for account_id, site_id in (
+            await session.execute(
+                select(UtilityAccount.id, UtilityAccount.site_id).where(
+                    UtilityAccount.id.in_(account_ids)
+                )
+            )
+        ).all()
+    }
+    blocked_sites: set[str] = set()
+    for site_id in sorted(set(account_sites.values())):
+        try:
+            await ensure_site_reset_mutations_allowed(session, [site_id])
+        except ProblemError as exc:
+            if exc.code != "data_reset_site_mutation_blocked":
+                raise
+            blocked_sites.add(site_id)
+
+    deleted = 0
     for bill in bills:
+        if bill.utility_account_id is not None:
+            site_id = account_sites.get(bill.utility_account_id)
+            # Missing account context is an integrity fault. Retention must fail
+            # closed instead of deleting evidence without a reset scope lock.
+            if site_id is None or site_id in blocked_sites:
+                continue
         await delete_original_artifact(session, bill=bill)
-    return len(bills)
+        deleted += 1
+    return deleted
 
 
 async def import_count(session: AsyncSession, account_id: str) -> int:
@@ -1996,5 +2046,19 @@ async def synchronize_rate_draft_from_extraction(
         bill.content_sha256,
         timezone=account.timezone if account is not None else version.timezone,
         currency=account.currency if account is not None else version.currency,
+    )
+    plan = await session.get(RatePlan, version.rate_plan_id)
+    if plan is None:
+        raise ProblemError(
+            404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
+        )
+    await ensure_rate_plans_reset_mutations_allowed(
+        session,
+        [plan],
+        extra_site_ids=await rate_owner_site_ids(
+            session,
+            ownership_scope=document.ownership_scope,
+            owner_id=document.owner_id,
+        ),
     )
     await update_draft_version(session, version, document)

@@ -124,6 +124,8 @@ async def test_bootstrap_enrollment_heartbeat_and_push(api_client: Any) -> None:
         "highest_contiguous_accepted_sequence": 0,
         "maximum_seen_sequence": 0,
         "next_sequence_floor": 1,
+        "data_generation": 0,
+        "reset_boundary": 0,
     }
     sparse_batch = {
         "protocol_version": PROTOCOL,
@@ -187,6 +189,8 @@ async def test_bootstrap_enrollment_heartbeat_and_push(api_client: Any) -> None:
         "highest_contiguous_accepted_sequence": 0,
         "maximum_seen_sequence": 790,
         "next_sequence_floor": 791,
+        "data_generation": 0,
+        "reset_boundary": 0,
     }
     devices = (await client.get("/api/v1/devices")).json()
     assert devices[0]["name"] == "Garage HVAC"

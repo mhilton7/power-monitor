@@ -22,6 +22,7 @@ from app.db.models import (
     RateVersion,
     RawReading,
     Site,
+    SiteDataState,
     TierAllocationSegment,
     User,
     UserSite,
@@ -1039,6 +1040,50 @@ async def test_history_continuation_reuses_exact_summary_and_bounds_detail_work(
     )
     assert tampered.status_code == 409
     assert tampered.json()["code"] == "history_continuation_invalid"
+
+
+@pytest.mark.asyncio
+async def test_history_continuation_is_invalidated_by_data_reset_revision(
+    api_client: object,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+) -> None:
+    client = api_client
+    assert isinstance(client, httpx.AsyncClient)
+    await bootstrap(client)
+    site_id, first_id, second_id, _ = await seed_two_sensor_history(session_factory_fixture)
+    payload = {
+        "scope": {"type": "devices", "device_ids": [first_id, second_id]},
+        "display_mode": "combined_plus_individual",
+        "metrics": ["power_w", "energy_kwh", "energy_cost"],
+        "start_utc": "2026-07-21T03:00:00Z",
+        "end_utc": "2026-07-21T05:00:00Z",
+        "bucket": "1h",
+        "timezone": "America/Los_Angeles",
+        "page_size": 1,
+    }
+    first_response = await client.post("/api/v1/history/query", headers=csrf(client), json=payload)
+    assert first_response.status_code == 200, first_response.text
+    token = first_response.json()["next_continuation_token"]
+    assert token
+
+    async with session_factory_fixture() as session:
+        session.add(
+            SiteDataState(
+                site_id=site_id,
+                data_generation=1,
+                history_revision=1,
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+    continuation = await client.post(
+        "/api/v1/history/query",
+        headers=csrf(client),
+        json={**payload, "page": 2, "continuation_token": token},
+    )
+    assert continuation.status_code == 409, continuation.text
+    assert continuation.json()["code"] == "history_continuation_invalid"
 
 
 @pytest.mark.asyncio

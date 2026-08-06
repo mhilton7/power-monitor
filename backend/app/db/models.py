@@ -718,9 +718,13 @@ class DeviceHeartbeat(Base):
     pzem_ok: Mapped[bool] = mapped_column(Boolean)
     sd_ok: Mapped[bool] = mapped_column(Boolean)
     time_trusted: Mapped[bool] = mapped_column(Boolean)
-    newest_sequence: Mapped[int] = mapped_column(Integer)
+    data_generation: Mapped[int] = mapped_column(Integer, default=0)
+    newest_sequence: Mapped[int] = mapped_column(BigInteger)
     backlog_estimate: Mapped[int] = mapped_column(Integer)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    __table_args__ = (
+        CheckConstraint("data_generation >= 0", name="device_heartbeat_generation_nonnegative"),
+    )
 
 
 class DeviceEvent(Base):
@@ -728,7 +732,7 @@ class DeviceEvent(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
     event_id: Mapped[str] = mapped_column(String(80))
-    event_sequence: Mapped[int | None] = mapped_column(Integer, index=True)
+    event_sequence: Mapped[int | None] = mapped_column(BigInteger, index=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     category: Mapped[str] = mapped_column(String(64), index=True)
@@ -745,8 +749,8 @@ class DeviceEventSyncCursor(Base):
     device_id: Mapped[str] = mapped_column(
         ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True
     )
-    highest_contiguous_sequence: Mapped[int] = mapped_column(Integer, default=0)
-    maximum_seen_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    highest_contiguous_sequence: Mapped[int] = mapped_column(BigInteger, default=0)
+    maximum_seen_sequence: Mapped[int] = mapped_column(BigInteger, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
@@ -767,17 +771,23 @@ class SyncCursor(Base):
     device_id: Mapped[str] = mapped_column(
         ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True
     )
-    highest_contiguous_sequence: Mapped[int] = mapped_column(Integer, default=0)
-    maximum_seen_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    highest_contiguous_sequence: Mapped[int] = mapped_column(BigInteger, default=0)
+    maximum_seen_sequence: Mapped[int] = mapped_column(BigInteger, default=0)
+    data_generation: Mapped[int] = mapped_column(Integer, default=0)
+    reset_boundary: Mapped[int] = mapped_column(BigInteger, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("data_generation >= 0", name="sync_cursor_generation_nonnegative"),
+        CheckConstraint("reset_boundary >= 0", name="sync_cursor_boundary_nonnegative"),
+    )
 
 
 class SequenceGap(Base):
     __tablename__ = "sequence_gaps"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="CASCADE"), index=True)
-    start_sequence: Mapped[int] = mapped_column(Integer)
-    end_sequence: Mapped[int] = mapped_column(Integer)
+    start_sequence: Mapped[int] = mapped_column(BigInteger)
+    end_sequence: Mapped[int] = mapped_column(BigInteger)
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     permanent_loss: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -802,7 +812,8 @@ class RawReading(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     device_id: Mapped[str] = mapped_column(ForeignKey("devices.id", ondelete="RESTRICT"))
     site_id: Mapped[str] = mapped_column(ForeignKey("sites.id", ondelete="RESTRICT"))
-    sequence: Mapped[int] = mapped_column(Integer)
+    data_generation: Mapped[int] = mapped_column(Integer, default=0)
+    sequence: Mapped[int] = mapped_column(BigInteger)
     boot_id: Mapped[str] = mapped_column(String(36))
     interval_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     interval_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -832,6 +843,7 @@ class RawReading(Base):
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     __table_args__ = (
         UniqueConstraint("device_id", "sequence", name="uq_raw_device_sequence"),
+        CheckConstraint("data_generation >= 0", name="raw_data_generation_nonnegative"),
         CheckConstraint("sequence > 0", name="positive_sequence"),
         CheckConstraint("interval_end > interval_start", name="valid_interval"),
         CheckConstraint("ingestion_source IN ('pull','push')", name="ingestion_source"),
@@ -839,6 +851,12 @@ class RawReading(Base):
             "power_factor IS NULL OR (power_factor >= 0 AND power_factor <= 1)", name="power_factor"
         ),
         Index("ix_raw_device_time", "device_id", "interval_start"),
+        Index(
+            "ix_raw_device_generation_time",
+            "device_id",
+            "data_generation",
+            "interval_start",
+        ),
         Index(
             "ix_raw_device_time_end",
             "device_id",
@@ -1706,7 +1724,8 @@ class BillingCycle(Base):
             name="billing_cycle_status",
         ),
         CheckConstraint(
-            "boundary_source IN ('generated','manual_override','utility_import','external_feed')",
+            "boundary_source IN "
+            "('generated','manual_override','utility_import','external_feed','data_reset')",
             name="billing_cycle_boundary_source",
         ),
         CheckConstraint(
@@ -2388,6 +2407,292 @@ class BackupRun(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+
+class DataResetPlan(Base):
+    """Immutable, expiring snapshot used to authorize a data-only reset."""
+
+    __tablename__ = "data_reset_plans"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.id", ondelete="RESTRICT"), index=True)
+    requested_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    requested_categories: Mapped[list[str]] = mapped_column(JSON, default=list)
+    delete_imported_bill_documents: Mapped[bool] = mapped_column(Boolean, default=False)
+    disconnected_sensor_policy: Mapped[str] = mapped_column(
+        String(32), default="defer_until_reconnect"
+    )
+    plan_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    plan_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    invalidation_reason: Mapped[str | None] = mapped_column(String(160))
+    __table_args__ = (
+        CheckConstraint("revision > 0", name="data_reset_plan_revision_positive"),
+        CheckConstraint(
+            "expires_at > created_at", name="data_reset_plan_expiration_after_creation"
+        ),
+        CheckConstraint(
+            "disconnected_sensor_policy IN ('block','defer_until_reconnect')",
+            name="data_reset_plan_disconnected_policy",
+        ),
+    )
+
+
+class DataResetOperation(Base):
+    """Durable, resumable server state for one authorized reset execution."""
+
+    __tablename__ = "data_reset_operations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    plan_id: Mapped[str] = mapped_column(
+        ForeignKey("data_reset_plans.id", ondelete="RESTRICT"), nullable=False
+    )
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.id", ondelete="RESTRICT"), index=True)
+    requested_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    state: Mapped[str] = mapped_column(String(64), default="awaiting_confirmation", index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    reset_generation: Mapped[int] = mapped_column(Integer)
+    reset_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    requested_categories: Mapped[list[str]] = mapped_column(JSON, default=list)
+    delete_imported_bill_documents: Mapped[bool] = mapped_column(Boolean, default=False)
+    disconnected_sensor_policy: Mapped[str] = mapped_column(
+        String(32), default="defer_until_reconnect"
+    )
+    backup_mode: Mapped[str] = mapped_column(String(32), default="verified_backup")
+    backup_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("backup_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    backup_reference: Mapped[str | None] = mapped_column(String(500))
+    backup_checksum: Mapped[str | None] = mapped_column(String(64))
+    backup_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str] = mapped_column(String(500))
+    idempotency_key: Mapped[str] = mapped_column(String(160))
+    request_fingerprint: Mapped[str] = mapped_column(String(64))
+    plan_revision: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+    central_commit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    failure_code: Mapped[str | None] = mapped_column(String(80))
+    failure_summary: Mapped[str | None] = mapped_column(String(500))
+    final_evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+    __table_args__ = (
+        UniqueConstraint("plan_id", name="uq_data_reset_operation_plan"),
+        UniqueConstraint("site_id", "idempotency_key", name="uq_data_reset_operation_idempotency"),
+        CheckConstraint("revision > 0", name="data_reset_operation_revision_positive"),
+        CheckConstraint("reset_generation > 0", name="data_reset_operation_generation_positive"),
+        CheckConstraint("plan_revision > 0", name="data_reset_operation_plan_revision_positive"),
+        CheckConstraint(
+            "backup_mode IN ('verified_backup','permanent_without_backup')",
+            name="data_reset_operation_backup_mode",
+        ),
+        CheckConstraint(
+            "disconnected_sensor_policy IN ('block','defer_until_reconnect')",
+            name="data_reset_operation_disconnected_policy",
+        ),
+        CheckConstraint(
+            "state IN ('planning','awaiting_confirmation','preparing_sensors',"
+            "'sensors_prepared','backup_running','backup_verified',"
+            "'database_reset_running','database_reset_committed',"
+            "'sensor_commit_running','verification_running','completed',"
+            "'completed_with_resets_pending_on_reconnect','partial_failure',"
+            "'attention_required','cancelled','failed_before_commit')",
+            name="data_reset_operation_state",
+        ),
+        Index(
+            "uq_data_reset_operation_active_site",
+            "site_id",
+            unique=True,
+            postgresql_where=text("state NOT IN ('completed','cancelled','failed_before_commit')"),
+            sqlite_where=text("state NOT IN ('completed','cancelled','failed_before_commit')"),
+        ),
+    )
+
+
+class DataResetParticipant(Base):
+    """Per-device reset checkpoints and redacted, replay-safe receipt evidence."""
+
+    __tablename__ = "data_reset_participants"
+    operation_id: Mapped[str] = mapped_column(
+        ForeignKey("data_reset_operations.id", ondelete="CASCADE"), primary_key=True
+    )
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("devices.id", ondelete="RESTRICT"), primary_key=True
+    )
+    state: Mapped[str] = mapped_column(String(48), default="pending", index=True)
+    planned_classification: Mapped[str] = mapped_column(String(24))
+    reset_generation: Mapped[int] = mapped_column(Integer)
+    reset_boundary: Mapped[int] = mapped_column(BigInteger)
+    old_sequence_floor: Mapped[int] = mapped_column(BigInteger, default=0)
+    old_next_sequence: Mapped[int] = mapped_column(BigInteger, default=1)
+    new_sequence_floor: Mapped[int | None] = mapped_column(BigInteger)
+    new_next_sequence: Mapped[int | None] = mapped_column(BigInteger)
+    server_highest_contiguous: Mapped[int] = mapped_column(BigInteger, default=0)
+    server_maximum_seen: Mapped[int] = mapped_column(BigInteger, default=0)
+    sensor_ack_sequence: Mapped[int | None] = mapped_column(BigInteger)
+    sensor_newest_sequence: Mapped[int | None] = mapped_column(BigInteger)
+    boot_id: Mapped[str | None] = mapped_column(String(80))
+    firmware_version: Mapped[str | None] = mapped_column(String(80))
+    firmware_build_hash: Mapped[str | None] = mapped_column(String(128))
+    card_generation: Mapped[str | None] = mapped_column(String(128))
+    prepare_receipt_safe: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    commit_receipt_safe: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    prepare_receipt_digest: Mapped[str | None] = mapped_column(String(64))
+    commit_receipt_digest: Mapped[str | None] = mapped_column(String(64))
+    preservation_hash_before: Mapped[str | None] = mapped_column(String(64))
+    preservation_hash_after: Mapped[str | None] = mapped_column(String(64))
+    failure_code: Mapped[str | None] = mapped_column(String(80))
+    failure_summary: Mapped[str | None] = mapped_column(String(500))
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    prepared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    commit_authorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    __table_args__ = (
+        CheckConstraint("reset_generation > 0", name="data_reset_participant_generation_positive"),
+        CheckConstraint(
+            "reset_boundary >= 0 AND old_sequence_floor >= 0 AND old_next_sequence > 0",
+            name="data_reset_participant_old_sequence_bounds",
+        ),
+        CheckConstraint(
+            "new_sequence_floor IS NULL OR new_sequence_floor >= reset_boundary",
+            name="data_reset_participant_new_floor_boundary",
+        ),
+        CheckConstraint(
+            "new_next_sequence IS NULL OR new_next_sequence > reset_boundary",
+            name="data_reset_participant_new_next_boundary",
+        ),
+        CheckConstraint(
+            "state IN ('pending','unreachable','unsupported','prepare_requested',"
+            "'prepared','commit_requested','committed','verified','pending_reconnect',"
+            "'failed','attention_required','not_applicable')",
+            name="data_reset_participant_state",
+        ),
+        CheckConstraint(
+            "planned_classification IN "
+            "('connected','authentication_failed','disconnected','unsupported','revoked','removed')",
+            name="data_reset_participant_planned_classification",
+        ),
+        Index("ix_data_reset_participant_device_state", "device_id", "state"),
+    )
+
+
+class SiteDataState(Base):
+    """Monotonic site epoch and History-cache revision."""
+
+    __tablename__ = "site_data_states"
+    site_id: Mapped[str] = mapped_column(
+        ForeignKey("sites.id", ondelete="CASCADE"), primary_key=True
+    )
+    data_generation: Mapped[int] = mapped_column(Integer, default=0)
+    history_revision: Mapped[int] = mapped_column(Integer, default=0)
+    last_reset_operation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("data_reset_operations.id", ondelete="SET NULL"), nullable=True
+    )
+    last_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    __table_args__ = (
+        CheckConstraint("data_generation >= 0", name="site_data_generation_nonnegative"),
+        CheckConstraint("history_revision >= 0", name="site_history_revision_nonnegative"),
+    )
+
+
+class DeviceDataState(Base):
+    """Per-device generation, reset boundary, and ingestion gate."""
+
+    __tablename__ = "device_data_states"
+    device_id: Mapped[str] = mapped_column(
+        ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True
+    )
+    site_id: Mapped[str] = mapped_column(ForeignKey("sites.id", ondelete="RESTRICT"), index=True)
+    data_generation: Mapped[int] = mapped_column(Integer, default=0)
+    reset_boundary: Mapped[int] = mapped_column(BigInteger, default=0)
+    ingestion_gate: Mapped[str] = mapped_column(String(32), default="open", index=True)
+    reset_required_on_reconnect: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    active_operation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("data_reset_operations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    last_completed_operation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("data_reset_operations.id", ondelete="SET NULL"), nullable=True
+    )
+    last_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    generation_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+    __table_args__ = (
+        CheckConstraint("data_generation >= 0", name="device_data_generation_nonnegative"),
+        CheckConstraint("reset_boundary >= 0", name="device_reset_boundary_nonnegative"),
+        CheckConstraint(
+            "ingestion_gate IN ('open','preparing','blocked','pending_reconnect',"
+            "'committing','verifying','attention_required')",
+            name="device_data_ingestion_gate",
+        ),
+    )
+
+
+class DataResetPricingBaseline(Base):
+    """References and canonical hash proving active pricing survived the reset."""
+
+    __tablename__ = "data_reset_pricing_baselines"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    operation_id: Mapped[str] = mapped_column(
+        ForeignKey("data_reset_operations.id", ondelete="CASCADE"), index=True
+    )
+    utility_account_id: Mapped[str] = mapped_column(
+        ForeignKey("utility_accounts.id", ondelete="RESTRICT"), index=True
+    )
+    rate_plan_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_plans.id", ondelete="RESTRICT"), index=True
+    )
+    rate_version_id: Mapped[str] = mapped_column(
+        ForeignKey("rate_versions.id", ondelete="RESTRICT"), index=True
+    )
+    # These are immutable audit identifiers, not live foreign keys. A later
+    # data-only reset must be able to remove the preceding reset's clean
+    # assignment/cycle while preserving this audit record.
+    rate_assignment_id: Mapped[str] = mapped_column(String(36), index=True)
+    billing_cycle_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    data_generation: Mapped[int] = mapped_column(Integer)
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    pricing_configuration_hash: Mapped[str] = mapped_column(String(64))
+    pricing_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "operation_id",
+            "utility_account_id",
+            name="uq_data_reset_pricing_baseline_account",
+        ),
+        CheckConstraint("data_generation > 0", name="data_reset_pricing_generation_positive"),
     )
 
 

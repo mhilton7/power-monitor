@@ -16,6 +16,7 @@ import {
   Plus,
   Radio,
   RefreshCw,
+  RotateCcw,
   Rows3,
   Shield,
   Trash2,
@@ -74,6 +75,7 @@ import type {
 } from '../../types/models'
 import { dateTime, energy, fileSize, money, power, relativeTime, statusLabel } from '../../utils/format'
 import { AdvancedRateSettings } from '../../features/rates/AdvancedRateSettings'
+import { DataResetWorkflow } from '../../features/data-reset/DataResetWorkflow'
 
 type Section = 'home' | 'sensors' | 'family' | 'notifications' | 'appearance' | 'data' | 'advanced'
 
@@ -1180,6 +1182,7 @@ const ADVANCED_DETAIL_POLICIES = {
   layout: { allOf: ['status_indicators.manage'] },
   logs: { allOf: ['logs.export'] },
   security: { allOf: ['audit.view'] },
+  'data-reset': { allOf: ['system.data_reset'] },
 } as const satisfies Record<string, PermissionPolicy>
 
 function AdvancedSettings() {
@@ -1201,6 +1204,7 @@ function AdvancedSettings() {
     ['layout', Rows3, 'Status layout'],
     ['logs', DatabaseBackup, 'Application logs'],
     ['security', Shield, 'Permissions & audit'],
+    ['data-reset', RotateCcw, 'Data reset'],
   ] as const
   const permittedOptions = options.filter(([id]) => satisfiesPolicy(session, ADVANCED_DETAIL_POLICIES[id]))
   const detail = permittedOptions.some(([id]) => id === routeDetail) ? routeDetail : permittedOptions[0]?.[0]
@@ -1219,6 +1223,7 @@ function AdvancedSettings() {
       {detail === 'layout' && <StatusLayoutDetail />}
       {detail === 'logs' && <LogsDetail />}
       {detail === 'security' && <SecurityDetail />}
+      {detail === 'data-reset' && home && <DataResetWorkflow siteId={home.id} siteName={home.name} mfaEnabled={Boolean(session?.user?.mfaEnabled)} />}
     </div>
   )
 }

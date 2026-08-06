@@ -16,6 +16,7 @@ from app.api.routes import (
     account_network,
     auth,
     bill_imports,
+    data_reset,
     device_protocol,
     exports,
     firmware,
@@ -33,9 +34,95 @@ from app.api.routes import (
 from app.config import get_settings
 from app.logging import configure_logging
 from app.problem import ProblemError, problem_response
+from app.schemas import MAX_RESET_BOUNDARY, SIGNED_BIGINT_MAX
 from app.security.protocol import ProtocolAuthError
 from app.sensor_test_mode import sensor_test_mode
 from app.upload_limits import FirmwareUploadLimitMiddleware
+
+
+class PowerMonitorAPI(FastAPI):
+    @staticmethod
+    def _set_integer_maximum(schemas: dict[str, Any], model: str, field: str, maximum: int) -> None:
+        model_schema = schemas.get(model)
+        if not isinstance(model_schema, dict):
+            return
+        properties = model_schema.get("properties")
+        if not isinstance(properties, dict):
+            return
+        field_schema = properties.get(field)
+        if not isinstance(field_schema, dict):
+            return
+
+        def apply(value: Any) -> None:
+            if isinstance(value, dict):
+                if value.get("type") == "integer":
+                    value["maximum"] = maximum
+                for child in value.values():
+                    apply(child)
+            elif isinstance(value, list):
+                for child in value:
+                    apply(child)
+
+        apply(field_schema)
+
+    def openapi(self) -> dict[str, Any]:
+        schema = super().openapi()
+        schema.setdefault("info", {})["x-data-reset-protocol"] = "data-reset/1.0.0"
+        schemas = schema.setdefault("components", {}).setdefault("schemas", {})
+        signed_sequence_fields = {
+            "Heartbeat": (
+                "oldest_stored_sequence",
+                "oldest_syncable_sequence",
+                "newest_syncable_sequence",
+                "newest_stored_sequence",
+                "server_ack_sequence",
+                "server_maximum_seen_sequence",
+            ),
+            "SequenceCursorResponse": (
+                "highest_contiguous_accepted_sequence",
+                "maximum_seen_sequence",
+                "next_sequence_floor",
+            ),
+            "Reading": ("sequence",),
+            "UnavailableSequenceRange": ("start_sequence", "end_sequence"),
+            "HeartbeatResponse": (
+                "highest_contiguous_accepted_sequence",
+                "gap_ranges",
+            ),
+            "RejectedReading": ("sequence",),
+            "ReadingBatchResponse": (
+                "accepted",
+                "duplicates",
+                "highest_contiguous_accepted_sequence",
+                "missing_ranges",
+            ),
+            "DataResetPlanParticipant": (
+                "sensor_ack_sequence",
+                "sensor_newest_sequence",
+                "old_sequence_floor",
+                "old_next_sequence",
+            ),
+            "DataResetParticipantView": ("new_sequence_floor", "new_next_sequence"),
+            "DeviceEventBatch": ("first_stored_event_sequence",),
+        }
+        reset_boundary_fields = {
+            "HeartbeatDataResetStatus": ("reset_boundary",),
+            "SequenceCursorResponse": ("reset_boundary",),
+            "ReadingBatchResponse": ("reset_boundary",),
+            "DataResetPlanParticipant": (
+                "boundary",
+                "server_highest_contiguous",
+                "server_maximum_seen",
+            ),
+            "DataResetParticipantView": ("reset_boundary",),
+        }
+        for model, fields in signed_sequence_fields.items():
+            for field in fields:
+                self._set_integer_maximum(schemas, model, field, SIGNED_BIGINT_MAX)
+        for model, fields in reset_boundary_fields.items():
+            for field in fields:
+                self._set_integer_maximum(schemas, model, field, MAX_RESET_BOUNDARY)
+        return schema
 
 
 @asynccontextmanager
@@ -57,7 +144,7 @@ async def lifespan(_app: FastAPI) -> Any:
     logger.info("application_stopped")
 
 
-app = FastAPI(
+app = PowerMonitorAPI(
     title="Power Monitor Server API",
     version="1.0.0",
     description="Central server for pm-protocol/1.0.0 sensor fleets",
@@ -77,6 +164,7 @@ for router in (
     access_control.router,
     account_network.router,
     bill_imports.router,
+    data_reset.router,
     tiered_rates.router,
     device_protocol.router,
     logs.router,

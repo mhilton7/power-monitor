@@ -15,6 +15,7 @@ from app.firmware_lifecycle import reconcile_stale_firmware_deployments
 from app.logging import configure_logging
 from sqlalchemy import text
 
+from worker.app.data_reset import process_data_reset_operations
 from worker.app.polling import poll_due_devices
 from worker.app.rate_sync import (
     activate_due_versions,
@@ -57,6 +58,7 @@ async def _process_work(session: Any, factory: Any, settings: Any) -> dict[str, 
     # work so a later worker failure cannot roll back an OTA terminal outcome
     # or block an authenticated sensor report for the duration of the loop.
     await session.commit()
+    data_reset = await process_data_reset_operations(session, settings)
     history_normalization = await reconcile_missing_normalized_intervals(session)
     alerts = await evaluate_alerts(session, settings)
     notifications = await process_notification_jobs(session, settings)
@@ -68,7 +70,12 @@ async def _process_work(session: Any, factory: Any, settings: Any) -> dict[str, 
     rate_sync = await process_rate_sync_jobs(session, settings)
     rates_activated = await activate_due_versions(session)
     stale_rate_sources = await check_stale_sources(session)
+    # Release all earlier task locks before retention acquires deterministic
+    # per-site reset barriers. Release those barriers again before network
+    # polling so an active reset is never delayed by device I/O.
+    await session.commit()
     utility_bill_retention_deletions = await due_retention_deletions(session)
+    await session.commit()
     polling = await poll_due_devices(factory, settings)
     now = datetime.now(UTC)
     state = await session.get(WorkerState, "main")
@@ -91,6 +98,7 @@ async def _process_work(session: Any, factory: Any, settings: Any) -> dict[str, 
         "exports_completed": exports,
         "reports_completed": reports,
         "history_normalization": history_normalization,
+        "data_reset": data_reset,
         "firmware_reconciliation": firmware_reconciliation,
         "cost_runs_completed": costs,
         "tier_recalculations_completed": tier_recalculations,

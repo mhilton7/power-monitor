@@ -8,6 +8,12 @@
     "protocol_version": {"const": "pm-protocol/1.0.0"},
     "schema_version": {"const": "reading-batch/1.0.0"},
     "device_id": {"type": "string", "format": "uuid"},
+    "data_generation": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Additive data-only-reset epoch; omission means generation zero for legacy sensors."
+    },
     "readings": {
       "type": "array",
       "minItems": 1,
@@ -16,7 +22,13 @@
         "type": "object",
         "required": ["sequence", "boot_id", "interval_start", "interval_end", "time_trusted", "energy_method", "ct_rating_amps", "quality_flags", "firmware_version"],
         "properties": {
-          "sequence": {"type": "integer", "minimum": 1},
+          "data_generation": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Must equal the enclosing batch generation."
+          },
+          "sequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
           "boot_id": {"type": "string", "format": "uuid"},
           "interval_start": {"type": "string", "format": "date-time"},
           "interval_end": {"type": "string", "format": "date-time"},
@@ -35,4 +47,3 @@
   },
   "additionalProperties": true
 }
-

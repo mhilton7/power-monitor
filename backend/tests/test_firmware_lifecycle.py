@@ -300,6 +300,7 @@ async def test_worker_loop_runs_ota_reconciliation_without_api_polling(
     monkeypatch.setattr(worker_main, "reconcile_stale_firmware_deployments", ota_reconciliation)
     for name in (
         "reconcile_missing_normalized_intervals",
+        "process_data_reset_operations",
         "evaluate_alerts",
         "process_rate_sync_jobs",
         "check_stale_sources",
@@ -336,7 +337,9 @@ async def test_worker_loop_runs_ota_reconciliation_without_api_polling(
         "terminalized": 1,
         "ota_post_boot_timeout": 1,
     }
-    assert session.commit.await_count == 2
+    # Firmware outcomes, pre-retention work, retention barriers, and worker
+    # state are committed independently so locks never span device polling.
+    assert session.commit.await_count == 4
 
 
 def _heartbeat(*, boot_id: str, pzem_ok: bool = True) -> Heartbeat:

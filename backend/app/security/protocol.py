@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import secrets
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qsl, quote, urlsplit
+from uuid import UUID
 
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
@@ -21,6 +23,7 @@ PROTOCOL = "pm-protocol/1.0.0"
 CANONICAL_PREFIX = "PM-HMAC-SHA256-V1"
 DEVICE_TO_SERVER_INFO = b"pm-device-to-server-v1"
 SERVER_TO_DEVICE_INFO = b"pm-server-to-device-v1"
+DATA_RESET_RECEIPT_INFO = b"pm-data-reset-receipt-v1"
 
 
 class ProtocolAuthError(ValueError):
@@ -61,6 +64,65 @@ def canonical_string(
 def derive_key(secret: bytes, direction: str) -> bytes:
     info = DEVICE_TO_SERVER_INFO if direction == "device-to-server" else SERVER_TO_DEVICE_INFO
     return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=info).derive(secret)
+
+
+def derive_data_reset_receipt_key(secret: bytes, device_id: str) -> bytes:
+    """Derive the device-to-server key used to bind durable reset receipts."""
+
+    canonical_device_id = str(UUID(device_id))
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=canonical_device_id.encode("utf-8"),
+        info=DATA_RESET_RECEIPT_INFO,
+    ).derive(derive_key(secret, "device-to-server"))
+
+
+def canonical_data_reset_receipt(receipt: dict[str, object]) -> bytes:
+    """Return the portable canonical JSON covered by a reset receipt HMAC."""
+
+    unsigned = {key: value for key, value in receipt.items() if key != "receipt_digest"}
+
+    def reject_floats(value: object) -> None:
+        if isinstance(value, float):
+            raise ValueError("data reset receipt decimals must be JSON strings")
+        if isinstance(value, dict):
+            for child in value.values():
+                reject_floats(child)
+        elif isinstance(value, list):
+            for child in value:
+                reject_floats(child)
+
+    reject_floats(unsigned)
+    return json.dumps(
+        unsigned,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def calculate_data_reset_receipt_digest(
+    secret: bytes, device_id: str, receipt: dict[str, object]
+) -> str:
+    return hmac.new(
+        derive_data_reset_receipt_key(secret, device_id),
+        canonical_data_reset_receipt(receipt),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def verify_data_reset_receipt_digest(
+    secret: bytes, device_id: str, receipt: dict[str, object]
+) -> bool:
+    supplied = receipt.get("receipt_digest")
+    if not isinstance(supplied, str):
+        return False
+    return hmac.compare_digest(
+        supplied,
+        calculate_data_reset_receipt_digest(secret, device_id, receipt),
+    )
 
 
 def calculate_signature(

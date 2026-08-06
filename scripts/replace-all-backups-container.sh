@@ -102,6 +102,12 @@ eligible AS (
       'verified','completed_unverified','verification_failed',
       'backup_failed','artifact_missing','deletion_failed'
     )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM data_reset_operations AS reset_operation
+      WHERE reset_operation.backup_run_id=backup_runs.id
+        AND reset_operation.state NOT IN ('completed','cancelled','failed_before_commit')
+    )
     AND EXISTS (SELECT 1 FROM replacement)
   RETURNING id, COALESCE(original_size_bytes, 0) AS original_size_bytes
 )

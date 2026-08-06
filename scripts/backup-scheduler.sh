@@ -307,6 +307,12 @@ SELECT id
 FROM backup_runs
 WHERE completed_at < now() - (:'retention_days' || ' days')::interval
   AND status IN ('verified','completed_unverified','verification_failed','backup_failed')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM data_reset_operations AS reset_operation
+    WHERE reset_operation.backup_run_id=backup_runs.id
+      AND reset_operation.state NOT IN ('completed','cancelled','failed_before_commit')
+  )
   AND (
     verified_at IS NULL
     OR (
@@ -326,7 +332,13 @@ UPDATE backup_runs
 SET status='deleting', deletion_reason='Automatic retention cleanup',
     original_size_bytes=size_bytes, updated_at=now()
 WHERE id=:'run_id'
-  AND status IN ('verified','completed_unverified','verification_failed','backup_failed');
+  AND status IN ('verified','completed_unverified','verification_failed','backup_failed')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM data_reset_operations AS reset_operation
+    WHERE reset_operation.backup_run_id=backup_runs.id
+      AND reset_operation.state NOT IN ('completed','cancelled','failed_before_commit')
+  );
 INSERT INTO background_jobs (
   id, job_type, status, requested_at, scheduled_for, correlation_id,
   dedupe_key, idempotency_key, trigger_type, progress, result

@@ -58,6 +58,7 @@ export const PERMISSION_CODES = [
   'status_indicators.view',
   'storage.manage',
   'storage.view',
+  'system.data_reset',
   'topology.manage',
   'topology.view',
   'usage.view',
@@ -99,6 +100,7 @@ export const SETTINGS_SECTION_POLICIES = {
     anyOf: [
       'network.manage', 'topology.manage', 'firmware.view', 'firmware.manage', 'firmware.deploy', 'interface_text.manage',
       'status_indicators.manage', 'audit.view', 'logs.export', 'settings.manage',
+      'system.data_reset',
       'rates.manage_custom', 'rates.manage_sources', 'rates.check_sources',
     ],
   },

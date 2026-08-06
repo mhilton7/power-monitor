@@ -376,6 +376,13 @@ PERMISSION_DEFINITIONS = (
         True,
     ),
     _permission(
+        "system.data_reset",
+        "Administration",
+        "Reset readings and pricing history",
+        "Coordinate a protected data-only reset across the server and assigned sensors.",
+        True,
+    ),
+    _permission(
         "interface_text.view",
         "Administration",
         "View interface text",
@@ -405,6 +412,7 @@ PERMISSION_DEFINITIONS = (
 
 PERMISSION_CATALOG = {item.code: item for item in PERMISSION_DEFINITIONS}
 ALL_PERMISSIONS = frozenset(PERMISSION_CATALOG)
+ADMIN_ONLY_PERMISSIONS = frozenset({"system.data_reset"})
 
 VIEWER_PERMISSIONS = frozenset(
     {
@@ -505,6 +513,9 @@ PERMISSION_DEPENDENCIES: dict[str, frozenset[str]] = {
     "alerts.manage_rules": frozenset({"alerts.view"}),
     "alerts.manage_delivery": frozenset({"alerts.view"}),
     "backups.create": frozenset({"backups.view"}),
+    "system.data_reset": frozenset(
+        {"settings.view", "audit.view", "backups.view", "devices.view", "rates.view"}
+    ),
 }
 
 
@@ -521,6 +532,15 @@ def validate_permissions(codes: set[str]) -> None:
             "One or more permission codes are not registered",
             "permission_unknown",
             extra={"permissions": unknown},
+        )
+    admin_only = sorted(codes & ADMIN_ONLY_PERMISSIONS)
+    if admin_only:
+        raise ProblemError(
+            422,
+            "Administrator-only permission",
+            "Administrator-only system operations cannot be assigned to a custom role",
+            "permission_admin_only",
+            extra={"permissions": admin_only},
         )
     missing: dict[str, list[str]] = {}
     for code, required in PERMISSION_DEPENDENCIES.items():
@@ -616,6 +636,7 @@ async def permissions_for_roles(session: AsyncSession, role_names: set[str]) -> 
     )
     for role_name in role_names:
         stored.update(BUILTIN_ROLE_PERMISSIONS.get(role_name, ()))
+    stored.difference_update(ADMIN_ONLY_PERMISSIONS)
     return frozenset(stored)
 
 
@@ -663,6 +684,18 @@ def require_recent_reauthentication(reauthenticated_at: datetime | None) -> None
             "Reauthentication required",
             "Confirm your current password or MFA code before this protected change",
             "reauthentication_required",
+        )
+
+
+def require_data_reset_administrator(*, roles: frozenset[str], permissions: frozenset[str]) -> None:
+    """Enforce the reset's built-in-admin and dedicated-permission boundary."""
+
+    if "admin" not in roles or "system.data_reset" not in permissions:
+        raise ProblemError(
+            403,
+            "Data reset access denied",
+            "A built-in administrator with the data reset permission is required",
+            "data_reset_administrator_required",
         )
 
 

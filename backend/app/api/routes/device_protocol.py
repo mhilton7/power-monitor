@@ -9,17 +9,25 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import AppSettings, DbSession, Verified, audit_event
+from app.data_reset.service import (
+    ensure_device_reset_mutations_allowed,
+    ensure_site_reset_mutations_allowed,
+    redact_history_values,
+)
 from app.db.models import (
     AlertInstance,
     AlertRule,
+    DataResetOperation,
+    DataResetParticipant,
     Device,
     DeviceAddress,
     DeviceCapability,
     DeviceConfigVersion,
     DeviceCredential,
+    DeviceDataState,
     DeviceEvent,
     DeviceEventSyncCursor,
     DeviceHeartbeat,
@@ -31,6 +39,7 @@ from app.db.models import (
     FirmwareRelease,
     SequenceGap,
     Site,
+    SiteDataState,
     SyncCursor,
 )
 from app.firmware_lifecycle import transition_firmware_deployment
@@ -47,6 +56,7 @@ from app.ota import (
 )
 from app.problem import ProblemError
 from app.schemas import (
+    SIGNED_BIGINT_MAX,
     ConfigReport,
     DeviceEventBatch,
     EnrollmentClaim,
@@ -581,6 +591,12 @@ async def claim_enrollment(
             "Enrollment requires operational microSD storage",
             "sd_required",
         )
+    advertised_reset_protocol = payload.capabilities.data_reset_protocol
+    if (
+        advertised_reset_protocol is None
+        and "data-reset/1.0.0" in payload.capabilities.supported_endpoints
+    ):
+        advertised_reset_protocol = "data-reset/1.0.0"
     existing_device = await session.scalar(
         select(Device).where(Device.hardware_id == payload.hardware_id).with_for_update()
     )
@@ -601,6 +617,126 @@ async def claim_enrollment(
             "Active site required",
             "Enable the site before enrolling or reassigning sensors",
             "site_not_assignable",
+        )
+    await ensure_site_reset_mutations_allowed(session, [site.id])
+    site_data_state = await session.get(SiteDataState, site.id, with_for_update=True)
+    historical_site_generation = int(
+        await session.scalar(
+            select(func.max(DataResetOperation.reset_generation)).where(
+                DataResetOperation.site_id == site.id,
+                DataResetOperation.central_commit_at.is_not(None),
+            )
+        )
+        or 0
+    )
+    required_site_generation = max(
+        historical_site_generation,
+        int(site_data_state.data_generation) if site_data_state is not None else 0,
+    )
+    required_claim_generation = required_site_generation
+    existing_data_state: DeviceDataState | None = None
+    existing_sync_cursor: SyncCursor | None = None
+    historical_reset_generation = 0
+    historical_reset_boundary = 0
+    if existing_device is not None:
+        await ensure_device_reset_mutations_allowed(session, [existing_device.id])
+        existing_data_state = await session.get(
+            DeviceDataState,
+            existing_device.id,
+            with_for_update=True,
+        )
+        existing_sync_cursor = await session.get(
+            SyncCursor,
+            existing_device.id,
+            with_for_update=True,
+        )
+        historical_reset_generation = int(
+            await session.scalar(
+                select(func.max(DataResetParticipant.reset_generation)).where(
+                    DataResetParticipant.device_id == existing_device.id
+                )
+            )
+            or 0
+        )
+        historical_reset_boundary = int(
+            await session.scalar(
+                select(func.max(DataResetParticipant.reset_boundary)).where(
+                    DataResetParticipant.device_id == existing_device.id
+                )
+            )
+            or 0
+        )
+        reset_handoff_required = existing_data_state is not None and (
+            existing_data_state.ingestion_gate != "open"
+            or existing_data_state.reset_required_on_reconnect
+        )
+        reset_generation = max(
+            historical_reset_generation,
+            required_site_generation,
+            int(existing_data_state.data_generation) if existing_data_state is not None else 0,
+            int(existing_sync_cursor.data_generation) if existing_sync_cursor is not None else 0,
+        )
+        required_claim_generation = reset_generation
+        reset_boundary = max(
+            historical_reset_boundary,
+            int(existing_data_state.reset_boundary) if existing_data_state is not None else 0,
+            int(existing_sync_cursor.reset_boundary) if existing_sync_cursor is not None else 0,
+            (
+                int(existing_sync_cursor.highest_contiguous_sequence)
+                if existing_sync_cursor is not None
+                else 0
+            ),
+            (
+                int(existing_sync_cursor.maximum_seen_sequence)
+                if existing_sync_cursor is not None
+                else 0
+            ),
+        )
+        verified_reset = None
+        if reset_generation > 0 or reset_boundary > 0:
+            verified_reset = await session.scalar(
+                select(DataResetParticipant.device_id)
+                .join(
+                    DataResetOperation,
+                    DataResetOperation.id == DataResetParticipant.operation_id,
+                )
+                .where(
+                    DataResetParticipant.device_id == existing_device.id,
+                    DataResetParticipant.reset_generation == reset_generation,
+                    DataResetParticipant.state == "verified",
+                    DataResetOperation.central_commit_at.is_not(None),
+                )
+                .limit(1)
+            )
+        cross_site_reenrollment = existing_device.site_id != site.id
+        if (
+            cross_site_reenrollment
+            or reset_handoff_required
+            or ((reset_generation > 0 or reset_boundary > 0) and verified_reset is None)
+        ):
+            raise ProblemError(
+                409,
+                "Local data reset recovery required",
+                "This decommissioned sensor did not complete the site's latest "
+                "data reset. Reenrollment cannot issue new credentials until a "
+                "future authenticated catch-up workflow clears its device-wide "
+                "local readings and installs the committed generation.",
+                "reenrollment_requires_data_reset_recovery",
+                extra={
+                    "device_id": existing_device.id,
+                    "required_data_generation": reset_generation,
+                    "reset_boundary": reset_boundary,
+                    "cross_site_reenrollment": cross_site_reenrollment,
+                },
+            )
+    if required_claim_generation > 0 and advertised_reset_protocol is None:
+        raise ProblemError(
+            409,
+            "Data-generation enrollment unsupported",
+            "This site requires a sensor enrollment client that can durably install "
+            "the server's reset generation before its first heartbeat or reading upload.",
+            "enrollment_data_generation_unsupported",
+            extra={"required_data_generation": required_claim_generation},
         )
     direct_address = request.client.host if request.client else ""
     try:
@@ -694,6 +830,58 @@ async def claim_enrollment(
         session.add(device)
         config_version = 1
     await session.flush()
+    if site_data_state is None:
+        site_data_state = SiteDataState(
+            site_id=site.id,
+            data_generation=required_site_generation,
+            history_revision=0,
+            updated_at=now,
+        )
+        session.add(site_data_state)
+        await session.flush()
+    elif int(site_data_state.data_generation) < required_site_generation:
+        site_data_state.data_generation = required_site_generation
+        site_data_state.updated_at = now
+    device_data_state = existing_data_state or await session.get(
+        DeviceDataState, device.id, with_for_update=True
+    )
+    sync_cursor = existing_sync_cursor or await session.get(
+        SyncCursor, device.id, with_for_update=True
+    )
+    reenrollment_boundary = max(
+        historical_reset_boundary,
+        int(device_data_state.reset_boundary) if device_data_state is not None else 0,
+        int(sync_cursor.reset_boundary) if sync_cursor is not None else 0,
+        int(sync_cursor.highest_contiguous_sequence) if sync_cursor is not None else 0,
+        int(sync_cursor.maximum_seen_sequence) if sync_cursor is not None else 0,
+    )
+    reenrollment_generation = max(
+        historical_reset_generation,
+        required_site_generation,
+        int(device_data_state.data_generation) if device_data_state is not None else 0,
+        int(sync_cursor.data_generation) if sync_cursor is not None else 0,
+    )
+    if device_data_state is None:
+        device_data_state = DeviceDataState(
+            device_id=device.id,
+            site_id=site.id,
+            data_generation=reenrollment_generation,
+            reset_boundary=0,
+            ingestion_gate="open",
+            reset_required_on_reconnect=False,
+            generation_updated_at=now,
+            updated_at=now,
+        )
+        session.add(device_data_state)
+    elif reenrollment:
+        device_data_state.site_id = site.id
+        device_data_state.data_generation = reenrollment_generation
+        device_data_state.reset_boundary = reenrollment_boundary
+        device_data_state.ingestion_gate = "open"
+        device_data_state.reset_required_on_reconnect = False
+        device_data_state.active_operation_id = None
+        device_data_state.generation_updated_at = now
+        device_data_state.updated_at = now
     current_assignment = await session.scalar(
         select(DeviceSiteAssignment).where(
             DeviceSiteAssignment.device_id == device.id,
@@ -727,6 +915,8 @@ async def claim_enrollment(
     capability_features: dict[str, Any] = {
         "supported_endpoints": payload.capabilities.supported_endpoints
     }
+    if advertised_reset_protocol is not None:
+        capability_features["data_reset"] = advertised_reset_protocol
     if payload.capabilities.ota is not None:
         capability_features["ota"] = payload.capabilities.ota.model_dump(mode="json")
     capability = await session.get(DeviceCapability, device.id)
@@ -761,15 +951,23 @@ async def claim_enrollment(
             created_at=now,
         )
     )
-    if await session.get(SyncCursor, device.id) is None:
+    if sync_cursor is None:
         session.add(
             SyncCursor(
                 device_id=device.id,
-                highest_contiguous_sequence=0,
-                maximum_seen_sequence=0,
+                highest_contiguous_sequence=reenrollment_boundary,
+                maximum_seen_sequence=reenrollment_boundary,
+                data_generation=reenrollment_generation,
+                reset_boundary=reenrollment_boundary,
                 updated_at=now,
             )
         )
+    elif reenrollment:
+        sync_cursor.highest_contiguous_sequence = reenrollment_boundary
+        sync_cursor.maximum_seen_sequence = reenrollment_boundary
+        sync_cursor.data_generation = reenrollment_generation
+        sync_cursor.reset_boundary = reenrollment_boundary
+        sync_cursor.updated_at = now
     token.consumed_at = now
     session.add(
         audit_event(
@@ -806,6 +1004,8 @@ async def claim_enrollment(
         sync_policy={
             "maximum_batch_records": settings.max_reading_batch_records,
             "durable_interval_seconds": 60,
+            "data_generation": reenrollment_generation,
+            "reset_boundary": reenrollment_boundary,
         },
     )
 
@@ -835,6 +1035,137 @@ def _status_from_heartbeat(payload: Heartbeat) -> str:
     return "online_synchronized"
 
 
+def _heartbeat_generation(payload: Heartbeat) -> int | None:
+    value = getattr(payload, "data_generation", None)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _safe_reset_heartbeat_payload(payload: Heartbeat) -> dict[str, Any]:
+    """Retain only coordination/liveness evidence while reset ingestion is gated."""
+
+    storage_details = payload.sd.details.model_dump(mode="json")
+    reset_evidence = (
+        payload.data_reset.model_dump(mode="json") if payload.data_reset is not None else None
+    )
+    return {
+        "protocol_version": payload.protocol_version,
+        "schema_version": payload.schema_version,
+        "device_id": payload.device_id,
+        "boot_id": payload.boot_id,
+        "firmware_version": payload.firmware_version,
+        "firmware_build_hash": payload.firmware_build_hash,
+        "uptime_seconds": payload.uptime_seconds,
+        "reboot_reason": payload.reboot_reason,
+        "connection_mode": payload.connection_mode,
+        "configuration_version": payload.configuration_version,
+        "data_generation": _heartbeat_generation(payload),
+        "pzem": {"ok": payload.pzem.ok, "status": payload.pzem.status},
+        "sd": {
+            "ok": payload.sd.ok,
+            "status": payload.sd.status,
+            "card_generation": storage_details.get("card_generation"),
+        },
+        "time": {"trusted": payload.time.trusted, "source": payload.time.source},
+        "data_reset": reset_evidence,
+    }
+
+
+async def _refresh_signed_heartbeat_capabilities(
+    session: DbSession,
+    *,
+    device: Device,
+    payload: Heartbeat,
+    now: datetime,
+) -> None:
+    """Refresh only schema-validated capability claims from an authenticated heartbeat."""
+
+    if payload.ota is None and payload.data_reset is None:
+        return
+    capability = await session.get(DeviceCapability, device.id)
+    if capability is None:
+        return
+    features = dict(capability.features or {})
+    if payload.ota is not None:
+        features["ota"] = payload.ota.model_dump(mode="json")
+    if payload.data_reset is not None:
+        features["data_reset"] = payload.data_reset.protocol
+    capability.features = features
+    capability.reported_at = now
+
+
+async def _reject_gated_heartbeat(
+    *,
+    session: DbSession,
+    request: Request,
+    device: Device,
+    payload: Heartbeat,
+    state: DeviceDataState,
+    now: datetime,
+    code: str,
+    detail: str,
+) -> None:
+    """Persist safe signed liveness, never measurement history, then reject."""
+
+    device.last_seen_at = now
+    device.firmware_version = payload.firmware_version
+    device.firmware_build_hash = payload.firmware_build_hash
+    device.connection_mode = payload.connection_mode
+    device.status = "reset_pending"
+    await _refresh_signed_heartbeat_capabilities(
+        session,
+        device=device,
+        payload=payload,
+        now=now,
+    )
+    session.add(
+        DeviceHeartbeat(
+            device_id=device.id,
+            boot_id=payload.boot_id,
+            received_at=now,
+            device_time=None,
+            source_ip=getattr(request.state, "device_source_ip", None),
+            current_watts=None,
+            rssi_dbm=payload.rssi_dbm,
+            pzem_ok=payload.pzem.ok,
+            sd_ok=payload.sd.ok,
+            time_trusted=payload.time.trusted,
+            newest_sequence=state.reset_boundary,
+            backlog_estimate=0,
+            data_generation=(
+                _heartbeat_generation(payload) if _heartbeat_generation(payload) is not None else 0
+            ),
+            payload=_safe_reset_heartbeat_payload(payload),
+        )
+    )
+    session.add(
+        DeviceStatusSnapshot(
+            device_id=device.id,
+            captured_at=now,
+            status="reset_pending",
+            evidence={
+                "heartbeat": True,
+                "data_reset_pending": True,
+                "required_data_generation": state.data_generation,
+                "reset_boundary": state.reset_boundary,
+            },
+        )
+    )
+    await session.commit()
+    raise ProblemError(
+        422 if code == "data_generation_required" else 409,
+        "Sensor reset required" if code == "sensor_reset_required" else "Data generation rejected",
+        detail,
+        code,
+        extra={
+            "required_data_generation": state.data_generation,
+            "reset_boundary": state.reset_boundary,
+            "operation_id": state.active_operation_id,
+        },
+    )
+
+
 @router.post("/device-heartbeats", response_model=HeartbeatResponse)
 async def heartbeat(
     payload: Heartbeat,
@@ -850,19 +1181,72 @@ async def heartbeat(
         )
     now = datetime.now(UTC)
     device = verified.device
+    reset_state = await session.get(DeviceDataState, device.id, with_for_update=True)
+    received_generation = _heartbeat_generation(payload)
+    if reset_state is not None:
+        required_generation = int(reset_state.data_generation)
+        if reset_state.ingestion_gate != "open" or reset_state.reset_required_on_reconnect:
+            await _reject_gated_heartbeat(
+                session=session,
+                request=request,
+                device=device,
+                payload=payload,
+                state=reset_state,
+                now=now,
+                code="sensor_reset_required",
+                detail=(
+                    "This sensor must complete its coordinated local data reset before "
+                    "measurement synchronization resumes"
+                ),
+            )
+        if received_generation is None and required_generation > 0:
+            await _reject_gated_heartbeat(
+                session=session,
+                request=request,
+                device=device,
+                payload=payload,
+                state=reset_state,
+                now=now,
+                code="data_generation_required",
+                detail="This sensor must report its coordinated reset data generation",
+            )
+        effective_generation = received_generation if received_generation is not None else 0
+        if effective_generation < required_generation:
+            await _reject_gated_heartbeat(
+                session=session,
+                request=request,
+                device=device,
+                payload=payload,
+                state=reset_state,
+                now=now,
+                code="data_generation_obsolete",
+                detail="A pre-reset heartbeat cannot update measurement state",
+            )
+        if effective_generation > required_generation:
+            await _reject_gated_heartbeat(
+                session=session,
+                request=request,
+                device=device,
+                payload=payload,
+                state=reset_state,
+                now=now,
+                code="data_generation_ahead",
+                detail="The sensor generation is ahead of the server's committed generation",
+            )
+    else:
+        effective_generation = received_generation if received_generation is not None else 0
     device.last_seen_at = now
     device.firmware_version = payload.firmware_version
     device.firmware_build_hash = payload.firmware_build_hash
     device.connection_mode = payload.connection_mode
     device.effective_config_version = payload.configuration_version
     device.status = _status_from_heartbeat(payload)
-    if payload.ota is not None:
-        capability = await session.get(DeviceCapability, device.id)
-        if capability is not None:
-            features = dict(capability.features or {})
-            features["ota"] = payload.ota.model_dump(mode="json")
-            capability.features = features
-            capability.reported_at = now
+    await _refresh_signed_heartbeat_capabilities(
+        session,
+        device=device,
+        payload=payload,
+        now=now,
+    )
     heartbeat_row = DeviceHeartbeat(
         device_id=device.id,
         boot_id=payload.boot_id,
@@ -876,6 +1260,7 @@ async def heartbeat(
         time_trusted=payload.time.trusted,
         newest_sequence=payload.newest_stored_sequence,
         backlog_estimate=payload.backlog_estimate,
+        data_generation=effective_generation,
         payload=payload.model_dump(mode="json"),
     )
     session.add(heartbeat_row)
@@ -982,9 +1367,18 @@ async def heartbeat(
             device_id=device.id,
             highest_contiguous_sequence=0,
             maximum_seen_sequence=0,
+            data_generation=effective_generation,
+            reset_boundary=0,
             updated_at=now,
         )
         session.add(cursor)
+    if cursor.data_generation != effective_generation:
+        raise ProblemError(
+            409,
+            "Sequence cursor generation mismatch",
+            "The heartbeat generation is not aligned with the committed sequence cursor",
+            "data_generation_cursor_mismatch",
+        )
     server_maximum_seen = max(
         cursor.highest_contiguous_sequence,
         cursor.maximum_seen_sequence,
@@ -1070,7 +1464,7 @@ async def heartbeat(
             device_id=device.id,
             site_id=device.site_id,
             measured_at=payload.latest.measured_at,
-            power_watts=payload.latest.power_w,
+            data_generation=effective_generation,
         )
         logger.info(
             "LATEST_MEASUREMENT_UPDATED",
@@ -1106,6 +1500,8 @@ async def heartbeat(
             highest_contiguous_accepted_sequence=cursor.highest_contiguous_sequence,
             maximum_seen_sequence=server_maximum_seen,
             next_sequence_floor=server_next_floor,
+            data_generation=cursor.data_generation,
+            reset_boundary=cursor.reset_boundary,
         ),
         gap_ranges=[(gap.start_sequence, gap.end_sequence) for gap in gaps],
         desired_configuration_version=device.desired_config_version,
@@ -1145,6 +1541,7 @@ async def reading_batch(
         device_id=verified.device.id,
         readings=payload.readings,
         source="push",
+        data_generation=getattr(payload, "data_generation", None),
         first_available_sequence=first_available,
         unavailable_sequence_ranges=payload.unavailable_sequence_ranges,
         maximum_clock_skew_seconds=settings.max_device_clock_skew_seconds,
@@ -1186,6 +1583,18 @@ async def event_batch(
     duplicates: list[str] = []
     event_sequences: list[int] = []
     now = datetime.now(UTC)
+    data_state = await session.get(
+        DeviceDataState,
+        verified.device.id,
+        with_for_update=True,
+    )
+    redact_measurement_evidence = bool(
+        data_state is not None
+        and (
+            payload.data_generation != data_state.data_generation
+            or data_state.ingestion_gate != "open"
+        )
+    )
     existing_events = {
         item.event_id: item
         for item in await session.scalars(
@@ -1198,6 +1607,17 @@ async def event_batch(
     sequence_owners: dict[int, str] = {}
     for event in payload.events:
         event_sequence = event.evidence.get("event_sequence")
+        if event_sequence is not None and (
+            isinstance(event_sequence, bool)
+            or not isinstance(event_sequence, int)
+            or not 1 <= event_sequence <= SIGNED_BIGINT_MAX
+        ):
+            raise ProblemError(
+                422,
+                "Event sequence invalid",
+                "Event sequence evidence must fit signed BIGINT storage",
+                "event_sequence_invalid",
+            )
         if isinstance(event_sequence, int) and event_sequence > 0:
             prior_owner = sequence_owners.get(event_sequence)
             if prior_owner is not None and prior_owner != event.event_id:
@@ -1219,6 +1639,16 @@ async def event_batch(
                 existing.event_sequence = event_sequence
             duplicates.append(event.event_id)
             continue
+        event_predates_reset = bool(
+            data_state is not None
+            and data_state.last_reset_at is not None
+            and _aware(event.occurred_at) <= _aware(data_state.last_reset_at)
+        )
+        evidence = (
+            redact_history_values(event.evidence)
+            if redact_measurement_evidence or event_predates_reset
+            else event.evidence
+        )
         session.add(
             DeviceEvent(
                 device_id=verified.device.id,
@@ -1232,7 +1662,7 @@ async def event_batch(
                 received_at=now,
                 category=event.category,
                 severity=event.severity,
-                evidence=event.evidence,
+                evidence=evidence,
             )
         )
         accepted.append(event.event_id)
@@ -1294,6 +1724,7 @@ async def event_batch(
 
 @router.get("/device-config/effective")
 async def effective_config(verified: Verified, session: DbSession) -> dict[str, Any]:
+    await ensure_device_reset_mutations_allowed(session, [verified.device.id])
     config = await session.scalar(
         select(DeviceConfigVersion)
         .where(DeviceConfigVersion.device_id == verified.device.id)
@@ -1318,6 +1749,7 @@ async def effective_config(verified: Verified, session: DbSession) -> dict[str, 
 async def deliver_rotated_credential(
     verified: Verified, session: DbSession, settings: AppSettings
 ) -> dict[str, Any]:
+    await ensure_device_reset_mutations_allowed(session, [verified.device.id])
     pending = await session.scalar(
         select(DeviceCredential)
         .where(
@@ -1348,6 +1780,7 @@ async def deliver_rotated_credential(
 async def confirm_rotated_credential(
     request: Request, verified: Verified, session: DbSession
 ) -> dict[str, bool]:
+    await ensure_device_reset_mutations_allowed(session, [verified.device.id])
     payload = await request.json()
     credential_id = payload.get("credential_id") if isinstance(payload, dict) else None
     if credential_id != verified.credential.id:
@@ -1388,6 +1821,7 @@ async def report_config(
     payload: ConfigReport, verified: Verified, session: DbSession
 ) -> dict[str, bool]:
     _assert_device_id(payload.device_id, verified.device.id)
+    await ensure_device_reset_mutations_allowed(session, [verified.device.id])
     config = await session.scalar(
         select(DeviceConfigVersion).where(
             DeviceConfigVersion.device_id == verified.device.id,
@@ -1412,6 +1846,7 @@ async def report_config(
 async def firmware_manifest(
     verified: Verified, session: DbSession, settings: AppSettings
 ) -> dict[str, Any]:
+    await ensure_device_reset_mutations_allowed(session, [verified.device.id])
     now = datetime.now(UTC)
     deployment = await session.scalar(
         select(FirmwareDeployment)

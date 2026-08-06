@@ -209,6 +209,10 @@
   .firmware-fleet-release > .icon-button, .firmware-deployment-row > .pill, .firmware-deployment-row > .inline-actions { grid-column: 1 / -1; justify-self: start; }
   .firmware-rollout-policy { align-items: flex-start; flex-direction: column; }
   .permission-groups { grid-template-columns: 1fr; }
+  .data-reset-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .data-reset-scope-summary, .data-reset-count-grid, .data-reset-summary-line { grid-template-columns: 1fr; }
+  .data-reset-participants dl { grid-template-columns: 1fr; }
+  .data-reset-preserved ul, .data-reset-progress, .data-reset-review-list, .data-reset-result-list, .data-reset-exact-counts dl { grid-template-columns: 1fr; }
   .home-primary-onboarding { grid-template-columns: 1fr; min-height: auto; padding: var(--space-5); }
   .home-onboarding-icon { width: 4.5rem; }
   .home-assurance-list { display: grid; }

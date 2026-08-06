@@ -24,6 +24,7 @@ from app.bills.service import (
     review_import,
     validate_bill_rate_draft,
 )
+from app.data_reset.service import ensure_site_reset_mutations_allowed
 from app.db.models import (
     RateSourceArtifact,
     UtilityAccount,
@@ -120,7 +121,13 @@ def _site_allowed(principal: Principal, account: UtilityAccount) -> None:
         )
 
 
-async def _account(session: DbSession, principal: Principal, account_id: str) -> UtilityAccount:
+async def _account(
+    session: DbSession,
+    principal: Principal,
+    account_id: str,
+    *,
+    for_mutation: bool = False,
+) -> UtilityAccount:
     account = await session.get(UtilityAccount, account_id)
     if account is None or account.status != "active":
         raise ProblemError(
@@ -130,10 +137,18 @@ async def _account(session: DbSession, principal: Principal, account_id: str) ->
             "utility_account_missing",
         )
     _site_allowed(principal, account)
+    if for_mutation:
+        await ensure_site_reset_mutations_allowed(session, [account.site_id])
     return account
 
 
-async def _bill(session: DbSession, principal: Principal, bill_id: str) -> UtilityBillImport:
+async def _bill(
+    session: DbSession,
+    principal: Principal,
+    bill_id: str,
+    *,
+    for_mutation: bool = False,
+) -> UtilityBillImport:
     bill = await session.get(UtilityBillImport, bill_id)
     if bill is None:
         raise ProblemError(
@@ -143,7 +158,12 @@ async def _bill(session: DbSession, principal: Principal, bill_id: str) -> Utili
             "utility_bill_missing",
         )
     if bill.utility_account_id is not None:
-        await _account(session, principal, bill.utility_account_id)
+        await _account(
+            session,
+            principal,
+            bill.utility_account_id,
+            for_mutation=for_mutation,
+        )
     elif bill.created_by != principal.user.id:
         raise ProblemError(
             404,
@@ -281,7 +301,9 @@ async def upload_unassigned_utility_bill(
     retain_until: Annotated[datetime | None, Query()] = None,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    account = await _account(session, principal, account_id) if account_id else None
+    account = (
+        await _account(session, principal, account_id, for_mutation=True) if account_id else None
+    )
     return await _store_utility_bill(
         account=account,
         request=request,
@@ -314,7 +336,7 @@ async def upload_utility_bill(
     retain_until: Annotated[datetime | None, Query()] = None,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    account = await _account(session, principal, account_id)
+    account = await _account(session, principal, account_id, for_mutation=True)
     return await _store_utility_bill(
         account=account,
         request=request,
@@ -408,7 +430,7 @@ async def clear_utility_bill_history_entry(
     session: DbSession,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    bill = await _bill(session, principal, bill_id)
+    bill = await _bill(session, principal, bill_id, for_mutation=True)
     if bill.history_cleared_at is not None:
         return {
             "id": bill.id,
@@ -481,6 +503,18 @@ async def attach_utility_bill_account(
             "bill_account_context_immutable",
         )
     account = await _account(session, principal, payload.account_id)
+    previous_account = (
+        await _account(session, principal, bill.utility_account_id)
+        if bill.utility_account_id is not None
+        else None
+    )
+    await ensure_site_reset_mutations_allowed(
+        session,
+        [
+            account.site_id,
+            *([previous_account.site_id] if previous_account is not None else []),
+        ],
+    )
     duplicate = await session.scalar(
         select(UtilityBillImport).where(
             UtilityBillImport.utility_account_id == account.id,
@@ -596,7 +630,7 @@ async def reprocess_utility_bill(
     settings: AppSettings,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    bill = await _bill(session, principal, bill_id)
+    bill = await _bill(session, principal, bill_id, for_mutation=True)
     revision, adopted = await reprocess_bill_import(
         session,
         bill=bill,
@@ -737,7 +771,7 @@ async def review_utility_bill_import(
     session: DbSession,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    bill = await _bill(session, principal, bill_id)
+    bill = await _bill(session, principal, bill_id, for_mutation=True)
     previous_rate_version_id = bill.rate_version_id
     result = await review_import(
         session,
@@ -781,7 +815,7 @@ async def validate_utility_bill_rate_draft(
     session: DbSession,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    bill = await _bill(session, principal, bill_id)
+    bill = await _bill(session, principal, bill_id, for_mutation=True)
     result = await validate_bill_rate_draft(
         session,
         bill,
@@ -828,7 +862,14 @@ async def publish_and_assign_utility_bill_rate(
     session: DbSession,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    bill = await _bill(session, principal, bill_id)
+    if "rates.assign" not in principal.permissions:
+        raise ProblemError(
+            403,
+            "Rate assignment permission required",
+            "Publishing an imported bill rate requires rate assignment permission",
+            "forbidden",
+        )
+    bill = await _bill(session, principal, bill_id, for_mutation=True)
     if bill.utility_account_id is None:
         raise ProblemError(
             409,
@@ -837,13 +878,6 @@ async def publish_and_assign_utility_bill_rate(
             "bill_account_context_required",
         )
     account = await _account(session, principal, bill.utility_account_id)
-    if "rates.assign" not in principal.permissions:
-        raise ProblemError(
-            403,
-            "Rate assignment permission required",
-            "Publishing an imported bill rate requires rate assignment permission",
-            "forbidden",
-        )
     effective_from = payload.effective_from
     if effective_from is None:
         effective_date = datetime.fromisoformat(
@@ -901,7 +935,7 @@ async def apply_utility_bill_cycle_dates(
     session: DbSession,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    bill = await _bill(session, principal, bill_id)
+    bill = await _bill(session, principal, bill_id, for_mutation=True)
     if bill.utility_account_id is None:
         raise ProblemError(
             409,
@@ -962,7 +996,7 @@ async def update_utility_bill_retention(
     session: DbSession,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    bill = await _bill(session, principal, bill_id)
+    bill = await _bill(session, principal, bill_id, for_mutation=True)
     if bill.revision != payload.revision:
         raise ProblemError(
             409,
@@ -1017,7 +1051,7 @@ async def delete_original_utility_bill(
     session: DbSession,
 ) -> dict[str, Any]:
     _bill_admin(principal, "utility_bills.manage")
-    bill = await _bill(session, principal, bill_id)
+    bill = await _bill(session, principal, bill_id, for_mutation=True)
     removed = await delete_original_artifact(session, bill=bill)
     session.add(
         audit_event(

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Request
 from sqlalchemy import select
 
 from app.api.deps import CsrfPrincipal, DbSession, Principal, Viewer, audit_event
+from app.data_reset.service import ensure_site_reset_mutations_allowed
 from app.db.models import (
     AggregateSet,
     BaselineRule,
@@ -27,6 +28,10 @@ from app.db.models import (
 )
 from app.problem import ProblemError
 from app.rates.engine import RateEngine, load_seed_plans
+from app.rates.reset_barrier import (
+    ensure_rate_plans_reset_mutations_allowed,
+    rate_plan_site_ids,
+)
 from app.schemas import (
     CostComponent,
     CostRecalculationRequest,
@@ -50,6 +55,14 @@ def _operator(principal: Principal, permission: str = "rates.manage_custom") -> 
             "Your account does not have the required rate permission",
             "forbidden",
         )
+
+
+async def _rate_plan_site_ids(session: DbSession, plan: RatePlan) -> list[str]:
+    return await rate_plan_site_ids(session, plan)
+
+
+async def _ensure_rate_plan_reset_mutations_allowed(session: DbSession, plan: RatePlan) -> None:
+    await ensure_rate_plans_reset_mutations_allowed(session, [plan])
 
 
 @router.get("/rate-plans")
@@ -192,6 +205,7 @@ async def clone_rate_version(
             raise ProblemError(
                 422, "Invalid rate periods", f"{key} does not cover 24 hours", "rate_period_gap"
             )
+    await _ensure_rate_plan_reset_mutations_allowed(session, plan)
     latest = await session.scalar(
         select(RateVersion.version)
         .where(RateVersion.rate_plan_id == plan.id)
@@ -305,6 +319,12 @@ async def activate_rate_version(
         raise ProblemError(
             404, "Rate version not found", "Version does not exist", "rate_version_missing"
         )
+    plan = await session.get(RatePlan, version.rate_plan_id)
+    if plan is None:
+        raise ProblemError(
+            404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
+        )
+    await _ensure_rate_plan_reset_mutations_allowed(session, plan)
     for sibling in await session.scalars(
         select(RateVersion).where(RateVersion.rate_plan_id == version.rate_plan_id)
     ):
@@ -438,6 +458,10 @@ async def queue_recalculation(
             "The aggregate set is not assigned to the selected utility account",
             "aggregate_account_mismatch",
         )
+    await ensure_site_reset_mutations_allowed(
+        session,
+        [account.site_id, aggregate.site_id],
+    )
     calculation_ranges: list[tuple[datetime, datetime, RateVersion]] = []
     if version:
         calculation_ranges.append((payload.input_start, payload.input_end, version))

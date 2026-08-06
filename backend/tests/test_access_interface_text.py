@@ -138,11 +138,37 @@ async def test_custom_role_site_scope_session_revocation_and_last_admin(
 ) -> None:
     admin_session = await bootstrap_admin(api_client)
     assert "users.manage" in admin_session["user"]["permissions"]
+    assert "system.data_reset" in admin_session["user"]["permissions"]
 
     permission_response = await api_client.get("/api/v1/admin/permissions")
     assert permission_response.status_code == 200
     permission_codes = {item["code"] for item in permission_response.json()["permissions"]}
-    assert {"users.manage", "roles.manage", "interface_text.manage"} <= permission_codes
+    assert {
+        "users.manage",
+        "roles.manage",
+        "interface_text.manage",
+        "system.data_reset",
+    } <= permission_codes
+
+    admin_only_failure = await api_client.post(
+        "/api/v1/admin/roles",
+        headers=csrf(api_client),
+        json={
+            "display_name": "Reset delegate",
+            "description": "Must not receive the administrator-only reset permission",
+            "permissions": [
+                "sites.view",
+                "devices.view",
+                "rates.view",
+                "backups.view",
+                "audit.view",
+                "settings.view",
+                "system.data_reset",
+            ],
+        },
+    )
+    assert admin_only_failure.status_code == 422
+    assert admin_only_failure.json()["code"] == "permission_admin_only"
 
     sites = await api_client.get("/api/v1/sites")
     primary_site = sites.json()[0]

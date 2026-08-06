@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canAccessSettings, hasPermission, ROUTE_POLICIES, satisfiesPolicy } from '../src/access/permissions'
+import { canAccessSettings, hasPermission, ROUTE_POLICIES, satisfiesPolicy, SETTINGS_SECTION_POLICIES } from '../src/access/permissions'
 import type { UserSession } from '../src/types/models'
 
 function session(permissions: string[]): UserSession {
@@ -40,5 +40,15 @@ describe('permission-driven navigation policies', () => {
     expect(hasPermission(firmwareViewer, 'firmware.deploy')).toBe(false)
     expect(hasPermission(firmwareManager, 'firmware.deploy')).toBe(false)
     expect(hasPermission(firmwareDeployer, 'firmware.deploy')).toBe(true)
+  })
+
+  it('exposes the protected data-reset workspace only through system.data_reset', () => {
+    const ownerWithoutReset = session(['settings.manage', 'audit.view'])
+    const resetAdministrator = session(['system.data_reset'])
+
+    expect(satisfiesPolicy(ownerWithoutReset, SETTINGS_SECTION_POLICIES.advanced)).toBe(true)
+    expect(hasPermission(ownerWithoutReset, 'system.data_reset')).toBe(false)
+    expect(satisfiesPolicy(resetAdministrator, SETTINGS_SECTION_POLICIES.advanced)).toBe(true)
+    expect(hasPermission(resetAdministrator, 'system.data_reset')).toBe(true)
   })
 })

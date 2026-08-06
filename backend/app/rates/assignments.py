@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import RateAssignment, RatePlan, RateVersion, UtilityAccount
 from app.problem import ProblemError
 from app.rates.documents import validate_document
+from app.rates.reset_barrier import ensure_account_rate_mutations_allowed
 from app.rates.service import version_document
 
 ASSIGNABLE_VERSION_STATUSES = frozenset({"published", "active", "approved"})
@@ -140,13 +141,11 @@ async def assign_version(
         )
         if existing is not None:
             return existing, [], assignment_state(existing) == "current"
-    account = await session.scalar(
-        select(UtilityAccount).where(UtilityAccount.id == account_id).with_for_update()
+    account, _locked_plans = await ensure_account_rate_mutations_allowed(
+        session,
+        account_id,
+        extra_version_ids=[rate_version_id],
     )
-    if account is None:
-        raise ProblemError(
-            404, "Electric service not found", "The electric service does not exist", "not_found"
-        )
     if account.status != "active":
         raise ProblemError(
             409,
@@ -342,11 +341,7 @@ async def end_assignment(
     reason: str,
     actor_id: str,
 ) -> RateAssignment:
-    account = await session.scalar(
-        select(UtilityAccount).where(UtilityAccount.id == account_id).with_for_update()
-    )
-    if account is None:
-        raise ProblemError(404, "Electric service not found", "Unknown service", "not_found")
+    account, _locked_plans = await ensure_account_rate_mutations_allowed(session, account_id)
     instant = aware(effective_at)
     assignments = await account_assignments(session, account.id, include_cancelled=False)
     current = next(
@@ -389,11 +384,7 @@ async def resolve_assignment_conflict(
     reason: str,
     actor_id: str,
 ) -> dict[str, Any]:
-    account = await session.scalar(
-        select(UtilityAccount).where(UtilityAccount.id == account_id).with_for_update()
-    )
-    if account is None:
-        raise ProblemError(404, "Electric service not found", "Unknown service", "not_found")
+    account, _locked_plans = await ensure_account_rate_mutations_allowed(session, account_id)
     assignments = await account_assignments(session, account.id)
     conflicts = conflicting_pairs(assignments)
     actual_ids = sorted({item.id for pair in conflicts for item in pair})

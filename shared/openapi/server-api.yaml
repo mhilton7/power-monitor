@@ -3,6 +3,7 @@ info:
   title: Power Monitor Server API
   description: Central server for pm-protocol/1.0.0 sensor fleets
   version: 1.0.0
+  x-data-reset-protocol: data-reset/1.0.0
 paths:
   /api/v1/auth/bootstrap:
     post:
@@ -3725,6 +3726,220 @@ paths:
                 additionalProperties: true
                 title: Response Update Utility Bill Retention Api V1 Admin Utility
                   Bill Imports  Bill Id  Retention Put
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/system/data-reset/plan:
+    post:
+      tags:
+      - data-only reset
+      summary: Plan Data Reset
+      operationId: plan_data_reset_api_v1_system_data_reset_plan_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataResetPlanRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataResetPlanView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/system/data-reset/execute:
+    post:
+      tags:
+      - data-only reset
+      summary: Execute Data Reset
+      operationId: execute_data_reset_api_v1_system_data_reset_execute_post
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataResetExecuteRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataResetOperationView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/system/data-reset/{operation_id}:
+    get:
+      tags:
+      - data-only reset
+      summary: Get Data Reset
+      operationId: get_data_reset_api_v1_system_data_reset__operation_id__get
+      parameters:
+      - name: operation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Operation Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataResetOperationView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/system/data-reset/{operation_id}/retry:
+    post:
+      tags:
+      - data-only reset
+      summary: Retry Data Reset
+      operationId: retry_data_reset_api_v1_system_data_reset__operation_id__retry_post
+      parameters:
+      - name: operation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Operation Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataResetRetryRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataResetOperationView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/system/data-reset/{operation_id}/cancel:
+    post:
+      tags:
+      - data-only reset
+      summary: Cancel Data Reset
+      operationId: cancel_data_reset_api_v1_system_data_reset__operation_id__cancel_post
+      parameters:
+      - name: operation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Operation Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataResetCancelRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataResetOperationView'
         '422':
           description: Validation Error
           content:
@@ -14568,6 +14783,646 @@ components:
       - chart_cost_color
       - expected_revision
       title: DashboardAppearanceWrite
+    DataResetCancelRequest:
+      properties:
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - idempotency_key
+      - reason
+      title: DataResetCancelRequest
+    DataResetConfirmationPhrases:
+      properties:
+        verified_backup:
+          type: string
+          const: RESET ALL READINGS AND PRICING HISTORY
+          title: Verified Backup
+          default: RESET ALL READINGS AND PRICING HISTORY
+        permanent_without_backup:
+          type: string
+          const: PERMANENTLY RESET ALL READINGS AND PRICING HISTORY WITHOUT BACKUP
+          title: Permanent Without Backup
+          default: PERMANENTLY RESET ALL READINGS AND PRICING HISTORY WITHOUT BACKUP
+      additionalProperties: false
+      type: object
+      title: DataResetConfirmationPhrases
+    DataResetExecuteRequest:
+      properties:
+        plan_id:
+          type: string
+          maxLength: 36
+          minLength: 1
+          title: Plan Id
+        plan_revision:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Plan Revision
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+        backup_mode:
+          type: string
+          enum:
+          - verified_backup
+          - permanent_without_backup
+          title: Backup Mode
+          default: verified_backup
+        confirmation_phrase:
+          type: string
+          maxLength: 240
+          minLength: 1
+          title: Confirmation Phrase
+        permanent_without_backup_acknowledged:
+          type: boolean
+          title: Permanent Without Backup Acknowledged
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - plan_id
+      - plan_revision
+      - idempotency_key
+      - reason
+      - confirmation_phrase
+      title: DataResetExecuteRequest
+    DataResetOperationView:
+      properties:
+        operation_id:
+          type: string
+          title: Operation Id
+        plan_id:
+          type: string
+          title: Plan Id
+        site_id:
+          type: string
+          title: Site Id
+        state:
+          type: string
+          enum:
+          - planning
+          - awaiting_confirmation
+          - preparing_sensors
+          - sensors_prepared
+          - backup_running
+          - backup_verified
+          - database_reset_running
+          - database_reset_committed
+          - sensor_commit_running
+          - verification_running
+          - completed
+          - completed_with_resets_pending_on_reconnect
+          - partial_failure
+          - attention_required
+          - cancelled
+          - failed_before_commit
+          title: State
+        stage:
+          anyOf:
+          - type: string
+          - additionalProperties: true
+            type: object
+          title: Stage
+        revision:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Revision
+        reset_generation:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Reset Generation
+        reset_timestamp:
+          type: string
+          format: date-time
+          title: Reset Timestamp
+        backup:
+          additionalProperties: true
+          type: object
+          title: Backup
+        recoverability:
+          anyOf:
+          - type: string
+          - additionalProperties: true
+            type: object
+          title: Recoverability
+        participants:
+          items:
+            $ref: '#/components/schemas/DataResetParticipantView'
+          type: array
+          title: Participants
+        started_at:
+          type: string
+          format: date-time
+          title: Started At
+        central_commit_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Central Commit At
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+        failure_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Code
+        failure_summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Summary
+        final_evidence:
+          additionalProperties: true
+          type: object
+          title: Final Evidence
+      additionalProperties: true
+      type: object
+      required:
+      - operation_id
+      - plan_id
+      - site_id
+      - state
+      - stage
+      - revision
+      - reset_generation
+      - reset_timestamp
+      - backup
+      - recoverability
+      - participants
+      - started_at
+      title: DataResetOperationView
+    DataResetParticipantView:
+      properties:
+        device_id:
+          type: string
+          title: Device Id
+        name:
+          type: string
+          title: Name
+        state:
+          type: string
+          enum:
+          - pending
+          - unreachable
+          - unsupported
+          - prepare_requested
+          - prepared
+          - commit_requested
+          - committed
+          - verified
+          - pending_reconnect
+          - failed
+          - attention_required
+          - not_applicable
+          title: State
+        reset_generation:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Reset Generation
+        reset_boundary:
+          type: integer
+          maximum: 9223372036854775805
+          minimum: 0.0
+          title: Reset Boundary
+        new_sequence_floor:
+          anyOf:
+          - type: integer
+            maximum: 9223372036854775807
+            minimum: 0.0
+          - type: 'null'
+          title: New Sequence Floor
+        new_next_sequence:
+          anyOf:
+          - type: integer
+            maximum: 9223372036854775807
+            minimum: 1.0
+          - type: 'null'
+          title: New Next Sequence
+        firmware_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Firmware Version
+        failure_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Code
+        failure_summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Summary
+        last_attempt_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Attempt At
+        prepared_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Prepared At
+        committed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Committed At
+        verified_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Verified At
+      additionalProperties: false
+      type: object
+      required:
+      - device_id
+      - name
+      - state
+      - reset_generation
+      - reset_boundary
+      title: DataResetParticipantView
+    DataResetPlanParticipant:
+      properties:
+        device_id:
+          type: string
+          title: Device Id
+        name:
+          type: string
+          title: Name
+        classification:
+          type: string
+          enum:
+          - connected
+          - authentication_failed
+          - disconnected
+          - unsupported
+          - revoked
+          - removed
+          title: Classification
+        supported:
+          type: boolean
+          title: Supported
+        boundary:
+          type: integer
+          maximum: 9223372036854775805
+          minimum: 0.0
+          title: Boundary
+        estimated_sensor_records:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Estimated Sensor Records
+        local_record_count:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Local Record Count
+        backlog_estimate:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Backlog Estimate
+        record_count_status:
+          type: string
+          enum:
+          - exact_prepare_projection
+          - last_reported
+          - unavailable
+          - not_applicable
+          title: Record Count Status
+        prepare_drain_records_projected:
+          type: integer
+          maximum: 2.0
+          minimum: 0.0
+          title: Prepare Drain Records Projected
+          default: 0
+        prepare_drain_first_sequence_projected:
+          anyOf:
+          - type: integer
+            maximum: 9.223372036854776e+18
+            minimum: 0.0
+          - type: 'null'
+          title: Prepare Drain First Sequence Projected
+        prepare_drain_last_sequence_projected:
+          anyOf:
+          - type: integer
+            maximum: 9.223372036854776e+18
+            minimum: 0.0
+          - type: 'null'
+          title: Prepare Drain Last Sequence Projected
+        prepare_drain_syncable_records_projected:
+          type: integer
+          maximum: 2.0
+          minimum: 0.0
+          title: Prepare Drain Syncable Records Projected
+          default: 0
+        last_seen_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Seen At
+        firmware_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Firmware Version
+        firmware_build_hash:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Firmware Build Hash
+        data_generation:
+          type: integer
+          minimum: 0.0
+          title: Data Generation
+          default: 0
+        server_highest_contiguous:
+          type: integer
+          maximum: 9223372036854775805
+          minimum: 0.0
+          title: Server Highest Contiguous
+          default: 0
+        server_maximum_seen:
+          type: integer
+          maximum: 9223372036854775805
+          minimum: 0.0
+          title: Server Maximum Seen
+          default: 0
+        sensor_ack_sequence:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0.0
+          title: Sensor Ack Sequence
+          default: 0
+        sensor_newest_sequence:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0.0
+          title: Sensor Newest Sequence
+          default: 0
+        old_sequence_floor:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0.0
+          title: Old Sequence Floor
+          default: 0
+        old_next_sequence:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 1.0
+          title: Old Next Sequence
+          default: 1
+        card_generation:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Card Generation
+        card_identity_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Card Identity Status
+        sd_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sd Status
+        probe_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Probe Status
+      additionalProperties: true
+      type: object
+      required:
+      - device_id
+      - name
+      - classification
+      - supported
+      - boundary
+      - record_count_status
+      title: DataResetPlanParticipant
+    DataResetPlanRequest:
+      properties:
+        site_id:
+          type: string
+          maxLength: 36
+          minLength: 1
+          title: Site Id
+        categories:
+          items:
+            type: string
+            enum:
+            - measurement_history
+            - cost_history
+            - pricing_history
+            - generated_outputs
+          type: array
+          maxItems: 4
+          minItems: 1
+          title: Categories
+        delete_imported_bill_documents:
+          type: boolean
+          title: Delete Imported Bill Documents
+          default: false
+        disconnected_sensor_policy:
+          type: string
+          enum:
+          - block
+          - defer_until_reconnect
+          title: Disconnected Sensor Policy
+          default: defer_until_reconnect
+      additionalProperties: false
+      type: object
+      required:
+      - site_id
+      - categories
+      title: DataResetPlanRequest
+    DataResetPlanView:
+      properties:
+        plan_id:
+          type: string
+          title: Plan Id
+        site:
+          additionalProperties: true
+          type: object
+          title: Site
+        categories:
+          items:
+            type: string
+            enum:
+            - measurement_history
+            - cost_history
+            - pricing_history
+            - generated_outputs
+          type: array
+          title: Categories
+        delete_imported_bill_documents:
+          type: boolean
+          title: Delete Imported Bill Documents
+        disconnected_sensor_policy:
+          type: string
+          enum:
+          - block
+          - defer_until_reconnect
+          title: Disconnected Sensor Policy
+        reset_timestamp:
+          type: string
+          format: date-time
+          title: Reset Timestamp
+        reset_generation:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Reset Generation
+        counts:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Counts
+        estimated_database_bytes:
+          type: integer
+          minimum: 0.0
+          title: Estimated Database Bytes
+        estimated_sensor_records:
+          type: integer
+          minimum: 0.0
+          title: Estimated Sensor Records
+        sensor_records_to_delete_now:
+          type: integer
+          minimum: 0.0
+          title: Sensor Records To Delete Now
+        participants:
+          items:
+            $ref: '#/components/schemas/DataResetPlanParticipant'
+          type: array
+          title: Participants
+        pricing:
+          items:
+            $ref: '#/components/schemas/DataResetPricingPlan'
+          type: array
+          title: Pricing
+        preserved:
+          items:
+            type: string
+          type: array
+          title: Preserved
+        confirmation_phrases:
+          $ref: '#/components/schemas/DataResetConfirmationPhrases'
+        fingerprint:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Fingerprint
+        revision:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Revision
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+      additionalProperties: true
+      type: object
+      required:
+      - plan_id
+      - site
+      - categories
+      - delete_imported_bill_documents
+      - disconnected_sensor_policy
+      - reset_timestamp
+      - reset_generation
+      - counts
+      - estimated_database_bytes
+      - estimated_sensor_records
+      - sensor_records_to_delete_now
+      - participants
+      - pricing
+      - preserved
+      - confirmation_phrases
+      - fingerprint
+      - revision
+      - created_at
+      - expires_at
+      title: DataResetPlanView
+    DataResetPricingPlan:
+      properties:
+        utility_account_id:
+          type: string
+          title: Utility Account Id
+        rate_plan_id:
+          type: string
+          title: Rate Plan Id
+        rate_version_id:
+          type: string
+          title: Rate Version Id
+        rate_assignment_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rate Assignment Id
+        pricing_configuration_hash:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Pricing Configuration Hash
+      additionalProperties: true
+      type: object
+      required:
+      - utility_account_id
+      - rate_plan_id
+      - rate_version_id
+      - pricing_configuration_hash
+      title: DataResetPricingPlan
+    DataResetRetryRequest:
+      properties:
+        idempotency_key:
+          type: string
+          maxLength: 160
+          minLength: 8
+          title: Idempotency Key
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - idempotency_key
+      - reason
+      title: DataResetRetryRequest
     DayScheduleDocument:
       properties:
         day_type:
@@ -14612,6 +15467,12 @@ components:
             type: string
           type: array
           title: Supported Endpoints
+        data_reset_protocol:
+          anyOf:
+          - type: string
+            const: data-reset/1.0.0
+          - type: 'null'
+          title: Data Reset Protocol
         ota:
           anyOf:
           - $ref: '#/components/schemas/DeviceOtaCapability'
@@ -14651,10 +15512,16 @@ components:
         device_id:
           type: string
           title: Device Id
+        data_generation:
+          type: integer
+          minimum: 0.0
+          title: Data Generation
+          default: 0
         first_stored_event_sequence:
           anyOf:
           - type: integer
-            exclusiveMinimum: 0.0
+            maximum: 9223372036854775807
+            minimum: 1.0
           - type: 'null'
           title: First Stored Event Sequence
         events:
@@ -16428,6 +17295,11 @@ components:
         firmware_build_hash:
           type: string
           title: Firmware Build Hash
+        data_generation:
+          type: integer
+          minimum: 0.0
+          title: Data Generation
+          default: 0
         uptime_seconds:
           type: integer
           minimum: 0.0
@@ -16469,31 +17341,37 @@ components:
           $ref: '#/components/schemas/StorageSubsystemHealth'
         oldest_stored_sequence:
           type: integer
+          maximum: 9223372036854775807
           minimum: 0.0
           title: Oldest Stored Sequence
         oldest_syncable_sequence:
           anyOf:
           - type: integer
+            maximum: 9223372036854775807
             minimum: 0.0
           - type: 'null'
           title: Oldest Syncable Sequence
         newest_syncable_sequence:
           anyOf:
           - type: integer
+            maximum: 9223372036854775807
             minimum: 0.0
           - type: 'null'
           title: Newest Syncable Sequence
         newest_stored_sequence:
           type: integer
+          maximum: 9223372036854775807
           minimum: 0.0
           title: Newest Stored Sequence
         server_ack_sequence:
           type: integer
+          maximum: 9223372036854775807
           minimum: 0.0
           title: Server Ack Sequence
         server_maximum_seen_sequence:
           anyOf:
           - type: integer
+            maximum: 9223372036854775807
             minimum: 0.0
           - type: 'null'
           title: Server Maximum Seen Sequence
@@ -16519,6 +17397,10 @@ components:
           anyOf:
           - $ref: '#/components/schemas/DeviceOtaCapability'
           - type: 'null'
+        data_reset:
+          anyOf:
+          - $ref: '#/components/schemas/HeartbeatDataResetStatus'
+          - type: 'null'
       type: object
       required:
       - protocol_version
@@ -16538,6 +17420,57 @@ components:
       - configuration_version
       - time
       title: Heartbeat
+    HeartbeatDataResetStatus:
+      properties:
+        protocol:
+          type: string
+          const: data-reset/1.0.0
+          title: Protocol
+          default: data-reset/1.0.0
+        state:
+          type: string
+          maxLength: 48
+          minLength: 1
+          title: State
+        checkpoint:
+          type: string
+          maxLength: 48
+          minLength: 1
+          title: Checkpoint
+        operation_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Operation Id
+        target_generation:
+          anyOf:
+          - type: integer
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Target Generation
+        failure_code:
+          anyOf:
+          - type: string
+            maxLength: 80
+            pattern: ^[a-z0-9][a-z0-9_]{0,79}$
+          - type: 'null'
+          title: Failure Code
+        reset_boundary:
+          anyOf:
+          - type: integer
+            maximum: 9223372036854775805
+            minimum: 0.0
+          - type: 'null'
+          title: Reset Boundary
+        reset_required:
+          type: boolean
+          title: Reset Required
+          default: false
+      type: object
+      required:
+      - state
+      - checkpoint
+      title: HeartbeatDataResetStatus
     HeartbeatResponse:
       properties:
         server_receive_time:
@@ -16546,6 +17479,8 @@ components:
           title: Server Receive Time
         highest_contiguous_accepted_sequence:
           type: integer
+          maximum: 9223372036854775807
+          minimum: 0.0
           title: Highest Contiguous Accepted Sequence
         sequence_cursor:
           $ref: '#/components/schemas/SequenceCursorResponse'
@@ -16553,7 +17488,11 @@ components:
           items:
             prefixItems:
             - type: integer
+              maximum: 9223372036854775807
+              minimum: 1.0
             - type: integer
+              maximum: 9223372036854775807
+              minimum: 1.0
             type: array
             maxItems: 2
             minItems: 2
@@ -19288,9 +20227,15 @@ components:
       title: RateVersionRestoreRequest
     Reading:
       properties:
+        data_generation:
+          type: integer
+          minimum: 0.0
+          title: Data Generation
+          default: 0
         sequence:
           type: integer
-          exclusiveMinimum: 0.0
+          maximum: 9223372036854775807
+          minimum: 1.0
           title: Sequence
         boot_id:
           type: string
@@ -19470,6 +20415,11 @@ components:
         device_id:
           type: string
           title: Device Id
+        data_generation:
+          type: integer
+          minimum: 0.0
+          title: Data Generation
+          default: 0
         readings:
           items:
             $ref: '#/components/schemas/Reading'
@@ -19492,11 +20442,15 @@ components:
         accepted:
           items:
             type: integer
+            maximum: 9223372036854775807
+            minimum: 1.0
           type: array
           title: Accepted
         duplicates:
           items:
             type: integer
+            maximum: 9223372036854775807
+            minimum: 1.0
           type: array
           title: Duplicates
         rejected:
@@ -19506,17 +20460,34 @@ components:
           title: Rejected
         highest_contiguous_accepted_sequence:
           type: integer
+          maximum: 9223372036854775807
+          minimum: 0.0
           title: Highest Contiguous Accepted Sequence
         missing_ranges:
           items:
             prefixItems:
             - type: integer
+              maximum: 9223372036854775807
+              minimum: 1.0
             - type: integer
+              maximum: 9223372036854775807
+              minimum: 1.0
             type: array
             maxItems: 2
             minItems: 2
           type: array
           title: Missing Ranges
+        data_generation:
+          type: integer
+          minimum: 0.0
+          title: Data Generation
+          default: 0
+        reset_boundary:
+          type: integer
+          maximum: 9223372036854775805
+          minimum: 0.0
+          title: Reset Boundary
+          default: 0
       additionalProperties: false
       type: object
       required:
@@ -19583,6 +20554,8 @@ components:
         sequence:
           anyOf:
           - type: integer
+            maximum: 9223372036854775807
+            minimum: 1.0
           - type: 'null'
           title: Sequence
         code:
@@ -20173,16 +21146,30 @@ components:
       properties:
         highest_contiguous_accepted_sequence:
           type: integer
+          maximum: 9223372036854775807
           minimum: 0.0
           title: Highest Contiguous Accepted Sequence
         maximum_seen_sequence:
           type: integer
+          maximum: 9223372036854775807
           minimum: 0.0
           title: Maximum Seen Sequence
         next_sequence_floor:
           type: integer
+          maximum: 9223372036854775807
           minimum: 1.0
           title: Next Sequence Floor
+        data_generation:
+          type: integer
+          minimum: 0.0
+          title: Data Generation
+          default: 0
+        reset_boundary:
+          type: integer
+          maximum: 9223372036854775805
+          minimum: 0.0
+          title: Reset Boundary
+          default: 0
       additionalProperties: false
       type: object
       required:
@@ -21307,11 +22294,13 @@ components:
       properties:
         start_sequence:
           type: integer
-          exclusiveMinimum: 0.0
+          maximum: 9223372036854775807
+          minimum: 1.0
           title: Start Sequence
         end_sequence:
           type: integer
-          exclusiveMinimum: 0.0
+          maximum: 9223372036854775807
+          minimum: 1.0
           title: End Sequence
       type: object
       required:

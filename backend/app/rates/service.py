@@ -43,6 +43,11 @@ from app.rates.documents import (
     document_hash,
     validate_document,
 )
+from app.rates.reset_barrier import (
+    ensure_rate_plans_reset_mutations_allowed,
+    rate_owner_site_ids,
+    rate_plan_site_ids,
+)
 
 
 async def version_document(session: AsyncSession, version: RateVersion) -> RatePlanDocument:
@@ -357,6 +362,25 @@ async def create_custom_plan(
     *,
     duplicate_suffix: bool = False,
 ) -> tuple[RatePlan, RateVersion]:
+    source_plans: list[RatePlan] = []
+    if document.cloned_from_rate_version_id:
+        source_version = await session.get(RateVersion, document.cloned_from_rate_version_id)
+        source_plan = (
+            await session.get(RatePlan, source_version.rate_plan_id)
+            if source_version is not None
+            else None
+        )
+        if source_plan is not None:
+            source_plans.append(source_plan)
+    await ensure_rate_plans_reset_mutations_allowed(
+        session,
+        source_plans,
+        extra_site_ids=await rate_owner_site_ids(
+            session,
+            ownership_scope=document.ownership_scope,
+            owner_id=document.owner_id,
+        ),
+    )
     utility = await session.scalar(
         select(Utility).where(func.lower(Utility.name) == document.utility.lower())
     )
@@ -436,17 +460,37 @@ async def update_draft_version(
     version: RateVersion,
     document: RatePlanDocument,
 ) -> ValidationReport:
+    plan = await session.get(RatePlan, version.rate_plan_id)
+    if plan is None:
+        raise ProblemError(
+            404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
+        )
+    await ensure_rate_plans_reset_mutations_allowed(
+        session,
+        [plan],
+        extra_site_ids=await rate_owner_site_ids(
+            session,
+            ownership_scope=document.ownership_scope,
+            owner_id=document.owner_id,
+        ),
+    )
+    locked_version = await session.scalar(
+        select(RateVersion)
+        .where(RateVersion.id == version.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked_version is None:
+        raise ProblemError(
+            404, "Rate version not found", "Version does not exist", "rate_version_missing"
+        )
+    version = locked_version
     if version.status != "draft" or version.is_active or version.immutable_after_use:
         raise ProblemError(
             409,
             "Rate version is immutable",
             "Create a new version to edit an active or used rate",
             "rate_version_immutable",
-        )
-    plan = await session.get(RatePlan, version.rate_plan_id)
-    if plan is None:
-        raise ProblemError(
-            404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
         )
     plan.name = document.plan_name
     plan.description = document.description
@@ -505,7 +549,23 @@ async def activate_version(
     automatically: bool = False,
 ) -> tuple[str, ValidationReport]:
     plan = await session.get(RatePlan, version.rate_plan_id)
-    if plan is not None and plan.status in {"removed", "retired"}:
+    if plan is None:
+        raise ProblemError(
+            404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
+        )
+    await ensure_rate_plans_reset_mutations_allowed(session, [plan])
+    locked_version = await session.scalar(
+        select(RateVersion)
+        .where(RateVersion.id == version.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked_version is None:
+        raise ProblemError(
+            404, "Rate version not found", "Version does not exist", "rate_version_missing"
+        )
+    version = locked_version
+    if plan.status in {"removed", "retired"}:
         raise ProblemError(
             409,
             "Rate plan is unavailable",
@@ -585,6 +645,13 @@ async def _move_assignments_and_queue_recalculations(
     """Move current assignments and recalculate only non-finalized estimates."""
     if not superseded_ids:
         return 0, 0
+    plan = await session.get(RatePlan, version.rate_plan_id)
+    if plan is None:
+        raise ProblemError(
+            404, "Rate plan not found", "Rate plan does not exist", "rate_plan_missing"
+        )
+    await ensure_rate_plans_reset_mutations_allowed(session, [plan])
+    held_site_ids = set(await rate_plan_site_ids(session, plan))
     now = datetime.now(UTC)
     effective_at = datetime.combine(
         version.effective_from, time.min, tzinfo=ZoneInfo(version.timezone)
@@ -594,6 +661,21 @@ async def _move_assignments_and_queue_recalculations(
             select(UtilityAccount).where(UtilityAccount.active_rate_version_id.in_(superseded_ids))
         )
     )
+    account_site_ids = {account.site_id for account in accounts}
+    if not account_site_ids.issubset(held_site_ids):
+        raise ProblemError(
+            409,
+            "Rate dependency scope changed",
+            "Accounts affected by activation changed while reset-safe locks were acquired. "
+            "Reload and retry the operation.",
+            "rate_plan_dependency_scope_changed",
+            extra={
+                "retryable": True,
+                "rate_plan_ids": [plan.id],
+                "locked_site_ids": sorted(held_site_ids),
+                "current_site_ids": sorted(account_site_ids),
+            },
+        )
     assignments_created = 0
     queued = 0
     for account in accounts:

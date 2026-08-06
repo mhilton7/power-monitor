@@ -12,9 +12,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.db.models import Device, DeviceAddress, DeviceCredential, Site, SyncCursor
+from app.db.models import (
+    Device,
+    DeviceAddress,
+    DeviceCredential,
+    DeviceDataState,
+    Site,
+    SyncCursor,
+)
 from app.ingestion.service import ingest_readings
 from app.polling.ssrf import AddressRejected, validate_poll_target
+from app.problem import ProblemError
 from app.network_policy import poll_policy_parameters
 from app.schemas import Reading
 from app.security.protocol import SecretCipher, sign_headers
@@ -81,6 +89,16 @@ async def poll_device(
             "failures": breaker.failures,
         }
     now = datetime.now(UTC)
+    reset_state = await session.get(DeviceDataState, device.id)
+    if reset_state is not None and (
+        reset_state.ingestion_gate != "open" or reset_state.reset_required_on_reconnect
+    ):
+        return {
+            "device_id": device.id,
+            "status": "sensor_reset_required",
+            "operation_id": reset_state.active_operation_id,
+            "required_data_generation": reset_state.data_generation,
+        }
     address = await _address(session, device.id)
     credential = await _credential(session, device.id, now)
     site = await session.get(Site, device.site_id)
@@ -155,14 +173,27 @@ async def poll_device(
                     Reading.model_validate(item) for item in body.get("readings", [])
                 ]
                 if readings:
+                    response_generation = body.get("data_generation")
+                    if isinstance(response_generation, bool) or not isinstance(
+                        response_generation, int
+                    ):
+                        response_generation = None
                     result = await ingest_readings(
-                        session, device_id=device.id, readings=readings, source="pull"
+                        session,
+                        device_id=device.id,
+                        readings=readings,
+                        source="pull",
+                        data_generation=response_generation,
                     )
                     await session.commit()
                     total_accepted += len(result.accepted)
                     after = result.highest_contiguous_accepted_sequence
                     ack_body = json.dumps(
-                        {"highest_contiguous_sequence": after}, separators=(",", ":")
+                        {
+                            "highest_contiguous_sequence": after,
+                            "data_generation": response_generation or 0,
+                        },
+                        separators=(",", ":"),
                     ).encode()
                     ack_path = "/api/v1/sync/ack"
                     ack = await client.post(
@@ -191,6 +222,13 @@ async def poll_device(
                 "accepted": total_accepted,
                 "health": health.json(),
             }
+    except ProblemError as exc:
+        breaker.fail()
+        return {
+            "device_id": device.id,
+            "status": exc.code,
+            "failures": breaker.failures,
+        }
     except (httpx.HTTPError, ValueError) as exc:
         breaker.fail()
         return {
