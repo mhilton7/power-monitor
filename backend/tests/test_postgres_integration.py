@@ -143,8 +143,8 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                     """
                 )
             }
-            assert revision == "20260803_0030"
-            assert table_count == 102
+            assert revision == "20260806_0031"
+            assert table_count == 108
             assert set(history_indexes) == {
                 "ix_raw_device_time_end",
                 "ix_normalized_device_time_end",
@@ -213,7 +213,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             assert await connection.fetchval("SELECT to_regclass('public.rate_sources')") is None
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260803_0030"
+                "20260806_0031"
             )
 
             await connection.execute("DROP SCHEMA public CASCADE")
@@ -251,7 +251,7 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
                 await connection.fetchval(
                     "SELECT count(*) FROM role_permissions WHERE role_name = 'admin'"
                 )
-                == 69
+                == 70
             )
             status_state = await connection.fetchrow(
                 """
@@ -273,13 +273,13 @@ async def test_postgres_17_migrates_previous_schema_and_clean_database() -> None
             await connection.execute("CREATE SCHEMA public")
             await migrate("upgrade", "head")
             assert await connection.fetchval("SELECT version_num FROM alembic_version") == (
-                "20260803_0030"
+                "20260806_0031"
             )
             assert (
                 await connection.fetchval(
                     "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
                 )
-                == 102
+                == 108
             )
         finally:
             await connection.close()

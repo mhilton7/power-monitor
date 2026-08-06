@@ -243,7 +243,11 @@ async def verify_device_request(
     if not hmac.compare_digest(actual_digest, supplied_digest):
         raise ProtocolAuthError("body_digest_mismatch", "Request body digest does not match")
 
-    device = await session.get(Device, device_id)
+    # Every authenticated device request inserts a nonce whose foreign key takes
+    # a key-share lock on this row.  Acquire the reset/mutation serialization
+    # lock first so concurrent requests cannot deadlock while upgrading that
+    # implicit key-share lock later in the transaction.
+    device = await session.get(Device, device_id, with_for_update=True)
     if device is None:
         raise ProtocolAuthError("unknown_device", "Device is not enrolled")
     if device.revoked_at is not None:
