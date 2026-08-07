@@ -13,6 +13,7 @@ x-security: &security
 x-app-environment: &app-environment
   POWER_MONITOR_VERSION: 1.0.0
   PROTOCOL_VERSION: pm-protocol/1.0.0
+  FIRMWARE_PROJECT_NAME: power_monitor_sensor_headless
   DATABASE_URL_FILE: /run/secrets/database_url
   APP_MASTER_KEY_FILE: /run/secrets/app_master_key
   PUBLIC_ORIGIN: https://power-monitor.local:8443
