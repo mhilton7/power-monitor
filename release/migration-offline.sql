@@ -4181,4 +4181,28 @@ CREATE INDEX ix_device_commands_delivery ON device_commands (device_id, state, c
 
 UPDATE alembic_version SET version_num='20260806_0032' WHERE alembic_version.version_num = '20260806_0031';
 
+-- Running upgrade 20260806_0032 -> 20260806_0033
+
+ALTER TABLE device_heartbeats ADD COLUMN current_voltage_volts NUMERIC(14, 4);
+
+ALTER TABLE device_heartbeats ADD COLUMN current_amps NUMERIC(14, 4);
+
+ALTER TABLE device_heartbeats ADD COLUMN current_power_factor NUMERIC(8, 5);
+
+ALTER TABLE device_heartbeats ADD COLUMN current_frequency_hz NUMERIC(8, 3);
+
+ALTER TABLE device_heartbeats ADD COLUMN current_energy_wh NUMERIC(20, 3);
+
+ALTER TABLE device_heartbeats ADD COLUMN pzem_status VARCHAR(64) DEFAULT 'unavailable' NOT NULL;
+
+ALTER TABLE device_heartbeats ADD COLUMN pzem_details JSON DEFAULT '{}' NOT NULL;
+
+ALTER TABLE device_heartbeats ADD COLUMN sd_status VARCHAR(64) DEFAULT 'unavailable' NOT NULL;
+
+ALTER TABLE device_heartbeats ADD COLUMN sd_details JSON DEFAULT '{}' NOT NULL;
+
+ALTER TABLE device_heartbeats ADD COLUMN card_generation VARCHAR(32);
+
+UPDATE alembic_version SET version_num='20260806_0033' WHERE alembic_version.version_num = '20260806_0032';
+
 COMMIT;
