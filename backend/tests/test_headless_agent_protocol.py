@@ -380,8 +380,8 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(api_client: Any)
             "capabilities": {
                 "hardware_target": "esp32s3",
                 "pzem_model": "PZEM-004T V4.0",
-                "sd_present": True,
-                "sd_required": True,
+                "sd_present": False,
+                "sd_required": False,
                 "supported_endpoints": ["data-reset/1.0.0"],
                 "data_reset_protocol": "data-reset/1.0.0",
                 "ota": {

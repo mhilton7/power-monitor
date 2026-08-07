@@ -70,6 +70,7 @@ from app.schemas import (
     ReadingBatchResponse,
     SequenceCursorResponse,
 )
+from app.security.agent_protocol import AGENT_PROTOCOL
 from app.security.protocol import PROTOCOL, SecretCipher
 
 router = APIRouter(prefix="/api/v1", tags=["device protocol"])
@@ -577,14 +578,16 @@ async def claim_enrollment(
         raise ProblemError(
             401, "Enrollment denied", "Token has expired", "enrollment_token_expired"
         )
-    if payload.protocol_version not in {PROTOCOL, "pm-agent/2.0.0"}:
+    if payload.protocol_version not in {PROTOCOL, AGENT_PROTOCOL}:
         raise ProblemError(
             426,
             "Protocol upgrade required",
             f"This server requires {PROTOCOL} or pm-agent/2.0.0",
             "protocol_incompatible",
         )
-    if not payload.capabilities.sd_present or not payload.capabilities.sd_required:
+    if payload.protocol_version != AGENT_PROTOCOL and (
+        not payload.capabilities.sd_present or not payload.capabilities.sd_required
+    ):
         raise ProblemError(
             422,
             "Required storage unavailable",
@@ -915,7 +918,7 @@ async def claim_enrollment(
     capability_features: dict[str, Any] = {
         "supported_endpoints": payload.capabilities.supported_endpoints
     }
-    if payload.protocol_version == "pm-agent/2.0.0":
+    if payload.protocol_version == AGENT_PROTOCOL:
         capability_features.update(
             {
                 "agent_protocol": "pm-agent/2.0.0",
@@ -933,7 +936,7 @@ async def claim_enrollment(
             device_id=device.id,
             hardware_target=payload.capabilities.hardware_target,
             pzem_model=payload.capabilities.pzem_model,
-            sd_required=True,
+            sd_required=payload.capabilities.sd_required,
             features=capability_features,
             reported_at=now,
         )
@@ -941,7 +944,7 @@ async def claim_enrollment(
     else:
         capability.hardware_target = payload.capabilities.hardware_target
         capability.pzem_model = payload.capabilities.pzem_model
-        capability.sd_required = True
+        capability.sd_required = payload.capabilities.sd_required
         capability.features = capability_features
         capability.reported_at = now
     session.add(
