@@ -50,11 +50,14 @@ function status(overrides: Partial<SensorStorageStatus> = {}): SensorStorageStat
     cleanupInProgress: false,
     cleanupRecoveryRequired: false,
     droppedIntervalCount: 0,
+    fieldStates: {},
     desiredPolicy: policy,
     effectivePolicy: policy,
     desiredConfigVersion: 8,
     effectiveConfigVersion: 8,
     policyPending: false,
+    cleanupSupported: true,
+    prepareRemovalSupported: true,
     ...overrides,
   }
 }
@@ -94,6 +97,24 @@ describe('sensor storage controls', () => {
     expect(screen.getByRole('button', { name: 'Run safe cleanup' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Prepare for removal' })).toBeDisabled()
     expect(screen.getByText(/Power down before physically removing it/)).toBeInTheDocument()
+  })
+
+  it('distinguishes unsupported inventory from truthful not-applicable fields', () => {
+    renderStorage(status({
+      eventSegmentCount: undefined,
+      temporaryArtifactCount: undefined,
+      exportCount: undefined,
+      fieldStates: {
+        event_segment_count: 'not_applicable',
+        export_count: 'not_applicable',
+        temporary_artifact_count: 'unavailable',
+      },
+    }), false)
+
+    expect(screen.getByText('Event segments').parentElement).toHaveTextContent('Not applicable')
+    expect(screen.getByText('Temporary artifacts').parentElement).toHaveTextContent(
+      /Unavailable temporary.*Not applicable exports/,
+    )
   })
 
   it.each([

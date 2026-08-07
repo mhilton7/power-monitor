@@ -25,6 +25,22 @@ function supportedMode(value?: string): AuthorityMode {
   return 'whole_account_meter'
 }
 
+function eligibilityMessage(
+  sensor: UsageAuthority['accountAssignedSensors'][number] | undefined,
+  mode: AuthorityMode,
+): string {
+  if (!sensor) return 'The server did not return eligibility for this sensor.'
+  const messages = mode === 'whole_account_meter'
+    ? sensor.wholeHomeEligibilityMessages
+    : sensor.serviceLegEligibilityMessages
+  if (messages.length) return messages.join(' ')
+  return statusLabel(
+    mode === 'whole_account_meter'
+      ? sensor.wholeAccountReason
+      : sensor.serviceLegReason,
+  )
+}
+
 export function CostCalculationSetup({
   service,
   sensors,
@@ -112,7 +128,6 @@ function AuthorityEditor({
     () => new Set(authority?.eligibleServiceLegSensors.map((sensor) => sensor.id) ?? []),
     [authority?.eligibleServiceLegSensors],
   )
-  const serviceLegSensors = assignedSensors.filter((sensor) => eligibleServiceLegIds.has(sensor.id))
   const [mode, setMode] = useState<AuthorityMode>(
     authority?.authorityType
       ? supportedMode(authority.authorityType)
@@ -123,15 +138,15 @@ function AuthorityEditor({
   const initialEligibleIds = mode === 'whole_account_meter'
     ? eligibleWholeAccountIds
     : eligibleServiceLegIds
+  const storedEligibleIds = authority?.deviceIds.filter(
+    (id) => initialEligibleIds.has(id),
+  ) ?? []
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>(
     authority?.deviceIds.length
-      ? authority.deviceIds.filter((id) => initialEligibleIds.has(id))
-      : serviceLegSensors.length === 2
-        ? serviceLegSensors.map((sensor) => sensor.id)
-        : assignedSensors
-            .filter((sensor) => eligibleWholeAccountIds.has(sensor.id))
-            .slice(0, 1)
-            .map((sensor) => sensor.id),
+      ? mode === 'whole_account_meter'
+        ? storedEligibleIds.length === 1 ? storedEligibleIds : []
+        : storedEligibleIds.slice(0, 2)
+      : [],
   )
   const [notice, setNotice] = useState('')
 
@@ -237,13 +252,9 @@ function AuthorityEditor({
                 : eligibleServiceLegIds
               const retained = selectedDeviceIds.filter((id) => nextEligibleIds.has(id))
               if (nextMode === 'whole_account_meter') {
-                setSelectedDeviceIds(retained.slice(0, 1))
+                setSelectedDeviceIds(retained.length === 1 ? retained : [])
               } else {
-                setSelectedDeviceIds(
-                  retained.length > 0
-                    ? retained.slice(0, 2)
-                    : serviceLegSensors.slice(0, 2).map((sensor) => sensor.id),
-                )
+                setSelectedDeviceIds(retained.slice(0, 2))
               }
             }}
           >
@@ -257,9 +268,6 @@ function AuthorityEditor({
               const selected = selectedDeviceIds.includes(sensor.id)
               const eligible = eligibleIds.has(sensor.id)
               const eligibility = authority?.accountAssignedSensors.find((item) => item.id === sensor.id)
-              const eligibilityReason = mode === 'whole_account_meter'
-                ? eligibility?.wholeAccountReason
-                : eligibility?.serviceLegReason
               return (
                 <label className="choice-card" key={sensor.id}>
                   <input
@@ -285,8 +293,9 @@ function AuthorityEditor({
                   <span>
                     <strong>{sensor.name}</strong>
                     <small>
-                      {sensor.monitoredCircuit} · {statusLabel(sensor.measurementRole)}
-                      {!eligible && eligibilityReason ? ` · ${statusLabel(eligibilityReason)}` : ''}
+                      {eligibility?.circuitName ?? sensor.monitoredCircuit} · {' '}
+                      {statusLabel(eligibility?.measurementRole ?? sensor.measurementRole)}
+                      {!eligible ? ` · ${eligibilityMessage(eligibility, mode)}` : ''}
                     </small>
                   </span>
                 </label>
@@ -307,9 +316,12 @@ function AuthorityEditor({
       )}
       {Boolean(authority?.invalidDevices.length) && (
         <InlineNotice tone="warning">
-          The saved usage source references a sensor that is no longer active, assigned,
-          or eligible. Choose the current sensors and save to repair the configuration.
-          {' '}{authority?.invalidDevices.map((item) => item.name).filter(Boolean).join(', ')}
+          The saved usage source contains obsolete or ineligible references. They are not
+          selected and do not consume a selection slot. Choose the current sensors and save
+          to replace them.{' '}
+          {authority?.invalidDevices.map((item) => (
+            `${item.name ?? item.deviceId}: ${item.messages[0] ?? statusLabel(item.reason)}`
+          )).join(' ')}
         </InlineNotice>
       )}
       {authority?.configured && authority.calculationRole !== 'sensor_measurements' && (

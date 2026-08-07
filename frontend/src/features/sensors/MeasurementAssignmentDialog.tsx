@@ -10,6 +10,7 @@ import type {
   Home,
   SensorSummary,
 } from '../../types/models'
+import { statusLabel } from '../../utils/format'
 
 const roles: Array<[CircuitSummary['measurementRole'], string]> = [
   ['main', 'Whole-home main'],
@@ -59,6 +60,14 @@ export function MeasurementAssignmentDialog({
   )
   const [includeInHome, setIncludeInHome] = useState(sensor.includedInDefault)
   const [reason, setReason] = useState('Owner reviewed the sensor measurement boundary')
+  const [repairRole, setRepairRole] = useState<'main' | 'service-leg'>('service-leg')
+  const [repairGroup, setRepairGroup] = useState('')
+  const [physicalBoundaryAcknowledged, setPhysicalBoundaryAcknowledged] = useState(false)
+  const [billingEffectAcknowledged, setBillingEffectAcknowledged] = useState(false)
+  const [repairConfirmation, setRepairConfirmation] = useState('')
+  const [repairReason, setRepairReason] = useState(
+    'Administrator reviewed the physical complete-service measurement boundary',
+  )
   const hasAssignment = Boolean(
     sensor.circuitId || sensor.utilityAccountId || sensor.includedInDefault,
   )
@@ -77,6 +86,20 @@ export function MeasurementAssignmentDialog({
       (circuitChoice === '__new__' && newCircuitName.trim())
       || selectedCircuit
     ),
+  )
+  const repairPhrase = repairRole === 'service-leg'
+    ? 'CONFIRM SERVICE LEG ASSIGNMENT'
+    : 'CONFIRM WHOLE HOME ASSIGNMENT'
+  const canRepairRole = Boolean(
+    sensor.circuitId
+    && circuitChoice === sensor.circuitId
+    && sensor.utilityAccountId
+    && serviceId === sensor.utilityAccountId
+    && physicalBoundaryAcknowledged
+    && billingEffectAcknowledged
+    && repairConfirmation === repairPhrase
+    && repairReason.trim().length >= 8
+    && (repairRole === 'main' || repairGroup.trim()),
   )
 
   const save = useMutation({
@@ -127,6 +150,24 @@ export function MeasurementAssignmentDialog({
       onDone()
     },
   })
+  const repairMeasurementRole = useMutation({
+    mutationFn: () => request(
+      `/api/v1/admin/devices/${sensor.id}/measurement-role-repair`,
+      json('PUT', {
+        utility_account_id: serviceId,
+        target_role: repairRole,
+        split_phase_group: repairRole === 'service-leg' ? repairGroup.trim() : null,
+        physical_boundary_acknowledged: true,
+        billing_effect_acknowledged: true,
+        confirmation: repairConfirmation,
+        reason: repairReason.trim(),
+      }),
+    ),
+    onSuccess: async () => {
+      await invalidateAssignmentQueries()
+      onDone()
+    },
+  })
 
   async function invalidateAssignmentQueries() {
     await Promise.all([
@@ -136,6 +177,7 @@ export function MeasurementAssignmentDialog({
       client.invalidateQueries({ queryKey: ['configuration-status', home.id] }),
       client.invalidateQueries({ queryKey: ['history'] }),
       client.invalidateQueries({ queryKey: ['home-summary', home.id] }),
+      client.invalidateQueries({ queryKey: ['usage-authority'] }),
     ])
   }
 
@@ -249,6 +291,109 @@ export function MeasurementAssignmentDialog({
             whole-account bill, import, or meter.
           </InlineNotice>
         )}
+        {sensor.circuitId && circuitChoice === sensor.circuitId && (
+          <details className="advanced-usage-corrections">
+            <summary>Repair complete-service measurement role</summary>
+            <InlineNotice tone="warning">
+              Use this only after physically verifying the CT location. Relabeling a branch
+              circuit to make billing selectable would double-count or misstate whole-home usage.
+            </InlineNotice>
+            <div className="form-grid">
+              <div>
+                <span>Sensor</span>
+                <strong>{sensor.name}</strong>
+              </div>
+              <div>
+                <span>Current roles</span>
+                <strong>
+                  Device {statusLabel(sensor.measurementRole)} · Circuit {' '}
+                  {statusLabel(selectedCircuit?.measurementRole ?? 'unknown')}
+                </strong>
+              </div>
+              <div>
+                <span>Electric service</span>
+                <strong>{services.find((service) => service.id === serviceId)?.name ?? 'Unassigned'}</strong>
+              </div>
+              <label>
+                <span>Proposed physical boundary</span>
+                <select
+                  value={repairRole}
+                  onChange={(event) => {
+                    setRepairRole(event.target.value as 'main' | 'service-leg')
+                    setRepairConfirmation('')
+                  }}
+                >
+                  <option value="service-leg">One complete incoming service conductor</option>
+                  <option value="main">One meter measuring the complete home</option>
+                </select>
+              </label>
+              {repairRole === 'service-leg' && (
+                <label>
+                  <span>Reviewed split-phase group</span>
+                  <input
+                    value={repairGroup}
+                    onChange={(event) => { setRepairGroup(event.target.value) }}
+                    placeholder="main-service"
+                  />
+                </label>
+              )}
+              <InlineNotice>
+                {repairRole === 'service-leg'
+                  ? 'This sensor becomes one half of a two-sensor service-leg billing authority and contributes to whole-home totals only with its non-overlapping partner.'
+                  : 'This sensor becomes the single complete-service source for whole-home totals and billing authority.'}
+              </InlineNotice>
+              <label className="toggle-row span-all">
+                <span>
+                  <strong>I verified the physical conductor or whole-home meter boundary.</strong>
+                  <small>This is a statement about the installed CT, not a software preference.</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={physicalBoundaryAcknowledged}
+                  onChange={(event) => { setPhysicalBoundaryAcknowledged(event.target.checked) }}
+                />
+              </label>
+              <label className="toggle-row span-all">
+                <span>
+                  <strong>I understand the effect on Home totals and billing.</strong>
+                  <small>Unfinalized billing cycles will require recalculation.</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={billingEffectAcknowledged}
+                  onChange={(event) => { setBillingEffectAcknowledged(event.target.checked) }}
+                />
+              </label>
+              <label className="span-all">
+                <span>Change reason</span>
+                <input
+                  value={repairReason}
+                  onChange={(event) => { setRepairReason(event.target.value) }}
+                />
+              </label>
+              <label className="span-all">
+                <span>Type {repairPhrase}</span>
+                <input
+                  value={repairConfirmation}
+                  onChange={(event) => { setRepairConfirmation(event.target.value) }}
+                />
+              </label>
+            </div>
+            {repairMeasurementRole.error && (
+              <InlineNotice tone="danger">
+                {errorMessage(repairMeasurementRole.error)}
+              </InlineNotice>
+            )}
+            <button
+              type="button"
+              className="button danger"
+              disabled={!canRepairRole || repairMeasurementRole.isPending}
+              onClick={() => { repairMeasurementRole.mutate() }}
+            >
+              {repairMeasurementRole.isPending ? 'Repairing role…' : 'Apply reviewed role repair'}
+            </button>
+          </details>
+        )}
         {save.error && <InlineNotice tone="danger">{errorMessage(save.error)}</InlineNotice>}
         {unassign.error && <InlineNotice tone="danger">{errorMessage(unassign.error)}</InlineNotice>}
         {save.isSuccess && <InlineNotice tone="success"><Check /> Assignment saved.</InlineNotice>}
@@ -259,7 +404,7 @@ export function MeasurementAssignmentDialog({
           <button
             type="button"
             className="button danger"
-            disabled={save.isPending || unassign.isPending || reason.trim().length < 3}
+            disabled={save.isPending || unassign.isPending || repairMeasurementRole.isPending || reason.trim().length < 3}
             onClick={() => {
               if (confirm(
                 `Unassign ${sensor.name} from its circuit, electric service, Home total, and monitoring groups? Historical readings will remain unchanged.`,
@@ -272,7 +417,7 @@ export function MeasurementAssignmentDialog({
         <button
           type="button"
           className="button primary"
-          disabled={!canSubmit || save.isPending || unassign.isPending || circuits.isLoading}
+          disabled={!canSubmit || save.isPending || unassign.isPending || repairMeasurementRole.isPending || circuits.isLoading}
           onClick={() => { save.mutate() }}
         >
           {save.isPending ? 'Saving…' : 'Save assignment'}

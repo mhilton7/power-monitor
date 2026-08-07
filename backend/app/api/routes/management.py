@@ -32,6 +32,7 @@ from app.data_reset.service import (
     ensure_site_reset_mutations_allowed,
 )
 from app.db.models import (
+    AccountUsageAuthority,
     AggregateMember,
     AggregateSet,
     AlertInstance,
@@ -39,6 +40,7 @@ from app.db.models import (
     AuditEvent,
     BackgroundJob,
     BackupRun,
+    BillingCycle,
     Circuit,
     CostCalculationRun,
     CostIntervalResult,
@@ -99,6 +101,8 @@ from app.schemas import (
     DeviceListItem,
     DeviceMeasurementAssignmentView,
     DeviceMeasurementAssignmentWrite,
+    DeviceMeasurementRoleRepairView,
+    DeviceMeasurementRoleRepairWrite,
     DeviceUnclaimRequest,
     EnrollmentTokenCreate,
     EnrollmentTokenView,
@@ -709,24 +713,76 @@ async def delete_circuit(
         raise ProblemError(404, "Circuit not found", "Circuit does not exist", "circuit_missing")
     _site_allowed(principal, circuit.site_id)
     await ensure_site_reset_mutations_allowed(session, [circuit.site_id])
-    child_count = int(
-        await session.scalar(
-            select(func.count()).select_from(Circuit).where(Circuit.parent_id == circuit.id)
+    children = list(
+        await session.scalars(
+            select(Circuit).where(Circuit.parent_id == circuit.id).order_by(Circuit.name)
         )
-        or 0
     )
-    device_count = int(
-        await session.scalar(
-            select(func.count()).select_from(Device).where(Device.circuit_id == circuit.id)
+    assigned_devices = list(
+        await session.scalars(
+            select(Device).where(Device.circuit_id == circuit.id).order_by(Device.name)
         )
-        or 0
     )
-    if child_count or device_count:
+    aggregate_members = list(
+        await session.scalars(
+            select(AggregateMember).where(AggregateMember.circuit_id == circuit.id)
+        )
+    )
+    aggregate_ids = sorted({member.aggregate_set_id for member in aggregate_members})
+    aggregate_sets = (
+        list(
+            await session.scalars(
+                select(AggregateSet)
+                .where(AggregateSet.id.in_(aggregate_ids))
+                .order_by(AggregateSet.name)
+            )
+        )
+        if aggregate_ids
+        else []
+    )
+    billing_aggregate_ids = (
+        set(
+            await session.scalars(
+                select(AccountUsageAuthority.aggregate_set_id).where(
+                    AccountUsageAuthority.aggregate_set_id.in_(aggregate_ids)
+                )
+            )
+        )
+        if aggregate_ids
+        else set()
+    )
+    dependencies = {
+        "assigned_sensors": [
+            {
+                "id": device.id,
+                "name": device.name,
+                "lifecycle_status": device.lifecycle_status,
+            }
+            for device in assigned_devices
+        ],
+        "child_circuits": [{"id": child.id, "name": child.name} for child in children],
+        "aggregate_sets": [
+            {
+                "id": aggregate.id,
+                "name": aggregate.name,
+                "billing_dependency": aggregate.id in billing_aggregate_ids,
+            }
+            for aggregate in aggregate_sets
+        ],
+    }
+    if children or assigned_devices or aggregate_sets:
+        if assigned_devices:
+            detail = f"Unassign sensor {assigned_devices[0].name} before removing this circuit"
+        elif children:
+            detail = f"Reassign or remove child circuit {children[0].name} first"
+        else:
+            detail = f"Remove this circuit from aggregate {aggregate_sets[0].name} first"
         raise ProblemError(
             409,
-            "Circuit is in use",
-            "Reassign child circuits and devices before deletion",
-            "circuit_in_use",
+            "Circuit has active dependencies",
+            detail,
+            "circuit_dependency_conflict",
+            extra={"dependencies": dependencies, "historical_readings_preserved": True},
         )
     session.add(
         audit_event(
@@ -736,10 +792,20 @@ async def delete_circuit(
             request=request,
             object_type="circuit",
             object_id=circuit.id,
+            details={"historical_readings_preserved": True},
         )
     )
-    await session.delete(circuit)
-    await session.commit()
+    try:
+        await session.delete(circuit)
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ProblemError(
+            409,
+            "Circuit has active dependencies",
+            "A topology or billing dependency changed while removal was being checked",
+            "circuit_dependency_conflict",
+        ) from exc
     return Response(status_code=204)
 
 
@@ -942,6 +1008,39 @@ async def delete_aggregate_set(
         )
     _site_allowed(principal, aggregate.site_id)
     await ensure_site_reset_mutations_allowed(session, [aggregate.site_id])
+    usage_authorities = list(
+        await session.scalars(
+            select(AccountUsageAuthority).where(
+                AccountUsageAuthority.aggregate_set_id == aggregate.id
+            )
+        )
+    )
+    historical_cost_run_count = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(CostCalculationRun)
+            .where(CostCalculationRun.aggregate_set_id == aggregate.id)
+        )
+        or 0
+    )
+    if usage_authorities or historical_cost_run_count:
+        raise ProblemError(
+            409,
+            "Aggregate has billing dependencies",
+            (
+                "Select a different billing usage authority before removing this aggregate"
+                if usage_authorities
+                else "Historical cost calculations retain this aggregate"
+            ),
+            "aggregate_dependency_conflict",
+            extra={
+                "dependencies": {
+                    "billing_authority_count": len(usage_authorities),
+                    "historical_cost_run_count": historical_cost_run_count,
+                },
+                "historical_readings_preserved": True,
+            },
+        )
     session.add(
         audit_event(
             action="aggregate.deleted",
@@ -950,6 +1049,7 @@ async def delete_aggregate_set(
             request=request,
             object_type="aggregate_set",
             object_id=aggregate.id,
+            details={"historical_readings_preserved": True},
         )
     )
     try:
@@ -1451,6 +1551,140 @@ async def update_device_measurement_assignment(
         "measurement_role": device.measurement_role,
         "cost_scope": device.cost_scope,
         "included_in_default_site_total": device.include_in_default_site_total,
+    }
+
+
+@router.put(
+    "/admin/devices/{device_id}/measurement-role-repair",
+    response_model=DeviceMeasurementRoleRepairView,
+)
+async def repair_device_measurement_role(
+    device_id: str,
+    payload: DeviceMeasurementRoleRepairWrite,
+    request: Request,
+    principal: CsrfPrincipal,
+    session: DbSession,
+) -> dict[str, Any]:
+    """Apply an explicitly reviewed complete-service measurement boundary."""
+
+    _permission(principal, "topology.manage")
+    device = await session.get(Device, device_id)
+    if device is None or device.lifecycle_status != "active" or device.revoked_at is not None:
+        raise ProblemError(
+            404,
+            "Sensor not found",
+            "The active, non-revoked sensor does not exist",
+            "device_missing",
+        )
+    _site_allowed(principal, device.site_id)
+    await ensure_device_reset_mutations_allowed(session, [device.id])
+    circuit = await session.get(Circuit, device.circuit_id) if device.circuit_id else None
+    account = await session.get(UtilityAccount, payload.utility_account_id)
+    if circuit is None or circuit.site_id != device.site_id:
+        raise ProblemError(
+            422,
+            "Circuit assignment is required",
+            "Assign the sensor to its physical circuit before repairing its role",
+            "measurement_role_repair_circuit_missing",
+        )
+    if (
+        account is None
+        or account.status != "active"
+        or account.site_id != device.site_id
+        or device.utility_account_id != account.id
+    ):
+        raise ProblemError(
+            422,
+            "Electric service assignment does not match",
+            "The reviewed sensor and circuit must belong to the selected electric service",
+            "measurement_role_repair_account_mismatch",
+        )
+    other_device = await session.scalar(
+        select(Device).where(
+            Device.circuit_id == circuit.id,
+            Device.id != device.id,
+            Device.lifecycle_status == "active",
+            Device.revoked_at.is_(None),
+        )
+    )
+    if other_device is not None:
+        raise ProblemError(
+            409,
+            "Circuit role is shared",
+            "Review or separate the other active sensor on this circuit before changing its role",
+            "measurement_role_repair_shared_circuit",
+        )
+
+    previous_device_role = device.measurement_role
+    previous_circuit_role = circuit.measurement_role
+    previous_split_phase_group = circuit.split_phase_group
+    now = datetime.now(UTC)
+    device.measurement_role = payload.target_role
+    circuit.measurement_role = payload.target_role
+    if payload.target_role == "service-leg":
+        circuit.split_phase_group = payload.split_phase_group
+    else:
+        circuit.split_phase_group = None
+
+    cycles = list(
+        await session.scalars(
+            select(BillingCycle).where(
+                BillingCycle.utility_account_id == account.id,
+                BillingCycle.finalized_at.is_(None),
+                BillingCycle.status != "finalized",
+            )
+        )
+    )
+    for cycle in cycles:
+        cycle.recalculation_required = True
+        cycle.usage_source_type = "unavailable"
+        cycle.tier_progress_source_type = "unavailable"
+        cycle.projection_source_type = "unavailable"
+        cycle.updated_by = principal.user.id
+        cycle.updated_at = now
+
+    session.add(
+        audit_event(
+            action="device.measurement_role_repaired",
+            actor_type="user",
+            actor_id=principal.user.id,
+            request=request,
+            object_type="device",
+            object_id=device.id,
+            details={
+                "reason": payload.reason,
+                "utility_account_id": account.id,
+                "circuit_id": circuit.id,
+                "previous": {
+                    "device_role": previous_device_role,
+                    "circuit_role": previous_circuit_role,
+                    "split_phase_group": previous_split_phase_group,
+                },
+                "current": {
+                    "device_role": device.measurement_role,
+                    "circuit_role": circuit.measurement_role,
+                    "split_phase_group": circuit.split_phase_group,
+                },
+                "physical_boundary_acknowledged": True,
+                "billing_effect_acknowledged": True,
+                "historical_readings_preserved": True,
+                "device_identity_preserved": True,
+                "unfinalized_cycles_marked": len(cycles),
+            },
+        )
+    )
+    await session.commit()
+    return {
+        "device_id": device.id,
+        "circuit_id": circuit.id,
+        "utility_account_id": account.id,
+        "previous_device_role": previous_device_role,
+        "previous_circuit_role": previous_circuit_role,
+        "device_measurement_role": device.measurement_role,
+        "circuit_measurement_role": circuit.measurement_role,
+        "split_phase_group": circuit.split_phase_group,
+        "historical_readings_preserved": True,
+        "device_identity_preserved": True,
     }
 
 
@@ -2241,6 +2475,52 @@ async def _queue_storage_configuration(
         created_at=datetime.now(UTC),
     )
     session.add(version)
+    if device.protocol_version == "pm-agent/2.0.0":
+        headless_supported_settings = {
+            "friendly_name",
+            "timezone",
+            "ct_rating_amps",
+            "measurement_interval_seconds",
+            "sample_interval_seconds",
+            "heartbeat_interval_seconds",
+            "retention_days",
+            "network",
+            "server_host",
+            "server_port",
+            "retention_mode",
+            "minimum_local_history_days",
+            "storage_notice_percent",
+            "storage_warning_percent",
+            "storage_critical_percent",
+            "storage_emergency_percent",
+            "storage_emergency_reserve_bytes",
+            "storage_cleanup_target_percent",
+            "storage_cleanup_target_bytes",
+            "event_retention_days",
+        }
+        command_settings = {
+            key: value for key, value in merged.items() if key in headless_supported_settings
+        }
+        session.add(
+            DeviceCommand(
+                device_id=device.id,
+                command_type="apply_configuration",
+                state="queued",
+                payload={
+                    "configuration_revision": version.version,
+                    "configuration_hash": version.config_hash,
+                    "settings": command_settings,
+                },
+                result=None,
+                expected_state={
+                    "configuration_revision": device.effective_config_version,
+                },
+                idempotency_key=f"configuration:{device.id}:{version.version}",
+                created_at=version.created_at,
+                expires_at=version.created_at + timedelta(hours=24),
+                delivery_attempts=0,
+            )
+        )
     session.add(
         audit_event(
             action=action,
@@ -2444,6 +2724,8 @@ async def device_storage_status(
         "desired_config_version": device.desired_config_version,
         "effective_config_version": device.effective_config_version,
         "policy_pending": device.desired_config_version > device.effective_config_version,
+        "cleanup_supported": device.protocol_version != "pm-agent/2.0.0",
+        "prepare_removal_supported": device.protocol_version != "pm-agent/2.0.0",
     }
 
 
@@ -2485,6 +2767,13 @@ async def request_device_storage_cleanup(
     if device is None or device.revoked_at:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
     _site_allowed(principal, device.site_id)
+    if device.protocol_version == "pm-agent/2.0.0":
+        raise ProblemError(
+            409,
+            "Cleanup is not supported",
+            "This headless firmware does not implement acknowledgement-aware storage cleanup",
+            "storage_cleanup_unsupported",
+        )
     request_id = new_uuid()
     version = await _queue_storage_configuration(
         device=device,
@@ -2519,6 +2808,13 @@ async def request_device_storage_prepare_removal(
     if device is None or device.revoked_at:
         raise ProblemError(404, "Device not found", "Device does not exist", "device_missing")
     _site_allowed(principal, device.site_id)
+    if device.protocol_version == "pm-agent/2.0.0":
+        raise ProblemError(
+            409,
+            "Card removal preparation is not supported",
+            "Power down the headless sensor before removing its microSD card",
+            "storage_prepare_removal_unsupported",
+        )
     if payload.confirmation not in {device.name, device.id}:
         raise ProblemError(
             409,

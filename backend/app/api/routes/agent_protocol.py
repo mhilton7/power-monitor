@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from ipaddress import IPv4Address
 from pathlib import Path
@@ -22,6 +22,7 @@ from app.api.routes.device_protocol import (
 from app.api.routes.firmware import _verified_artifact
 from app.data_reset.service import redact_history_values
 from app.db.models import (
+    Device,
     DeviceCapability,
     DeviceCommand,
     DeviceConfigVersion,
@@ -182,6 +183,31 @@ class AgentSdDetails(AgentModel):
     free_bytes: int = Field(default=0, ge=0)
     card_generation: str | None = Field(default=None, max_length=32)
     format_attempted: StrictBool = False
+    storage_full: StrictBool | None = None
+    pressure_state: str | None = Field(default=None, max_length=32, pattern=r"^[a-z0-9_]+$")
+    oldest_stored_sequence: int | None = Field(default=None, ge=0)
+    newest_stored_sequence: int | None = Field(default=None, ge=0)
+    server_ack_sequence: int | None = Field(default=None, ge=0)
+    unsynchronized_count: int | None = Field(default=None, ge=0)
+    open_segment_count: int | None = Field(default=None, ge=0)
+    closed_segment_count: int | None = Field(default=None, ge=0)
+    dropped_interval_count: int | None = Field(default=None, ge=0)
+    first_dropped_interval_at: datetime | None = None
+    last_dropped_interval_at: datetime | None = None
+    retention_mode: Literal["disabled", "strict_age", "continuous_protected"] | None = None
+    retention_days: int | None = Field(default=None, ge=0, le=3650)
+    minimum_local_history_days: int | None = Field(default=None, ge=1, le=3650)
+    storage_notice_percent: int | None = Field(default=None, ge=2, le=50)
+    storage_warning_percent: int | None = Field(default=None, ge=2, le=49)
+    storage_critical_percent: int | None = Field(default=None, ge=2, le=48)
+    storage_emergency_percent: int | None = Field(default=None, ge=1, le=47)
+    storage_emergency_reserve_bytes: int | None = Field(default=None, ge=0)
+    storage_cleanup_target_percent: int | None = Field(default=None, ge=2, le=50)
+    storage_cleanup_target_bytes: int | None = Field(default=None, ge=0)
+    event_retention_days: int | None = Field(default=None, ge=1, le=3650)
+    field_states: dict[str, Literal["known", "unavailable", "unsupported", "not_applicable"]] = (
+        Field(default_factory=dict)
+    )
 
 
 class AgentSdHealth(AgentModel):
@@ -646,6 +672,144 @@ async def _next_command(
     }
 
 
+_HEADLESS_CONFIGURATION_SETTINGS = {
+    "friendly_name",
+    "timezone",
+    "ct_rating_amps",
+    "measurement_interval_seconds",
+    "sample_interval_seconds",
+    "heartbeat_interval_seconds",
+    "retention_days",
+    "network",
+    "server_host",
+    "server_port",
+    "retention_mode",
+    "minimum_local_history_days",
+    "storage_notice_percent",
+    "storage_warning_percent",
+    "storage_critical_percent",
+    "storage_emergency_percent",
+    "storage_emergency_reserve_bytes",
+    "storage_cleanup_target_percent",
+    "storage_cleanup_target_bytes",
+    "event_retention_days",
+}
+
+
+async def _reconcile_configuration_delivery(
+    session: DbSession, device: Device, now: datetime
+) -> None:
+    """Recover historical pending revisions that never received a device command."""
+
+    effective = int(device.effective_config_version)
+    desired = int(device.desired_config_version)
+    pending_versions = list(
+        await session.scalars(
+            select(DeviceConfigVersion).where(
+                DeviceConfigVersion.device_id == device.id,
+                DeviceConfigVersion.status == "pending",
+            )
+        )
+    )
+    for config in pending_versions:
+        if int(config.version) <= effective:
+            config.status = "applied"
+            config.reported_at = config.reported_at or now
+            config.report = config.report or {
+                "protocol_version": AGENT_PROTOCOL,
+                "device_id": device.id,
+                "version": int(config.version),
+                "status": "applied",
+                "source": "signed_heartbeat_reconciliation",
+            }
+
+    active_commands = list(
+        await session.scalars(
+            select(DeviceCommand).where(
+                DeviceCommand.device_id == device.id,
+                DeviceCommand.command_type == "apply_configuration",
+                DeviceCommand.state.in_(["queued", "delivered", "accepted", "running"]),
+            )
+        )
+    )
+    for command in active_commands:
+        revision = command.payload.get("configuration_revision")
+        if type(revision) is not int:
+            continue
+        if revision <= effective:
+            command.state = "completed"
+            command.result = {
+                "configuration_revision": revision,
+                "status": "applied",
+                "source": "signed_heartbeat_reconciliation",
+            }
+            command.completed_at = now
+        elif revision < desired:
+            command.state = "cancelled"
+            command.failure_code = "configuration_superseded"
+            command.completed_at = now
+
+    if desired <= effective:
+        return
+    latest = await session.scalar(
+        select(DeviceConfigVersion).where(
+            DeviceConfigVersion.device_id == device.id,
+            DeviceConfigVersion.version == desired,
+        )
+    )
+    if latest is None or not isinstance(latest.desired_config, dict):
+        return
+    idempotency_key = f"configuration:{device.id}:{desired}"
+    command_settings = {
+        key: value
+        for key, value in latest.desired_config.items()
+        if key in _HEADLESS_CONFIGURATION_SETTINGS
+    }
+    existing = await session.scalar(
+        select(DeviceCommand).where(DeviceCommand.idempotency_key == idempotency_key)
+    )
+    if existing is not None:
+        if existing.state in {"completed", "failed", "cancelled", "expired"}:
+            # The revision is still desired and the signed heartbeat proves it
+            # is not effective. Reuse the durable idempotency record rather
+            # than creating a duplicate command that violates its unique key.
+            existing.state = "queued"
+            existing.payload = {
+                "configuration_revision": desired,
+                "configuration_hash": latest.config_hash,
+                "settings": command_settings,
+            }
+            existing.result = None
+            existing.expected_state = {"configuration_revision": effective}
+            existing.created_at = now
+            existing.expires_at = now + timedelta(hours=24)
+            existing.delivered_at = None
+            existing.accepted_at = None
+            existing.started_at = None
+            existing.completed_at = None
+            existing.delivery_attempts = 0
+            existing.failure_code = None
+        return
+    session.add(
+        DeviceCommand(
+            device_id=device.id,
+            command_type="apply_configuration",
+            state="queued",
+            payload={
+                "configuration_revision": desired,
+                "configuration_hash": latest.config_hash,
+                "settings": command_settings,
+            },
+            result=None,
+            expected_state={"configuration_revision": effective},
+            idempotency_key=idempotency_key,
+            created_at=now,
+            expires_at=now + timedelta(hours=24),
+            delivery_attempts=0,
+        )
+    )
+
+
 @router.post("/enroll", response_model=EnrollmentClaimResponse, status_code=201)
 async def enroll_agent(
     payload: EnrollmentClaim,
@@ -816,6 +980,7 @@ async def heartbeat(
                 )
             )
     await _record_headless_ota_heartbeat(session, payload, settings, now)
+    await _reconcile_configuration_delivery(session, agent.device, now)
     command = await _next_command(session, agent.device.id, now, settings)
     await session.commit()
     return _signed_response(

@@ -29,7 +29,6 @@ run_id=$1
 failure_stage=initialization
 failure_code=INTEGRITY_CHECK_FAILED
 safe_summary="Backup verification did not complete"
-restore_workspace=""
 test_db=""
 
 record_failure() {
@@ -37,9 +36,6 @@ record_failure() {
   trap - ERR
   if [[ -n "$test_db" ]]; then
     dropdb --if-exists --force "$test_db" >/dev/null 2>&1 || true
-  fi
-  if [[ -n "$restore_workspace" && -d "$restore_workspace" ]]; then
-    rm -rf -- "$restore_workspace"
   fi
   remove_temporary_backup_key
   psql -v ON_ERROR_STOP=1 \
@@ -127,13 +123,6 @@ if [[ -f "$resolved/database.dump.enc" ]]; then
 fi
 [[ -f "$database_artifact" ]]
 
-failure_stage=decryption
-failure_code=DECRYPTION_FAILED
-safe_summary="The encrypted database artifact could not be decrypted"
-restore_workspace=$(mktemp -d /tmp/power-monitor-verify.XXXXXX)
-database_dump="$restore_workspace/database.dump"
-decrypt_backup_artifact "$database_artifact" "$database_dump"
-
 test_db="pm_verify_$(date -u +%Y%m%d%H%M%S)_$$_${run_id:0:8}"
 failure_stage=database_permissions
 failure_code=DATABASE_PERMISSION_DENIED
@@ -151,8 +140,23 @@ createdb "$test_db"
 failure_stage=restore
 failure_code=RESTORE_FAILED
 safe_summary="The logical backup could not be restored into the isolated database"
-pg_restore --exit-on-error --no-owner --no-privileges \
-  --dbname="$test_db" "$database_dump"
+set +e
+decrypt_backup_artifact_to_stdout "$database_artifact" | \
+  pg_restore --exit-on-error --no-owner --no-privileges --dbname="$test_db"
+restore_pipeline_status=("${PIPESTATUS[@]}")
+set -e
+if (( restore_pipeline_status[0] != 0 )); then
+  failure_stage=decryption
+  failure_code=DECRYPTION_FAILED
+  safe_summary="The encrypted database artifact could not be decrypted"
+  false
+fi
+if (( restore_pipeline_status[1] != 0 )); then
+  failure_stage=restore
+  failure_code=RESTORE_FAILED
+  safe_summary="The logical backup could not be restored into the isolated database"
+  false
+fi
 
 failure_stage=alembic_revision
 failure_code=ALEMBIC_REVISION_MISSING
@@ -217,11 +221,9 @@ SQL
 
 failure_stage=cleanup
 failure_code=CLEANUP_FAILED
-safe_summary="The isolated verification database or workspace could not be cleaned up"
+safe_summary="The isolated verification database could not be cleaned up"
 dropdb --if-exists --force "$test_db"
 test_db=""
-rm -rf -- "$restore_workspace"
-restore_workspace=""
 remove_temporary_backup_key
 trap - ERR INT TERM
 printf 'verified backup_run=%s migration=%s tables=%s\n' \

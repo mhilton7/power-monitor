@@ -500,6 +500,7 @@ test('legacy route matrix resolves only to canonical workspaces', async ({ page 
 })
 
 test('System Health has a canonical direct route and typed component states', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-07-27T00:00:00Z'))
   await page.goto('/settings/advanced/system-health')
   await expect(page).toHaveURL(/\/settings\/advanced\/system-health$/)
   await expect(page.getByRole('heading', { name: 'System health' })).toBeVisible()

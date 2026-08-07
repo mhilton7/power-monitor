@@ -566,6 +566,14 @@ export function adaptSensorStorage(value: unknown): SensorStorageStatus {
     throw new TypeError('The frontend and sensor-storage API use incompatible schemas')
   }
   const details = source.details ? record(source.details, 'sensor storage details') : {}
+  const rawFieldStates = details.field_states
+    ? record(details.field_states, 'sensor storage field states')
+    : {}
+  const fieldStates = Object.fromEntries(Object.entries(rawFieldStates).flatMap(([key, state]) => (
+    ['known', 'unavailable', 'unsupported', 'not_applicable'].includes(String(state))
+      ? [[key, String(state) as 'known' | 'unavailable' | 'unsupported' | 'not_applicable']]
+      : []
+  )))
   const optionalDetailNumber = (key: string): number | undefined => optionalNumber(details[key])
   return {
     schemaVersion,
@@ -620,11 +628,14 @@ export function adaptSensorStorage(value: unknown): SensorStorageStatus {
     estimatedDaysRemaining: optionalDetailNumber('estimated_days_remaining'),
     growthState: optionalString(details.growth_state),
     lastError: optionalString(details.last_error),
+    fieldStates,
     desiredPolicy: adaptStoragePolicy(source.desired_policy),
     effectivePolicy: adaptStoragePolicy(source.effective_policy),
     desiredConfigVersion: numberValue(source.desired_config_version),
     effectiveConfigVersion: numberValue(source.effective_config_version),
     policyPending: booleanValue(source.policy_pending),
+    cleanupSupported: booleanValue(source.cleanup_supported, true),
+    prepareRemovalSupported: booleanValue(source.prepare_removal_supported, true),
   }
 }
 
@@ -647,6 +658,7 @@ export function adaptCircuits(value: unknown): CircuitSummary[] {
 
 export function adaptUsageAuthority(value: unknown): UsageAuthority {
   const source = record(value, 'usage authority')
+  const storedDeviceIds = stringList(source.device_ids)
   const calculationRole = stringValue(
     source.calculation_role,
     booleanValue(source.configured) ? 'reference_only' : 'unavailable',
@@ -659,24 +671,63 @@ export function adaptUsageAuthority(value: unknown): UsageAuthority {
   ].includes(calculationRole)) {
     throw new Error('Usage authority returned an unsupported calculation role')
   }
-  const adaptAuthoritySensor = (item: Record<string, unknown>) => ({
-    id: stringValue(item.id),
-    name: stringValue(item.name, 'Unnamed sensor'),
-    lifecycle: stringValue(item.lifecycle, 'unknown'),
-    siteId: stringValue(item.site_id),
-    utilityAccountId: optionalString(item.utility_account_id),
-    measurementRole: stringValue(item.measurement_role, 'unknown'),
-    circuitId: optionalString(item.circuit_id),
-    circuitName: optionalString(item.circuit_name),
-    circuitRole: optionalString(item.circuit_role),
-    splitPhaseGroup: optionalString(item.split_phase_group),
-    wholeAccountReason: stringValue(item.whole_account_reason, 'wrong_measurement_role'),
-    serviceLegReason: stringValue(item.service_leg_reason, 'wrong_measurement_role'),
-  })
+  const adaptAuthoritySensor = (item: Record<string, unknown>) => {
+    const id = stringValue(item.id, stringValue(item.device_id))
+    const lifecycle = stringValue(item.lifecycle, 'unknown')
+    const wholeAccountReason = stringValue(item.whole_account_reason, 'wrong_device_role')
+    const serviceLegReason = stringValue(item.service_leg_reason, 'wrong_device_role')
+    const wholeHomeEligibilityCodes = stringList(item.whole_home_eligibility_codes)
+    const serviceLegEligibilityCodes = stringList(item.service_leg_eligibility_codes)
+    return {
+      id,
+      name: stringValue(item.name, 'Unnamed sensor'),
+      lifecycle,
+      active: booleanValue(item.active, lifecycle === 'active'),
+      revoked: booleanValue(item.revoked),
+      siteId: stringValue(item.site_id),
+      utilityAccountId: optionalString(item.utility_account_id),
+      measurementRole: stringValue(
+        item.device_measurement_role,
+        stringValue(item.measurement_role, 'unknown'),
+      ),
+      circuitId: optionalString(item.circuit_id),
+      circuitName: optionalString(item.circuit_name),
+      circuitRole: optionalString(item.circuit_measurement_role)
+        ?? optionalString(item.circuit_role),
+      splitPhaseGroup: optionalString(item.split_phase_group),
+      eligibleWholeHome: booleanValue(
+        item.eligible_whole_home,
+        wholeAccountReason === 'eligible',
+      ),
+      eligibleServiceLeg: booleanValue(
+        item.eligible_service_leg,
+        serviceLegReason === 'eligible',
+      ),
+      wholeHomeEligibilityCodes: wholeHomeEligibilityCodes.length
+        ? wholeHomeEligibilityCodes
+        : wholeAccountReason === 'eligible' ? [] : [wholeAccountReason],
+      wholeHomeEligibilityMessages: stringList(item.whole_home_eligibility_messages),
+      serviceLegEligibilityCodes: serviceLegEligibilityCodes.length
+        ? serviceLegEligibilityCodes
+        : serviceLegReason === 'eligible' ? [] : [serviceLegReason],
+      serviceLegEligibilityMessages: stringList(item.service_leg_eligibility_messages),
+      eligibilityCodes: stringList(item.eligibility_codes),
+      eligibilityMessages: stringList(item.eligibility_messages),
+      currentlySavedInAuthority: booleanValue(
+        item.currently_saved_in_authority,
+        storedDeviceIds.includes(id),
+      ),
+      staleAuthorityReference: booleanValue(item.stale_authority_reference),
+      wholeAccountReason,
+      serviceLegReason,
+    }
+  }
   const invalidDevices = objectList(source.invalid_devices).map((item) => ({
     deviceId: stringValue(item.device_id),
     name: optionalString(item.name),
     reason: stringValue(item.reason, 'stale_reference'),
+    reasons: stringList(item.reasons),
+    messages: stringList(item.messages),
   }))
   return {
     configured: booleanValue(source.configured),
@@ -686,12 +737,13 @@ export function adaptUsageAuthority(value: unknown): UsageAuthority {
     confidence: stringValue(source.confidence, 'unknown'),
     sourceReference: optionalString(source.source_reference),
     aggregateSetId: optionalString(source.aggregate_set_id),
-    deviceIds: stringList(source.device_ids),
+    deviceIds: storedDeviceIds,
     revision: numberValue(source.revision),
     updatedAt: optionalString(source.updated_at),
     validDeviceIds: stringList(source.valid_device_ids),
     invalidDevices,
     storedAuthorityHealthy: booleanValue(source.stored_authority_healthy),
+    sensors: objectList(source.sensors).map(adaptAuthoritySensor),
     accountAssignedSensors: objectList(source.account_assigned_sensors).map(adaptAuthoritySensor),
     eligibleWholeAccountSensors: objectList(source.eligible_whole_account_sensors).map(adaptAuthoritySensor),
     eligibleServiceLegSensors: objectList(source.eligible_service_leg_sensors).map(adaptAuthoritySensor),

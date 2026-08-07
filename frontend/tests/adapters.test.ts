@@ -180,6 +180,7 @@ describe('typed homeowner adapters', () => {
         event_segment_count: 4,
         temporary_artifact_count: 1,
         cleanup_recovery_required: true,
+        field_states: { event_segment_count: 'not_applicable' },
       },
       desired_policy: {
         retention_mode: 'continuous_protected', retention_days: 730,
@@ -199,6 +200,7 @@ describe('typed homeowner adapters', () => {
       serverAckSequence: 120, newestStoredSequence: 150,
       unsynchronizedCount: 30, estimatedDaysRemaining: 45, policyPending: true,
       eventSegmentCount: 4, temporaryArtifactCount: 1, cleanupRecoveryRequired: true,
+      fieldStates: { event_segment_count: 'not_applicable' },
       desiredPolicy: { retentionMode: 'continuous_protected', retentionDays: 730 },
     })
     expect(storage.lastCleanupBytes).toBeUndefined()

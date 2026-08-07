@@ -471,6 +471,46 @@ async def test_history_combines_two_sensors_and_calculates_exact_range_cost(
 
 
 @pytest.mark.asyncio
+async def test_site_history_includes_only_active_sensor_without_explicit_default(
+    api_client: object,
+    session_factory_fixture: async_sessionmaker[AsyncSession],
+) -> None:
+    client = api_client
+    assert isinstance(client, httpx.AsyncClient)
+    await bootstrap(client)
+    site_id, first_id, second_id, _ = await seed_two_sensor_history(session_factory_fixture)
+    async with session_factory_fixture() as session:
+        first = await session.get(Device, first_id)
+        second = await session.get(Device, second_id)
+        assert first is not None and second is not None
+        first.include_in_default_site_total = False
+        second.include_in_default_site_total = False
+        second.lifecycle_status = "removed"
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/history/query",
+        headers=csrf(client),
+        json={
+            "scope": {"type": "site", "site_id": site_id},
+            "display_mode": "combined_plus_individual",
+            "metrics": ["power_w", "energy_kwh"],
+            "start_utc": "2026-07-21T03:00:00Z",
+            "end_utc": "2026-07-21T05:00:00Z",
+            "bucket": "1h",
+            "timezone": "America/Los_Angeles",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert len(data["combined"]) == 2
+    assert {series["device_id"] for series in data["individual"]} == {first_id}
+    assert Decimal(data["summary"]["energy_kwh"]) == Decimal("2")
+    assert any(warning["code"] == "single_sensor_site_fallback" for warning in data["warnings"])
+
+
+@pytest.mark.asyncio
 async def test_history_rejects_parent_child_combined_selection(
     api_client: object,
     session_factory_fixture: async_sessionmaker[AsyncSession],

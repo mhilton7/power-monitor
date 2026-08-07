@@ -331,11 +331,14 @@ export interface SensorStorageStatus {
   estimatedDaysRemaining?: number
   growthState?: string
   lastError?: string
+  fieldStates: Record<string, 'known' | 'unavailable' | 'unsupported' | 'not_applicable'>
   desiredPolicy: SensorStoragePolicy
   effectivePolicy: SensorStoragePolicy
   desiredConfigVersion: number
   effectiveConfigVersion: number
   policyPending: boolean
+  cleanupSupported: boolean
+  prepareRemovalSupported: boolean
 }
 
 export interface CircuitSummary {
@@ -359,8 +362,15 @@ export interface UsageAuthority {
   revision: number
   updatedAt?: string
   validDeviceIds: string[]
-  invalidDevices: Array<{ deviceId: string; name?: string; reason: string }>
+  invalidDevices: Array<{
+    deviceId: string
+    name?: string
+    reason: string
+    reasons: string[]
+    messages: string[]
+  }>
   storedAuthorityHealthy: boolean
+  sensors: UsageAuthoritySensor[]
   accountAssignedSensors: UsageAuthoritySensor[]
   eligibleWholeAccountSensors: UsageAuthoritySensor[]
   eligibleServiceLegSensors: UsageAuthoritySensor[]
@@ -371,6 +381,8 @@ export interface UsageAuthoritySensor {
   id: string
   name: string
   lifecycle: string
+  active: boolean
+  revoked: boolean
   siteId: string
   utilityAccountId?: string
   measurementRole: string
@@ -378,6 +390,16 @@ export interface UsageAuthoritySensor {
   circuitName?: string
   circuitRole?: string
   splitPhaseGroup?: string
+  eligibleWholeHome: boolean
+  eligibleServiceLeg: boolean
+  wholeHomeEligibilityCodes: string[]
+  wholeHomeEligibilityMessages: string[]
+  serviceLegEligibilityCodes: string[]
+  serviceLegEligibilityMessages: string[]
+  eligibilityCodes: string[]
+  eligibilityMessages: string[]
+  currentlySavedInAuthority: boolean
+  staleAuthorityReference: boolean
   wholeAccountReason: string
   serviceLegReason: string
 }

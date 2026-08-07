@@ -635,7 +635,24 @@ async def ingest_readings(
         )
         session.add(raw)
         await session.flush()
-        selected = normalize_energy(reading)
+        logger.info(
+            "history.reading_ingested",
+            device_id=device_id,
+            site_id=device.site_id,
+            sequence=reading.sequence,
+            data_generation=accepted_generation,
+        )
+        try:
+            selected = normalize_energy(reading)
+        except Exception as exc:
+            logger.exception(
+                "history.normalization_rejected",
+                device_id=device_id,
+                sequence=reading.sequence,
+                data_generation=accepted_generation,
+                reason_code=type(exc).__name__,
+            )
+            raise
         session.add(
             NormalizedInterval(
                 raw_reading_id=raw.id,
@@ -649,6 +666,14 @@ async def ingest_readings(
                 validation_result=selected.validation_result,
                 validation_reason=selected.validation_reason,
             )
+        )
+        logger.info(
+            "history.normalization_completed",
+            device_id=device_id,
+            sequence=reading.sequence,
+            data_generation=accepted_generation,
+            validation_result=selected.validation_result,
+            selected_method=selected.selected_method,
         )
         accepted.append(reading.sequence)
         accepted_windows.append((reading.interval_start, reading.interval_end))

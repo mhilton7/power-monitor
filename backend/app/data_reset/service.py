@@ -735,6 +735,7 @@ def _configuration_transition_state(
     desired_version: int,
     effective_version: int,
     pending_versions: Iterable[tuple[str, int]],
+    uninitialized_baseline: bool = False,
 ) -> tuple[bool, list[str], list[str]]:
     """Classify pending rows against authoritative desired/effective revisions.
 
@@ -750,6 +751,18 @@ def _configuration_transition_state(
         target = stale_ids if int(version) <= effective_version else unresolved_ids
         target.append(config_id)
     transition_pending = desired_version != effective_version or bool(unresolved_ids)
+    # Devices created before their first explicit configuration revision use
+    # the model's 1/0 baseline but have no configuration artifact to deliver.
+    # That sentinel is not an active transition; every initialized mismatch
+    # and every unresolved pending row remains a reset blocker.
+    if (
+        uninitialized_baseline
+        and desired_version == 1
+        and effective_version == 0
+        and not unresolved_ids
+        and not stale_ids
+    ):
+        transition_pending = False
     return transition_pending, unresolved_ids, stale_ids
 
 
@@ -788,6 +801,7 @@ async def _device_plan_snapshot(
         desired_version=int(device.desired_config_version),
         effective_version=int(device.effective_config_version),
         pending_versions=((item.id, int(item.version)) for item in pending_configs),
+        uninitialized_baseline=latest_config is None,
     )
     active_deployment = await session.scalar(
         select(FirmwareDeployment)

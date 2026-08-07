@@ -82,6 +82,14 @@ def test_configuration_transition_uses_desired_and_signed_effective_revisions() 
     )
     assert newer_pending_row == (True, ["future"], [])
 
+    uninitialized_baseline = _configuration_transition_state(
+        desired_version=1,
+        effective_version=0,
+        pending_versions=(),
+        uninitialized_baseline=True,
+    )
+    assert uninitialized_baseline == (False, [], [])
+
 
 def test_reset_metadata_has_durable_generation_and_boundary_foundation() -> None:
     assert DataResetPlan.__tablename__ == "data_reset_plans"

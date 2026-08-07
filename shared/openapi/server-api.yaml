@@ -5940,7 +5940,7 @@ paths:
       tags:
       - management
       summary: Update Device Measurement Assignment
-      description: Assign an existing sensor to its audited circuit and utility-account
+      description: Assign or unassign a sensor's audited circuit and utility-account
         context.
       operationId: update_device_measurement_assignment_api_v1_admin_devices__device_id__measurement_assignment_put
       parameters:
@@ -5979,6 +5979,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeviceMeasurementAssignmentView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/admin/devices/{device_id}/measurement-role-repair:
+    put:
+      tags:
+      - management
+      summary: Repair Device Measurement Role
+      description: Apply an explicitly reviewed complete-service measurement boundary.
+      operationId: repair_device_measurement_role_api_v1_admin_devices__device_id__measurement_role_repair_put
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceMeasurementRoleRepairWrite'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceMeasurementRoleRepairView'
         '422':
           description: Validation Error
           content:
@@ -17014,6 +17063,108 @@ components:
       required:
       - reason
       title: DeviceMeasurementAssignmentWrite
+    DeviceMeasurementRoleRepairView:
+      properties:
+        device_id:
+          type: string
+          title: Device Id
+        circuit_id:
+          type: string
+          title: Circuit Id
+        utility_account_id:
+          type: string
+          title: Utility Account Id
+        previous_device_role:
+          type: string
+          title: Previous Device Role
+        previous_circuit_role:
+          type: string
+          title: Previous Circuit Role
+        device_measurement_role:
+          type: string
+          enum:
+          - main
+          - service-leg
+          title: Device Measurement Role
+        circuit_measurement_role:
+          type: string
+          enum:
+          - main
+          - service-leg
+          title: Circuit Measurement Role
+        split_phase_group:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Split Phase Group
+        historical_readings_preserved:
+          type: boolean
+          const: true
+          title: Historical Readings Preserved
+        device_identity_preserved:
+          type: boolean
+          const: true
+          title: Device Identity Preserved
+      additionalProperties: false
+      type: object
+      required:
+      - device_id
+      - circuit_id
+      - utility_account_id
+      - previous_device_role
+      - previous_circuit_role
+      - device_measurement_role
+      - circuit_measurement_role
+      - split_phase_group
+      - historical_readings_preserved
+      - device_identity_preserved
+      title: DeviceMeasurementRoleRepairView
+    DeviceMeasurementRoleRepairWrite:
+      properties:
+        utility_account_id:
+          type: string
+          title: Utility Account Id
+        target_role:
+          type: string
+          enum:
+          - main
+          - service-leg
+          title: Target Role
+        split_phase_group:
+          anyOf:
+          - type: string
+            maxLength: 80
+            minLength: 1
+          - type: 'null'
+          title: Split Phase Group
+        physical_boundary_acknowledged:
+          type: boolean
+          const: true
+          title: Physical Boundary Acknowledged
+        billing_effect_acknowledged:
+          type: boolean
+          const: true
+          title: Billing Effect Acknowledged
+        confirmation:
+          type: string
+          maxLength: 80
+          minLength: 8
+          title: Confirmation
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - utility_account_id
+      - target_role
+      - physical_boundary_acknowledged
+      - billing_effect_acknowledged
+      - confirmation
+      - reason
+      title: DeviceMeasurementRoleRepairWrite
     DeviceOtaCapability:
       properties:
         supported:

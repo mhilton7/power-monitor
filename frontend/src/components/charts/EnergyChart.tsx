@@ -58,9 +58,11 @@ export function energyChartPointIndex(points: HistoryPoint[]): Map<number, Histo
   return new Map(points.map((point) => [Date.parse(point.start), point]))
 }
 
-export function chartTickLimitForWidth(width: number): number {
+export function chartTickLimitForWidth(width: number, bucket: HistoryBucket = '15m'): number {
   if (!Number.isFinite(width) || width <= 0) return 6
-  return Math.max(3, Math.min(12, Math.floor((width - 80) / 84)))
+  const estimatedLabelWidth = bucket === '1h' ? 84 : bucket === '1d' ? 68 : 64
+  const usableWidth = Math.max(0, width - 32)
+  return Math.max(3, Math.min(20, Math.floor(usableWidth / estimatedLabelWidth)))
 }
 
 export function EnergyChart({ points, mode, currency, title, timezone = 'UTC', bucket = '15m', rangeStart, rangeEnd, variant = 'history' }: {
@@ -154,7 +156,7 @@ export function EnergyChart({ points, mode, currency, title, timezone = 'UTC', b
       } },
     },
     scales: {
-      x: { type: 'linear', min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined, afterBuildTicks(axis) { axis.ticks = chartTickTimestampsFromEpochs(orderedParsed.map(({ startMs }) => startMs), rangeStartMs, rangeEndMs, chartTickLimitForWidth(axis.chart.width)).map((value) => ({ value })) }, grid: { display: false }, title: { display: true, text: `Time (${timezone})`, color: '#97b1a7' }, ticks: { color: '#82908b', autoSkip: false, maxRotation: 0, minRotation: 0, callback: (value) => chartTickLabel(Number(value), bucket, timezone) } },
+      x: { type: 'linear', min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined, afterBuildTicks(axis) { const tickLimit = chartTickLimitForWidth(axis.width || axis.chart.width, bucket); axis.ticks = chartTickTimestampsFromEpochs(orderedParsed.map(({ startMs }) => startMs), rangeStartMs, rangeEndMs, tickLimit).map((value) => ({ value })) }, grid: { display: false }, title: { display: true, text: `Time (${timezone})`, color: '#97b1a7' }, ticks: { color: '#82908b', autoSkip: true, maxTicksLimit: chartTickLimitForWidth(1920, bucket), sampleSize: 20, maxRotation: 0, minRotation: 0, callback: (value) => chartTickLabel(Number(value), bucket, timezone) } },
       power: { display: mode === 'power', position: 'left', title: { display: true, text: 'Power (W)', color: '#97b1a7' }, grid: { color: colorWithAlpha('#FFFFFF', .06) }, ticks: { color: '#82908b', callback: (value) => chartAxisValue(value, 'power', currency) } },
       energy: { display: mode !== 'power' && mode !== 'cost', position: 'left', title: { display: true, text: 'Energy (kWh)', color: '#97b1a7' }, grid: { color: colorWithAlpha('#FFFFFF', .06) }, ticks: { color: '#82908b', callback: (value) => chartAxisValue(value, 'energy', currency) } },
       cost: { display: mode === 'cost' || mode === 'energy_cost', position: mode === 'cost' ? 'left' : 'right', title: { display: true, text: `Estimated cost (${currency})`, color: '#97b1a7' }, grid: { display: mode === 'cost', color: colorWithAlpha('#FFFFFF', .06) }, ticks: { color: chartColors.cost, callback: (value) => chartAxisValue(value, 'cost', currency) } },

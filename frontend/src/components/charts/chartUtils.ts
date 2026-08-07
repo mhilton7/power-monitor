@@ -29,7 +29,7 @@ function intervalParts(timestamp: string, timezone: string) {
 
 export function chartTickLabel(timestamp: number, bucket: HistoryBucket, timezone: string): string {
   if (bucket === '1d') return zoned(timestamp, timezone, { month: 'short', day: 'numeric' })
-  if (bucket === '1h') return zoned(timestamp, timezone, { month: 'short', day: 'numeric', hour: 'numeric' })
+  if (bucket === '1h') return zoned(timestamp, timezone, { weekday: 'short', hour: 'numeric' })
   return zoned(timestamp, timezone, { hour: 'numeric', minute: '2-digit' })
 }
 

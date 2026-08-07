@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
+import shutil
 import time
 from collections import defaultdict, deque
+from contextlib import suppress
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Literal
 
 import structlog
@@ -177,6 +181,64 @@ def _aware_utc(value: datetime | None) -> datetime | None:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
+def _storage_failure_type(exc: OSError) -> str:
+    if exc.errno == errno.EROFS:
+        return "read_only_mount"
+    if exc.errno == errno.ENOSPC:
+        return "insufficient_space"
+    if exc.errno == errno.EDQUOT:
+        return "storage_quota_exceeded"
+    if isinstance(exc, PermissionError) or exc.errno in {errno.EACCES, errno.EPERM}:
+        return "permission_denied"
+    return "access_probe_failed"
+
+
+def _probe_storage_location(
+    *, label: str, path: Path, required_access: Literal["read_only", "read_write"]
+) -> dict[str, Any]:
+    """Exercise the access the API actually needs without exposing a configured path."""
+
+    result: dict[str, Any] = {
+        "label": label,
+        "required_access": required_access,
+        "status": "failed",
+        "failure_type": None,
+        "free_bytes": None,
+    }
+    if not path.exists():
+        result["failure_type"] = "missing_mount"
+        return result
+    if not path.is_dir():
+        result["failure_type"] = "not_a_directory"
+        return result
+
+    probe_source = path / f".power-monitor-health-{os.getpid()}-{time.time_ns()}"
+    probe_destination = path / f"{probe_source.name}.renamed"
+    try:
+        with os.scandir(path) as entries:
+            next(entries, None)
+        result["free_bytes"] = shutil.disk_usage(path).free
+        if required_access == "read_write":
+            with probe_source.open("xb") as handle:
+                handle.write(b"power-monitor-storage-health\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            probe_source.rename(probe_destination)
+            with probe_destination.open("rb") as handle:
+                if handle.read() != b"power-monitor-storage-health\n":
+                    raise OSError(errno.EIO, "storage probe readback mismatch")
+            probe_destination.unlink()
+        result["status"] = "accessible"
+        return result
+    except OSError as exc:
+        result["failure_type"] = _storage_failure_type(exc)
+        return result
+    finally:
+        for probe in (probe_source, probe_destination):
+            with suppress(OSError):
+                probe.unlink(missing_ok=True)
+
+
 @router.get("/api/v1/system/health", response_model=SystemHealthResponse)
 async def detailed_system_health(
     request: Request,
@@ -294,26 +356,41 @@ async def detailed_system_health(
         )
     )
 
-    storage_paths = (
-        settings.firmware_path,
-        settings.report_path,
-        settings.rate_sync_artifact_path,
-        settings.utility_bill_artifact_path,
-        settings.backup_path,
-        settings.log_path,
-    )
     storage_checks = [
-        {
-            "configured": True,
-            "exists": path.exists(),
-            "readable": path.exists() and os.access(path, os.R_OK),
-            "writable": path.exists() and os.access(path, os.W_OK),
-        }
-        for path in storage_paths
+        _probe_storage_location(
+            label="Firmware artifacts",
+            path=settings.firmware_path,
+            required_access="read_write",
+        ),
+        _probe_storage_location(
+            label="Generated reports",
+            path=settings.report_path,
+            required_access="read_write",
+        ),
+        _probe_storage_location(
+            label="Rate-source artifacts",
+            path=settings.rate_sync_artifact_path,
+            required_access="read_write",
+        ),
+        _probe_storage_location(
+            label="Utility-bill artifacts",
+            path=settings.utility_bill_artifact_path,
+            required_access="read_write",
+        ),
+        # The API reads backup metadata and artifacts. Only the dedicated
+        # backup service is allowed to mutate this dataset.
+        _probe_storage_location(
+            label="Backup artifacts",
+            path=settings.backup_path,
+            required_access="read_only",
+        ),
+        _probe_storage_location(
+            label="Application logs",
+            path=settings.log_path,
+            required_access="read_write",
+        ),
     ]
-    storage_ready = sum(
-        1 for check in storage_checks if check["exists"] and check["readable"] and check["writable"]
-    )
+    storage_ready = sum(1 for check in storage_checks if check["status"] == "accessible")
     storage_status = (
         "healthy"
         if storage_ready == len(storage_checks)
@@ -321,6 +398,9 @@ async def detailed_system_health(
         if storage_ready
         else "unknown"
     )
+    failed_storage_labels = [
+        str(check["label"]) for check in storage_checks if check["status"] != "accessible"
+    ]
     components.append(
         _health_component(
             key="storage",
@@ -329,12 +409,14 @@ async def detailed_system_health(
             summary=(
                 "All configured local storage locations are accessible."
                 if storage_status == "healthy"
-                else "One or more configured local storage locations are not yet accessible."
+                else f"Storage checks failed for: {', '.join(failed_storage_labels)}."
             ),
             checked_at=checked_at,
             details={
                 "configured_locations": len(storage_checks),
                 "accessible_locations": storage_ready,
+                "locations": storage_checks,
+                "failed_categories": failed_storage_labels,
             },
             remediation=(
                 None
@@ -353,6 +435,16 @@ async def detailed_system_health(
         if database_available
         else None
     )
+    last_verified_backup = (
+        await session.scalar(
+            select(BackupRun)
+            .where(BackupRun.verified_at.is_not(None), BackupRun.deleted_at.is_(None))
+            .order_by(BackupRun.verified_at.desc())
+            .limit(1)
+        )
+        if database_available
+        else None
+    )
     if not database_available:
         backup_status = "unknown"
         backup_summary = "Backup state is unavailable while the database is unreachable."
@@ -361,10 +453,16 @@ async def detailed_system_health(
         backup_status = "unknown"
         backup_summary = "No logical backup run has been recorded yet."
         backup_success = None
-    elif backup.status in {"failed", "error"}:
+    elif backup.status in {"failed", "error", "backup_failed", "verification_failed"}:
         backup_status = "unhealthy"
-        backup_summary = "The most recent logical backup failed."
-        backup_success = None
+        backup_summary = (
+            backup.safe_error_summary
+            if backup.safe_error_summary
+            else "The most recent logical backup failed."
+        )
+        backup_success = (
+            _aware_utc(last_verified_backup.verified_at) if last_verified_backup else None
+        )
     elif backup.verified_at is None:
         backup_status = "degraded"
         backup_summary = "The most recent logical backup has not been verified."
@@ -382,8 +480,34 @@ async def detailed_system_health(
             checked_at=checked_at,
             last_success_at=backup_success,
             details={
+                "latest_backup_id": backup.id if backup else None,
                 "latest_status": backup.status if backup else "not_run",
                 "verified": bool(backup and backup.verified_at),
+                "verification_status": (
+                    "verified"
+                    if backup and backup.verified_at
+                    else backup.status
+                    if backup
+                    else "not_run"
+                ),
+                "verification_attempt_count": (backup.verification_attempt_count if backup else 0),
+                "verification_started_at": (
+                    _iso_or_none(_aware_utc(backup.verification_started_at)) if backup else None
+                ),
+                "verification_completed_at": (
+                    _iso_or_none(_aware_utc(backup.verification_completed_at)) if backup else None
+                ),
+                "failed_stage": backup.failed_stage if backup else None,
+                "safe_error_code": backup.safe_error_code if backup else None,
+                "safe_error_summary": backup.safe_error_summary if backup else None,
+                "last_verified_backup_id": (
+                    last_verified_backup.id if last_verified_backup else None
+                ),
+                "last_verified_at": (
+                    _iso_or_none(_aware_utc(last_verified_backup.verified_at))
+                    if last_verified_backup
+                    else None
+                ),
             },
             remediation=(
                 None

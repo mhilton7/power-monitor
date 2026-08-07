@@ -171,6 +171,7 @@ interface MockOptions {
   failFirstBillUpload?: boolean
   billingOnly?: boolean
   sourceDelayMs?: number
+  authorityScenario?: boolean
 }
 
 interface ObservedRequests {
@@ -189,12 +190,16 @@ interface ObservedRequests {
   adjustmentCreated: boolean
   adjustmentUpdated: boolean
   adjustmentRemoved: boolean
+  authoritySelections: Array<{ authority_type: string; device_ids: string[] }>
 }
 
 async function mockRepairServer(page: Page, configured = false, options: MockOptions = {}) {
   let billUploadAttempts = 0
   let sourceRunPolls = 0
   let adjustment: Record<string, unknown> | undefined
+  let authorityMode = 'service_leg_pair'
+  let authorityIds = ['leg-1', 'obsolete-device']
+  let authorityRevision = 4
   const liveMeasurementAt = new Date().toISOString()
   const hasBilling = configured || options.billingOnly === true
   const observed: ObservedRequests = {
@@ -211,12 +216,117 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
     adjustmentCreated: false,
     adjustmentUpdated: false,
     adjustmentRemoved: false,
+    authoritySelections: [],
+  }
+  const authoritySensor = (id: string, name: string, role: 'main' | 'service-leg') => ({
+    id,
+    device_id: id,
+    name,
+    lifecycle: 'active',
+    active: true,
+    revoked: false,
+    site_id: home.id,
+    utility_account_id: service.id,
+    measurement_role: role,
+    device_measurement_role: role,
+    circuit_id: `circuit-${id}`,
+    circuit_name: `${name} circuit`,
+    circuit_role: role,
+    circuit_measurement_role: role,
+    split_phase_group: role === 'service-leg' ? 'main-service' : null,
+    eligible_whole_home: role === 'main',
+    eligible_service_leg: role === 'service-leg',
+    whole_home_eligibility_codes: role === 'main' ? [] : ['wrong_device_role'],
+    whole_home_eligibility_messages: role === 'main'
+      ? []
+      : ['The sensor measurement role does not match this billing mode.'],
+    service_leg_eligibility_codes: role === 'service-leg' ? [] : ['wrong_device_role'],
+    service_leg_eligibility_messages: role === 'service-leg'
+      ? []
+      : ['The sensor measurement role does not match this billing mode.'],
+    whole_account_reason: role === 'main' ? 'eligible' : 'wrong_device_role',
+    service_leg_reason: role === 'service-leg' ? 'eligible' : 'wrong_device_role',
+    currently_saved_in_authority: authorityIds.includes(id),
+    stale_authority_reference: false,
+  })
+  const authorityPayload = () => {
+    const main = authoritySensor('main-1', 'Whole home', 'main')
+    const legOne = authoritySensor('leg-1', 'Indoor-AC', 'service-leg')
+    const legTwo = authoritySensor('leg-2', 'Indoor-AC1', 'service-leg')
+    const stale = authorityIds.includes('obsolete-device')
+    const validIds = authorityIds.filter((id) => id !== 'obsolete-device')
+    return {
+      configured: true,
+      authority_type: authorityMode,
+      calculation_role: 'sensor_measurements',
+      complete_account: true,
+      confidence: 'high',
+      source_reference: null,
+      aggregate_set_id: null,
+      device_ids: authorityIds,
+      valid_device_ids: validIds,
+      invalid_devices: stale ? [{
+        device_id: 'obsolete-device',
+        reason: 'stale_reference',
+        reasons: ['stale_reference'],
+        messages: ['The saved sensor no longer exists.'],
+      }] : [],
+      stored_authority_healthy: !stale,
+      revision: authorityRevision,
+      sensors: [main, legOne, legTwo],
+      account_assigned_sensors: [main, legOne, legTwo],
+      eligible_whole_account_sensors: [main],
+      eligible_service_leg_sensors: [legOne, legTwo],
+      recommended_repair: stale
+        ? 'Choose the current eligible sensors.'
+        : 'No authority repair is required.',
+    }
   }
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
     const requestUrl = new URL(request.url())
     const pathname = requestUrl.pathname
     if (pathname === '/api/v1/events/stream') return route.fulfill({ status: 204 })
+    if (
+      options.authorityScenario
+      && pathname === `/api/v1/admin/utility-accounts/${service.id}/usage-authority`
+    ) {
+      if (request.method() === 'PUT') {
+        const payload = request.postDataJSON() as {
+          authority_type: string
+          device_ids: string[]
+        }
+        observed.authoritySelections.push({
+          authority_type: payload.authority_type,
+          device_ids: [...payload.device_ids],
+        })
+        authorityMode = payload.authority_type
+        authorityIds = [...payload.device_ids]
+        authorityRevision += 1
+      }
+      return route.fulfill({ json: authorityPayload() })
+    }
+    if (
+      options.authorityScenario
+      && pathname === `/api/v1/admin/utility-accounts/${service.id}/billing-cycles/current/recalculate`
+    ) {
+      return route.fulfill({ json: {
+        available: false,
+        cycle: {
+          id: 'cycle-1',
+          starts_at: '2026-07-01T07:00:00Z',
+          ends_at: '2026-08-01T07:00:00Z',
+          status: 'confirmed',
+        },
+        recalculation_version: observed.authoritySelections.length,
+        pricing_model: 'tiered',
+        usage_source_type: 'sensor_measurements',
+        projection_source_type: 'unavailable',
+        tier_progress_source_type: 'sensor_measurements',
+        tiers: [],
+        warnings: ['Waiting for enough accepted readings.'],
+      } })
+    }
     if (pathname === '/api/v1/admin/utility-bill-imports' && request.method() === 'POST') {
       billUploadAttempts += 1
       if (options.failFirstBillUpload && billUploadAttempts === 1) {
@@ -533,11 +643,22 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
         })
       }
       if (status === 'retired') return route.fulfill({ json: { plans: [] } })
+      const currentPlans = options.authorityScenario
+        ? ratePlans.plans.map((plan, index) => index === 0
+          ? {
+              ...plan,
+              versions: plan.versions.map((version) => ({
+                ...version,
+                pricing_model: 'tiered',
+              })),
+            }
+          : plan)
+        : ratePlans.plans
       return route.fulfill({
         json: {
           plans: observed.removed
-            ? ratePlans.plans.filter((plan) => plan.id !== 'plan-2')
-            : ratePlans.plans,
+            ? currentPlans.filter((plan) => plan.id !== 'plan-2')
+            : currentPlans,
         },
       })
     }
@@ -548,7 +669,42 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
         user: { id: 'owner-1', email: 'owner@example.test', display_name: 'Home Owner', roles: ['admin'], permissions: [...PERMISSION_CODES], all_sites: true, site_ids: [] },
       },
       '/api/v1/sites': [home],
-      '/api/v1/devices': configured ? [{
+      '/api/v1/devices': options.authorityScenario ? [
+        {
+          id: 'main-1',
+          site_id: home.id,
+          utility_account_id: service.id,
+          circuit_id: 'circuit-main-1',
+          name: 'Whole home',
+          status: 'online_synchronized',
+          lifecycle_status: 'active',
+          measurement_freshness: 'live',
+          heartbeat_freshness: 'online',
+          offline_after_seconds: 30,
+          circuit_name: 'Whole home circuit',
+          measurement_role: 'main',
+          included_in_default: true,
+          ct_rating_amps: '200',
+          backlog: 0,
+        },
+        ...['leg-1', 'leg-2'].map((id, index) => ({
+          id,
+          site_id: home.id,
+          utility_account_id: service.id,
+          circuit_id: `circuit-${id}`,
+          name: index === 0 ? 'Indoor-AC' : 'Indoor-AC1',
+          status: 'online_synchronized',
+          lifecycle_status: 'active',
+          measurement_freshness: 'live',
+          heartbeat_freshness: 'online',
+          offline_after_seconds: 30,
+          circuit_name: `${index === 0 ? 'Indoor-AC' : 'Indoor-AC1'} circuit`,
+          measurement_role: 'service-leg',
+          included_in_default: true,
+          ct_rating_amps: '200',
+          backlog: 0,
+        })),
+      ] : configured ? [{
         id: 'sensor-1',
         name: 'Main panel',
         status: 'online_synchronized',
@@ -581,7 +737,7 @@ async function mockRepairServer(page: Page, configured = false, options: MockOpt
           plan_name: 'TOU-D 4 PM to 9 PM',
           version_id: 'version-1',
           version: 2,
-          pricing_model: 'time_of_use',
+          pricing_model: options.authorityScenario ? 'tiered' : 'time_of_use',
           effective_from: '2026-07-01T07:00:00Z',
           effective_to: null,
           state: 'current',
@@ -792,6 +948,47 @@ test('bill importer is visible, keyboard contained, retryable, and URL-backed', 
   await page.goto('/bill-import')
   await expect(page).toHaveURL(/\/billing\?action=upload/)
   await expect(dialog).toBeVisible()
+})
+
+test('stale billing authority can be repaired in whole-home and service-leg modes', async ({ page }) => {
+  const observed = await mockRepairServer(page, true, { authorityScenario: true })
+  await page.goto('/billing')
+  await expect(page.getByRole('heading', { name: 'Billing', exact: true })).toBeVisible()
+  await expect(page.getByText(/saved usage source contains obsolete/i)).toBeVisible()
+
+  const mode = page.getByLabel('Complete-service measurement')
+  await mode.selectOption('whole_account_meter')
+  const wholeHome = page.getByRole('radio', { name: /Whole home circuit/i })
+  await expect(wholeHome).toBeEnabled()
+  await expect(wholeHome).not.toBeChecked()
+  await wholeHome.check()
+  await page.getByRole('button', { name: 'Save and recalculate' }).click()
+  await expect.poll(() => observed.authoritySelections).toEqual([{
+    authority_type: 'whole_account_meter',
+    device_ids: ['main-1'],
+  }])
+
+  await page.reload()
+  await expect(page.getByRole('radio', { name: /Whole home circuit/i })).toBeChecked()
+  await expect(page.getByText(/saved usage source contains obsolete/i)).toHaveCount(0)
+
+  await page.getByLabel('Complete-service measurement').selectOption('service_leg_pair')
+  const firstLeg = page.getByRole('checkbox', { name: /Indoor-AC circuit/i })
+  const secondLeg = page.getByRole('checkbox', { name: /Indoor-AC1 circuit/i })
+  await expect(firstLeg).toBeEnabled()
+  await expect(secondLeg).toBeEnabled()
+  await firstLeg.check()
+  await secondLeg.check()
+  await page.getByRole('button', { name: 'Save and recalculate' }).click()
+  await expect.poll(() => observed.authoritySelections).toEqual([
+    { authority_type: 'whole_account_meter', device_ids: ['main-1'] },
+    { authority_type: 'service_leg_pair', device_ids: ['leg-1', 'leg-2'] },
+  ])
+
+  await page.reload()
+  await expect(page.getByRole('checkbox', { name: /Indoor-AC circuit/i })).toBeChecked()
+  await expect(page.getByRole('checkbox', { name: /Indoor-AC1 circuit/i })).toBeChecked()
+  await expect(page.getByText(/saved usage source contains obsolete/i)).toHaveCount(0)
 })
 
 test('Billing rate-plan menus close predictably before lifecycle confirmation', async ({ page }) => {
@@ -1073,6 +1270,7 @@ test('bill importer exposes a recoverable error state and retries the same file'
 })
 
 test('Home has intentional empty and configured dashboard layouts', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-08-07T11:30:00-07:00'))
   await mockRepairServer(page)
   await page.goto('/home')
   await expect(page.getByText('Connect your first sensor')).toBeVisible()

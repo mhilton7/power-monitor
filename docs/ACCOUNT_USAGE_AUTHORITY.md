@@ -45,5 +45,28 @@ default. Advanced corrections and external meter imports are collapsed under
 `ALTER TIER PROGRESSION` confirmation. Every mutation is server-authorized,
 CSRF protected, site scoped, and audited.
 
+The existing `main` measurement role means one meter or CT arrangement that
+measures the complete electric service. The `service-leg` role means one
+complete incoming service conductor and is eligible only as one member of a
+reviewed, non-overlapping pair in the same split-phase group. `branch`,
+`submeter`, and `informational` sensors are never complete-service billing
+sources.
+
+Changing a branch or submeter to `main` or `service-leg` is a physical-topology
+repair, not a billing preference. **Settings > Sensors > Manage assignment**
+shows the current device/circuit roles and requires physical-boundary and
+billing-effect acknowledgements plus the displayed exact confirmation phrase.
+The repair keeps the Device UUID and historical readings unchanged and records
+an audit event.
+
+For read-only database diagnosis, run:
+
+```console
+python tools/diagnose_usage_authority.py --account <utility-account-uuid>
+```
+
+The command uses the same eligibility service as the API and rolls back its
+session without changing authority, sensors, readings, or billing history.
+
 See [Utility accounts](UTILITY_ACCOUNTS.md), [Usage imports](USAGE_IMPORTS.md),
 and [Billing cycles](BILLING_CYCLES.md).

@@ -57,6 +57,7 @@ from app.db.models import (
     TierAllocationSegment,
     UtilityAccount,
 )
+from app.home_aggregate import resolve_home_aggregate_devices
 from app.problem import ProblemError
 from app.rates.documents import engine_plan
 from app.rates.engine import RateEngine
@@ -760,15 +761,49 @@ async def resolve_history_scope(
             raise ProblemError(
                 404, "Resource not found", "Resource does not exist", "resource_missing"
             )
-        selected_ids = list(
+        site_devices = list(
             await session.scalars(
-                select(Device.id).where(
+                select(Device)
+                .where(
                     Device.site_id == site_id,
-                    Device.include_in_default_site_total.is_(True),
                     Device.lifecycle_status == "active",
+                    Device.revoked_at.is_(None),
                 )
+                .order_by(Device.name, Device.id)
             )
         )
+        site_selection = await resolve_home_aggregate_devices(session, site_devices)
+        selected_ids = [device.id for device in site_selection.devices]
+        if site_selection.mode == "single_sensor_fallback":
+            warnings.append(
+                {
+                    "code": "single_sensor_site_fallback",
+                    "message": (
+                        "The only active measurement sensor was included even though no "
+                        "explicit Whole Home selection is configured."
+                    ),
+                    "device_ids": selected_ids,
+                }
+            )
+        elif site_selection.mode == "configuration_required":
+            warnings.append(
+                {
+                    "code": "site_total_configuration_required",
+                    "message": (
+                        "Active sensors need an explicit, non-overlapping Whole Home "
+                        "selection before they can be combined."
+                    ),
+                    "device_ids": [device.id for device in site_devices],
+                }
+            )
+        for selection_warning in site_selection.warnings:
+            warnings.append(
+                {
+                    "code": "site_total_topology_warning",
+                    "message": selection_warning,
+                    "device_ids": selected_ids,
+                }
+            )
     else:
         aggregate = await session.get(AggregateSet, scope.aggregate_set_id or "")
         if aggregate is None or not principal.can_access_site(aggregate.site_id):

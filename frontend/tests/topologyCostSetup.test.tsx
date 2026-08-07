@@ -214,6 +214,69 @@ describe('sensor topology and tier allocation setup', () => {
     )
   })
 
+  it('requires reviewed physical and billing confirmation before repairing a role', async () => {
+    const onDone = vi.fn()
+    requestMock.mockImplementation((path: string, options?: unknown) => {
+      if (path.startsWith('/api/v1/circuits?')) {
+        return Promise.resolve([{
+          id: 'circuit-1',
+          site_id: home.id,
+          parent_id: null,
+          name: 'Indoor AC branch',
+          measurement_role: 'branch',
+          split_phase_group: null,
+        }])
+      }
+      if (path === '/api/v1/admin/devices/sensor-1/measurement-role-repair') {
+        expect(parseBody(options)).toMatchObject({
+          utility_account_id: service.id,
+          target_role: 'service-leg',
+          split_phase_group: 'main-service',
+          physical_boundary_acknowledged: true,
+          billing_effect_acknowledged: true,
+          confirmation: 'CONFIRM SERVICE LEG ASSIGNMENT',
+        })
+        return Promise.resolve({ device_id: sensor.id })
+      }
+      throw new Error(`Unexpected request: ${path}`)
+    })
+
+    const user = userEvent.setup()
+    renderWithClient(
+      <MeasurementAssignmentDialog
+        home={home}
+        sensor={{
+          ...sensor,
+          circuitId: 'circuit-1',
+          utilityAccountId: service.id,
+          monitoredCircuit: 'Indoor AC branch',
+        }}
+        services={[service]}
+        onClose={() => undefined}
+        onDone={onDone}
+      />,
+    )
+
+    await user.click(await screen.findByText('Repair complete-service measurement role'))
+    const apply = screen.getByRole('button', { name: 'Apply reviewed role repair' })
+    expect(apply).toBeDisabled()
+    await user.type(screen.getByLabelText('Reviewed split-phase group'), 'main-service')
+    await user.click(screen.getByRole('checkbox', { name: /verified the physical conductor/i }))
+    await user.click(screen.getByRole('checkbox', { name: /understand the effect on Home totals/i }))
+    await user.type(
+      screen.getByLabelText('Type CONFIRM SERVICE LEG ASSIGNMENT'),
+      'CONFIRM SERVICE LEG ASSIGNMENT',
+    )
+    expect(apply).toBeEnabled()
+    await user.click(apply)
+
+    await waitFor(() => { expect(onDone).toHaveBeenCalledTimes(1) })
+    expect(requestMock).toHaveBeenCalledWith(
+      '/api/v1/admin/devices/sensor-1/measurement-role-repair',
+      expect.objectContaining({ method: 'PUT' }),
+    )
+  })
+
   it('saves a sensor measurement authority before recalculating the current cycle', async () => {
     requestMock.mockImplementation((
       path: string,
@@ -348,6 +411,7 @@ describe('sensor topology and tier allocation setup', () => {
     )
 
     await screen.findByText('Sensor usage source not configured')
+    await user.click(screen.getByRole('radio', { name: /Indoor AC/i }))
     await user.click(screen.getByRole('button', { name: 'Save and recalculate' }))
 
     expect(await screen.findByText(/Sensor usage and chronological tier allocation recalculated at version 1/))
@@ -434,12 +498,161 @@ describe('sensor topology and tier allocation setup', () => {
       />,
     )
 
-    expect(await screen.findByText(/saved usage source references a sensor/i)).toBeVisible()
+    expect(await screen.findByText(/saved usage source contains obsolete/i)).toBeVisible()
     const first = screen.getByRole('checkbox', { name: /Leg one/i })
     const second = screen.getByRole('checkbox', { name: /Leg two/i })
     expect(first).toBeChecked()
     expect(second).toBeEnabled()
     await user.click(second)
     expect(screen.getByRole('button', { name: 'Save and recalculate' })).toBeEnabled()
+  })
+
+  it('reconciles selections across modes and submits only visible eligible IDs', async () => {
+    const authoritySensor = (
+      id: string,
+      name: string,
+      role: 'main' | 'service-leg' | 'branch',
+    ) => {
+      const wholeEligible = role === 'main'
+      const legEligible = role === 'service-leg'
+      return {
+        id,
+        name,
+        lifecycle: 'active',
+        active: true,
+        site_id: home.id,
+        utility_account_id: service.id,
+        measurement_role: role,
+        circuit_id: `circuit-${id}`,
+        circuit_name: `${name} circuit`,
+        circuit_role: role,
+        split_phase_group: legEligible ? 'main-service' : null,
+        eligible_whole_home: wholeEligible,
+        eligible_service_leg: legEligible,
+        whole_home_eligibility_codes: wholeEligible ? [] : ['wrong_device_role'],
+        whole_home_eligibility_messages: wholeEligible
+          ? []
+          : ['The sensor measurement role does not match this billing mode.'],
+        service_leg_eligibility_codes: legEligible ? [] : ['wrong_device_role'],
+        service_leg_eligibility_messages: legEligible
+          ? []
+          : role === 'branch'
+            ? ['This sensor is configured as a branch monitor.']
+            : ['The sensor measurement role does not match this billing mode.'],
+        whole_account_reason: wholeEligible ? 'eligible' : 'wrong_device_role',
+        service_leg_reason: legEligible ? 'eligible' : 'wrong_device_role',
+      }
+    }
+    const main = authoritySensor('main-1', 'Whole home', 'main')
+    const legOne = authoritySensor('leg-1', 'Indoor-AC', 'service-leg')
+    const legTwo = authoritySensor('leg-2', 'Indoor-AC1', 'service-leg')
+    const branch = authoritySensor('branch-1', 'Outdoor-AC', 'branch')
+    requestMock.mockImplementation((
+      path: string,
+      options?: unknown,
+      adapter?: (value: unknown) => unknown,
+    ) => {
+      let value: unknown
+      if (path === '/api/v1/admin/utility-accounts/service-1/usage-authority') {
+        if ((options as RequestInit | undefined)?.method === 'PUT') {
+          expect(parseBody(options)).toMatchObject({
+            authority_type: 'service_leg_pair',
+            device_ids: ['leg-1', 'leg-2'],
+          })
+        }
+        value = {
+          configured: true,
+          authority_type: 'service_leg_pair',
+          calculation_role: 'sensor_measurements',
+          device_ids: ['leg-1', 'obsolete-device'],
+          valid_device_ids: ['leg-1'],
+          invalid_devices: [{
+            device_id: 'obsolete-device',
+            reason: 'stale_reference',
+            reasons: ['stale_reference'],
+            messages: ['The saved sensor no longer exists.'],
+          }],
+          stored_authority_healthy: false,
+          sensors: [main, legOne, legTwo, branch],
+          account_assigned_sensors: [main, legOne, legTwo, branch],
+          eligible_whole_account_sensors: [main],
+          eligible_service_leg_sensors: [legOne, legTwo],
+          complete_account: true,
+          confidence: 'high',
+          revision: 7,
+          recommended_repair: 'Choose the current eligible sensors.',
+        }
+      } else if (
+        path === '/api/v1/admin/utility-accounts/service-1/billing-cycles/current/recalculate'
+      ) {
+        value = {
+          available: false,
+          cycle: {
+            id: cycle.id,
+            starts_at: cycle.startsAt,
+            ends_at: cycle.endsAt,
+            status: 'confirmed',
+          },
+          recalculation_version: 0,
+          pricing_model: 'tiered',
+          usage_source_type: 'sensor_measurements',
+          projection_source_type: 'unavailable',
+          tier_progress_source_type: 'sensor_measurements',
+          tiers: [],
+          warnings: ['Waiting for enough accepted readings.'],
+        }
+      } else throw new Error(`Unexpected request: ${path}`)
+      return Promise.resolve(adapter ? adapter(value) : value)
+    })
+    const summary = (row: ReturnType<typeof authoritySensor>): SensorSummary => ({
+      ...sensor,
+      id: row.id,
+      name: row.name,
+      utilityAccountId: service.id,
+      measurementRole: row.measurement_role,
+      monitoredCircuit: row.circuit_name,
+    })
+    const user = userEvent.setup()
+    renderWithClient(
+      <CostCalculationSetup
+        service={service}
+        sensors={[main, legOne, legTwo, branch].map(summary)}
+        cycle={cycle}
+        onRefresh={() => Promise.resolve()}
+      />,
+    )
+
+    expect(await screen.findByText(/saved usage source contains obsolete/i)).toBeVisible()
+    expect(screen.getByRole('checkbox', { name: /Indoor-AC circuit/i })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /Indoor-AC1 circuit/i })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: /Outdoor-AC circuit/i })).toBeDisabled()
+    expect(screen.getByText(/configured as a branch monitor/i)).toBeVisible()
+
+    const selector = screen.getByLabelText('Complete-service measurement')
+    await user.selectOptions(selector, 'whole_account_meter')
+    const wholeHome = screen.getByRole('radio', { name: /Whole home circuit/i })
+    expect(wholeHome).toBeEnabled()
+    expect(wholeHome).not.toBeChecked()
+    await user.click(wholeHome)
+    expect(wholeHome).toBeChecked()
+
+    await user.selectOptions(selector, 'service_leg_pair')
+    expect(screen.getByRole('checkbox', { name: /Indoor-AC circuit/i })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /Indoor-AC1 circuit/i })).toBeEnabled()
+    await user.selectOptions(selector, 'whole_account_meter')
+    expect(screen.getByRole('radio', { name: /Whole home circuit/i })).not.toBeChecked()
+    await user.selectOptions(selector, 'service_leg_pair')
+    const first = screen.getByRole('checkbox', { name: /Indoor-AC circuit/i })
+    const second = screen.getByRole('checkbox', { name: /Indoor-AC1 circuit/i })
+    await user.click(first)
+    await user.click(second)
+    expect(screen.getByRole('button', { name: 'Save and recalculate' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Save and recalculate' }))
+
+    expect(await screen.findByText('Waiting for enough accepted readings.')).toBeVisible()
+    expect(requestMock).toHaveBeenCalledWith(
+      '/api/v1/admin/utility-accounts/service-1/usage-authority',
+      expect.objectContaining({ method: 'PUT' }),
+    )
   })
 })

@@ -67,6 +67,7 @@ import type {
   FamilyRoleOption,
   PermissionOption,
   BackupSummary,
+  CircuitSummary,
   SensorSummary,
   SensorStoragePolicy,
   SensorStorageStatus,
@@ -521,15 +522,24 @@ export function SensorStorageContent({
   canManage: boolean
   refresh: () => Promise<unknown>
 }) {
-  const count = (value: number | undefined) => value ?? 'Unavailable'
+  const unavailableLabel = (key: string) => {
+    const state = status.fieldStates[key]
+    if (state === 'not_applicable') return 'Not applicable'
+    if (state === 'unsupported') return 'Unsupported'
+    return 'Unavailable'
+  }
+  const count = (key: string, value: number | undefined) => value ?? unavailableLabel(key)
+  const bytes = (key: string, value: number | undefined) => (
+    value === undefined ? unavailableLabel(key) : fileSize(value)
+  )
   const segmentSummary = status.eligibleSegmentCount !== undefined && status.protectedSegmentCount !== undefined
     ? `${status.eligibleSegmentCount} eligible · ${status.protectedSegmentCount} protected`
     : status.segmentCount !== undefined
       ? `${status.segmentCount} total · eligibility unavailable`
-      : 'Unavailable'
+      : unavailableLabel('segment_count')
   const cleanupSummary = status.lastCleanupAt || status.lastCleanupResult
     ? `${status.lastCleanupAt ? relativeTime(status.lastCleanupAt) : 'Time unavailable'} · ${status.lastCleanupResult ?? 'Result unavailable'}`
-    : 'Unavailable'
+    : unavailableLabel('last_cleanup_at')
   const normalizedLastError = status.lastError?.trim().toLowerCase()
   const actionableLastError = normalizedLastError && !['healthy', 'none', 'ok'].includes(normalizedLastError)
     ? status.lastError
@@ -582,13 +592,13 @@ export function SensorStorageContent({
         <div><small>Estimated remaining</small><strong>{storageEstimate(status)}</strong></div>
         <div><small>Reading acknowledgement</small><strong>{status.serverAckSequence ?? 'Unavailable'} / {status.newestStoredSequence ?? 'Unavailable'}</strong></div>
         <div><small>Unsynchronized readings</small><strong>{status.unsynchronizedCount ?? 'Unavailable'}</strong></div>
-        <div><small>Safely reclaimable</small><strong>{fileSize(status.eligibleReclaimableBytes)}</strong></div>
-        <div><small>Protected, unacknowledged</small><strong>{fileSize(status.blockedUnacknowledgedBytes)}</strong></div>
+        <div><small>Safely reclaimable</small><strong>{bytes('eligible_reclaimable_bytes', status.eligibleReclaimableBytes)}</strong></div>
+        <div><small>Protected, unacknowledged</small><strong>{bytes('blocked_unacknowledged_bytes', status.blockedUnacknowledgedBytes)}</strong></div>
         <div><small>Segments</small><strong>{segmentSummary}</strong></div>
-        <div><small>Event segments</small><strong>{count(status.eventSegmentCount)}</strong></div>
-        <div><small>Temporary artifacts</small><strong>{count(status.temporaryArtifactCount)} temporary · {count(status.exportCount)} exports · {count(status.repairArtifactCount)} repair</strong></div>
+        <div><small>Event segments</small><strong>{count('event_segment_count', status.eventSegmentCount)}</strong></div>
+        <div><small>Temporary artifacts</small><strong>{count('temporary_artifact_count', status.temporaryArtifactCount)} temporary · {count('export_count', status.exportCount)} exports · {count('repair_artifact_count', status.repairArtifactCount)} repair</strong></div>
         <div><small>Last cleanup</small><strong>{cleanupSummary}</strong></div>
-        <div><small>Dropped durable intervals</small><strong>{count(status.droppedIntervalCount)}</strong></div>
+        <div><small>Dropped durable intervals</small><strong>{count('dropped_interval_count', status.droppedIntervalCount)}</strong></div>
       </div>
       {status.cleanupRecoveryRequired && <InlineNotice tone="danger">Cleanup recovery is blocked. The sensor preserves all ambiguous files and remains read-only until the journal is safely repaired.</InlineNotice>}
       {status.cleanupInProgress && <InlineNotice tone="info">Acknowledgement-aware cleanup is running on the sensor StorageTask.</InlineNotice>}
@@ -614,9 +624,10 @@ export function SensorStorageContent({
           {canManage && <><label className="span-all">Change reason<input minLength={8} required value={reason} onChange={(event) => { setReason(event.target.value) }} /></label><div className="form-actions"><button className="button primary" disabled={policyMutation.isPending}>Apply storage policy</button></div></>}
         </form>
       </details>
-      {canManage && <section className="storage-actions">
-        <div><h3>Safe cleanup</h3><p>Queues cleanup on StorageTask. Active, corrupt, unacknowledged, untrusted, and too-recent segments remain protected.</p><label>Reason<input minLength={8} value={cleanupReason} onChange={(event) => { setCleanupReason(event.target.value) }} /></label><button type="button" className="button secondary" disabled={cleanup.isPending || cleanupReason.length < 8} onClick={() => { cleanup.mutate() }}>Run safe cleanup</button></div>
-        <div><h3>Prepare card for removal</h3><p>Unmounts the card without formatting, resetting, or changing enrollment. Power down before physically removing it.</p><label>Type {status.deviceName}<input value={confirmation} onChange={(event) => { setConfirmation(event.target.value) }} /></label><button type="button" className="button danger" disabled={prepare.isPending || confirmation !== status.deviceName} onClick={() => { prepare.mutate() }}>Prepare for removal</button></div>
+      {canManage && !status.cleanupSupported && !status.prepareRemovalSupported && <InlineNotice>Cleanup and live card-unmount actions are not applicable to this headless firmware. Power the sensor down before removing its card.</InlineNotice>}
+      {canManage && (status.cleanupSupported || status.prepareRemovalSupported) && <section className="storage-actions">
+        {status.cleanupSupported && <div><h3>Safe cleanup</h3><p>Queues cleanup on StorageTask. Active, corrupt, unacknowledged, untrusted, and too-recent segments remain protected.</p><label>Reason<input minLength={8} value={cleanupReason} onChange={(event) => { setCleanupReason(event.target.value) }} /></label><button type="button" className="button secondary" disabled={cleanup.isPending || cleanupReason.length < 8} onClick={() => { cleanup.mutate() }}>Run safe cleanup</button></div>}
+        {status.prepareRemovalSupported && <div><h3>Prepare card for removal</h3><p>Unmounts the card without formatting, resetting, or changing enrollment. Power down before physically removing it.</p><label>Type {status.deviceName}<input value={confirmation} onChange={(event) => { setConfirmation(event.target.value) }} /></label><button type="button" className="button danger" disabled={prepare.isPending || confirmation !== status.deviceName} onClick={() => { prepare.mutate() }}>Prepare for removal</button></div>}
       </section>}
       {mutationError && <InlineNotice tone="danger">{mutationError.message}</InlineNotice>}
       {(policyMutation.isSuccess || cleanup.isSuccess || prepare.isSuccess) && <InlineNotice tone="success">Request saved and queued for signed sensor delivery.</InlineNotice>}
@@ -1449,6 +1460,8 @@ function HealthDetail() {
               {component.lastSuccessAt && <><dt>Last success</dt><dd>{relativeTime(component.lastSuccessAt)}</dd></>}
               {component.latencyMs !== undefined && <><dt>Latency</dt><dd>{component.latencyMs.toFixed(1)} ms</dd></>}
             </dl>
+            {component.key === 'storage' && <StorageHealthEvidence details={component.details} />}
+            {component.key === 'backups' && <BackupHealthEvidence details={component.details} />}
             {component.remediation?.route && (
               <button type="button" className="text-button" onClick={() => { navigate(component.remediation?.route ?? '/settings/advanced/system-health'); }}>
                 {component.remediation.label}
@@ -1481,6 +1494,42 @@ function HealthDetail() {
       </Surface>
     </div>
   )
+}
+
+function StorageHealthEvidence({ details }: { details: Record<string, unknown> }) {
+  const locations = Array.isArray(details.locations)
+    ? details.locations.filter((value): value is Record<string, unknown> => (
+        typeof value === 'object' && value !== null && !Array.isArray(value)
+      ))
+    : []
+  if (!locations.length) return null
+  return <dl className="health-component-evidence">{locations.map((location, index) => {
+    const label = typeof location.label === 'string' ? location.label : `Storage location ${index + 1}`
+    const status = location.status === 'accessible' ? 'Accessible' : 'Failed'
+    const access = location.required_access === 'read_only' ? 'read only' : 'read/write'
+    const failure = typeof location.failure_type === 'string'
+      ? ` · ${location.failure_type.replaceAll('_', ' ')}`
+      : ''
+    return <div key={label}><dt>{label}</dt><dd>{status} · {access}{failure}</dd></div>
+  })}</dl>
+}
+
+function BackupHealthEvidence({ details }: { details: Record<string, unknown> }) {
+  const value = (key: string) => {
+    const candidate = details[key]
+    return typeof candidate === 'string' && candidate ? candidate : undefined
+  }
+  const attempts = typeof details.verification_attempt_count === 'number'
+    ? details.verification_attempt_count
+    : undefined
+  return <dl className="health-component-evidence">
+    {value('latest_backup_id') && <><dt>Latest backup</dt><dd>{value('latest_backup_id')}</dd></>}
+    {value('verification_status') && <><dt>Verification</dt><dd>{value('verification_status')?.replaceAll('_', ' ')}</dd></>}
+    {attempts !== undefined && <><dt>Attempts</dt><dd>{attempts}</dd></>}
+    {value('failed_stage') && <><dt>Failed stage</dt><dd>{value('failed_stage')?.replaceAll('_', ' ')}</dd></>}
+    {value('safe_error_code') && <><dt>Failure code</dt><dd>{value('safe_error_code')}</dd></>}
+    {value('last_verified_at') && <><dt>Last verified</dt><dd>{relativeTime(value('last_verified_at') ?? '')}</dd></>}
+  </dl>
 }
 
 function SystemHealthError({ error, retry }: { error: unknown; retry: () => void }) {
@@ -1678,13 +1727,107 @@ function NetworkDetail() {
   return <Surface title="Sensor network policy" subtitle="Signed device authentication remains required in every mode.">{runtime.isLoading ? <LoadingState /> : runtime.error ? <ErrorState error={runtime.error} /> : <pre className="structured-data">{JSON.stringify(runtime.data, null, 2)}</pre>}</Surface>
 }
 
-function TopologyDetail({ homeId }: { homeId: string }) {
+function LegacyTopologyDetail({ homeId }: { homeId: string }) {
   const navigate = useNavigate()
   const { sensors } = useLiveHome()
   const circuits = useQuery({ queryKey: ['circuits', homeId], queryFn: () => request(`/api/v1/circuits?site_id=${encodeURIComponent(homeId)}`, {}, adaptCircuits) })
   const aggregates = useQuery({ queryKey: ['aggregates', homeId], queryFn: () => request<Record<string, unknown>[]>(`/api/v1/aggregate-sets?site_id=${encodeURIComponent(homeId)}`) })
   const incomplete = sensors.filter((sensor) => !sensor.circuitId || !sensor.utilityAccountId)
   return <Surface title="Monitoring topology" subtitle="Whole-home totals and partial circuits remain server-authoritative and double-count protected." action={<button type="button" className="button secondary compact" onClick={() => { navigate('/settings/sensors?configuration=measurement-assignment') }}>Manage assignments</button>}>{circuits.isLoading ? <LoadingState /> : <><div className="list-row"><Radio /><span><strong>{circuits.data?.length ?? 0} monitored circuits</strong><small>{aggregates.data?.length ?? 0} aggregate sets · {incomplete.length} sensors need assignment</small></span></div>{circuits.data?.map((item) => <div className="list-row" key={item.id}><span><strong>{item.name}</strong><small>{item.measurementRole.replaceAll('-', ' ')}</small></span></div>)}{aggregates.data?.map((item, index) => <div className="list-row" key={typeof item.id === 'string' ? item.id : String(index)}><span><strong>{typeof item.name === 'string' ? item.name : 'Monitoring group'}</strong><small>{typeof item.cost_scope === 'string' ? item.cost_scope : 'server managed'}</small></span></div>)}</>}</Surface>
+}
+
+interface TopologyAggregate {
+  id: string
+  name: string
+  cost_scope?: string
+  members?: Array<{ circuit_id?: string; device_id?: string }>
+}
+
+export function TopologyDetail({ homeId }: { homeId: string }) {
+  const client = useQueryClient()
+  const { session } = useAuth()
+  const { sensors } = useLiveHome()
+  const circuits = useQuery({ queryKey: ['circuits', homeId], queryFn: () => request(`/api/v1/circuits?site_id=${encodeURIComponent(homeId)}`, {}, adaptCircuits) })
+  const aggregates = useQuery({ queryKey: ['aggregates', homeId], queryFn: () => request<TopologyAggregate[]>(`/api/v1/aggregate-sets?site_id=${encodeURIComponent(homeId)}`) })
+  const [removing, setRemoving] = useState<CircuitSummary>()
+  const [confirmation, setConfirmation] = useState('')
+  const canManage = session ? hasPermission(session, 'topology.manage') : false
+  const invalidateTopologyConsumers = async () => {
+    await Promise.all([
+      'circuits', 'aggregates', 'home', 'fleet', 'history', 'configuration-status',
+      'usage-authority', 'billing',
+    ].map((key) => client.invalidateQueries({ queryKey: [key] })))
+  }
+  const edit = useMutation({
+    mutationFn: ({ circuit, name }: { circuit: CircuitSummary; name: string }) => request(
+      `/api/v1/circuits/${circuit.id}`,
+      json('PUT', {
+        site_id: circuit.homeId,
+        parent_id: circuit.parentId ?? null,
+        name,
+        measurement_role: circuit.measurementRole,
+        split_phase_group: circuit.splitPhaseGroup ?? null,
+      }),
+    ),
+    onSuccess: invalidateTopologyConsumers,
+  })
+  const remove = useMutation({
+    mutationFn: (circuit: CircuitSummary) => request(
+      `/api/v1/circuits/${circuit.id}`,
+      { method: 'DELETE' },
+    ),
+    onSuccess: async () => {
+      await invalidateTopologyConsumers()
+      setRemoving(undefined)
+      setConfirmation('')
+    },
+  })
+  const assignedSensors = removing
+    ? sensors.filter((sensor) => sensor.circuitId === removing.id)
+    : []
+  const childCircuits = removing
+    ? (circuits.data ?? []).filter((circuit) => circuit.parentId === removing.id)
+    : []
+  const aggregateDependencies = removing
+    ? (aggregates.data ?? []).filter((aggregate) => (
+        aggregate.members?.some((member) => member.circuit_id === removing.id)
+      ))
+    : []
+  const expectedConfirmation = removing ? `REMOVE CIRCUIT ${removing.name}` : ''
+  return <>
+    <LegacyTopologyDetail homeId={homeId} />
+    {canManage && <Surface title="Topology management" subtitle="Edit circuits or remove only those without sensor, child, aggregate, billing, or reset dependencies.">
+      {circuits.isLoading ? <LoadingState /> : circuits.data?.map((item) => <div className="list-row" key={item.id}>
+        <span><strong>{item.name}</strong><small>{item.measurementRole.replaceAll('-', ' ')}</small></span>
+        <div className="inline-actions">
+          <button className="button secondary compact" type="button" onClick={() => { const name = window.prompt('Circuit name', item.name)?.trim(); if (name && name !== item.name) edit.mutate({ circuit: item, name }); }}>Edit</button>
+          <button className="button danger compact" type="button" onClick={() => { setConfirmation(''); setRemoving(item); }}>Remove</button>
+        </div>
+      </div>)}
+      {edit.error && <InlineNotice tone="danger">{edit.error.message}</InlineNotice>}
+    </Surface>}
+    {removing && <ModalLayer onRequestClose={() => { if (!remove.isPending) setRemoving(undefined) }}>
+      <section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="circuit-removal-title">
+        <header><div><small>Protected topology change</small><h2 id="circuit-removal-title">Remove circuit</h2></div><button type="button" className="icon-button" aria-label="Close removal dialog" onClick={() => { setRemoving(undefined) }}><X /></button></header>
+        <div className="setup-body">
+          <dl>
+            <dt>Name</dt><dd>{removing.name}</dd>
+            <dt>Object type</dt><dd>Circuit</dd>
+            <dt>Measurement role</dt><dd>{removing.measurementRole.replaceAll('-', ' ')}</dd>
+            <dt>Assigned sensors</dt><dd>{assignedSensors.length ? assignedSensors.map((sensor) => sensor.name).join(', ') : 'None'}</dd>
+            <dt>Child circuits</dt><dd>{childCircuits.length ? childCircuits.map((circuit) => circuit.name).join(', ') : 'None'}</dd>
+            <dt>Aggregate dependencies</dt><dd>{aggregateDependencies.length ? aggregateDependencies.map((aggregate) => aggregate.name).join(', ') : 'None'}</dd>
+            <dt>Billing dependencies</dt><dd>{aggregateDependencies.some((aggregate) => aggregate.cost_scope === 'full_account' || aggregate.cost_scope === 'allocated_account') ? 'Present — repair billing authority first' : 'None visible; server rechecks on removal'}</dd>
+            <dt>Historical readings preserved</dt><dd>Yes</dd>
+          </dl>
+          {(assignedSensors.length > 0 || childCircuits.length > 0 || aggregateDependencies.length > 0) && <InlineNotice tone="warning">Repair the listed dependencies before removal. Sensors can be reassigned or unassigned from Manage assignments.</InlineNotice>}
+          <label>Type <strong>{expectedConfirmation}</strong><input value={confirmation} onChange={(event) => { setConfirmation(event.target.value) }} /></label>
+          {remove.error && <InlineNotice tone="danger">{remove.error.message}</InlineNotice>}
+        </div>
+        <footer><button className="button secondary" type="button" disabled={remove.isPending} onClick={() => { setRemoving(undefined) }}>Cancel</button><button className="button danger" type="button" disabled={confirmation !== expectedConfirmation || remove.isPending} onClick={() => { remove.mutate(removing) }}>Remove circuit</button></footer>
+      </section>
+    </ModalLayer>}
+  </>
 }
 
 function FirmwareDetail() {

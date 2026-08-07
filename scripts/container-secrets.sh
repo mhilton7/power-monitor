@@ -72,3 +72,17 @@ decrypt_backup_artifact() {
     cp -- "$source" "$destination"
   fi
 }
+
+decrypt_backup_artifact_to_stdout() {
+  local source=$1
+  if [[ "$source" == *.enc ]]; then
+    [[ -n "${BACKUP_KEY_PATH:-}" ]] || {
+      printf 'backup is encrypted; BACKUP_ENCRYPTION_KEY_FILE is required\n' >&2
+      return 65
+    }
+    openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 \
+      -pass "file:${BACKUP_KEY_PATH}" -in "$source"
+  else
+    cat -- "$source"
+  fi
+}

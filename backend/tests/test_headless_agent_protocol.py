@@ -597,7 +597,10 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(
     await session.commit()
 
     async def send_heartbeat(
-        counter: int, nonce: str, ota_capability: bool | dict[str, Any] = True
+        counter: int,
+        nonce: str,
+        ota_capability: bool | dict[str, Any] = True,
+        configuration_revision: int = 1,
     ) -> httpx.Response:
         payload = {
             "protocol": AGENT_PROTOCOL,
@@ -697,7 +700,7 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(
                     "format_on_mount_failure": False,
                 },
             },
-            "configuration_revision": 1,
+            "configuration_revision": configuration_revision,
             "reset_generation": 0,
             "reset_operation": {"state": "idle", "checkpoint": "idle"},
             "resources": {"free_heap_bytes": 120000},
@@ -883,3 +886,68 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(
     detail = await client.get(f"/api/v1/devices/{device_id}")
     assert detail.status_code == 200, detail.text
     assert detail.json()["device"]["effective_config_version"] == revision
+
+    storage_policy = await client.put(
+        f"/api/v1/devices/{device_id}/storage/policy",
+        headers=csrf(client),
+        json={
+            "retention_mode": "continuous_protected",
+            "retention_days": 730,
+            "minimum_local_history_days": 30,
+            "storage_notice_percent": 20,
+            "storage_warning_percent": 10,
+            "storage_critical_percent": 5,
+            "storage_emergency_percent": 2,
+            "storage_emergency_reserve_bytes": 536870912,
+            "storage_cleanup_target_percent": 10,
+            "storage_cleanup_target_bytes": 1073741824,
+            "event_retention_days": 730,
+            "reason": "Verify signed headless storage-policy delivery",
+        },
+    )
+    assert storage_policy.status_code == 202, storage_policy.text
+    storage_revision = storage_policy.json()["version"]
+    offered_storage = await send_heartbeat(
+        8,
+        "8" * 32,
+        configuration_revision=revision,
+    )
+    assert offered_storage.status_code == 200, offered_storage.text
+    storage_command = offered_storage.json()["command"]
+    assert storage_command["type"] == "apply_configuration"
+    assert storage_command["payload"]["configuration_revision"] == storage_revision
+    assert storage_command["payload"]["settings"]["retention_days"] == 730
+    assert storage_command["payload"]["settings"]["retention_mode"] == ("continuous_protected")
+    # Reproduce a revision created by older server code without a durable
+    # outbound command. The next signed heartbeat must repair delivery without
+    # changing or falsely acknowledging the desired revision.
+    missing_command = await session.get(DeviceCommand, storage_command["command_id"])
+    assert missing_command is not None
+    await session.delete(missing_command)
+    await session.commit()
+    recovered_storage = await send_heartbeat(
+        9,
+        "9" * 32,
+        configuration_revision=revision,
+    )
+    assert recovered_storage.status_code == 200, recovered_storage.text
+    recovered_command = recovered_storage.json()["command"]
+    assert recovered_command["payload"]["configuration_revision"] == storage_revision
+    assert "durable_log_interval_seconds" not in recovered_command["payload"]["settings"]
+    assert "live_update_interval_seconds" not in recovered_command["payload"]["settings"]
+    recovered_row = await session.get(DeviceCommand, recovered_command["command_id"])
+    assert recovered_row is not None
+    recovered_row.state = "expired"
+    recovered_row.failure_code = "command_expired"
+    recovered_row.completed_at = datetime.now(UTC)
+    await session.commit()
+    retried_storage = await send_heartbeat(
+        10,
+        "a" * 32,
+        configuration_revision=revision,
+    )
+    assert retried_storage.status_code == 200, retried_storage.text
+    assert retried_storage.json()["command"]["command_id"] == recovered_command["command_id"]
+    assert retried_storage.json()["command"]["payload"]["configuration_revision"] == (
+        storage_revision
+    )

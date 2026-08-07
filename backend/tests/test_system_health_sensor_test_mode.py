@@ -68,6 +68,13 @@ async def test_system_health_is_owner_only_typed_and_secret_safe(api_client: Any
         "rate_engine",
     }
     assert payload["versions"]["frontend"] == "1.0.0"
+    storage = next(item for item in payload["components"] if item["key"] == "storage")
+    assert len(storage["details"]["locations"]) == 6
+    backup_location = next(
+        item for item in storage["details"]["locations"] if item["label"] == "Backup artifacts"
+    )
+    assert backup_location["required_access"] == "read_only"
+    assert all("path" not in item for item in storage["details"]["locations"])
     serialized = response.text.lower()
     assert "session_pepper" not in serialized
     assert "app_master_key" not in serialized

@@ -609,10 +609,6 @@ class AccountUsageAuthorityWrite(ApiModel):
                 raise ValueError("a standard utility bill cannot become usage authority")
         if self.authority_type == "complete_site_aggregate" and not self.aggregate_set_id:
             raise ValueError("complete site aggregate authority requires an aggregate set")
-        if self.authority_type == "service_leg_pair" and len(set(self.device_ids)) != 2:
-            raise ValueError("service-leg authority requires exactly two distinct sensors")
-        if self.authority_type == "whole_account_meter" and len(set(self.device_ids)) != 1:
-            raise ValueError("whole-account meter authority requires exactly one sensor")
         if self.authority_type == "partial_monitored_circuits" and self.complete_account:
             raise ValueError("partial monitored circuits cannot claim complete-account authority")
         return self
@@ -969,6 +965,42 @@ class DeviceMeasurementAssignmentView(ApiModel):
     measurement_role: str
     cost_scope: str
     included_in_default_site_total: bool
+
+
+class DeviceMeasurementRoleRepairWrite(ApiModel):
+    utility_account_id: str
+    target_role: Literal["main", "service-leg"]
+    split_phase_group: str | None = Field(default=None, min_length=1, max_length=80)
+    physical_boundary_acknowledged: Literal[True]
+    billing_effect_acknowledged: Literal[True]
+    confirmation: str = Field(min_length=8, max_length=80)
+    reason: str = Field(min_length=8, max_length=500)
+
+    @model_validator(mode="after")
+    def reviewed_role_repair(self) -> DeviceMeasurementRoleRepairWrite:
+        phrase = (
+            "CONFIRM SERVICE LEG ASSIGNMENT"
+            if self.target_role == "service-leg"
+            else "CONFIRM WHOLE HOME ASSIGNMENT"
+        )
+        if self.confirmation != phrase:
+            raise ValueError(f"confirmation must be exactly: {phrase}")
+        if self.target_role == "service-leg" and not self.split_phase_group:
+            raise ValueError("service-leg assignment requires a split-phase service group")
+        return self
+
+
+class DeviceMeasurementRoleRepairView(ApiModel):
+    device_id: str
+    circuit_id: str
+    utility_account_id: str
+    previous_device_role: str
+    previous_circuit_role: str
+    device_measurement_role: Literal["main", "service-leg"]
+    circuit_measurement_role: Literal["main", "service-leg"]
+    split_phase_group: str | None
+    historical_readings_preserved: Literal[True]
+    device_identity_preserved: Literal[True]
 
 
 class DeviceOtaCapability(DeviceProtocolModel):

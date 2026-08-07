@@ -71,7 +71,7 @@ describe('energy chart tooltip formatting', () => {
   it('formats exact intervals and bucket-aware ticks in the account timezone', () => {
     expect(chartIntervalLabel('2026-07-31T15:15:00Z', '2026-07-31T15:30:00Z', 'America/Los_Angeles')).toBe('Jul 31, 8:15–8:30 AM')
     expect(chartTickLabel(Date.parse('2026-07-31T15:15:00Z'), '15m', 'America/Los_Angeles')).toBe('8:15 AM')
-    expect(chartTickLabel(Date.parse('2026-07-31T15:00:00Z'), '1h', 'America/Los_Angeles')).toContain('Jul 31')
+    expect(chartTickLabel(Date.parse('2026-07-31T15:00:00Z'), '1h', 'America/Los_Angeles')).toBe('Fri 8 AM')
     expect(chartTickLabel(Date.parse('2026-07-31T15:05:00Z'), '5m', 'America/Los_Angeles')).toBe('8:05 AM')
     expect(chartTickLabel(Date.parse('2026-07-31T15:00:00Z'), '1d', 'America/Los_Angeles')).toBe('Jul 31')
   })
@@ -117,10 +117,12 @@ describe('energy chart tooltip formatting', () => {
   })
 
   it('adapts x-axis tick density to the measured chart width', () => {
-    expect(chartTickLimitForWidth(390)).toBe(3)
-    expect(chartTickLimitForWidth(600)).toBe(6)
-    expect(chartTickLimitForWidth(900)).toBe(9)
-    expect(chartTickLimitForWidth(1200)).toBe(12)
+    expect([320, 480, 768, 1024, 1440, 1920].map((width) => (
+      chartTickLimitForWidth(width, '1h')
+    ))).toEqual([3, 5, 8, 11, 16, 20])
+    expect(chartTickLimitForWidth(320, '15m')).toBe(4)
+    expect(chartTickLimitForWidth(1920, '15m')).toBe(20)
+    expect(chartTickLimitForWidth(480, '1d')).toBe(6)
     expect(chartTickLimitForWidth(0)).toBe(6)
   })
 

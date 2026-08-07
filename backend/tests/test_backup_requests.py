@@ -516,6 +516,11 @@ def test_replace_all_script_verifies_before_deletion_and_excludes_replacement() 
     assert "writing_database_dump" in backup_script
     assert "writing_supporting_artifacts" in backup_script
     assert "testing_database_restore" in verify_script
+    assert 'decrypt_backup_artifact_to_stdout "$database_artifact" |' in verify_script
+    assert 'database_dump="$restore_workspace/database.dump"' not in verify_script
+    assert 'restore_pipeline_status=("${PIPESTATUS[@]}")' in verify_script
+    assert "restore_pipeline_status[0]" in verify_script
+    assert "restore_pipeline_status[1]" in verify_script
     for script in (workflow, backup_script, verify_script, scheduler_script):
         assert "COALESCE(progress, '{}'::jsonb)" not in script
         assert "COALESCE(progress, '{}'::json)::jsonb" in script
