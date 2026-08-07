@@ -1,6 +1,6 @@
 {
   "product": "Power Monitor Server",
-  "version": "1.0.49",
+  "version": "1.0.50",
   "protocol": "pm-protocol/1.0.0",
   "migration_revision": "20260806_0033",
   "migration": {
@@ -29,7 +29,7 @@
       "backup": "postgres:17.5-bookworm"
     }
   },
-  "git_commit": "3ac09a1ef587d0bf8b01eebce4f1fb977a4d8761",
+  "git_commit": "57a980ac9a2bb6e4f4d8197eba6ad62c708e63cd",
   "dependency_audits": {
     "backend": {
       "lock": {
@@ -44,7 +44,7 @@
     },
     "frontend": {
       "lock": {
-        "path": "frontend-next/package-lock.json",
+        "path": "frontend/package-lock.json",
         "sha256": "9041283f903d54db7c5bb2f5cacbb3d7851fd72d980ef2d1308324694b1763b1"
       },
       "report": {
@@ -55,9 +55,9 @@
     }
   },
   "images": {
-    "api": "power-monitor-api:1.0.49",
-    "frontend": "power-monitor-frontend:1.0.49",
-    "backup": "power-monitor-backup:1.0.49",
+    "api": "power-monitor-api:1.0.50",
+    "frontend": "power-monitor-frontend:1.0.50",
+    "backup": "power-monitor-backup:1.0.50",
     "postgres": "docker.io/library/postgres:17.5-bookworm",
     "caddy": "docker.io/library/caddy:2.10.0-alpine"
   },
