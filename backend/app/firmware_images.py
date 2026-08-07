@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import BinaryIO
 
+from app.security.agent_protocol import AGENT_PROTOCOL
 from app.security.protocol import PROTOCOL
 
 ESP_IMAGE_MAGIC = 0xE9
@@ -88,8 +89,8 @@ def _build_timestamp(date_text: str, time_text: str) -> datetime:
     return parsed.replace(tzinfo=UTC)
 
 
-def _contains_protocol(stream: BinaryIO, size_bytes: int) -> bool:
-    marker = PROTOCOL.encode("ascii")
+def _contains_protocol(stream: BinaryIO, size_bytes: int, protocol: str) -> bool:
+    marker = protocol.encode("ascii")
     overlap = len(marker) - 1
     previous = b""
     stream.seek(0)
@@ -243,17 +244,18 @@ def parse_esp32s3_application_image(
             raise FirmwareImageError(
                 "firmware_image_invalid", "Firmware application build hash is missing"
             )
-        if not _contains_protocol(stream, size_bytes):
+        protocol = AGENT_PROTOCOL if project_name == "power_monitor_sensor_headless" else PROTOCOL
+        if not _contains_protocol(stream, size_bytes, protocol):
             raise FirmwareImageError(
-                "firmware_protocol_invalid", f"Firmware does not declare {PROTOCOL}"
+                "firmware_protocol_invalid", f"Firmware does not declare {protocol}"
             )
 
     return ParsedFirmwareImage(
         version=version,
         project_name=project_name,
         hardware_target=EXPECTED_HARDWARE_TARGET,
-        protocol_min=PROTOCOL,
-        protocol_max=PROTOCOL,
+        protocol_min=protocol,
+        protocol_max=protocol,
         size_bytes=size_bytes,
         build_hash=build_hash_bytes.hex(),
         build_timestamp=_build_timestamp(build_date, build_time),

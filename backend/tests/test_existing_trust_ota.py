@@ -24,6 +24,7 @@ from app.ota import (
     verify_ota_manifest_hmac,
 )
 from app.schemas import FirmwareDeploymentReport
+from app.security.agent_protocol import AGENT_PROTOCOL
 from app.security.protocol import PROTOCOL, sign_headers
 from app.upload_limits import FIRMWARE_MULTIPART_OVERHEAD_BYTES
 
@@ -50,6 +51,7 @@ def esp32s3_image(
     project: str = PROJECT,
     chip_id: int = 9,
     descriptor_magic: int = 0xABCD5432,
+    protocol: str = PROTOCOL,
     variant: bytes = b"a",
 ) -> bytes:
     descriptor = bytearray(256)
@@ -60,7 +62,7 @@ def esp32s3_image(
     descriptor[96:112] = _field("Aug 02 2026", 16)
     descriptor[112:144] = _field("esp-idf-v5.4", 32)
     descriptor[144:176] = hashlib.sha256(b"elf-" + variant).digest()
-    segment = bytes(descriptor) + PROTOCOL.encode("ascii") + b"\x00" + variant * 127
+    segment = bytes(descriptor) + protocol.encode("ascii") + b"\x00" + variant * 127
 
     header = bytearray(24)
     header[0] = 0xE9
@@ -328,6 +330,22 @@ def test_strict_esp32s3_parser_extracts_standard_descriptor(tmp_path: Path) -> N
             ota_partition_size_bytes=len(image),
         )
     assert caught.value.code == "firmware_too_large"
+
+
+def test_strict_esp32s3_parser_accepts_headless_agent_protocol(tmp_path: Path) -> None:
+    project = "power_monitor_sensor_headless"
+    image = esp32s3_image(version="2.0.4", project=project, protocol=AGENT_PROTOCOL, variant=b"h")
+    path = tmp_path / "headless-firmware.bin"
+    path.write_bytes(image)
+    parsed = parse_esp32s3_application_image(
+        path,
+        maximum_bytes=len(image),
+        ota_partition_size_bytes=6 * 1024 * 1024,
+        expected_project_name=project,
+    )
+    assert parsed.version == "2.0.4"
+    assert parsed.project_name == project
+    assert parsed.protocol_min == parsed.protocol_max == AGENT_PROTOCOL
 
 
 def test_manifest_hkdf_hmac_vector_and_tamper_matrix(monkeypatch: pytest.MonkeyPatch) -> None:
