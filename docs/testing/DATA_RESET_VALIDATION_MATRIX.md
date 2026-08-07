@@ -72,8 +72,8 @@ pass does not substitute for a listed physical or live-infrastructure gate.
 ## Baseline captured before implementation
 
 - Backend: Ruff check/format, Mypy, contracts, and full Pytest passed (`341 passed, 5 skipped`).
-- Legacy frontend: lint/typecheck/unit/build passed; e2e passed (`51 passed`). It is not the production UI.
-- Production `frontend-next`: lint/typecheck, `163` unit tests, and build passed. Baseline Playwright completed `264 passed, 62 skipped, 1 failed`; the isolated mobile firmware-menu test could not find `Outdoor-AC` and is tracked as a pre-feature baseline flake.
+- The now-retired comparison frontend passed lint/typecheck/unit/build and 51 e2e checks before removal.
+- Production `frontend`: lint/typecheck, `163` unit tests, and build passed. Baseline Playwright completed `264 passed, 62 skipped, 1 failed`; the isolated mobile firmware-menu test could not find `Outdoor-AC` and is tracked as a pre-feature baseline flake.
 - Sensor: `104` Python tests, web `36` tests/build, native/native-sanitized, release/debug/simulated-meter builds, and repository checks passed on the pre-reset implementation.
 - PostgreSQL/Compose baseline was unavailable because Docker Desktop was not running and no supported host PostgreSQL client/service was installed.
 - Host Node/npm were `26.0.0`/`11.12.1`, outside release pins (`24.4.0`/`11.4.2`); release evidence must use the pinned toolchain.

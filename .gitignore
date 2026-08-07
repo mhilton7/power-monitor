@@ -20,11 +20,7 @@ frontend/node_modules/
 frontend/dist/
 frontend/playwright-report/
 frontend/test-results/
-frontend-next/node_modules/
-frontend-next/dist/
-frontend-next/playwright-report/
-frontend-next/test-results/
-frontend-next/*.tsbuildinfo
+frontend/*.tsbuildinfo
 backups/*
 !backups/.gitkeep
 firmware/*

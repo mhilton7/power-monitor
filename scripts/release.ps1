@@ -68,7 +68,7 @@ Assert-NativeSuccess 'Contract check'
 & $python tools/validate-truenas-compose.py
 Assert-NativeSuccess 'TrueNAS template validation'
 
-Push-Location frontend-next
+Push-Location frontend
 & $NpmBin ci
 Assert-NativeSuccess 'npm clean install'
 & $NpmBin run lint
@@ -90,7 +90,7 @@ docker run --rm --platform linux/amd64 --mount $backendAuditMount --workdir /wor
     python:3.13.5-slim-bookworm sh -ec `
     'python -m venv /tmp/audit-venv && /tmp/audit-venv/bin/pip install --disable-pip-version-check pip-audit==2.9.0 && /tmp/audit-venv/bin/python -m pip_audit -r backend/requirements.lock --no-deps --format json --output release/backend-audit.json && /tmp/audit-venv/bin/python -m pip_audit -r backend/requirements.lock --no-deps --format cyclonedx-json --output release/backend-sbom.cdx.json'
 Assert-NativeSuccess 'Linux/amd64 backend dependency audit and SBOM'
-Push-Location frontend-next
+Push-Location frontend
 $frontendAudit = (& $NpmBin audit --audit-level=high --json | Out-String)
 $frontendAuditCode = $LASTEXITCODE
 [IO.File]::WriteAllText(

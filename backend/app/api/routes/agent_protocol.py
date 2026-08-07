@@ -762,6 +762,10 @@ async def heartbeat(
     agent.device.firmware_build_hash = payload.build_hash
     agent.device.status = "online" if not reset_required else "reset_required"
     agent.device.last_seen_at = now
+    # The authenticated heartbeat is authoritative application evidence.  It
+    # closes a desired/effective transition even if the command-result response
+    # was lost while the sensor rebooted after applying configuration.
+    agent.device.effective_config_version = payload.configuration_revision
     capability = await session.get(DeviceCapability, agent.device.id)
     capability_features = _headless_capability_features(capability, payload)
     signed_storage = payload.capabilities.storage

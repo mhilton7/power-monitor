@@ -59,11 +59,11 @@ The server supplies one current `verification.blocker`. The browser displays its
 
 | Test surface | Required assertion | Evidence location |
 | --- | --- | --- |
-| Runtime adapter | Checklist, blocker, exact identity, timestamps, recovery and rollback fields survive snake-case conversion | `frontend-next/tests/adapters.test.ts` |
-| One-sensor dialog | Current blocker and full checklist render; first-reading and stabilization states are distinct | `frontend-next/tests/firmwareUpdate.test.tsx` |
-| One-sensor dialog | Terminal timeout has no spinner/progress loop and exposes Retry | `frontend-next/tests/firmwareUpdate.test.tsx` |
-| Fleet workflow | Terminal rows stop polling/spinning; Cancel and Retry follow persisted state | `frontend-next/tests/firmwareFleet.test.tsx` |
-| Browser workflow | A verified image enters Preparing download with indeterminate authenticated-progress messaging | `frontend-next/e2e/single-home.spec.ts` |
+| Runtime adapter | Checklist, blocker, exact identity, timestamps, recovery and rollback fields survive snake-case conversion | `frontend/tests/adapters.test.ts` |
+| One-sensor dialog | Current blocker and full checklist render; first-reading and stabilization states are distinct | `frontend/tests/firmwareUpdate.test.tsx` |
+| One-sensor dialog | Terminal timeout has no spinner/progress loop and exposes Retry | `frontend/tests/firmwareUpdate.test.tsx` |
+| Fleet workflow | Terminal rows stop polling/spinning; Cancel and Retry follow persisted state | `frontend/tests/firmwareFleet.test.tsx` |
+| Browser workflow | A verified image enters Preparing download with indeterminate authenticated-progress messaging | `frontend/e2e/single-home.spec.ts` |
 | Backend lifecycle | Monotonic transitions, stale-attempt rejection, idempotency, retry reset, locking, stale terminalization | `backend/tests/test_firmware_lifecycle.py`, `backend/tests/test_existing_trust_ota.py` |
 
 ### Measured automated result

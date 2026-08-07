@@ -19,13 +19,21 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.api.routes.system import _sse_stream
 from app.config import Settings
 from app.db.models import (
+    AccountUsageAuthority,
+    AggregateMember,
+    AggregateSet,
     AuditEvent,
+    BillingCycle,
+    Circuit,
     Device,
     DeviceCredential,
     DeviceHeartbeat,
     DeviceLifecycleEvent,
+    DeviceSiteAssignment,
     LogExportJob,
     RawReading,
+    Utility,
+    UtilityAccount,
 )
 from app.logging import DailyJsonLogWriter, maintain_log_directory, retention_boundary
 from app.security.protocol import PROTOCOL, sign_headers
@@ -881,6 +889,54 @@ async def test_sensor_unclaim_retains_history_revokes_and_reenrolls_with_new_sec
     async with session_factory_fixture() as session:
         device = await session.get(Device, device_id)
         assert device is not None
+        utility = await session.scalar(select(Utility).order_by(Utility.name))
+        assert utility is not None
+        circuit = Circuit(
+            site_id=device.site_id,
+            name="Removal test circuit",
+            measurement_role="main",
+        )
+        account = UtilityAccount(
+            site_id=device.site_id,
+            utility_id=utility.id,
+            name="Removal test electric service",
+        )
+        session.add_all((circuit, account))
+        await session.flush()
+        aggregate = AggregateSet(
+            site_id=device.site_id,
+            utility_account_id=account.id,
+            name="Removal test billing group",
+            cost_scope="allocated_account",
+        )
+        session.add(aggregate)
+        await session.flush()
+        direct_member = AggregateMember(
+            aggregate_set_id=aggregate.id,
+            device_id=device.id,
+            allocation_percent=Decimal("100"),
+        )
+        usage_authority = AccountUsageAuthority(
+            utility_account_id=account.id,
+            authority_type="whole_account_meter",
+            calculation_role="sensor_measurements",
+            device_ids=[device.id],
+            confidence="high",
+            complete_account=True,
+            updated_at=datetime.now(UTC),
+        )
+        billing_cycle = BillingCycle(
+            utility_account_id=account.id,
+            starts_at=datetime.now(UTC) - timedelta(days=15),
+            ends_at=datetime.now(UTC) + timedelta(days=15),
+            status="confirmed",
+        )
+        session.add_all((direct_member, usage_authority, billing_cycle))
+        device.circuit_id = circuit.id
+        device.utility_account_id = account.id
+        device.measurement_role = "main"
+        device.cost_scope = "allocated_account"
+        device.include_in_default_site_total = True
         reading = RawReading(
             device_id=device.id,
             site_id=device.site_id,
@@ -900,6 +956,10 @@ async def test_sensor_unclaim_retains_history_revokes_and_reenrolls_with_new_sec
         )
         session.add(reading)
         await session.commit()
+        aggregate_id = aggregate.id
+        account_id = account.id
+        usage_authority_id = usage_authority.id
+        billing_cycle_id = billing_cycle.id
 
     fleet_before = (await client.get("/api/v1/fleet/summary")).json()
     removed = await client.post(
@@ -951,9 +1011,52 @@ async def test_sensor_unclaim_retains_history_revokes_and_reenrolls_with_new_sec
                 AuditEvent.action == "device.unclaimed", AuditEvent.object_id == device_id
             )
         )
+        removed_device = await session.get(Device, device_id)
+        direct_member_count = await session.scalar(
+            select(func.count())
+            .select_from(AggregateMember)
+            .where(AggregateMember.aggregate_set_id == aggregate_id)
+        )
+        open_site_assignment_count = await session.scalar(
+            select(func.count())
+            .select_from(DeviceSiteAssignment)
+            .where(
+                DeviceSiteAssignment.device_id == device_id,
+                DeviceSiteAssignment.effective_to.is_(None),
+            )
+        )
+        cleared_authority = await session.get(AccountUsageAuthority, usage_authority_id)
+        invalidated_cycle = await session.get(BillingCycle, billing_cycle_id)
         assert active_credentials == 0
+        assert removed_device is not None
+        assert removed_device.circuit_id is None
+        assert removed_device.utility_account_id is None
+        assert removed_device.cost_scope == "energy_only"
+        assert removed_device.include_in_default_site_total is False
+        assert direct_member_count == 0
+        assert open_site_assignment_count == 0
+        assert cleared_authority is not None
+        assert cleared_authority.device_ids == []
+        assert cleared_authority.complete_account is False
+        assert cleared_authority.confidence == "unverified"
+        assert cleared_authority.revision == 2
+        assert invalidated_cycle is not None
+        assert invalidated_cycle.recalculation_required is True
+        assert invalidated_cycle.usage_source_type == "unavailable"
+        assert invalidated_cycle.tier_progress_source_type == "unavailable"
+        assert invalidated_cycle.projection_source_type == "unavailable"
         assert event is not None and event.reason == "replaced" and event.actor_id
+        assert event.details["cleared_assignments"]["utility_account_id"] == account_id
         assert audit is not None and audit.details["reason"] == "replaced"
+        assert audit.details["cleared_assignments"]["removed_direct_aggregate_member_ids"]
+        assert (
+            usage_authority_id
+            in audit.details["cleared_assignments"]["cleared_usage_authority_ids"]
+        )
+        assert (
+            billing_cycle_id
+            in audit.details["cleared_assignments"]["invalidated_billing_cycle_ids"]
+        )
         assert audit.occurred_at
 
     reenrolled_id, new_secret = await _enroll_sensor(client, "esp32-removal-001")

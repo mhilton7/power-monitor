@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 SERVER_ROOT = Path(__file__).resolve().parents[1]
-SENSOR_ROOT = SERVER_ROOT.parent / "power-monitor-sensor"
+SENSOR_ROOT = SERVER_ROOT.parent / "power-monitor-sensor-headless"
 DEFAULT_OUTPUT = SERVER_ROOT / "docs" / "audits" / "TRACKED_FILE_AUDIT_MANIFEST.csv"
 
 
@@ -24,7 +24,7 @@ KNOWN_FINDINGS: dict[tuple[str, str], tuple[str, str]] = {
         "Baseline hydrated broad ORM rows and performed unrequested rate, tier, and series work.",
         "Use a metric-aware execution plan, narrow projections, bounded output, and indexed tier lookup.",
     ),
-    ("server", "frontend-next/src/pages/history/HistoryPage.tsx"): (
+    ("server", "frontend/src/pages/history/HistoryPage.tsx"): (
         "Baseline request identity, cancellation, and event refresh behavior could duplicate expensive work.",
         "Stabilize query identity, propagate cancellation, coalesce active-site refreshes, and preserve pagination.",
     ),
@@ -112,7 +112,7 @@ def category(path: str) -> str:
         return "dependency-lock"
     if extension in {".md", ".txt"} or path.startswith("docs/"):
         return "documentation"
-    if "test" in path.lower() or path.startswith(("frontend-next/e2e/", "simulator/")):
+    if "test" in path.lower() or path.startswith(("frontend/e2e/", "simulator/")):
         return "test-or-simulator"
     if extension in TEXT_EXTENSIONS:
         return "first-party-text"
@@ -123,21 +123,17 @@ def subsystem(repository: str, path: str) -> str:
     normalized = path.lower()
     if repository == "sensor":
         for token, label in (
-            ("src/ota/", "sensor-ota"),
-            ("src/network/", "sensor-network-sync"),
-            ("src/storage/", "sensor-storage"),
-            ("src/api/", "sensor-local-web"),
-            ("src/config/", "sensor-configuration"),
-            ("src/provisioning/", "sensor-provisioning"),
-            ("src/security/", "sensor-security"),
-            ("web/", "sensor-local-web"),
+            ("components/platform_idf/", "headless-platform-runtime"),
+            ("components/agent_core/", "headless-agent-core"),
+            ("main/", "headless-firmware-entrypoint"),
+            ("host/", "headless-host-validation"),
             ("release/", "sensor-release"),
             ("tools/", "sensor-tooling"),
             ("test/", "sensor-tests"),
         ):
             if normalized.startswith(token):
                 return label
-        return "sensor-runtime"
+        return "headless-firmware-runtime"
     for token, label in (
         ("backend/alembic/", "database-migrations"),
         ("backend/app/history", "history-backend"),
@@ -145,8 +141,7 @@ def subsystem(repository: str, path: str) -> str:
         ("backend/app/api/routes/firmware", "firmware-lifecycle"),
         ("backend/", "backend-api"),
         ("worker/", "background-worker"),
-        ("frontend-next/", "production-frontend"),
-        ("frontend/", "legacy-frontend"),
+        ("frontend/", "production-frontend"),
         ("deploy/", "deployment"),
         ("tools/", "deployment-tooling"),
         ("scripts/", "build-release-tooling"),

@@ -7,9 +7,9 @@ ENV VITE_BUILD_VERSION=${APP_VERSION} \
     VITE_RELEASE_COMMIT=${RELEASE_COMMIT} \
     VITE_SINGLE_HOME_MODE=${SINGLE_HOME_MODE}
 WORKDIR /build
-COPY frontend-next/package.json frontend-next/package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --ignore-scripts
-COPY frontend-next/ ./
+COPY frontend/ ./
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.29.0-alpine

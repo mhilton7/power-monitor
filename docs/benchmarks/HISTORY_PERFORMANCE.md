@@ -160,7 +160,7 @@ require that index and its concurrent production installation.
 
 ### Production-build browser acceptance
 
-`frontend-next/e2e/history-performance.spec.ts` warms the built application on
+`frontend/e2e/history-performance.spec.ts` warms the built application on
 Home, begins a Chromium Long Tasks observer, and then navigates through the real
 client router to History. The deterministic API fixture returns 720 exact points
 in the production page size (500 + 220). The test enables collector-gated User

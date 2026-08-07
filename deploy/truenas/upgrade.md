@@ -39,7 +39,7 @@ The frontend compares its API/import schema versions with the backend before
 mounting an authenticated workspace and intentionally blocks a mixed release.
 
 For the Single Home frontend cutover, confirm exactly one site is active before
-upgrading. The new production image contains only `frontend-next` and exposes
+upgrading. The production image contains only `frontend` and exposes
 exactly Home, History, Billing, and Settings; the gateway, internal frontend
 port, UID/GID, datasets, secrets, health check, and published gateway port do
 not change. Preserve the previous digest-pinned frontend image and App YAML for

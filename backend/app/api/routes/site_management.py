@@ -43,6 +43,7 @@ from app.schemas import (
     SiteRemoveRequest,
     SiteRestoreRequest,
 )
+from app.services.device_assignments import clear_device_assignment_relationships
 
 router = APIRouter(prefix="/api/v1/admin/sites", tags=["site management"])
 
@@ -855,6 +856,13 @@ async def resolve_site_dependencies(
                 "site_sensor_dependency_changed",
             )
         if resolution.action == "archive":
+            cleared_assignments = await clear_device_assignment_relationships(
+                session,
+                device=device,
+                effective_at=now,
+                close_site_assignment=True,
+                updated_by=principal.user.id,
+            )
             device.lifecycle_status = "decommissioned"
             device.lifecycle_generation += 1
             device.decommissioned_at = now
@@ -869,8 +877,11 @@ async def resolve_site_dependencies(
                     actor_id=principal.user.id,
                     reason="site_removed",
                     site_id=site.id,
-                    circuit_id=device.circuit_id,
-                    details={"site_removal_resolution": True},
+                    circuit_id=cleared_assignments.circuit_id,
+                    details={
+                        "site_removal_resolution": True,
+                        "cleared_assignments": cleared_assignments.audit_details(),
+                    },
                 )
             )
             sensor_summary.append({"device_id": device.id, "action": "archived"})
@@ -886,6 +897,7 @@ async def resolve_site_dependencies(
                         "revision": site.revision + 1,
                         "device_id": device.id,
                         "history_preserved": True,
+                        "cleared_assignments": cleared_assignments.audit_details(),
                         "reason": payload.reason,
                     },
                 )
@@ -903,14 +915,14 @@ async def resolve_site_dependencies(
                     "Choose an authorized active destination site",
                     "site_transfer_target_unavailable",
                 )
-            current = await session.scalar(
-                select(DeviceSiteAssignment).where(
-                    DeviceSiteAssignment.device_id == device.id,
-                    DeviceSiteAssignment.effective_to.is_(None),
-                )
+            prior_site_id = device.site_id
+            cleared_assignments = await clear_device_assignment_relationships(
+                session,
+                device=device,
+                effective_at=now,
+                close_site_assignment=True,
+                updated_by=principal.user.id,
             )
-            if current:
-                current.effective_to = now
             session.add(
                 DeviceSiteAssignment(
                     device_id=device.id,
@@ -921,10 +933,7 @@ async def resolve_site_dependencies(
                     created_at=now,
                 )
             )
-            prior_site_id = device.site_id
             device.site_id = target.id
-            device.circuit_id = None
-            device.utility_account_id = None
             device.lifecycle_generation += 1
             session.add(
                 DeviceLifecycleEvent(
@@ -939,6 +948,7 @@ async def resolve_site_dependencies(
                         "from_site_id": prior_site_id,
                         "to_site_id": target.id,
                         "raw_history_preserved": True,
+                        "cleared_assignments": cleared_assignments.audit_details(),
                     },
                 )
             )
@@ -964,6 +974,7 @@ async def resolve_site_dependencies(
                         "to_site_id": target.id,
                         "effective_at": now.isoformat(),
                         "history_preserved": True,
+                        "cleared_assignments": cleared_assignments.audit_details(),
                         "reason": payload.reason,
                     },
                 )

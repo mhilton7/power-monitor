@@ -59,6 +59,9 @@ export function MeasurementAssignmentDialog({
   )
   const [includeInHome, setIncludeInHome] = useState(sensor.includedInDefault)
   const [reason, setReason] = useState('Owner reviewed the sensor measurement boundary')
+  const hasAssignment = Boolean(
+    sensor.circuitId || sensor.utilityAccountId || sensor.includedInDefault,
+  )
 
   const selectedCircuit = useMemo(
     () => circuits.data?.find((item) => item.id === circuitChoice),
@@ -105,17 +108,36 @@ export function MeasurementAssignmentDialog({
       )
     },
     onSuccess: async () => {
-      await Promise.all([
-        client.invalidateQueries({ queryKey: ['circuits', home.id] }),
-        client.invalidateQueries({ queryKey: ['sensors', home.id] }),
-        client.invalidateQueries({ queryKey: ['electric-services', home.id] }),
-        client.invalidateQueries({ queryKey: ['configuration-status', home.id] }),
-        client.invalidateQueries({ queryKey: ['history'] }),
-        client.invalidateQueries({ queryKey: ['home-summary', home.id] }),
-      ])
+      await invalidateAssignmentQueries()
       onDone()
     },
   })
+  const unassign = useMutation({
+    mutationFn: () => request(
+      `/api/v1/admin/devices/${sensor.id}/measurement-assignment`,
+      json('PUT', {
+        circuit_id: null,
+        utility_account_id: null,
+        include_in_default_site_total: false,
+        reason,
+      }),
+    ),
+    onSuccess: async () => {
+      await invalidateAssignmentQueries()
+      onDone()
+    },
+  })
+
+  async function invalidateAssignmentQueries() {
+    await Promise.all([
+      client.invalidateQueries({ queryKey: ['circuits', home.id] }),
+      client.invalidateQueries({ queryKey: ['sensors', home.id] }),
+      client.invalidateQueries({ queryKey: ['electric-services', home.id] }),
+      client.invalidateQueries({ queryKey: ['configuration-status', home.id] }),
+      client.invalidateQueries({ queryKey: ['history'] }),
+      client.invalidateQueries({ queryKey: ['home-summary', home.id] }),
+    ])
+  }
 
   return (
     <section
@@ -127,7 +149,7 @@ export function MeasurementAssignmentDialog({
       <header className="workflow-header">
         <div>
           <p>Topology and cost relationship</p>
-          <h2 id="measurement-assignment-title">Assign {sensor.name}</h2>
+          <h2 id="measurement-assignment-title">Manage {sensor.name} assignment</h2>
         </div>
         <button type="button" className="icon-button" onClick={onClose} aria-label="Close assignment">
           <X />
@@ -228,14 +250,29 @@ export function MeasurementAssignmentDialog({
           </InlineNotice>
         )}
         {save.error && <InlineNotice tone="danger">{errorMessage(save.error)}</InlineNotice>}
+        {unassign.error && <InlineNotice tone="danger">{errorMessage(unassign.error)}</InlineNotice>}
         {save.isSuccess && <InlineNotice tone="success"><Check /> Assignment saved.</InlineNotice>}
       </div>
       <footer className="workflow-footer">
         <button type="button" className="button secondary" onClick={onClose}>Cancel</button>
+        {hasAssignment && (
+          <button
+            type="button"
+            className="button danger"
+            disabled={save.isPending || unassign.isPending || reason.trim().length < 3}
+            onClick={() => {
+              if (confirm(
+                `Unassign ${sensor.name} from its circuit, electric service, Home total, and monitoring groups? Historical readings will remain unchanged.`,
+              )) unassign.mutate()
+            }}
+          >
+            {unassign.isPending ? 'Unassigning…' : 'Unassign sensor'}
+          </button>
+        )}
         <button
           type="button"
           className="button primary"
-          disabled={!canSubmit || save.isPending || circuits.isLoading}
+          disabled={!canSubmit || save.isPending || unassign.isPending || circuits.isLoading}
           onClick={() => { save.mutate() }}
         >
           {save.isPending ? 'Saving…' : 'Save assignment'}

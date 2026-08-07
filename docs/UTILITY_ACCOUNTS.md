@@ -116,5 +116,5 @@ Accounts with assignments, costs, readings, reports, or audit history are archiv
 deleted. Archive keeps all historical calculations and rate-version references intact.
 
 See the deterministic administrative examples in
-`backend/tests/test_utility_account_network_policy.py` and the browser workflow in
-`frontend/e2e/shell.spec.ts`. Neither depends on a live SCE website.
+`backend/tests/test_utility_account_network_policy.py`. They do not depend on a
+live SCE website.

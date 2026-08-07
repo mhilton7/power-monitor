@@ -95,7 +95,7 @@ def backend_licenses() -> None:
 
 def frontend_licenses() -> None:
     lock = json.loads(
-        (ROOT / "frontend-next" / "package-lock.json").read_text(encoding="utf-8")
+        (ROOT / "frontend" / "package-lock.json").read_text(encoding="utf-8")
     )
     with (RELEASE / "frontend-licenses.csv").open(
         "w", encoding="utf-8", newline=""
@@ -326,7 +326,7 @@ def versions(
             },
             "frontend": {
                 "lock": _artifact_evidence(
-                    "frontend-next/package-lock.json", release_commit=git
+                    "frontend/package-lock.json", release_commit=git
                 ),
                 "report": _release_artifact_evidence("frontend-audit.json"),
                 "format": "npm-audit/json",

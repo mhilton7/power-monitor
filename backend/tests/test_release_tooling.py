@@ -358,7 +358,7 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
     release = root / "release"
     migration_dir = root / "backend" / "alembic" / "versions"
     backend_dir = root / "backend"
-    frontend_dir = root / "frontend-next"
+    frontend_dir = root / "frontend"
     protocol_dir = root / "shared"
     release.mkdir(parents=True)
     migration_dir.mkdir(parents=True)
@@ -463,7 +463,7 @@ def test_checksum_verifier_binds_metadata_to_head_commit_and_archive(
             "frontend": {
                 "format": "npm-audit/json",
                 "lock": {
-                    "path": "frontend-next/package-lock.json",
+                    "path": "frontend/package-lock.json",
                     "sha256": hashlib.sha256(
                         _git_blob_bytes(root, commit, package_lock)
                     ).hexdigest(),

@@ -103,6 +103,7 @@ function renderWithClient(node: React.ReactNode) {
 
 afterEach(() => {
   vi.clearAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('sensor topology and tier allocation setup', () => {
@@ -146,7 +147,7 @@ describe('sensor topology and tier allocation setup', () => {
       />,
     )
 
-    expect(await screen.findByRole('heading', { name: 'Assign Indoor AC' })).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'Manage Indoor AC assignment' })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Save assignment' }))
 
     await waitFor(() => { expect(onDone).toHaveBeenCalledTimes(1) })
@@ -155,6 +156,58 @@ describe('sensor topology and tier allocation setup', () => {
       expect.objectContaining({ method: 'POST' }),
       expect.any(Function),
     )
+    expect(requestMock).toHaveBeenCalledWith(
+      '/api/v1/admin/devices/sensor-1/measurement-assignment',
+      expect.objectContaining({ method: 'PUT' }),
+    )
+  })
+
+  it('unassigns a sensor while preserving its historical readings', async () => {
+    const onDone = vi.fn()
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    requestMock.mockImplementation((path: string, options?: unknown) => {
+      if (path.startsWith('/api/v1/circuits?')) {
+        return Promise.resolve([{
+          id: 'circuit-1',
+          site_id: home.id,
+          parent_id: null,
+          name: 'Indoor AC',
+          measurement_role: 'branch',
+          split_phase_group: null,
+        }])
+      }
+      if (path === '/api/v1/admin/devices/sensor-1/measurement-assignment') {
+        expect(parseBody(options)).toEqual({
+          circuit_id: null,
+          utility_account_id: null,
+          include_in_default_site_total: false,
+          reason: 'Owner reviewed the sensor measurement boundary',
+        })
+        return Promise.resolve({ device_id: sensor.id })
+      }
+      throw new Error(`Unexpected request: ${path}`)
+    })
+
+    const user = userEvent.setup()
+    renderWithClient(
+      <MeasurementAssignmentDialog
+        home={home}
+        sensor={{
+          ...sensor,
+          circuitId: 'circuit-1',
+          utilityAccountId: service.id,
+          includedInDefault: true,
+        }}
+        services={[service]}
+        onClose={() => undefined}
+        onDone={onDone}
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Unassign sensor' }))
+
+    await waitFor(() => { expect(onDone).toHaveBeenCalledTimes(1) })
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Historical readings'))
     expect(requestMock).toHaveBeenCalledWith(
       '/api/v1/admin/devices/sensor-1/measurement-assignment',
       expect.objectContaining({ method: 'PUT' }),

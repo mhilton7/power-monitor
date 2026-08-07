@@ -730,6 +730,29 @@ def _supports_data_reset(capability: DeviceCapability | None) -> bool:
     return DATA_RESET_PROTOCOL in values
 
 
+def _configuration_transition_state(
+    *,
+    desired_version: int,
+    effective_version: int,
+    pending_versions: Iterable[tuple[str, int]],
+) -> tuple[bool, list[str], list[str]]:
+    """Classify pending rows against authoritative desired/effective revisions.
+
+    A signed sensor report can advance the effective revision even when an
+    earlier command-result response was lost.  Rows at or below that revision
+    are stale status records, not active configuration transitions.  A version
+    mismatch or any newer pending row must continue to block a data reset.
+    """
+
+    unresolved_ids: list[str] = []
+    stale_ids: list[str] = []
+    for config_id, version in pending_versions:
+        target = stale_ids if int(version) <= effective_version else unresolved_ids
+        target.append(config_id)
+    transition_pending = desired_version != effective_version or bool(unresolved_ids)
+    return transition_pending, unresolved_ids, stale_ids
+
+
 async def _device_plan_snapshot(
     session: AsyncSession,
     device: Device,
@@ -747,15 +770,24 @@ async def _device_plan_snapshot(
         .order_by(DeviceConfigVersion.version.desc())
         .limit(1)
     )
-    pending_config_ids = list(
+    pending_configs = list(
         await session.scalars(
-            select(DeviceConfigVersion.id)
+            select(DeviceConfigVersion)
             .where(
                 DeviceConfigVersion.device_id == device.id,
                 DeviceConfigVersion.status == "pending",
             )
             .order_by(DeviceConfigVersion.version)
         )
+    )
+    (
+        pending_configuration_change,
+        pending_config_ids,
+        stale_pending_config_ids,
+    ) = _configuration_transition_state(
+        desired_version=int(device.desired_config_version),
+        effective_version=int(device.effective_config_version),
+        pending_versions=((item.id, int(item.version)) for item in pending_configs),
     )
     active_deployment = await session.scalar(
         select(FirmwareDeployment)
@@ -969,8 +1001,9 @@ async def _device_plan_snapshot(
         "data_generation": data_generation,
         "configuration_snapshot": configuration_snapshot,
         "configuration_snapshot_digest": canonical_sha256(configuration_snapshot),
-        "pending_configuration_change": bool(pending_config_ids),
+        "pending_configuration_change": pending_configuration_change,
         "pending_configuration_ids": pending_config_ids,
+        "stale_pending_configuration_ids": stale_pending_config_ids,
         "active_firmware_deployment_id": (
             active_deployment.id if active_deployment is not None else None
         ),

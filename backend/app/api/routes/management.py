@@ -124,6 +124,7 @@ from app.schemas import (
 )
 from app.security.browser import hash_password, password_is_strong
 from app.security.protocol import SecretCipher
+from app.services.device_assignments import clear_device_assignment_relationships
 from app.topology import AggregateItem, overlap_warnings, would_create_cycle
 
 router = APIRouter(prefix="/api/v1", tags=["management"])
@@ -1295,7 +1296,7 @@ async def update_device_measurement_assignment(
     principal: CsrfPrincipal,
     session: DbSession,
 ) -> dict[str, Any]:
-    """Assign an existing sensor to its audited circuit and utility-account context."""
+    """Assign or unassign a sensor's audited circuit and utility-account context."""
 
     _permission(principal, "topology.manage")
     device = await session.get(Device, device_id)
@@ -1395,13 +1396,26 @@ async def update_device_measurement_assignment(
         "circuit_id": device.circuit_id,
         "utility_account_id": device.utility_account_id,
         "measurement_role": device.measurement_role,
+        "cost_scope": device.cost_scope,
         "included_in_default_site_total": device.include_in_default_site_total,
     }
-    device.circuit_id = circuit.id if circuit else None
-    device.utility_account_id = account.id if account else None
-    if circuit is not None:
-        device.measurement_role = circuit.measurement_role
-    device.include_in_default_site_total = payload.include_in_default_site_total
+    unassigned = circuit is None and account is None
+    removed_direct_aggregate_member_ids: list[str] = []
+    if unassigned:
+        cleared = await clear_device_assignment_relationships(
+            session,
+            device=device,
+            effective_at=datetime.now(UTC),
+            close_site_assignment=False,
+            updated_by=principal.user.id,
+        )
+        removed_direct_aggregate_member_ids = list(cleared.aggregate_member_ids)
+    else:
+        device.circuit_id = circuit.id if circuit else None
+        device.utility_account_id = account.id if account else None
+        if circuit is not None:
+            device.measurement_role = circuit.measurement_role
+        device.include_in_default_site_total = payload.include_in_default_site_total
     session.add(
         audit_event(
             action="device.measurement_assignment_changed",
@@ -1417,8 +1431,11 @@ async def update_device_measurement_assignment(
                     "circuit_id": device.circuit_id,
                     "utility_account_id": device.utility_account_id,
                     "measurement_role": device.measurement_role,
+                    "cost_scope": device.cost_scope,
                     "included_in_default_site_total": (device.include_in_default_site_total),
                 },
+                "unassigned": unassigned,
+                "removed_direct_aggregate_member_ids": (removed_direct_aggregate_member_ids),
                 "historical_readings_preserved": True,
             },
         )
@@ -1746,7 +1763,14 @@ async def _decommission_device(
     await ensure_device_reset_mutations_allowed(session, [device.id])
     now = datetime.now(UTC)
     prior_site_id = device.site_id
-    prior_circuit_id = device.circuit_id
+    cleared_assignments = await clear_device_assignment_relationships(
+        session,
+        device=device,
+        effective_at=now,
+        close_site_assignment=True,
+        updated_by=principal.user.id,
+    )
+    prior_circuit_id = cleared_assignments.circuit_id
     device.revoked_at = now
     device.status = "decommissioned"
     device.lifecycle_status = "decommissioned"
@@ -1754,7 +1778,6 @@ async def _decommission_device(
     device.decommissioned_at = now
     device.decommissioned_by = principal.user.id
     device.decommission_reason = reason
-    device.circuit_id = None
     device.maintenance_until = None
     for credential in await session.scalars(
         select(DeviceCredential).where(DeviceCredential.device_id == device.id)
@@ -1799,6 +1822,7 @@ async def _decommission_device(
                 "reading_count": int(history_count or 0),
                 "earliest_reading_at": history_start.isoformat() if history_start else None,
                 "latest_reading_at": history_end.isoformat() if history_end else None,
+                "cleared_assignments": cleared_assignments.audit_details(),
             },
         )
     )
@@ -1814,6 +1838,8 @@ async def _decommission_device(
                 "reason": reason,
                 "site_id": prior_site_id,
                 "circuit_id": prior_circuit_id,
+                "utility_account_id": cleared_assignments.utility_account_id,
+                "cleared_assignments": cleared_assignments.audit_details(),
                 "retained_history": True,
                 "reading_count": int(history_count or 0),
                 "correlation_id": request.state.request_id,

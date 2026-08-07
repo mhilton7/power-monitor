@@ -35,7 +35,7 @@ MYPYPATH=backend "$python_bin" -m mypy worker simulator --explicit-package-bases
 "$python_bin" scripts/generate_openapi.py --check
 "$python_bin" scripts/validate_contracts.py
 "$python_bin" tools/validate-truenas-compose.py
-(cd frontend-next && "$npm_bin" ci && "$npm_bin" run lint && \
+(cd frontend && "$npm_bin" ci && "$npm_bin" run lint && \
   "$npm_bin" run typecheck && "$npm_bin" test && "$npm_bin" run build && \
   "$npm_bin" run e2e)
 "$python_bin" scripts/secret_scan.py
@@ -43,7 +43,7 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   --mount "type=bind,source=${PWD},target=/workspace" --workdir /workspace \
   python:3.13.5-slim-bookworm sh -ec \
   'python -m venv /tmp/audit-venv && /tmp/audit-venv/bin/pip install --disable-pip-version-check pip-audit==2.9.0 && /tmp/audit-venv/bin/python -m pip_audit -r backend/requirements.lock --no-deps --format json --output release/backend-audit.json && /tmp/audit-venv/bin/python -m pip_audit -r backend/requirements.lock --no-deps --format cyclonedx-json --output release/backend-sbom.cdx.json'
-(cd frontend-next && "$npm_bin" audit --audit-level=high --json \
+(cd frontend && "$npm_bin" audit --audit-level=high --json \
   > ../release/frontend-audit.json && \
   "$npm_bin" sbom --sbom-format cyclonedx > ../release/frontend-sbom.cdx.json)
 "$python_bin" scripts/generate_release_reports.py \

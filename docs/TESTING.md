@@ -95,7 +95,7 @@ Run the focused assignment and UI regression before the full suites:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest backend/tests/test_current_plan_configuration_status.py
-Set-Location frontend-next
+Set-Location frontend
 npm run test -- --run tests/adapters.test.ts tests/configurationStatus.test.tsx tests/rateWorkflows.test.tsx
 npm run build
 npx playwright test e2e/current-plan-status.spec.ts
@@ -114,7 +114,7 @@ revision reuse, publish/supersede behavior, dependency-aware version lifecycle,
 observable and deduplicated source jobs, scoped Retry, per-source results,
 adjustment revision conflicts, soft removal, and audit evidence.
 
-`frontend-next/tests/rateWorkflows.test.tsx` verifies that Published and Current
+`frontend/tests/rateWorkflows.test.tsx` verifies that Published and Current
 are rendered independently, Adjust Rates stays under the same plan identity,
 historical preservation is explained before replacement, and Check now exposes
 loading, progress, and completion. Adapter tests validate all new runtime
@@ -196,8 +196,9 @@ preview, the read-only NGINX frontend image, and the full Compose Caddy
 gateway. Advanced System Health exposes the frontend version, commit, and
 active hashed CSS asset.
 
-The retained comparison frontend still passes lint, type checking, 64 unit
-tests, its production build, and all 51 Chromium regressions. Ruff
+Before source consolidation, the retired comparison frontend passed lint,
+type checking, 64 unit tests, its production build, and all 51 Chromium
+regressions. Ruff
 lint/format, strict mypy, generated OpenAPI drift, contracts, the repository
 secret scan, 179 portable backend tests, the separately enabled PostgreSQL 17
 migration gate, and the 100-device load/resilience gate pass. No backend,
@@ -215,7 +216,7 @@ Its containers, networks, volumes, CA, and generated secrets were removed.
 
 ## Single Home frontend replacement acceptance (2026-07-24)
 
-The production `frontend-next` package passes a locked dependency install,
+The production `frontend` package passes a locked dependency install,
 lint, TypeScript checking, 10 unit/adapter tests, a zero-vulnerability npm audit,
 and a production build. The bundle verifier reports 11 JavaScript chunks,
 534,990 uncompressed bytes, and no legacy module markers. All 36 Playwright
@@ -223,11 +224,12 @@ checks pass on dark desktop, light desktop, tablet, and mobile. They cover the
 four-destination navigation, legacy redirects, page boundaries, stable loading
 and recoverable error states, responsive Billing and Settings, the custom-role
 lifecycle, and the skippable nine-step first-run flow. Reviewed image baselines are stored beside
-`frontend-next/e2e/single-home.spec.ts`.
+`frontend/e2e/single-home.spec.ts`.
 
-The retained comparison frontend also passes lint, type checking, 64
-unit/component tests, its build, and 51 Chromium regressions. It is not copied
-into the production image.
+The retired comparison frontend passed lint, type checking, 64 unit/component
+tests, its build, and 51 Chromium regressions before its source was removed.
+It remains recoverable from Git history and is not copied into the production
+image.
 
 Ruff lint/format and strict mypy pass. The portable backend, worker, and
 simulator suite passes 178 tests with the three gated cases run separately.
@@ -607,7 +609,7 @@ database. The official pytest wrapper repeated that workflow successfully.
 
 ## Login autofill and browser acceptance
 
-`frontend/tests/authAutofill.test.tsx` verifies the rendered native form
+The retired comparison frontend's `authAutofill.test.tsx` historically verified the rendered native form
 contract, direct DOM-value submission without React change events, exact
 password preservation, failed authentication behavior, same-node password
 visibility, public-text success/failure, and first-run autocomplete separation.
@@ -914,7 +916,7 @@ Run the focused regression suites before the complete release matrix:
 
 ```text
 .venv/Scripts/python.exe -m pytest backend/tests/test_system_health_sensor_test_mode.py
-cd frontend-next
+cd frontend
 npm run test -- --run
 npm run build
 npm run e2e
@@ -982,6 +984,6 @@ sequence preservation, rollback, and long-running memory soak as pending.
 resource/evidence contract, secret filtering, distinct delivery failures, permission-aware
 SMTP recommendations, durable suppression/restore/audit behavior, protected operational
 alerts, and idempotent acknowledge/silence lifecycle semantics. Frontend adapter and drawer
-coverage is in `frontend-next/tests/adapters.test.ts` and
-`frontend-next/tests/notifications.test.tsx`. The browser matrix validates the responsive
+coverage is in `frontend/tests/adapters.test.ts` and
+`frontend/tests/notifications.test.tsx`. The browser matrix validates the responsive
 notification center and Settings notification surfaces in Chromium, Firefox, and WebKit.

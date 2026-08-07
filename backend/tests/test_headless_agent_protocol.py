@@ -723,6 +723,10 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(
 
     first = await send_heartbeat(1, "1" * 32)
     assert first.status_code == 200, first.text
+    enrolled_device = await session.get(Device, device_id)
+    assert enrolled_device is not None
+    await session.refresh(enrolled_device)
+    assert enrolled_device.effective_config_version == 1
     storage = await client.get(f"/api/v1/devices/{device_id}/storage")
     assert storage.status_code == 200, storage.text
     storage_details = storage.json()["details"]

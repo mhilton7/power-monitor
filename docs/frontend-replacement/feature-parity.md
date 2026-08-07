@@ -1,6 +1,6 @@
 # Single Home frontend feature parity
 
-This is the production cutover contract for `frontend-next`. Internal sites,
+This is the production cutover contract for `frontend`. Internal sites,
 utility accounts, circuits, aggregate sets, and device IDs remain unchanged in
 the server model; typed adapters translate them into homeowner language. Every
 row below was reviewed against the existing API, permission catalog, and
@@ -47,17 +47,16 @@ greenfield production component.
 | API and protocol evidence | Compatibility/system APIs | Settings → Advanced | protocol contract validation | Complete |
 | Legacy URL compatibility | Client redirects | Four canonical destinations | 32-case responsive route E2E | Complete |
 | Exactly four production destinations | Not applicable | Home, History, Billing, Settings | architecture unit test | Complete |
-| No legacy production modules | Not applicable | `frontend-next` image only | production-bundle audit and Docker build | Complete |
+| No legacy production modules | Not applicable | `frontend` image only | production-bundle audit and Docker build | Complete |
 
 ## Cutover evidence
 
-- `frontend-next`: lint, type check, 10 unit/adapter tests, production build, and
+- `frontend`: lint, type check, 10 unit/adapter tests, production build, and
   36 Playwright checks across desktop, light desktop, tablet, and mobile.
 - The production bundle contains 11 chunks, 534,990 uncompressed JavaScript
   bytes, and no legacy route or page module token.
-- The retained legacy frontend still passes 64 unit/component tests, its build,
-  and 51 Chromium regression scenarios, but is not copied into the production
-  image.
+- The retired comparison frontend remains recoverable from Git history but is
+  no longer duplicated in the working tree or copied into the production image.
 - Backend/worker/simulator regression: 178 passed; PostgreSQL migration and
   100-device gates passed separately.
 - The isolated seven-service TrueNAS workflow completed migration-first

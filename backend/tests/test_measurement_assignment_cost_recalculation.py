@@ -157,6 +157,57 @@ async def test_existing_sensor_can_be_assigned_to_circuit_and_account(
     assert duplicate.status_code == 409, duplicate.text
     assert duplicate.json()["code"] == "device_default_total_overlap"
 
+    aggregate = await api_client.post(
+        "/api/v1/aggregate-sets",
+        headers=csrf(api_client),
+        json={
+            "site_id": site["id"],
+            "utility_account_id": account["id"],
+            "name": "Direct sensor billing group",
+            "cost_scope": "energy_only",
+            "is_default": False,
+            "confirm_overlap": False,
+            "members": [{"device_id": device_id, "allocation_percent": "100"}],
+        },
+    )
+    assert aggregate.status_code == 201, aggregate.text
+
+    unassigned = await api_client.put(
+        f"/api/v1/admin/devices/{device_id}/measurement-assignment",
+        headers=csrf(api_client),
+        json={
+            "circuit_id": None,
+            "utility_account_id": None,
+            "include_in_default_site_total": False,
+            "reason": "Sensor was physically removed from this measurement boundary",
+        },
+    )
+    assert unassigned.status_code == 200, unassigned.text
+    assert unassigned.json() == {
+        "device_id": device_id,
+        "site_id": site["id"],
+        "circuit_id": None,
+        "circuit_name": None,
+        "utility_account_id": None,
+        "utility_account_name": None,
+        "measurement_role": "branch",
+        "cost_scope": "energy_only",
+        "included_in_default_site_total": False,
+    }
+
+    devices_after_unassign = await api_client.get(f"/api/v1/devices?site_id={site['id']}")
+    unassigned_sensor = next(
+        item for item in devices_after_unassign.json() if item["id"] == device_id
+    )
+    assert unassigned_sensor["circuit_id"] is None
+    assert unassigned_sensor["utility_account_id"] is None
+    assert unassigned_sensor["included_in_default"] is False
+    aggregate_sets = await api_client.get(f"/api/v1/aggregate-sets?site_id={site['id']}")
+    direct_group = next(
+        item for item in aggregate_sets.json() if item["id"] == aggregate.json()["id"]
+    )
+    assert direct_group["members"] == []
+
     after = await api_client.get(f"/api/v1/configuration-status?site_id={site['id']}")
     assert after.status_code == 200, after.text
     assert "sensor.measurement-assignment-incomplete" in {
@@ -168,6 +219,7 @@ async def test_existing_sensor_can_be_assigned_to_circuit_and_account(
     assert any(
         event["action"] == "device.measurement_assignment_changed"
         and event["object_id"] == device_id
+        and event["details"].get("unassigned") is True
         for event in audit.json()
     )
 

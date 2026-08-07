@@ -1,6 +1,6 @@
 # Single Home frontend architecture
 
-`frontend-next` is a greenfield React and TypeScript application. It does not
+`frontend` is the production React and TypeScript application. It does not
 import the legacy shell, routes, page components, feature components, or CSS.
 The production image copies only this directory.
 
@@ -58,4 +58,4 @@ communicated by color alone, and reduced-motion preferences are respected.
 `scripts/verify-production-bundle.mjs` rejects legacy page tokens and enforces a
 1.25 MB uncompressed JavaScript budget. The current bundle is split into React,
 query, chart, icon, and application chunks. `deploy/docker/frontend.Dockerfile`
-sets `VITE_SINGLE_HOME_MODE=true` and copies only `frontend-next`.
+sets `VITE_SINGLE_HOME_MODE=true` and copies only `frontend`.

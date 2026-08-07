@@ -165,13 +165,13 @@ TLS verification.
 ## Reviewed UI evidence
 
 - Published-versus-current and same-plan revision comparison:
-  `frontend-next/e2e/single-pass-repair.spec.ts-snapshots/rate-editor-adjust-rates-compare-desktop-win32.png`
+  `frontend/e2e/single-pass-repair.spec.ts-snapshots/rate-editor-adjust-rates-compare-desktop-win32.png`
 - Complete source-check outcome with progress, candidate, and artifact counts:
-  `frontend-next/e2e/single-pass-repair.spec.ts-snapshots/rate-editor-source-check-completed-desktop-win32.png`
+  `frontend/e2e/single-pass-repair.spec.ts-snapshots/rate-editor-source-check-completed-desktop-win32.png`
 - Source inventory, per-source action, and history disclosure:
-  `frontend-next/e2e/single-pass-repair.spec.ts-snapshots/rate-editor-sources-desktop-win32.png`
+  `frontend/e2e/single-pass-repair.spec.ts-snapshots/rate-editor-sources-desktop-win32.png`
 - Version and assignment lifecycle:
-  `frontend-next/e2e/single-pass-repair.spec.ts-snapshots/rate-editor-lifecycle-desktop-win32.png`
+  `frontend/e2e/single-pass-repair.spec.ts-snapshots/rate-editor-lifecycle-desktop-win32.png`
 
 Each proof also has light-theme, tablet, and mobile baselines. The full browser
 matrix checks page overflow, pairwise control overlap, focus order, ARIA tab

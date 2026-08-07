@@ -13,6 +13,6 @@ if __name__ == "__main__":
     validate_bill_import_context_contract()
     validate_vectors()
     print(
-        "OpenAPI documents, JSON Schemas, generated bill-import types, "
+        "OpenAPI documents, JSON Schemas, bill-import context contracts, "
         "examples, and HMAC vectors are valid"
     )

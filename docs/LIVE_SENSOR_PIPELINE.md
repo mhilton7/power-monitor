@@ -29,11 +29,11 @@ The production path for a physical PZEM-004T sensor is:
    `backend/app/status_indicators.py` use the same resolver.
 9. `backend/app/api/routes/system.py` publishes `heartbeat`, `reading`, and
    `device_status` SSE events.
-10. `frontend-next/src/state/LiveHomeContext.tsx` invalidates the site-scoped
+10. `frontend/src/state/LiveHomeContext.tsx` invalidates the site-scoped
     sensors and Home-summary queries after those events, with 15-second
     polling as a fallback.
-11. `frontend-next/src/api/adapters.ts` preserves null measurement values.
-    `frontend-next/src/pages/home/HomePage.tsx` renders the header, main
+11. `frontend/src/api/adapters.ts` preserves null measurement values.
+    `frontend/src/pages/home/HomePage.tsx` renders the header, main
     power value, status summary, and per-sensor electrical metrics.
 
 Heartbeat measurements provide low-latency live display. History and energy

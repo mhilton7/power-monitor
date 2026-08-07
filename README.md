@@ -26,8 +26,8 @@ draft, responsive preview, immutable publish, defaults, and rollback. See
 
 The production browser application uses **Single Home Mode** and exactly four
 destinations: **Home, History, Billing, and Settings**. Alerts open from the
-global header instead of becoming a fifth workspace. The independent
-`frontend-next` bundle consumes the existing FastAPI services through
+global header instead of becoming a fifth workspace. The production
+`frontend` bundle consumes the existing FastAPI services through
 runtime-validated adapters; legacy bookmarks redirect to one of the four
 destinations and no legacy page is included in the production image. Internal
 site, account, circuit, aggregate, and device identities remain intact in
@@ -80,15 +80,15 @@ Requirements are Python 3.13, Node.js 24 LTS, and PostgreSQL 17. Docker Compose 
 python -m venv .venv
 . .venv/bin/activate
 pip install -e './backend[dev]'
-cd frontend-next && npm ci && cd ..
+cd frontend && npm ci && cd ..
 cp .env.example .env                 # replace every CHANGE_ME value
 docker compose -f compose.yaml -f compose.dev.yaml up -d postgres
 cd backend && alembic upgrade head && uvicorn app.main:app --reload
 ```
 
 In separate terminals run `python -m worker.app.main` and
-`cd frontend-next && npm run dev`. The legacy `frontend` directory remains only
-as temporary migration evidence and is not copied into the production image.
+`cd frontend && npm run dev`. The retired comparison UI remains available in
+Git history but is no longer duplicated in the working tree.
 
 For production use [Installation](docs/INSTALLATION.md), then [First run](docs/FIRST_RUN.md).
 Browser sign-in behavior is documented in [Authentication](docs/AUTHENTICATION.md)

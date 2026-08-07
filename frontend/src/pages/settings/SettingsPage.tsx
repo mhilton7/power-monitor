@@ -248,7 +248,7 @@ function SensorSettings() {
             <span><strong>{sensor.name}</strong><small>{sensor.monitoredCircuit} · {sensor.firmware ?? 'Firmware unknown'}{canViewFirmware && sensor.firmwareOta ? ` · ${sensor.firmwareOta.state === 'ready' ? 'OTA ready' : sensor.firmwareOta.state.replaceAll('_', ' ')}` : ''} · last seen {relativeTime(sensor.lastSeenAt)}</small></span>
             <span className={`pill ${sensor.online ? 'success' : 'warning'}`}>{sensor.online ? 'Online' : 'Needs attention'}</span>
             <DropdownMenu label={`Manage ${sensor.name}`} triggerClassName="icon-button" menuClassName="row-menu" trigger={<MoreHorizontal />}>
-              {canManageTopology && <DropdownMenuItem onSelect={() => { setAssignmentSensor(sensor) }}><Rows3 /> Assign circuit and electric service</DropdownMenuItem>}
+              {canManageTopology && <DropdownMenuItem onSelect={() => { setAssignmentSensor(sensor) }}><Rows3 /> {sensor.circuitId || sensor.utilityAccountId || sensor.includedInDefault ? 'Change or unassign circuit and service' : 'Assign circuit and electric service'}</DropdownMenuItem>}
               {hasPermission(session, 'storage.view') && <DropdownMenuItem onSelect={() => { setStorageSensor(sensor) }}><HardDrive /> Storage</DropdownMenuItem>}
               {canManageDevices && <DropdownMenuItem onSelect={() => { configure.mutate({ id: sensor.id, currentName: sensor.name, currentCt: sensor.ctRatingAmps }); }}><Gauge /> Edit name and CT rating</DropdownMenuItem>}
               {canManageDevices && <DropdownMenuItem onSelect={() => { maintenance.mutate({ id: sensor.id, enabled: true }); }}><Wrench /> Start maintenance test</DropdownMenuItem>}
@@ -257,7 +257,7 @@ function SensorSettings() {
               {canManageDevices && sensor.protocolVersion === 'pm-agent/2.0.0' && <DropdownMenuItem onSelect={() => { agentCommand.mutate({ id: sensor.id, commandType: 'sync_now' }) }}><RefreshCw /> Force sync</DropdownMenuItem>}
               {canManageDevices && sensor.protocolVersion === 'pm-agent/2.0.0' && <DropdownMenuItem onSelect={() => { if (confirm(`Reboot ${sensor.name}? Measurements remain stored locally during recovery.`)) agentCommand.mutate({ id: sensor.id, commandType: 'reboot' }) }}><RotateCcw /> Reboot agent</DropdownMenuItem>}
               {canViewFirmware && canManageFirmware && canDeployFirmware && <DropdownMenuItem onSelect={() => { setFirmwareSensor(sensor) }}><RefreshCw /> Update firmware</DropdownMenuItem>}
-              {canRemoveDevices && <DropdownMenuItem className="danger" onSelect={() => { if (confirm(`Remove ${sensor.name}? Historical readings will be preserved.`)) remove.mutate({ id: sensor.id, name: sensor.name }) }}><Trash2 /> Remove sensor</DropdownMenuItem>}
+              {canRemoveDevices && <DropdownMenuItem className="danger" onSelect={() => { if (confirm(`Remove ${sensor.name}? Current site, circuit, electric-service, Home-total, and monitoring-group assignments will end. Historical readings will be preserved.`)) remove.mutate({ id: sensor.id, name: sensor.name }) }}><Trash2 /> Remove sensor</DropdownMenuItem>}
             </DropdownMenu>
           </article>)}</div>}
       </Surface>

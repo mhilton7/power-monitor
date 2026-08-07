@@ -18,7 +18,11 @@ from app.access import (
     require_data_reset_administrator,
     validate_permissions,
 )
-from app.data_reset.service import _supports_data_reset, redact_history_values
+from app.data_reset.service import (
+    _configuration_transition_state,
+    _supports_data_reset,
+    redact_history_values,
+)
 from app.db.models import (
     DataResetOperation,
     DataResetParticipant,
@@ -54,6 +58,29 @@ from app.security.protocol import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_configuration_transition_uses_desired_and_signed_effective_revisions() -> None:
+    synchronized = _configuration_transition_state(
+        desired_version=3,
+        effective_version=3,
+        pending_versions=(("old", 2), ("reported", 3)),
+    )
+    assert synchronized == (False, [], ["old", "reported"])
+
+    missing_pending_row = _configuration_transition_state(
+        desired_version=3,
+        effective_version=2,
+        pending_versions=(),
+    )
+    assert missing_pending_row == (True, [], [])
+
+    newer_pending_row = _configuration_transition_state(
+        desired_version=3,
+        effective_version=3,
+        pending_versions=(("future", 4),),
+    )
+    assert newer_pending_row == (True, ["future"], [])
 
 
 def test_reset_metadata_has_durable_generation_and_boundary_foundation() -> None:
