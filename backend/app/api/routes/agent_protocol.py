@@ -42,6 +42,7 @@ from app.problem import ProblemError
 from app.schemas import (
     SIGNED_BIGINT_MAX,
     DeviceEventInput,
+    DeviceOtaCapability,
     EnrollmentClaim,
     EnrollmentClaimResponse,
     Reading,
@@ -59,6 +60,38 @@ from app.security.protocol import ProtocolAuthError, SecretCipher
 router = APIRouter(prefix="/api/v2/agent", tags=["headless agent protocol"])
 RANGE_PATTERN = re.compile(r"^bytes=(\d+)-(\d+)$")
 MAX_FIRMWARE_RANGE_BYTES = 64 * 1024
+
+
+def _headless_capability_features(
+    capability: DeviceCapability | None, payload: AgentHeartbeat
+) -> dict[str, Any]:
+    """Merge signed heartbeat claims without discarding enrollment evidence."""
+
+    features = dict(capability.features or {}) if capability is not None else {}
+    reset_capability = payload.capabilities.get("data_reset", {})
+    features.update(
+        {
+            "agent_protocol": AGENT_PROTOCOL,
+            "data_reset": reset_capability,
+            "supported_endpoints": ["data-reset/1.0.0"],
+            "outbound_commands": True,
+            "runtime_http_listener": False,
+        }
+    )
+    ota_claim = payload.capabilities.get("ota")
+    if isinstance(ota_claim, dict):
+        try:
+            features["ota"] = DeviceOtaCapability.model_validate(ota_claim).model_dump(mode="json")
+        except ValueError as exc:
+            raise ProblemError(
+                422,
+                "Capability evidence invalid",
+                "The signed OTA capability claim is invalid",
+                "ota_capability_invalid",
+            ) from exc
+    elif ota_claim is False:
+        features["ota"] = {"supported": False}
+    return features
 
 
 class AgentModel(BaseModel):
@@ -559,27 +592,21 @@ async def heartbeat(
     agent.device.firmware_build_hash = payload.build_hash
     agent.device.status = "online" if not reset_required else "reset_required"
     agent.device.last_seen_at = now
-    reset_capability = payload.capabilities.get("data_reset", {})
     capability = await session.get(DeviceCapability, agent.device.id)
-    capability_features = {
-        "agent_protocol": AGENT_PROTOCOL,
-        "data_reset": reset_capability,
-        "supported_endpoints": ["data-reset/1.0.0"],
-        "outbound_commands": True,
-        "runtime_http_listener": False,
-    }
+    capability_features = _headless_capability_features(capability, payload)
     if capability is None:
         session.add(
             DeviceCapability(
                 device_id=agent.device.id,
                 hardware_target="esp32s3",
                 pzem_model="PZEM-004T-v3",
-                sd_required=True,
+                sd_required=False,
                 features=capability_features,
                 reported_at=now,
             )
         )
     else:
+        capability.sd_required = False
         capability.features = capability_features
         capability.reported_at = now
     await _record_headless_ota_heartbeat(session, payload, settings, now)

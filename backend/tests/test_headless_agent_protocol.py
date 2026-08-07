@@ -399,7 +399,9 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(api_client: Any)
     secret = claim.json()["enrollment_secret"].encode()
     boot_id = "83869685-4032-4e2c-8d5f-7aad43f1637e"
 
-    async def send_heartbeat(counter: int, nonce: str) -> httpx.Response:
+    async def send_heartbeat(
+        counter: int, nonce: str, ota_capability: bool | dict[str, Any] = True
+    ) -> httpx.Response:
         payload = {
             "protocol": AGENT_PROTOCOL,
             "device_id": device_id,
@@ -453,7 +455,8 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(api_client: Any)
                     "supported": True,
                     "protocol": "data-reset/1.0.0",
                     "receipt_schema": 1,
-                }
+                },
+                "ota": ota_capability,
             },
             "configuration_revision": 1,
             "reset_generation": 0,
@@ -481,6 +484,9 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(api_client: Any)
 
     first = await send_heartbeat(1, "1" * 32)
     assert first.status_code == 200, first.text
+    readiness = await client.get(f"/api/v1/devices/{device_id}/firmware-readiness")
+    assert readiness.status_code == 200, readiness.text
+    assert readiness.json()["firmware_ota"]["state"] == "ready"
     digest, signature = calculate_agent_response_signature(
         secret=secret,
         request_nonce="1" * 32,
@@ -502,10 +508,23 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(api_client: Any)
         },
     )
     assert queued.status_code == 201, queued.text
-    second = await send_heartbeat(2, "2" * 32)
+    second = await send_heartbeat(
+        2,
+        "2" * 32,
+        {
+            "supported": True,
+            "protocol_version": 2,
+            "authentication_mode": "existing_device_hmac",
+            "rollback_supported": True,
+            "partition_size_bytes": 6 * 1024 * 1024,
+        },
+    )
     assert second.status_code == 200, second.text
     assert second.json()["command"]["command_id"] == queued.json()["command_id"]
     assert second.json()["command"]["type"] == "sync_now"
+    readiness = await client.get(f"/api/v1/devices/{device_id}/firmware-readiness")
+    assert readiness.status_code == 200, readiness.text
+    assert readiness.json()["firmware_ota"]["state"] == "ready"
 
     async def send_command_result(
         *, counter: int, nonce: str, command_id: str, state: str, result: dict[str, Any]
