@@ -575,7 +575,10 @@ export function adaptSensorStorage(value: unknown): SensorStorageStatus {
     available: booleanValue(source.available),
     healthy: booleanValue(source.healthy),
     status: stringValue(source.status, 'waiting_for_heartbeat'),
-    pressureState: stringValue(details.pressure_state, 'unknown'),
+    pressureState: stringValue(
+      details.pressure_state,
+      booleanValue(source.healthy) ? 'healthy' : stringValue(source.status, 'unknown'),
+    ),
     pressureReason: optionalString(details.pressure_reason),
     cardType: optionalString(details.card_type),
     capacityBytes: optionalDetailNumber('capacity_bytes'),

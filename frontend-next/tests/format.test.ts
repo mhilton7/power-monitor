@@ -12,6 +12,7 @@ import {
   rate,
   sensorMeasurementTime,
   statusLabel,
+  storageCapacity,
   voltage,
 } from '../src/utils/format'
 
@@ -28,7 +29,8 @@ describe('centralized display formatting', () => {
 
   it('uses readable status and file-size labels', () => {
     expect(statusLabel('online_with_backlog')).toBe('Online With Backlog')
-    expect(fileSize(1_048_576)).toBe('1 MB')
+    expect(fileSize(1_048_576)).toBe('1 MiB')
+    expect(storageCapacity(7_800_356_864)).toBe('7.26 GiB (7.8 GB)')
   })
 
   it('formats sensor electrical metrics without converting missing data to zero', () => {

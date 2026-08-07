@@ -8,7 +8,7 @@ source commit without a self-referential Git hash.
    commit**.
 2. From that clean commit, run `scripts/release.ps1` or `scripts/release.sh`
    with a previously unused semantic version. The scripts reject dirty source,
-   require Alembic head `20260806_0032`, require Node.js `v24.4.0` with npm
+   require Alembic head `20260806_0033`, require Node.js `v24.4.0` with npm
    `11.4.2`, and label every
    locally built image with the source commit.
 3. The scripts run load, PostgreSQL upgrade/downgrade, History performance,

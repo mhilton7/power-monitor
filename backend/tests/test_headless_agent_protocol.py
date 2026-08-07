@@ -643,6 +643,7 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(
                     "index_valid": True,
                     "card_generation": "42",
                     "format_attempted": False,
+                    "last_error": "healthy",
                 },
             },
             "sequences": {
@@ -722,6 +723,16 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(
 
     first = await send_heartbeat(1, "1" * 32)
     assert first.status_code == 200, first.text
+    storage = await client.get(f"/api/v1/devices/{device_id}/storage")
+    assert storage.status_code == 200, storage.text
+    storage_details = storage.json()["details"]
+    assert storage_details["pressure_state"] == "healthy"
+    assert storage_details["oldest_stored_sequence"] == 1
+    assert storage_details["newest_stored_sequence"] == 1
+    assert storage_details["server_ack_sequence"] == 0
+    assert storage_details["unsynchronized_count"] == 1
+    assert storage_details["last_error"] is None
+    assert storage_details["protected_bytes"] is None
     readiness = await client.get(f"/api/v1/devices/{device_id}/firmware-readiness")
     assert readiness.status_code == 200, readiness.text
     assert readiness.json()["firmware_ota"]["state"] == "ready"

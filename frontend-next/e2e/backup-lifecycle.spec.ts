@@ -245,7 +245,7 @@ test('replace-all shows inventory and requires the exact destructive confirmatio
   const dialog = page.getByRole('dialog', { name: 'Replace all backups' })
   await expect(dialog).toContainText('Existing backup count')
   await expect(dialog).toContainText('3')
-  await expect(dialog).toContainText('1 MB')
+  await expect(dialog).toContainText('1 MiB')
   const execute = dialog.getByRole('button', { name: 'Replace all backups', exact: true })
   await expect(execute).toBeDisabled()
   await dialog.getByLabel(/Type REPLACE ALL BACKUPS/).fill('replace all backups')

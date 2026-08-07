@@ -182,7 +182,13 @@ export function statusLabel(value: string): string {
 export function fileSize(value: number | undefined): string {
   if (value === undefined || !Number.isFinite(value)) return 'Size unavailable'
   if (value < 1024) return `${value} B`
-  if (value < 1024 ** 2) return `${number(value / 1024, 1)} KB`
-  if (value < 1024 ** 3) return `${number(value / 1024 ** 2, 1)} MB`
-  return `${number(value / 1024 ** 3, 2)} GB`
+  if (value < 1024 ** 2) return `${number(value / 1024, 1)} KiB`
+  if (value < 1024 ** 3) return `${number(value / 1024 ** 2, 1)} MiB`
+  return `${number(value / 1024 ** 3, 2)} GiB`
+}
+
+export function storageCapacity(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) return 'Size unavailable'
+  if (value < 1_000_000_000) return fileSize(value)
+  return `${fileSize(value)} (${number(value / 1_000_000_000, 2)} GB)`
 }

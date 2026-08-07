@@ -130,4 +130,25 @@ describe('sensor storage controls', () => {
     expect(screen.getByText(/explicit storage gap/)).toBeInTheDocument()
     expect(screen.getByText(/3 intervals/)).toBeInTheDocument()
   })
+
+  it('does not present absent inventory as measured zeros or healthy state as an error', () => {
+    renderStorage(status({
+      cardType: 'sd',
+      capacityBytes: 7_800_356_864,
+      eligibleSegmentCount: undefined,
+      protectedSegmentCount: undefined,
+      segmentCount: 0,
+      eventSegmentCount: undefined,
+      temporaryArtifactCount: undefined,
+      exportCount: undefined,
+      repairArtifactCount: undefined,
+      droppedIntervalCount: undefined,
+      lastError: 'healthy',
+    }), false)
+
+    expect(screen.getByText(/7\.26 GiB \(7\.8 GB\)/)).toBeInTheDocument()
+    expect(screen.getByText(/0 total · eligibility unavailable/)).toBeInTheDocument()
+    expect(screen.getByText('Event segments').parentElement).toHaveTextContent('Unavailable')
+    expect(screen.queryByText(/Last storage error/)).not.toBeInTheDocument()
+  })
 })

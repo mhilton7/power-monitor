@@ -13733,11 +13733,47 @@ components:
             const: ALTER TIER PROGRESSION
           - type: 'null'
           title: Confirmation
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 8
+          title: Reason
+          default: Reviewed usage-authority selection
+        idempotency_key:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 8
+          - type: 'null'
+          title: Idempotency Key
       additionalProperties: false
       type: object
       required:
       - authority_type
       title: AccountUsageAuthorityWrite
+    AgentCapabilities:
+      properties:
+        data_reset:
+          $ref: '#/components/schemas/AgentDataResetCapability'
+        ota:
+          anyOf:
+          - $ref: '#/components/schemas/DeviceOtaCapability'
+          - type: boolean
+          title: Ota
+        storage:
+          anyOf:
+          - $ref: '#/components/schemas/AgentStorageCapability'
+          - type: 'null'
+        outbound_commands:
+          type: boolean
+          title: Outbound Commands
+          default: true
+      additionalProperties: false
+      type: object
+      required:
+      - data_reset
+      - ota
+      title: AgentCapabilities
     AgentCommandResult:
       properties:
         protocol:
@@ -13782,6 +13818,65 @@ components:
       - command_id
       - state
       title: AgentCommandResult
+    AgentDataResetCapability:
+      properties:
+        supported:
+          type: boolean
+          title: Supported
+        protocol:
+          type: string
+          maxLength: 32
+          minLength: 1
+          title: Protocol
+        receipt_schema:
+          type: integer
+          minimum: 1.0
+          title: Receipt Schema
+        prepare:
+          type: boolean
+          title: Prepare
+          default: false
+        commit:
+          type: boolean
+          title: Commit
+          default: false
+        cancel:
+          type: boolean
+          title: Cancel
+          default: false
+        status:
+          type: boolean
+          title: Status
+          default: false
+        reboot_safe:
+          type: boolean
+          title: Reboot Safe
+          default: false
+        card_identity:
+          type: boolean
+          title: Card Identity
+          default: false
+        configuration_preservation:
+          type: boolean
+          title: Configuration Preservation
+          default: false
+        configuration_preservation_version:
+          type: integer
+          minimum: 1.0
+          title: Configuration Preservation Version
+          default: 1
+        reset_journal_version:
+          type: integer
+          minimum: 1.0
+          title: Reset Journal Version
+          default: 1
+      additionalProperties: false
+      type: object
+      required:
+      - supported
+      - protocol
+      - receipt_schema
+      title: AgentDataResetCapability
     AgentEventBatch:
       properties:
         protocol:
@@ -13855,36 +13950,23 @@ components:
           minLength: 1
           title: Reset Reason
         wifi:
-          additionalProperties: true
-          type: object
-          title: Wifi
+          $ref: '#/components/schemas/AgentWifi'
         latest:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - $ref: '#/components/schemas/AgentLiveMeasurement'
           - type: 'null'
-          title: Latest
         pzem:
-          additionalProperties: true
-          type: object
-          title: Pzem
+          $ref: '#/components/schemas/AgentPzemHealth'
         sd:
-          additionalProperties: true
-          type: object
-          title: Sd
+          $ref: '#/components/schemas/AgentSdHealth'
         sequences:
-          additionalProperties:
-            type: integer
-          type: object
-          title: Sequences
+          $ref: '#/components/schemas/AgentSequences'
         reset_projection:
           additionalProperties: true
           type: object
           title: Reset Projection
         capabilities:
-          additionalProperties: true
-          type: object
-          title: Capabilities
+          $ref: '#/components/schemas/AgentCapabilities'
         configuration_revision:
           type: integer
           minimum: 0.0
@@ -13898,14 +13980,9 @@ components:
           type: object
           title: Reset Operation
         resources:
-          additionalProperties: true
-          type: object
-          title: Resources
+          $ref: '#/components/schemas/AgentResources'
         task_stack_margins:
-          additionalProperties:
-            type: integer
-          type: object
-          title: Task Stack Margins
+          $ref: '#/components/schemas/AgentTaskStackMargins'
         last_command_result:
           anyOf:
           - additionalProperties: true
@@ -13930,12 +14007,166 @@ components:
       - build_hash
       - uptime_ms
       - reset_reason
+      - wifi
+      - pzem
+      - sd
       - sequences
       - reset_projection
       - capabilities
       - configuration_revision
       - reset_generation
+      - resources
+      - task_stack_margins
       title: AgentHeartbeat
+    AgentLiveMeasurement:
+      properties:
+        measured_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Measured At
+        monotonic_ms:
+          anyOf:
+          - type: integer
+            maximum: 9.223372036854776e+18
+            minimum: 0.0
+          - type: 'null'
+          title: Monotonic Ms
+        voltage_v:
+          anyOf:
+          - type: number
+            maximum: 300.0
+            minimum: 0.0
+          - type: string
+          title: Voltage V
+        current_a:
+          anyOf:
+          - type: number
+            maximum: 1000.0
+            minimum: 0.0
+          - type: string
+          title: Current A
+        power_w:
+          anyOf:
+          - type: number
+            maximum: 300000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Power W
+        power_factor:
+          anyOf:
+          - type: number
+            maximum: 1.0
+            minimum: 0.0
+          - type: string
+          title: Power Factor
+        frequency_hz:
+          anyOf:
+          - type: number
+            maximum: 70.0
+            minimum: 40.0
+          - type: string
+          title: Frequency Hz
+        energy_wh:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: string
+          title: Energy Wh
+        watts:
+          anyOf:
+          - type: number
+            maximum: 300000.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Watts
+      additionalProperties: false
+      type: object
+      required:
+      - measured_at
+      - voltage_v
+      - current_a
+      - power_factor
+      - frequency_hz
+      - energy_wh
+      title: AgentLiveMeasurement
+    AgentPzemDetails:
+      properties:
+        initialized:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Initialized
+        responding:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Responding
+        uart_port:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Uart Port
+        sample_valid:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Sample Valid
+        last_valid_sample_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Valid Sample At
+        consecutive_failures:
+          type: integer
+          minimum: 0.0
+          title: Consecutive Failures
+          default: 0
+        last_error:
+          anyOf:
+          - type: string
+            maxLength: 80
+            pattern: ^[a-z0-9_]+$
+          - type: 'null'
+          title: Last Error
+        last_error_code:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Last Error Code
+      additionalProperties: false
+      type: object
+      title: AgentPzemDetails
+    AgentPzemHealth:
+      properties:
+        ok:
+          type: boolean
+          title: Ok
+        status:
+          type: string
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-z0-9_]+$
+          title: Status
+        error_count:
+          type: integer
+          minimum: 0.0
+          title: Error Count
+          default: 0
+        details:
+          $ref: '#/components/schemas/AgentPzemDetails'
+      additionalProperties: false
+      type: object
+      required:
+      - ok
+      - status
+      title: AgentPzemHealth
     AgentReadingBatch:
       properties:
         protocol:
@@ -13972,6 +14203,301 @@ components:
       - data_generation
       - readings
       title: AgentReadingBatch
+    AgentResources:
+      properties:
+        free_heap_bytes:
+          type: integer
+          minimum: 0.0
+          title: Free Heap Bytes
+        largest_free_block_bytes:
+          type: integer
+          minimum: 0.0
+          title: Largest Free Block Bytes
+          default: 0
+      additionalProperties: false
+      type: object
+      required:
+      - free_heap_bytes
+      title: AgentResources
+    AgentSdDetails:
+      properties:
+        mounted:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Mounted
+        writable:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Writable
+        card_present:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Card Present
+        card_type:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Card Type
+        capacity_bytes:
+          type: integer
+          minimum: 0.0
+          title: Capacity Bytes
+          default: 0
+        used_bytes:
+          type: integer
+          minimum: 0.0
+          title: Used Bytes
+          default: 0
+        free_percent:
+          anyOf:
+          - type: number
+            maximum: 100.0
+            minimum: 0.0
+          - type: string
+          - type: 'null'
+          title: Free Percent
+        index_valid:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Index Valid
+        segment_count:
+          type: integer
+          minimum: 0.0
+          title: Segment Count
+          default: 0
+        recovery_state:
+          anyOf:
+          - type: string
+            maxLength: 64
+            pattern: ^[a-z0-9_]+$
+          - type: 'null'
+          title: Recovery State
+        last_error:
+          anyOf:
+          - type: string
+            maxLength: 80
+            pattern: ^[a-z0-9_]+$
+          - type: 'null'
+          title: Last Error
+        last_error_code:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Last Error Code
+        mount_attempts:
+          type: integer
+          minimum: 0.0
+          title: Mount Attempts
+          default: 0
+        spi_hz:
+          type: integer
+          minimum: 0.0
+          title: Spi Hz
+          default: 0
+        total_bytes:
+          type: integer
+          minimum: 0.0
+          title: Total Bytes
+          default: 0
+        free_bytes:
+          type: integer
+          minimum: 0.0
+          title: Free Bytes
+          default: 0
+        card_generation:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Card Generation
+        format_attempted:
+          type: boolean
+          title: Format Attempted
+          default: false
+      additionalProperties: false
+      type: object
+      title: AgentSdDetails
+    AgentSdHealth:
+      properties:
+        ok:
+          type: boolean
+          title: Ok
+        status:
+          type: string
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-z0-9_]+$
+          title: Status
+        error_count:
+          type: integer
+          minimum: 0.0
+          title: Error Count
+          default: 0
+        details:
+          $ref: '#/components/schemas/AgentSdDetails'
+        format_attempted:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Format Attempted
+      additionalProperties: false
+      type: object
+      required:
+      - ok
+      - status
+      title: AgentSdHealth
+    AgentSequences:
+      properties:
+        sequence_floor:
+          type: integer
+          maximum: 9.223372036854776e+18
+          minimum: 0.0
+          title: Sequence Floor
+        maximum_seen_sequence:
+          type: integer
+          maximum: 9.223372036854776e+18
+          minimum: 0.0
+          title: Maximum Seen Sequence
+        server_acknowledgement:
+          type: integer
+          maximum: 9.223372036854776e+18
+          minimum: 0.0
+          title: Server Acknowledgement
+        next_sequence:
+          type: integer
+          maximum: 9.223372036854776e+18
+          minimum: 1.0
+          title: Next Sequence
+        oldest_stored_sequence:
+          type: integer
+          maximum: 9.223372036854776e+18
+          minimum: 0.0
+          title: Oldest Stored Sequence
+        newest_stored_sequence:
+          type: integer
+          maximum: 9.223372036854776e+18
+          minimum: 0.0
+          title: Newest Stored Sequence
+        newest_syncable_sequence:
+          type: integer
+          maximum: 9.223372036854776e+18
+          minimum: 0.0
+          title: Newest Syncable Sequence
+        backlog:
+          type: integer
+          maximum: 9.223372036854776e+18
+          minimum: 0.0
+          title: Backlog
+      additionalProperties: false
+      type: object
+      required:
+      - sequence_floor
+      - maximum_seen_sequence
+      - server_acknowledgement
+      - next_sequence
+      - oldest_stored_sequence
+      - newest_stored_sequence
+      - newest_syncable_sequence
+      - backlog
+      title: AgentSequences
+    AgentStorageCapability:
+      properties:
+        present:
+          type: boolean
+          title: Present
+        required:
+          type: boolean
+          title: Required
+        sd_required:
+          type: boolean
+          title: Sd Required
+        durable_queue:
+          type: boolean
+          title: Durable Queue
+        format_on_mount_failure:
+          type: boolean
+          title: Format On Mount Failure
+      additionalProperties: false
+      type: object
+      required:
+      - present
+      - required
+      - sd_required
+      - durable_queue
+      - format_on_mount_failure
+      title: AgentStorageCapability
+    AgentTaskStackMargins:
+      properties:
+        measurement:
+          type: integer
+          minimum: 0.0
+          title: Measurement
+          default: 0
+        storage:
+          type: integer
+          minimum: 0.0
+          title: Storage
+          default: 0
+        network:
+          type: integer
+          minimum: 0.0
+          title: Network
+          default: 0
+        supervisor:
+          type: integer
+          minimum: 0.0
+          title: Supervisor
+          default: 0
+      additionalProperties: false
+      type: object
+      title: AgentTaskStackMargins
+    AgentWifi:
+      properties:
+        connected:
+          type: boolean
+          title: Connected
+        ip_address:
+          anyOf:
+          - type: string
+            format: ipv4
+          - type: 'null'
+          title: Ip Address
+        rssi_dbm:
+          anyOf:
+          - type: integer
+            maximum: 0.0
+            minimum: -127.0
+          - type: 'null'
+          title: Rssi Dbm
+        network_identity:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Network Identity
+        disconnect_reason:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Disconnect Reason
+        connection_state:
+          type: string
+          maxLength: 32
+          minLength: 1
+          pattern: ^[a-z0-9_]+$
+          title: Connection State
+          default: connected
+      additionalProperties: false
+      type: object
+      required:
+      - connected
+      title: AgentWifi
     AggregateMemberInput:
       properties:
         circuit_id:
@@ -16125,6 +16651,9 @@ components:
         connection_mode:
           type: string
           title: Connection Mode
+        protocol_version:
+          type: string
+          title: Protocol Version
         measurement_role:
           type: string
           title: Measurement Role
@@ -16307,11 +16836,43 @@ components:
           - type: boolean
           - type: 'null'
           title: Pzem Ok
+        pzem_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pzem Status
+        pzem_details:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Pzem Details
         sd_ok:
           anyOf:
           - type: boolean
           - type: 'null'
           title: Sd Ok
+        sd_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sd Status
+        sd_details:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Sd Details
+        card_generation:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Card Generation
+        current_energy_wh:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Current Energy Wh
         time_trusted:
           anyOf:
           - type: boolean
@@ -16331,6 +16892,7 @@ components:
       - circuit_id
       - circuit_name
       - connection_mode
+      - protocol_version
       - measurement_role
       - cost_scope
       - included_in_default
@@ -16366,7 +16928,13 @@ components:
       - previous_outage_reason
       - rssi_dbm
       - pzem_ok
+      - pzem_status
+      - pzem_details
       - sd_ok
+      - sd_status
+      - sd_details
+      - card_generation
+      - current_energy_wh
       - time_trusted
       - backlog
       title: DeviceListItem

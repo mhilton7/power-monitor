@@ -73,7 +73,7 @@ import type {
   SystemHealthStatus,
   TestLoadProfile,
 } from '../../types/models'
-import { dateTime, energy, fileSize, money, power, relativeTime, statusLabel } from '../../utils/format'
+import { dateTime, energy, fileSize, money, power, relativeTime, statusLabel, storageCapacity } from '../../utils/format'
 import { AdvancedRateSettings } from '../../features/rates/AdvancedRateSettings'
 import { DataResetWorkflow } from '../../features/data-reset/DataResetWorkflow'
 
@@ -521,6 +521,19 @@ export function SensorStorageContent({
   canManage: boolean
   refresh: () => Promise<unknown>
 }) {
+  const count = (value: number | undefined) => value ?? 'Unavailable'
+  const segmentSummary = status.eligibleSegmentCount !== undefined && status.protectedSegmentCount !== undefined
+    ? `${status.eligibleSegmentCount} eligible · ${status.protectedSegmentCount} protected`
+    : status.segmentCount !== undefined
+      ? `${status.segmentCount} total · eligibility unavailable`
+      : 'Unavailable'
+  const cleanupSummary = status.lastCleanupAt || status.lastCleanupResult
+    ? `${status.lastCleanupAt ? relativeTime(status.lastCleanupAt) : 'Time unavailable'} · ${status.lastCleanupResult ?? 'Result unavailable'}`
+    : 'Unavailable'
+  const normalizedLastError = status.lastError?.trim().toLowerCase()
+  const actionableLastError = normalizedLastError && !['healthy', 'none', 'ok'].includes(normalizedLastError)
+    ? status.lastError
+    : undefined
   const [policy, setPolicy] = useState<SensorStoragePolicy>(status.desiredPolicy)
   const [reason, setReason] = useState('Administrator reviewed protected storage retention')
   const [cleanupReason, setCleanupReason] = useState('Administrator requested acknowledgement-aware safe cleanup')
@@ -563,7 +576,7 @@ export function SensorStorageContent({
         <span>{status.policyPending ? `Policy pending on sensor · desired v${status.desiredConfigVersion}` : `Policy effective · v${status.effectiveConfigVersion}`}</span>
       </div>
       <div className="storage-metric-grid">
-        <div><small>Card</small><strong>{status.cardType ?? 'Unknown card'} · {fileSize(status.capacityBytes)}</strong></div>
+        <div><small>Card</small><strong>{status.cardType ?? 'Unknown card'} · {storageCapacity(status.capacityBytes)}</strong></div>
         <div><small>Used</small><strong>{fileSize(status.usedBytes)}{status.freePercent !== undefined ? ` · ${Math.max(0, 100 - status.freePercent).toFixed(1)}%` : ''}</strong></div>
         <div><small>Free</small><strong>{fileSize(status.freeBytes)}{status.freePercent !== undefined ? ` · ${status.freePercent.toFixed(1)}%` : ''}</strong></div>
         <div><small>Estimated remaining</small><strong>{storageEstimate(status)}</strong></div>
@@ -571,11 +584,11 @@ export function SensorStorageContent({
         <div><small>Unsynchronized readings</small><strong>{status.unsynchronizedCount ?? 'Unavailable'}</strong></div>
         <div><small>Safely reclaimable</small><strong>{fileSize(status.eligibleReclaimableBytes)}</strong></div>
         <div><small>Protected, unacknowledged</small><strong>{fileSize(status.blockedUnacknowledgedBytes)}</strong></div>
-        <div><small>Segments</small><strong>{status.eligibleSegmentCount ?? 0} eligible · {status.protectedSegmentCount ?? 0} protected</strong></div>
-        <div><small>Event segments</small><strong>{status.eventSegmentCount ?? 0}</strong></div>
-        <div><small>Temporary artifacts</small><strong>{status.temporaryArtifactCount ?? 0} temporary · {status.exportCount ?? 0} exports · {status.repairArtifactCount ?? 0} repair</strong></div>
-        <div><small>Last cleanup</small><strong>{status.lastCleanupAt ? relativeTime(status.lastCleanupAt) : 'Not run'} · {status.lastCleanupResult ?? 'No result'}</strong></div>
-        <div><small>Dropped durable intervals</small><strong>{status.droppedIntervalCount ?? 0}</strong></div>
+        <div><small>Segments</small><strong>{segmentSummary}</strong></div>
+        <div><small>Event segments</small><strong>{count(status.eventSegmentCount)}</strong></div>
+        <div><small>Temporary artifacts</small><strong>{count(status.temporaryArtifactCount)} temporary · {count(status.exportCount)} exports · {count(status.repairArtifactCount)} repair</strong></div>
+        <div><small>Last cleanup</small><strong>{cleanupSummary}</strong></div>
+        <div><small>Dropped durable intervals</small><strong>{count(status.droppedIntervalCount)}</strong></div>
       </div>
       {status.cleanupRecoveryRequired && <InlineNotice tone="danger">Cleanup recovery is blocked. The sensor preserves all ambiguous files and remains read-only until the journal is safely repaired.</InlineNotice>}
       {status.cleanupInProgress && <InlineNotice tone="info">Acknowledgement-aware cleanup is running on the sensor StorageTask.</InlineNotice>}
@@ -588,7 +601,7 @@ export function SensorStorageContent({
           </span>
         </InlineNotice>
       ) : null}
-      {status.lastError && <InlineNotice tone="danger">Last storage error: {statusLabel(status.lastError)}</InlineNotice>}
+      {actionableLastError && <InlineNotice tone="danger">Last storage error: {statusLabel(actionableLastError)}</InlineNotice>}
       <details className="storage-policy" open>
         <summary><strong>Retention and full-card protection</strong><span>Only verified, closed, server-acknowledged segments are eligible.</span></summary>
         <form className="form-grid" onSubmit={(event) => { event.preventDefault(); policyMutation.mutate() }}>

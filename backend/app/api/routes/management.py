@@ -2268,6 +2268,8 @@ async def device_storage_status(
     subsystem = cast(dict[str, Any], raw_subsystem) if isinstance(raw_subsystem, dict) else {}
     raw_details = subsystem.get("details")
     details = cast(dict[str, Any], raw_details) if isinstance(raw_details, dict) else {}
+    raw_sequences = payload.get("sequences")
+    sequences = cast(dict[str, Any], raw_sequences) if isinstance(raw_sequences, dict) else {}
     policy_keys = (
         "retention_mode",
         "retention_days",
@@ -2289,9 +2291,56 @@ async def device_storage_status(
     if latest_config and isinstance(latest_config.desired_config, dict):
         desired.update(latest_config.desired_config)
 
-    def detail_count(key: str) -> int:
-        value = details.get(key)
-        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+    def first_evidence(*values: Any) -> Any:
+        return next((value for value in values if value is not None), None)
+
+    def nonnegative_int(value: Any) -> int | None:
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+        return None
+
+    protected_parts = (
+        nonnegative_int(details.get("protected_unacknowledged_bytes")),
+        nonnegative_int(details.get("protected_untrusted_bytes")),
+    )
+    protected_bytes = nonnegative_int(details.get("protected_bytes"))
+    if protected_bytes is None and any(value is not None for value in protected_parts):
+        protected_bytes = sum(value or 0 for value in protected_parts)
+
+    raw_last_error = details.get("last_error")
+    last_error = raw_last_error
+    if isinstance(raw_last_error, str) and raw_last_error.strip().lower() in {
+        "",
+        "healthy",
+        "none",
+        "ok",
+    }:
+        last_error = None
+
+    pressure_state = details.get("pressure_state")
+    if not isinstance(pressure_state, str) or not pressure_state.strip():
+        free_percent = details.get("free_percent")
+        if isinstance(free_percent, int | float) and not isinstance(free_percent, bool):
+            thresholds = (
+                ("emergency", effective.get("storage_emergency_percent", 2)),
+                ("critical", effective.get("storage_critical_percent", 5)),
+                ("warning", effective.get("storage_warning_percent", 10)),
+                ("notice", effective.get("storage_notice_percent", 20)),
+            )
+            pressure_state = "healthy"
+            for state, raw_threshold in thresholds:
+                if (
+                    isinstance(raw_threshold, int | float)
+                    and not isinstance(raw_threshold, bool)
+                    and free_percent <= raw_threshold
+                ):
+                    pressure_state = state
+                    break
+        elif subsystem.get("ok") is True:
+            pressure_state = "healthy"
+        else:
+            raw_status = subsystem.get("status")
+            pressure_state = raw_status if isinstance(raw_status, str) else "unknown"
 
     reading_index_integrity = details.get("reading_index_integrity_verified")
     if not isinstance(reading_index_integrity, bool):
@@ -2305,16 +2354,52 @@ async def device_storage_status(
         # Preserve the original field while providing one stable server-side
         # name to both legacy and current firmware clients.
         "reading_index_integrity_verified": reading_index_integrity,
-        "oldest_stored_sequence": details.get("oldest_record_sequence"),
-        "newest_stored_sequence": details.get("newest_record_sequence"),
-        "server_event_ack_sequence": details.get("event_ack_sequence"),
-        "unsynchronized_count": details.get("unacknowledged_record_count"),
-        "eligible_reclaimable_bytes": details.get("reclaimable_bytes"),
-        "blocked_unacknowledged_bytes": details.get("protected_unacknowledged_bytes"),
-        "protected_bytes": detail_count("protected_unacknowledged_bytes")
-        + detail_count("protected_untrusted_bytes"),
-        "last_cleanup_bytes": details.get("last_cleanup_reclaimed_bytes"),
-        "estimated_bytes_per_day": details.get("growth_bytes_per_day"),
+        "pressure_state": pressure_state,
+        "last_error": last_error,
+        "oldest_stored_sequence": first_evidence(
+            details.get("oldest_stored_sequence"),
+            details.get("oldest_record_sequence"),
+            sequences.get("oldest_stored_sequence"),
+            payload.get("oldest_stored_sequence"),
+        ),
+        "newest_stored_sequence": first_evidence(
+            details.get("newest_stored_sequence"),
+            details.get("newest_record_sequence"),
+            sequences.get("newest_stored_sequence"),
+            payload.get("newest_stored_sequence"),
+        ),
+        "server_ack_sequence": first_evidence(
+            details.get("server_ack_sequence"),
+            sequences.get("server_acknowledgement"),
+            payload.get("server_ack_sequence"),
+        ),
+        "server_event_ack_sequence": first_evidence(
+            details.get("server_event_ack_sequence"),
+            details.get("event_ack_sequence"),
+        ),
+        "unsynchronized_count": first_evidence(
+            details.get("unsynchronized_count"),
+            details.get("unacknowledged_record_count"),
+            sequences.get("backlog"),
+            payload.get("backlog_estimate"),
+        ),
+        "eligible_reclaimable_bytes": first_evidence(
+            details.get("eligible_reclaimable_bytes"),
+            details.get("reclaimable_bytes"),
+        ),
+        "blocked_unacknowledged_bytes": first_evidence(
+            details.get("blocked_unacknowledged_bytes"),
+            details.get("protected_unacknowledged_bytes"),
+        ),
+        "protected_bytes": protected_bytes,
+        "last_cleanup_bytes": first_evidence(
+            details.get("last_cleanup_bytes"),
+            details.get("last_cleanup_reclaimed_bytes"),
+        ),
+        "estimated_bytes_per_day": first_evidence(
+            details.get("estimated_bytes_per_day"),
+            details.get("growth_bytes_per_day"),
+        ),
         "dropped_interval_count": details.get("dropped_interval_count"),
         "first_dropped_interval_at": details.get("first_dropped_interval_at"),
         "last_dropped_interval_at": details.get("last_dropped_interval_at"),

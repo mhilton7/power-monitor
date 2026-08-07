@@ -148,7 +148,7 @@ test('Sensor Health renders one compact accessible measurement strip per sensor'
   await expect(card).toBeVisible()
   await expect(card.locator('.sensor-health-row')).toHaveCount(2)
   await expect(card.locator('.sensor-electrical-strip')).toHaveCount(2)
-  await expect(card.locator('.sensor-electrical-metric')).toHaveCount(10)
+  await expect(card.locator('.sensor-electrical-metric')).toHaveCount(12)
   await expect(card.locator('.sensor-electrical-grid')).toHaveCount(0)
   await expect(card.getByText('Invalid reading')).toHaveCount(0)
   await expect(card.getByLabel('Power measurement invalid')).toHaveText('—')
