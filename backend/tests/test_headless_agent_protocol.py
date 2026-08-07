@@ -25,6 +25,7 @@ from app.db.models import (
     Site,
     User,
 )
+from app.ota import release_compatibility
 from app.security.agent_protocol import (
     AGENT_PROTOCOL,
     ProtocolAuthError,
@@ -37,6 +38,51 @@ from app.security.protocol import SecretCipher, sha256_hex
 
 ROOT = Path(__file__).resolve().parents[2]
 PASSWORD = "Long-Production-Password-42!"
+
+
+def test_headless_release_accepts_enrolled_target_alias_and_agent_protocol() -> None:
+    device = Device(
+        site_id="4f13827a-6a94-46dc-aabc-89a5ed75fed1",
+        hardware_id="headless-compatibility-device",
+        name="Headless compatibility",
+        protocol_version=AGENT_PROTOCOL,
+        connection_mode="push",
+        firmware_version="2.0.3",
+        firmware_build_hash="a" * 64,
+    )
+    capability = DeviceCapability(
+        device_id="5db961d7-4812-449c-bf85-9683d3a4babc",
+        hardware_target="esp32s3",
+        pzem_model="PZEM-004T V4.0",
+        sd_required=False,
+        features={
+            "ota": {
+                "supported": True,
+                "protocol_version": 2,
+                "authentication_mode": "existing_device_hmac",
+                "rollback_supported": True,
+                "partition_size_bytes": 6 * 1024 * 1024,
+            }
+        },
+    )
+    release = FirmwareRelease(
+        version="2.0.4",
+        channel="stable",
+        trust_mode="existing_device_hmac",
+        project_name="power_monitor_sensor_headless",
+        hardware_target="esp32-s3",
+        protocol_min=AGENT_PROTOCOL,
+        protocol_max=AGENT_PROTOCOL,
+        size_bytes=1_009_792,
+        sha256="b" * 64,
+        build_hash="c" * 64,
+        verification_status="verified",
+    )
+
+    compatibility = release_compatibility(device, capability, release)
+
+    assert compatibility["ready"] is True
+    assert compatibility["reasons"] == []
 
 
 def test_shared_pm_agent_hmac_vector() -> None:

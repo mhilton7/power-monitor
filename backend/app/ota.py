@@ -13,7 +13,6 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from app.db.models import Device, DeviceCapability, FirmwareRelease
-from app.security.protocol import PROTOCOL
 
 OTA_MANIFEST_SCHEMA = "pm-ota-manifest/2"
 OTA_MANIFEST_PROTOCOL_VERSION = 2
@@ -160,7 +159,8 @@ def hardware_compatible(device_target: str, release_target: str) -> bool:
     normalized_device = device_target.strip().lower()
     normalized_release = release_target.strip().lower()
     return normalized_device == normalized_release or (
-        normalized_release == "esp32-s3" and normalized_device.startswith("esp32-s3")
+        normalized_release == "esp32-s3"
+        and (normalized_device == "esp32s3" or normalized_device.startswith("esp32-s3"))
     )
 
 
@@ -218,7 +218,10 @@ def release_compatibility(
         capability.hardware_target, release.hardware_target
     ):
         reasons.append("hardware_incompatible")
-    if not (release.protocol_min == PROTOCOL == release.protocol_max):
+    if not (
+        device.protocol_version
+        and release.protocol_min == device.protocol_version == release.protocol_max
+    ):
         reasons.append("protocol_incompatible")
     partition_size = ota.get("partition_size_bytes")
     if isinstance(partition_size, int) and release.size_bytes > partition_size:
