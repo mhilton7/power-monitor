@@ -243,6 +243,158 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v2/agent/enroll:
+    post:
+      tags:
+      - headless agent protocol
+      summary: Enroll Agent
+      operationId: enroll_agent_api_v2_agent_enroll_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentClaim'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentClaimResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v2/agent/heartbeat:
+    post:
+      tags:
+      - headless agent protocol
+      summary: Heartbeat
+      operationId: heartbeat_api_v2_agent_heartbeat_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentHeartbeat'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v2/agent/readings:
+    post:
+      tags:
+      - headless agent protocol
+      summary: Readings
+      operationId: readings_api_v2_agent_readings_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentReadingBatch'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v2/agent/events:
+    post:
+      tags:
+      - headless agent protocol
+      summary: Events
+      operationId: events_api_v2_agent_events_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentEventBatch'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v2/agent/commands/results:
+    post:
+      tags:
+      - headless agent protocol
+      summary: Command Result
+      operationId: command_result_api_v2_agent_commands_results_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentCommandResult'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v2/agent/firmware/{release_id}:
+    get:
+      tags:
+      - headless agent protocol
+      summary: Firmware Range
+      operationId: firmware_range_api_v2_agent_firmware__release_id__get
+      parameters:
+      - name: release_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Release Id
+      - name: Range
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Range
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/public/interface-text:
     get:
       tags:
@@ -6098,6 +6250,94 @@ paths:
       responses:
         '204':
           description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/commands:
+    post:
+      tags:
+      - management
+      summary: Create Device Command
+      operationId: create_device_command_api_v1_devices__device_id__commands_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: X-CSRF-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Csrf-Token
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceCommandCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Create Device Command Api V1 Devices  Device Id  Commands
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/agent-status:
+    get:
+      tags:
+      - management
+      summary: Get Device Agent Status
+      operationId: get_device_agent_status_api_v1_devices__device_id__agent_status_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: pm_session
+        in: cookie
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Pm Session
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Device Agent Status Api V1 Devices  Device Id  Agent
+                  Status Get
         '422':
           description: Validation Error
           content:
@@ -13498,6 +13738,240 @@ components:
       required:
       - authority_type
       title: AccountUsageAuthorityWrite
+    AgentCommandResult:
+      properties:
+        protocol:
+          type: string
+          const: pm-agent/2.0.0
+          title: Protocol
+        device_id:
+          type: string
+          maxLength: 36
+          minLength: 36
+          title: Device Id
+        command_id:
+          type: string
+          maxLength: 36
+          minLength: 36
+          title: Command Id
+        state:
+          type: string
+          enum:
+          - accepted
+          - running
+          - completed
+          - failed
+          - cancelled
+          title: State
+        result:
+          additionalProperties: true
+          type: object
+          title: Result
+        failure_code:
+          anyOf:
+          - type: string
+            maxLength: 80
+            pattern: ^[a-z0-9][a-z0-9_]{0,79}$
+          - type: 'null'
+          title: Failure Code
+      additionalProperties: false
+      type: object
+      required:
+      - protocol
+      - device_id
+      - command_id
+      - state
+      title: AgentCommandResult
+    AgentEventBatch:
+      properties:
+        protocol:
+          type: string
+          const: pm-agent/2.0.0
+          title: Protocol
+        device_id:
+          type: string
+          maxLength: 36
+          minLength: 36
+          title: Device Id
+        data_generation:
+          type: integer
+          minimum: 0.0
+          title: Data Generation
+          default: 0
+        first_stored_event_sequence:
+          anyOf:
+          - type: integer
+            maximum: 9.223372036854776e+18
+            minimum: 1.0
+          - type: 'null'
+          title: First Stored Event Sequence
+        events:
+          items:
+            $ref: '#/components/schemas/DeviceEventInput'
+          type: array
+          maxItems: 100
+          minItems: 1
+          title: Events
+      additionalProperties: false
+      type: object
+      required:
+      - protocol
+      - device_id
+      - events
+      title: AgentEventBatch
+    AgentHeartbeat:
+      properties:
+        protocol:
+          type: string
+          const: pm-agent/2.0.0
+          title: Protocol
+        device_id:
+          type: string
+          maxLength: 36
+          minLength: 36
+          title: Device Id
+        boot_id:
+          type: string
+          maxLength: 36
+          minLength: 36
+          title: Boot Id
+        firmware_version:
+          type: string
+          maxLength: 32
+          minLength: 1
+          title: Firmware Version
+        build_hash:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Build Hash
+        uptime_ms:
+          type: integer
+          maximum: 9.223372036854776e+18
+          minimum: 0.0
+          title: Uptime Ms
+        reset_reason:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Reset Reason
+        wifi:
+          additionalProperties: true
+          type: object
+          title: Wifi
+        latest:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Latest
+        pzem:
+          additionalProperties: true
+          type: object
+          title: Pzem
+        sd:
+          additionalProperties: true
+          type: object
+          title: Sd
+        sequences:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Sequences
+        reset_projection:
+          additionalProperties: true
+          type: object
+          title: Reset Projection
+        capabilities:
+          additionalProperties: true
+          type: object
+          title: Capabilities
+        configuration_revision:
+          type: integer
+          minimum: 0.0
+          title: Configuration Revision
+        reset_generation:
+          type: integer
+          minimum: 0.0
+          title: Reset Generation
+        reset_operation:
+          additionalProperties: true
+          type: object
+          title: Reset Operation
+        resources:
+          additionalProperties: true
+          type: object
+          title: Resources
+        task_stack_margins:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Task Stack Margins
+        last_command_result:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Last Command Result
+        ota:
+          additionalProperties: true
+          type: object
+          title: Ota
+        time_trusted:
+          type: boolean
+          title: Time Trusted
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - protocol
+      - device_id
+      - boot_id
+      - firmware_version
+      - build_hash
+      - uptime_ms
+      - reset_reason
+      - sequences
+      - reset_projection
+      - capabilities
+      - configuration_revision
+      - reset_generation
+      title: AgentHeartbeat
+    AgentReadingBatch:
+      properties:
+        protocol:
+          type: string
+          const: pm-agent/2.0.0
+          title: Protocol
+        device_id:
+          type: string
+          maxLength: 36
+          minLength: 36
+          title: Device Id
+        data_generation:
+          type: integer
+          minimum: 0.0
+          title: Data Generation
+        readings:
+          items:
+            $ref: '#/components/schemas/Reading'
+          type: array
+          maxItems: 500
+          minItems: 1
+          title: Readings
+        unavailable_sequence_ranges:
+          items:
+            $ref: '#/components/schemas/UnavailableSequenceRange'
+          type: array
+          maxItems: 500
+          title: Unavailable Sequence Ranges
+      additionalProperties: false
+      type: object
+      required:
+      - protocol
+      - device_id
+      - data_generation
+      - readings
+      title: AgentReadingBatch
     AggregateMemberInput:
       properties:
         circuit_id:
@@ -15483,6 +15957,43 @@ components:
       - pzem_model
       - sd_present
       title: DeviceCapabilities
+    DeviceCommandCreate:
+      properties:
+        command_type:
+          type: string
+          enum:
+          - apply_configuration
+          - reboot
+          - ota_update
+          - sync_now
+          title: Command Type
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+        expected_current_state:
+          additionalProperties: true
+          type: object
+          title: Expected Current State
+        idempotency_key:
+          anyOf:
+          - type: string
+            maxLength: 160
+            minLength: 8
+            pattern: ^[A-Za-z0-9._:-]+$
+          - type: 'null'
+          title: Idempotency Key
+        expires_in_seconds:
+          type: integer
+          maximum: 86400.0
+          minimum: 30.0
+          title: Expires In Seconds
+          default: 1800
+      additionalProperties: false
+      type: object
+      required:
+      - command_type
+      title: DeviceCommandCreate
     DeviceConfigCreate:
       properties:
         settings:
