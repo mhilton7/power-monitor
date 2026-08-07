@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.routes.agent_protocol import _record_headless_ota_result
+from app.api.routes.agent_protocol import AgentHeartbeat, _record_headless_ota_result
 from app.api.routes.firmware import _queue_headless_ota_command
 from app.config import Settings
 from app.data_reset.sensor_client import request_sensor_reset
@@ -20,6 +21,7 @@ from app.db.models import (
     DeviceCapability,
     DeviceCommand,
     DeviceCredential,
+    DeviceHeartbeat,
     FirmwareDeployment,
     FirmwareRelease,
     Site,
@@ -116,6 +118,144 @@ def test_shared_pm_agent_hmac_vector() -> None:
     )
     assert digest == response["body_sha256"]
     assert signature == response["signature_hex"]
+
+
+def test_shared_heartbeat_hardware_vector_is_canonical_byte_for_byte() -> None:
+    vector = json.loads(
+        (ROOT / "shared" / "contract-test-vectors" / "agent-heartbeat-hardware-v2.json").read_text()
+    )
+    encoded = json.dumps(vector["value"], sort_keys=True, separators=(",", ":")).encode()
+    assert encoded.decode() == vector["canonical_json_utf8"]
+    assert hashlib.sha256(encoded).hexdigest() == vector["sha256"]
+
+
+def _typed_heartbeat_payload() -> dict[str, Any]:
+    return {
+        "protocol": AGENT_PROTOCOL,
+        "device_id": "61c897c2-1f49-401d-8e72-d932997e7e7f",
+        "boot_id": "83869685-4032-4e2c-8d5f-7aad43f1637e",
+        "firmware_version": "2.0.4",
+        "build_hash": "1" * 64,
+        "uptime_ms": 60_000,
+        "reset_reason": "power_on",
+        "wifi": {"connected": True, "rssi_dbm": -48},
+        "latest": {
+            "measured_at": "2026-08-06T20:00:00Z",
+            "voltage_v": "120.3",
+            "current_a": "5.125",
+            "power_w": "615.25",
+            "power_factor": "0.98",
+            "frequency_hz": "60",
+            "energy_wh": "42183",
+        },
+        "pzem": {
+            "ok": True,
+            "status": "healthy",
+            "error_count": 0,
+            "details": {"last_error_code": 0},
+        },
+        "sd": {
+            "ok": True,
+            "status": "healthy",
+            "error_count": 0,
+            "details": {
+                "last_error_code": 0,
+                "mount_attempts": 1,
+                "spi_hz": 20_000_000,
+                "total_bytes": 32_000_000_000,
+                "free_bytes": 30_000_000_000,
+                "card_generation": "42",
+                "format_attempted": False,
+            },
+        },
+        "sequences": {
+            "sequence_floor": 0,
+            "maximum_seen_sequence": 1,
+            "server_acknowledgement": 0,
+            "next_sequence": 2,
+            "oldest_stored_sequence": 1,
+            "newest_stored_sequence": 1,
+            "newest_syncable_sequence": 1,
+            "backlog": 1,
+        },
+        "reset_projection": {},
+        "capabilities": {
+            "data_reset": {
+                "supported": True,
+                "protocol": "data-reset/1.0.0",
+                "receipt_schema": 1,
+            },
+            "ota": True,
+            "storage": {
+                "present": True,
+                "required": True,
+                "sd_required": True,
+                "durable_queue": True,
+                "format_on_mount_failure": False,
+            },
+            "outbound_commands": True,
+        },
+        "configuration_revision": 1,
+        "reset_generation": 0,
+        "reset_operation": {},
+        "resources": {"free_heap_bytes": 120_000, "largest_free_block_bytes": 80_000},
+        "task_stack_margins": {
+            "measurement": 2048,
+            "storage": 2048,
+            "network": 4096,
+            "supervisor": 2048,
+        },
+        "ota": {"state": "idle"},
+        "time_trusted": True,
+    }
+
+
+def test_typed_heartbeat_preserves_canonical_hardware_evidence_and_legacy_alias() -> None:
+    canonical = AgentHeartbeat.model_validate(_typed_heartbeat_payload())
+    assert canonical.latest is not None
+    assert canonical.latest.power_w == 615.25
+    assert canonical.pzem.ok is True
+    assert canonical.sd.details.free_bytes == 30_000_000_000
+    assert canonical.capabilities.storage is not None
+    assert canonical.capabilities.storage.sd_required is True
+
+    legacy_payload = _typed_heartbeat_payload()
+    assert isinstance(legacy_payload["latest"], dict)
+    legacy_payload["latest"]["watts"] = legacy_payload["latest"].pop("power_w")
+    legacy = AgentHeartbeat.model_validate(legacy_payload)
+    assert legacy.latest is not None
+    assert legacy.latest.power_w == 615.25
+    assert legacy.latest.watts == 615.25
+
+
+@pytest.mark.parametrize(
+    "case",
+    json.loads(
+        (
+            ROOT / "shared" / "contract-test-vectors" / "agent-heartbeat-hardware-cases-v2.json"
+        ).read_text(encoding="utf-8")
+    )["cases"],
+    ids=lambda case: str(case["name"]),
+)
+def test_cross_repository_hardware_contract_cases(case: dict[str, Any]) -> None:
+    payload = _typed_heartbeat_payload()
+    payload.update({key: case[key] for key in ("latest", "pzem", "sd")})
+    if case["valid"]:
+        heartbeat = AgentHeartbeat.model_validate(payload)
+        if case.get("legacy_alias"):
+            assert heartbeat.latest is not None
+            assert heartbeat.latest.power_w == 615.25
+        return
+    with pytest.raises(ValueError):
+        AgentHeartbeat.model_validate(payload)
+
+
+@pytest.mark.parametrize("field", ["pzem", "sd", "sequences"])
+def test_typed_heartbeat_rejects_malformed_signed_evidence(field: str) -> None:
+    payload = _typed_heartbeat_payload()
+    payload[field] = {"ok": "yes"} if field != "sequences" else {"next_sequence": "zero"}
+    with pytest.raises(ValueError):
+        AgentHeartbeat.model_validate(payload)
 
 
 async def enrolled_agent(
@@ -468,9 +608,43 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(
             "uptime_ms": counter * 1000,
             "reset_reason": "power_on",
             "wifi": {"connected": True, "rssi_dbm": -48},
-            "latest": None,
-            "pzem": {"ok": True, "status": "healthy"},
-            "sd": {"ok": True, "status": "healthy"},
+            "latest": {
+                "measured_at": datetime.now(UTC).isoformat(),
+                "monotonic_ms": counter * 1000,
+                "voltage_v": 120.3,
+                "current_a": 5.125,
+                "power_w": 615.25,
+                "power_factor": 0.98,
+                "frequency_hz": 60,
+                "energy_wh": 42183,
+            },
+            "pzem": {
+                "ok": True,
+                "status": "healthy",
+                "details": {
+                    "initialized": True,
+                    "responding": True,
+                    "uart_port": 1,
+                    "sample_valid": True,
+                    "consecutive_failures": 0,
+                    "last_error": "none",
+                },
+            },
+            "sd": {
+                "ok": True,
+                "status": "healthy",
+                "details": {
+                    "mounted": True,
+                    "writable": True,
+                    "card_present": True,
+                    "capacity_bytes": 32_000_000_000,
+                    "free_bytes": 30_000_000_000,
+                    "free_percent": 93.75,
+                    "index_valid": True,
+                    "card_generation": "42",
+                    "format_attempted": False,
+                },
+            },
             "sequences": {
                 "sequence_floor": 0,
                 "maximum_seen_sequence": 1,
@@ -514,6 +688,13 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(
                     "receipt_schema": 1,
                 },
                 "ota": ota_capability,
+                "storage": {
+                    "present": True,
+                    "required": True,
+                    "sd_required": True,
+                    "durable_queue": True,
+                    "format_on_mount_failure": False,
+                },
             },
             "configuration_revision": 1,
             "reset_generation": 0,
@@ -522,7 +703,7 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(
             "task_stack_margins": {"network": 4096},
             "last_command_result": None,
             "ota": {"state": "idle"},
-            "time_trusted": False,
+            "time_trusted": True,
         }
         body = json.dumps(payload, separators=(",", ":")).encode()
         signed = headers(
@@ -654,6 +835,36 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(
     assert status.status_code == 200, status.text
     assert status.json()["heartbeat"]["protocol"] == AGENT_PROTOCOL
     assert status.json()["commands"][0]["state"] == "completed"
+    heartbeat = await session.scalar(
+        select(DeviceHeartbeat)
+        .where(DeviceHeartbeat.device_id == device_id)
+        .order_by(DeviceHeartbeat.received_at.desc())
+        .limit(1)
+    )
+    assert heartbeat is not None
+    assert heartbeat.current_watts == Decimal("615.25")
+    assert heartbeat.current_voltage_volts == Decimal("120.3")
+    assert heartbeat.current_amps == Decimal("5.125")
+    assert heartbeat.current_power_factor == Decimal("0.98")
+    assert heartbeat.current_frequency_hz == Decimal("60")
+    assert heartbeat.current_energy_wh == Decimal("42183")
+    assert heartbeat.pzem_ok is True
+    assert heartbeat.pzem_details["sample_valid"] is True
+    assert heartbeat.sd_ok is True
+    assert heartbeat.sd_details["writable"] is True
+    assert heartbeat.card_generation == "42"
+    devices = await client.get(f"/api/v1/devices?site_id={site_id}")
+    assert devices.status_code == 200, devices.text
+    listed = next(item for item in devices.json() if item["id"] == device_id)
+    assert Decimal(listed["current_watts"]) == Decimal("615.25")
+    assert Decimal(listed["voltage_volts"]) == Decimal("120.3")
+    assert listed["pzem_ok"] is True
+    assert listed["sd_ok"] is True
+    assert listed["protocol_version"] == AGENT_PROTOCOL
+    capability = await session.get(DeviceCapability, device_id)
+    assert capability is not None
+    await session.refresh(capability)
+    assert capability.sd_required is True
     detail = await client.get(f"/api/v1/devices/{device_id}")
     assert detail.status_code == 200, detail.text
     assert detail.json()["device"]["effective_config_version"] == revision

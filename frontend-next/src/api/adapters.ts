@@ -513,7 +513,18 @@ export function adaptSensors(value: unknown): SensorSummary[] {
       previousOutageReason: optionalString(source.previous_outage_reason),
       invalidMetrics: stringList(source.measurement_invalid_metrics),
       lastSeenAt: optionalString(source.last_seen_at),
+      pzemHealthy: typeof source.pzem_ok === 'boolean' ? source.pzem_ok : undefined,
+      pzemStatus: optionalString(source.pzem_status),
+      pzemDetails: source.pzem_details && typeof source.pzem_details === 'object'
+        ? record(source.pzem_details, 'PZEM details')
+        : undefined,
       storageHealthy: typeof source.sd_ok === 'boolean' ? source.sd_ok : undefined,
+      storageStatus: optionalString(source.sd_status),
+      storageDetails: source.sd_details && typeof source.sd_details === 'object'
+        ? record(source.sd_details, 'storage details')
+        : undefined,
+      cardGeneration: optionalString(source.card_generation),
+      currentEnergyWh: optionalString(source.current_energy_wh),
       wifiDbm: typeof source.rssi_dbm === 'number' ? source.rssi_dbm : undefined,
       firmware: optionalString(source.firmware_version),
       monitoredCircuit: stringValue(source.circuit_name, 'Unassigned'),
@@ -645,6 +656,25 @@ export function adaptUsageAuthority(value: unknown): UsageAuthority {
   ].includes(calculationRole)) {
     throw new Error('Usage authority returned an unsupported calculation role')
   }
+  const adaptAuthoritySensor = (item: Record<string, unknown>) => ({
+    id: stringValue(item.id),
+    name: stringValue(item.name, 'Unnamed sensor'),
+    lifecycle: stringValue(item.lifecycle, 'unknown'),
+    siteId: stringValue(item.site_id),
+    utilityAccountId: optionalString(item.utility_account_id),
+    measurementRole: stringValue(item.measurement_role, 'unknown'),
+    circuitId: optionalString(item.circuit_id),
+    circuitName: optionalString(item.circuit_name),
+    circuitRole: optionalString(item.circuit_role),
+    splitPhaseGroup: optionalString(item.split_phase_group),
+    wholeAccountReason: stringValue(item.whole_account_reason, 'wrong_measurement_role'),
+    serviceLegReason: stringValue(item.service_leg_reason, 'wrong_measurement_role'),
+  })
+  const invalidDevices = objectList(source.invalid_devices).map((item) => ({
+    deviceId: stringValue(item.device_id),
+    name: optionalString(item.name),
+    reason: stringValue(item.reason, 'stale_reference'),
+  }))
   return {
     configured: booleanValue(source.configured),
     authorityType: optionalString(source.authority_type),
@@ -656,6 +686,13 @@ export function adaptUsageAuthority(value: unknown): UsageAuthority {
     deviceIds: stringList(source.device_ids),
     revision: numberValue(source.revision),
     updatedAt: optionalString(source.updated_at),
+    validDeviceIds: stringList(source.valid_device_ids),
+    invalidDevices,
+    storedAuthorityHealthy: booleanValue(source.stored_authority_healthy),
+    accountAssignedSensors: objectList(source.account_assigned_sensors).map(adaptAuthoritySensor),
+    eligibleWholeAccountSensors: objectList(source.eligible_whole_account_sensors).map(adaptAuthoritySensor),
+    eligibleServiceLegSensors: objectList(source.eligible_service_leg_sensors).map(adaptAuthoritySensor),
+    recommendedRepair: stringValue(source.recommended_repair, 'Review the current sensor selection.'),
   }
 }
 

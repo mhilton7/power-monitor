@@ -23,6 +23,7 @@ from app.bills.extraction import (
 from app.db.models import (
     AccountUsageAuthority,
     AuditEvent,
+    Circuit,
     Device,
     ManualAccountUsage,
     NormalizedInterval,
@@ -507,9 +508,17 @@ async def test_complete_bill_api_workflow_is_reviewed_separate_and_private(
 
     # The retained 951 kWh on the reviewed bill must not seed tier progress.
     # A 100 kWh sensor interval is the only calculation input.
+    main_circuit = Circuit(
+        site_id=site["id"],
+        name="Whole Home Main",
+        measurement_role="main",
+    )
+    session.add(main_circuit)
+    await session.flush()
     device = Device(
         site_id=site["id"],
         utility_account_id=account["id"],
+        circuit_id=main_circuit.id,
         hardware_id="bill-boundary-whole-home-sensor",
         name="Whole Home",
         measurement_role="main",

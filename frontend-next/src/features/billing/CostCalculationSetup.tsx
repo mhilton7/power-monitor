@@ -90,32 +90,58 @@ function AuthorityEditor({
 }) {
   const client = useQueryClient()
   const assignedSensors = useMemo(
-    () => sensors.filter((sensor) => sensor.utilityAccountId === service.id),
-    [sensors, service.id],
+    () => {
+      const assignedActiveIds = new Set(
+        authority?.accountAssignedSensors
+          .filter((sensor) => sensor.lifecycle === 'active')
+          .map((sensor) => sensor.id) ?? [],
+      )
+      return sensors.filter((sensor) => (
+        assignedActiveIds.size > 0
+          ? assignedActiveIds.has(sensor.id)
+          : sensor.utilityAccountId === service.id
+      ))
+    },
+    [authority?.accountAssignedSensors, sensors, service.id],
   )
-  const serviceLegSensors = useMemo(
-    () => assignedSensors.filter((sensor) => sensor.measurementRole === 'service-leg'),
-    [assignedSensors],
+  const eligibleWholeAccountIds = useMemo(
+    () => new Set(authority?.eligibleWholeAccountSensors.map((sensor) => sensor.id) ?? []),
+    [authority?.eligibleWholeAccountSensors],
   )
+  const eligibleServiceLegIds = useMemo(
+    () => new Set(authority?.eligibleServiceLegSensors.map((sensor) => sensor.id) ?? []),
+    [authority?.eligibleServiceLegSensors],
+  )
+  const serviceLegSensors = assignedSensors.filter((sensor) => eligibleServiceLegIds.has(sensor.id))
   const [mode, setMode] = useState<AuthorityMode>(
     authority?.authorityType
       ? supportedMode(authority.authorityType)
-      : serviceLegSensors.length === 2
+      : eligibleServiceLegIds.size === 2
         ? 'service_leg_pair'
         : 'whole_account_meter',
   )
+  const initialEligibleIds = mode === 'whole_account_meter'
+    ? eligibleWholeAccountIds
+    : eligibleServiceLegIds
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>(
     authority?.deviceIds.length
-      ? authority.deviceIds
+      ? authority.deviceIds.filter((id) => initialEligibleIds.has(id))
       : serviceLegSensors.length === 2
         ? serviceLegSensors.map((sensor) => sensor.id)
-        : assignedSensors.slice(0, 1).map((sensor) => sensor.id),
+        : assignedSensors
+            .filter((sensor) => eligibleWholeAccountIds.has(sensor.id))
+            .slice(0, 1)
+            .map((sensor) => sensor.id),
   )
   const [notice, setNotice] = useState('')
 
+  const eligibleIds = mode === 'whole_account_meter'
+    ? eligibleWholeAccountIds
+    : eligibleServiceLegIds
+  const sanitizedSelectedDeviceIds = selectedDeviceIds.filter((id) => eligibleIds.has(id))
   const validSelection = mode === 'whole_account_meter'
-    ? selectedDeviceIds.length === 1
-    : selectedDeviceIds.length === 2
+    ? sanitizedSelectedDeviceIds.length === 1
+    : sanitizedSelectedDeviceIds.length === 2
 
   const saveAndRecalculate = useMutation({
     mutationFn: async () => {
@@ -125,11 +151,13 @@ function AuthorityEditor({
           revision: authority?.configured ? authority.revision : null,
           authority_type: mode,
           aggregate_set_id: null,
-          device_ids: selectedDeviceIds,
+          device_ids: sanitizedSelectedDeviceIds,
           source_reference: null,
           confidence: 'high',
           complete_account: true,
           calculation_role: 'sensor_measurements',
+          reason: 'Reviewed current complete-service sensor topology',
+          idempotency_key: crypto.randomUUID(),
         }),
       )
       return request(
@@ -204,13 +232,17 @@ function AuthorityEditor({
             onChange={(event) => {
               const nextMode = event.target.value as AuthorityMode
               setMode(nextMode)
-              if (nextMode === 'whole_account_meter' && selectedDeviceIds.length > 1) {
-                setSelectedDeviceIds(selectedDeviceIds.slice(0, 1))
-              } else if (nextMode === 'service_leg_pair') {
+              const nextEligibleIds = nextMode === 'whole_account_meter'
+                ? eligibleWholeAccountIds
+                : eligibleServiceLegIds
+              const retained = selectedDeviceIds.filter((id) => nextEligibleIds.has(id))
+              if (nextMode === 'whole_account_meter') {
+                setSelectedDeviceIds(retained.slice(0, 1))
+              } else {
                 setSelectedDeviceIds(
-                  serviceLegSensors.length >= 2
-                    ? serviceLegSensors.slice(0, 2).map((sensor) => sensor.id)
-                    : selectedDeviceIds.slice(0, 2),
+                  retained.length > 0
+                    ? retained.slice(0, 2)
+                    : serviceLegSensors.slice(0, 2).map((sensor) => sensor.id),
                 )
               }
             }}
@@ -223,6 +255,11 @@ function AuthorityEditor({
             <legend>{mode === 'whole_account_meter' ? 'Whole-home sensor' : 'Service-leg sensors'}</legend>
             {assignedSensors.length ? assignedSensors.map((sensor) => {
               const selected = selectedDeviceIds.includes(sensor.id)
+              const eligible = eligibleIds.has(sensor.id)
+              const eligibility = authority?.accountAssignedSensors.find((item) => item.id === sensor.id)
+              const eligibilityReason = mode === 'whole_account_meter'
+                ? eligibility?.wholeAccountReason
+                : eligibility?.serviceLegReason
               return (
                 <label className="choice-card" key={sensor.id}>
                   <input
@@ -230,9 +267,10 @@ function AuthorityEditor({
                     name="usage-authority-sensors"
                     checked={selected}
                     disabled={
-                      mode === 'service_leg_pair'
-                      && !selected
-                      && selectedDeviceIds.length >= 2
+                      !eligible
+                      || (mode === 'service_leg_pair'
+                        && !selected
+                        && sanitizedSelectedDeviceIds.length >= 2)
                     }
                     onChange={() => {
                       setSelectedDeviceIds(
@@ -246,7 +284,10 @@ function AuthorityEditor({
                   />
                   <span>
                     <strong>{sensor.name}</strong>
-                    <small>{sensor.monitoredCircuit} · {statusLabel(sensor.measurementRole)}</small>
+                    <small>
+                      {sensor.monitoredCircuit} · {statusLabel(sensor.measurementRole)}
+                      {!eligible && eligibilityReason ? ` · ${statusLabel(eligibilityReason)}` : ''}
+                    </small>
                   </span>
                 </label>
               )
@@ -262,6 +303,13 @@ function AuthorityEditor({
           Usage source needs attention. Select {mode === 'whole_account_meter'
             ? 'one sensor that measures the complete service'
             : 'exactly two non-overlapping service-leg sensors'} to calculate tiered costs.
+        </InlineNotice>
+      )}
+      {Boolean(authority?.invalidDevices.length) && (
+        <InlineNotice tone="warning">
+          The saved usage source references a sensor that is no longer active, assigned,
+          or eligible. Choose the current sensors and save to repair the configuration.
+          {' '}{authority?.invalidDevices.map((item) => item.name).filter(Boolean).join(', ')}
         </InlineNotice>
       )}
       {authority?.configured && authority.calculationRole !== 'sensor_measurements' && (

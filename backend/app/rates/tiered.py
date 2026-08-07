@@ -32,6 +32,8 @@ from app.db.models import (
     BillingCycle,
     CycleTierSummary,
     Device,
+    DeviceCapability,
+    DeviceHeartbeat,
     ManualAccountUsage,
     NormalizedInterval,
     RateAssignment,
@@ -59,6 +61,7 @@ class AuthoritativeInterval:
     start: datetime
     end: datetime
     energy_kwh: Decimal
+    device_id: str | None = None
     quality_flags: tuple[str, ...] = ()
     import_id: str | None = None
 
@@ -156,6 +159,20 @@ async def _authority_device_ids(
     session: AsyncSession, account: UtilityAccount, authority: AccountUsageAuthority
 ) -> tuple[list[str], list[str]]:
     warnings: list[str] = []
+    if authority.authority_type in {"whole_account_meter", "service_leg_pair"}:
+        from app.usage_authority import authority_reconciliation_plan
+
+        plan = await authority_reconciliation_plan(session, account, authority)
+        if not plan["stored_authority_healthy"]:
+            invalid = plan["invalid_devices"]
+            if invalid:
+                for item in invalid:
+                    name = item.get("name") or item["device_id"]
+                    warnings.append(f"{name} is not eligible: {item['reason']}.")
+            else:
+                warnings.append(plan["recommended_repair"])
+            return [], warnings
+        return list(plan["valid_device_ids"]), warnings
     if authority.authority_type == "complete_site_aggregate":
         aggregate = (
             await session.get(AggregateSet, authority.aggregate_set_id)
@@ -247,6 +264,7 @@ async def _monitored_intervals(
         result.append(
             AuthoritativeInterval(
                 interval_id=normalized.id,
+                device_id=normalized.device_id,
                 start=left,
                 end=right,
                 energy_kwh=(
@@ -259,6 +277,39 @@ async def _monitored_intervals(
             )
         )
     return result
+
+
+async def _missing_sensor_warnings(
+    session: AsyncSession,
+    device_ids: list[str],
+    reporting_ids: set[str],
+) -> list[str]:
+    warnings: list[str] = []
+    devices = {
+        device.id: device
+        for device in await session.scalars(select(Device).where(Device.id.in_(device_ids)))
+    }
+    for device_id in sorted(set(device_ids) - reporting_ids):
+        device = devices.get(device_id)
+        name = device.name if device is not None else device_id
+        heartbeat = await session.scalar(
+            select(DeviceHeartbeat)
+            .where(DeviceHeartbeat.device_id == device_id)
+            .order_by(DeviceHeartbeat.received_at.desc())
+            .limit(1)
+        )
+        capability = await session.get(DeviceCapability, device_id)
+        if heartbeat is None:
+            warnings.append(f"Waiting for a signed heartbeat and accepted readings from {name}.")
+        elif not heartbeat.pzem_ok:
+            warnings.append(
+                f"{name} PZEM meter is not returning valid samples ({heartbeat.pzem_status})."
+            )
+        elif capability is not None and capability.sd_required and not heartbeat.sd_ok:
+            warnings.append(f"{name} microSD is not writable ({heartbeat.sd_status}).")
+        else:
+            warnings.append(f"Waiting for accepted readings from {name}.")
+    return warnings
 
 
 def _parse_imported_intervals(
@@ -505,6 +556,26 @@ async def calculate_cycle_tier_status(
         # Partial circuits are priced with explicit account context but never added
         # to the account-total tier cursor.
         intervals = []
+    if usage_source == SENSOR_MEASUREMENTS and device_ids:
+        reporting_ids = {item.device_id for item in intervals if item.device_id is not None}
+        if reporting_ids != set(device_ids):
+            hardware_warnings = await _missing_sensor_warnings(session, device_ids, reporting_ids)
+            result = _unavailable_status(
+                account,
+                cycle,
+                authority_view,
+                hardware_warnings[0],
+            )
+            result["warnings"] = [
+                *hardware_warnings,
+                "Whole-account usage is incomplete; partial sensor evidence is not "
+                "used to guess tier progress.",
+            ]
+            result["partial_monitored_usage_kwh"] = str(
+                sum((item.energy_kwh for item in intervals), ZERO)
+            )
+            result["partial_reporting_device_ids"] = sorted(reporting_ids)
+            return result
     if (
         authority.authority_type
         in {

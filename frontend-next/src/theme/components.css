@@ -923,6 +923,12 @@ tbody th { font-weight: 700; }
 .sensor-electrical-metric dd { margin: 0; color: var(--text); font-size: .86rem; font-weight: 780; line-height: 1.25; }
 .sensor-electrical-metric dd.invalid { color: var(--danger); }
 .sensor-electrical-metric dd.unavailable { color: var(--muted); }
+.sensor-hardware-strip { display: flex; flex-wrap: wrap; gap: .3rem .8rem; margin: 0; color: var(--muted); font-size: .68rem; }
+.sensor-hardware-strip > div { display: inline-flex; gap: .25rem; }
+.sensor-hardware-strip dt { font-weight: 750; }
+.sensor-hardware-strip dd { margin: 0; }
+.sensor-hardware-strip [data-state="healthy"] dd { color: var(--success); }
+.sensor-hardware-strip [data-state="fault"] dd { color: var(--danger); }
 .sensor-peek .status-dot { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sensor-health-card > .surface-header { align-items: flex-start; flex-direction: row; }
 .home-side-stack .surface-header .text-link { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .3rem; white-space: nowrap; }

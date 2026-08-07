@@ -1228,6 +1228,7 @@ async def list_devices(
                 "circuit_id": device.circuit_id,
                 "circuit_name": circuit.name if circuit else None,
                 "connection_mode": device.connection_mode,
+                "protocol_version": device.protocol_version,
                 "measurement_role": device.measurement_role,
                 "cost_scope": device.cost_scope,
                 "included_in_default": device.include_in_default_site_total,
@@ -1265,7 +1266,13 @@ async def list_devices(
                 "previous_outage_reason": measurement.previous_outage_reason,
                 "rssi_dbm": heartbeat.rssi_dbm if heartbeat else None,
                 "pzem_ok": heartbeat.pzem_ok if heartbeat else None,
+                "pzem_status": heartbeat.pzem_status if heartbeat else None,
+                "pzem_details": heartbeat.pzem_details if heartbeat else None,
                 "sd_ok": heartbeat.sd_ok if heartbeat else None,
+                "sd_status": heartbeat.sd_status if heartbeat else None,
+                "sd_details": heartbeat.sd_details if heartbeat else None,
+                "card_generation": heartbeat.card_generation if heartbeat else None,
+                "current_energy_wh": heartbeat.current_energy_wh if heartbeat else None,
                 "time_trusted": heartbeat.time_trusted if heartbeat else None,
                 "backlog": (
                     max(0, cursor.maximum_seen_sequence - cursor.highest_contiguous_sequence)

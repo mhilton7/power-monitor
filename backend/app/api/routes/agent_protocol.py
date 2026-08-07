@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
+from ipaddress import IPv4Address
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 from sqlalchemy import select, update
 
 from app.api.deps import AppSettings, DbSession, audit_event
@@ -75,7 +76,7 @@ def _headless_capability_features(
     """Merge signed heartbeat claims without discarding enrollment evidence."""
 
     features = dict(capability.features or {}) if capability is not None else {}
-    reset_capability = payload.capabilities.get("data_reset", {})
+    reset_capability = payload.capabilities.data_reset.model_dump(mode="json")
     features.update(
         {
             "agent_protocol": AGENT_PROTOCOL,
@@ -85,17 +86,9 @@ def _headless_capability_features(
             "runtime_http_listener": False,
         }
     )
-    ota_claim = payload.capabilities.get("ota")
-    if isinstance(ota_claim, dict):
-        try:
-            features["ota"] = DeviceOtaCapability.model_validate(ota_claim).model_dump(mode="json")
-        except ValueError as exc:
-            raise ProblemError(
-                422,
-                "Capability evidence invalid",
-                "The signed OTA capability claim is invalid",
-                "ota_capability_invalid",
-            ) from exc
+    ota_claim = payload.capabilities.ota
+    if isinstance(ota_claim, DeviceOtaCapability):
+        features["ota"] = ota_claim.model_dump(mode="json")
     elif ota_claim is True and "ota" not in features:
         # Firmware 2.0.0-2.0.3 advertised the complete capability at
         # enrollment but reduced the same signed heartbeat claim to `true`.
@@ -111,6 +104,164 @@ class AgentModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AgentWifi(AgentModel):
+    connected: StrictBool
+    ip_address: IPv4Address | None = None
+    rssi_dbm: int | None = Field(default=None, ge=-127, le=0)
+    network_identity: str | None = Field(default=None, max_length=64)
+    disconnect_reason: str | None = Field(default=None, max_length=64)
+    connection_state: str = Field(
+        default="connected", min_length=1, max_length=32, pattern=r"^[a-z0-9_]+$"
+    )
+
+
+class AgentLiveMeasurement(AgentModel):
+    measured_at: datetime | None
+    monotonic_ms: int | None = Field(default=None, ge=0, le=2**63 - 1)
+    voltage_v: Decimal = Field(ge=0, le=300)
+    current_a: Decimal = Field(ge=0, le=1000)
+    power_w: Decimal | None = Field(default=None, ge=0, le=300000)
+    power_factor: Decimal = Field(ge=0, le=1)
+    frequency_hz: Decimal = Field(ge=40, le=70)
+    energy_wh: Decimal = Field(ge=0)
+    watts: Decimal | None = Field(default=None, ge=0, le=300000, exclude=True)
+
+    @model_validator(mode="after")
+    def canonicalize_legacy_power_alias(self) -> AgentLiveMeasurement:
+        if self.power_w is None and self.watts is None:
+            raise ValueError("power_w is required")
+        if self.power_w is not None and self.watts is not None and self.power_w != self.watts:
+            raise ValueError("power_w and legacy watts disagree")
+        if self.power_w is None:
+            self.power_w = self.watts
+        return self
+
+
+class AgentPzemDetails(AgentModel):
+    initialized: StrictBool | None = None
+    responding: StrictBool | None = None
+    uart_port: int | None = Field(default=None, ge=0)
+    sample_valid: StrictBool | None = None
+    last_valid_sample_at: datetime | None = None
+    consecutive_failures: int = Field(default=0, ge=0)
+    last_error: str | None = Field(default=None, max_length=80, pattern=r"^[a-z0-9_]+$")
+    last_error_code: int | None = Field(default=None, ge=0)
+
+
+class AgentPzemHealth(AgentModel):
+    ok: StrictBool
+    status: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_]+$")
+    error_count: int = Field(default=0, ge=0)
+    details: AgentPzemDetails = Field(default_factory=AgentPzemDetails)
+
+    @model_validator(mode="after")
+    def validate_health_consistency(self) -> AgentPzemHealth:
+        if self.ok != (self.status == "healthy"):
+            raise ValueError("PZEM ok must agree with healthy status")
+        if self.details.sample_valid is not None and self.details.sample_valid != self.ok:
+            raise ValueError("PZEM sample_valid must agree with ok")
+        return self
+
+
+class AgentSdDetails(AgentModel):
+    mounted: StrictBool | None = None
+    writable: StrictBool | None = None
+    card_present: StrictBool | None = None
+    card_type: str | None = Field(default=None, max_length=32)
+    capacity_bytes: int = Field(default=0, ge=0)
+    used_bytes: int = Field(default=0, ge=0)
+    free_percent: Decimal | None = Field(default=None, ge=0, le=100)
+    index_valid: StrictBool | None = None
+    segment_count: int = Field(default=0, ge=0)
+    recovery_state: str | None = Field(default=None, max_length=64, pattern=r"^[a-z0-9_]+$")
+    last_error: str | None = Field(default=None, max_length=80, pattern=r"^[a-z0-9_]+$")
+    last_error_code: int | None = None
+    mount_attempts: int = Field(default=0, ge=0)
+    spi_hz: int = Field(default=0, ge=0)
+    total_bytes: int = Field(default=0, ge=0)
+    free_bytes: int = Field(default=0, ge=0)
+    card_generation: str | None = Field(default=None, max_length=32)
+    format_attempted: StrictBool = False
+
+
+class AgentSdHealth(AgentModel):
+    ok: StrictBool
+    status: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_]+$")
+    error_count: int = Field(default=0, ge=0)
+    details: AgentSdDetails = Field(default_factory=AgentSdDetails)
+    # 2.0.0-2.0.3 placed this evidence at the health-object root.
+    format_attempted: StrictBool | None = Field(default=None, exclude=True)
+
+    @model_validator(mode="after")
+    def validate_health_consistency(self) -> AgentSdHealth:
+        if self.status == "healthy" and not self.ok:
+            raise ValueError("healthy SD status requires ok=true")
+        if self.ok and (self.details.mounted is False or self.details.writable is False):
+            raise ValueError("SD ok requires mounted and writable evidence")
+        return self
+
+
+class AgentSequences(AgentModel):
+    sequence_floor: int = Field(ge=0, le=SIGNED_BIGINT_MAX)
+    maximum_seen_sequence: int = Field(ge=0, le=SIGNED_BIGINT_MAX)
+    server_acknowledgement: int = Field(ge=0, le=SIGNED_BIGINT_MAX)
+    next_sequence: int = Field(ge=1, le=SIGNED_BIGINT_MAX)
+    oldest_stored_sequence: int = Field(ge=0, le=SIGNED_BIGINT_MAX)
+    newest_stored_sequence: int = Field(ge=0, le=SIGNED_BIGINT_MAX)
+    newest_syncable_sequence: int = Field(ge=0, le=SIGNED_BIGINT_MAX)
+    backlog: int = Field(ge=0, le=SIGNED_BIGINT_MAX)
+
+
+class AgentDataResetCapability(AgentModel):
+    supported: bool
+    protocol: str = Field(min_length=1, max_length=32)
+    receipt_schema: int = Field(ge=1)
+    prepare: bool = False
+    commit: bool = False
+    cancel: bool = False
+    status: bool = False
+    reboot_safe: bool = False
+    card_identity: bool = False
+    configuration_preservation: bool = False
+    configuration_preservation_version: int = Field(default=1, ge=1)
+    reset_journal_version: int = Field(default=1, ge=1)
+
+
+class AgentStorageCapability(AgentModel):
+    present: bool
+    required: bool
+    sd_required: bool
+    durable_queue: bool
+    format_on_mount_failure: bool
+
+    @model_validator(mode="after")
+    def validate_required_claim(self) -> AgentStorageCapability:
+        if self.required != self.sd_required:
+            raise ValueError("required and sd_required must agree")
+        if self.format_on_mount_failure:
+            raise ValueError("automatic formatting is not supported")
+        return self
+
+
+class AgentCapabilities(AgentModel):
+    data_reset: AgentDataResetCapability
+    ota: DeviceOtaCapability | bool
+    storage: AgentStorageCapability | None = None
+    outbound_commands: bool = True
+
+
+class AgentResources(AgentModel):
+    free_heap_bytes: int = Field(ge=0)
+    largest_free_block_bytes: int = Field(default=0, ge=0)
+
+
+class AgentTaskStackMargins(AgentModel):
+    measurement: int = Field(default=0, ge=0)
+    storage: int = Field(default=0, ge=0)
+    network: int = Field(default=0, ge=0)
+    supervisor: int = Field(default=0, ge=0)
+
+
 class AgentHeartbeat(AgentModel):
     protocol: Literal["pm-agent/2.0.0"]
     device_id: str = Field(min_length=36, max_length=36)
@@ -119,21 +270,28 @@ class AgentHeartbeat(AgentModel):
     build_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     uptime_ms: int = Field(ge=0, le=2**63 - 1)
     reset_reason: str = Field(min_length=1, max_length=64)
-    wifi: dict[str, Any] = Field(default_factory=dict)
-    latest: dict[str, Any] | None = None
-    pzem: dict[str, Any] = Field(default_factory=dict)
-    sd: dict[str, Any] = Field(default_factory=dict)
-    sequences: dict[str, int]
+    wifi: AgentWifi
+    latest: AgentLiveMeasurement | None = None
+    pzem: AgentPzemHealth
+    sd: AgentSdHealth
+    sequences: AgentSequences
     reset_projection: dict[str, Any]
-    capabilities: dict[str, Any]
+    capabilities: AgentCapabilities
     configuration_revision: int = Field(ge=0)
     reset_generation: int = Field(ge=0)
     reset_operation: dict[str, Any] = Field(default_factory=dict)
-    resources: dict[str, Any] = Field(default_factory=dict)
-    task_stack_margins: dict[str, int] = Field(default_factory=dict)
+    resources: AgentResources
+    task_stack_margins: AgentTaskStackMargins
     last_command_result: dict[str, Any] | None = None
     ota: dict[str, Any] = Field(default_factory=dict)
     time_trusted: bool = False
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    """Normalize optional OTA result counters, never heartbeat sequence evidence."""
+
+    valid = isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    return value if valid else default
 
 
 class AgentReadingBatch(AgentModel):
@@ -163,11 +321,6 @@ class AgentEventBatch(AgentModel):
     data_generation: int = Field(default=0, ge=0)
     first_stored_event_sequence: int | None = Field(default=None, ge=1, le=SIGNED_BIGINT_MAX)
     events: list[DeviceEventInput] = Field(min_length=1, max_length=100)
-
-
-def _safe_int(value: Any, default: int = 0) -> int:
-    valid = isinstance(value, int) and not isinstance(value, bool) and value >= 0
-    return value if valid else default
 
 
 def _advance_headless_deployment(
@@ -521,13 +674,13 @@ async def heartbeat(
     _assert_identity(payload.device_id, payload.boot_id, agent)
     now = datetime.now(UTC)
     sequences = payload.sequences
-    acknowledgement = _safe_int(sequences.get("server_acknowledgement"))
-    maximum_seen = _safe_int(sequences.get("maximum_seen_sequence"))
-    floor = _safe_int(sequences.get("sequence_floor"))
-    next_sequence = _safe_int(sequences.get("next_sequence"), 1)
-    newest_stored = _safe_int(sequences.get("newest_stored_sequence"))
-    newest_syncable = _safe_int(sequences.get("newest_syncable_sequence"))
-    oldest_stored = _safe_int(sequences.get("oldest_stored_sequence"))
+    acknowledgement = sequences.server_acknowledgement
+    maximum_seen = sequences.maximum_seen_sequence
+    floor = sequences.sequence_floor
+    next_sequence = sequences.next_sequence
+    newest_stored = sequences.newest_stored_sequence
+    newest_syncable = sequences.newest_syncable_sequence
+    oldest_stored = sequences.oldest_stored_sequence
     if next_sequence <= max(floor, maximum_seen, acknowledgement, newest_stored, newest_syncable):
         raise ProblemError(
             422,
@@ -558,16 +711,10 @@ async def heartbeat(
         (data_state is not None and data_state.reset_required_on_reconnect)
         or payload.reset_generation < required_generation
     )
-    latest_watts: Decimal | None = None
-    if payload.latest is not None:
-        try:
-            latest_watts = Decimal(str(payload.latest.get("watts")))
-        except (InvalidOperation, TypeError):
-            latest_watts = None
-    rssi = payload.wifi.get("rssi_dbm")
-    rssi_value = rssi if isinstance(rssi, int) and -127 <= rssi <= 0 else None
-    pzem_ok = payload.pzem.get("ok") is True
-    sd_ok = payload.sd.get("ok") is True
+    latest_watts = payload.latest.power_w if payload.latest is not None else None
+    rssi_value = payload.wifi.rssi_dbm
+    pzem_ok = payload.pzem.ok
+    sd_ok = payload.sd.ok
     backlog = max(0, newest_syncable - server_ack)
     heartbeat_payload = payload.model_dump(mode="json")
     heartbeat_payload.update(
@@ -586,12 +733,22 @@ async def heartbeat(
             device_id=agent.device.id,
             boot_id=payload.boot_id,
             received_at=now,
-            device_time=None,
+            device_time=payload.latest.measured_at if payload.latest is not None else None,
             source_ip=getattr(request.state, "device_source_ip", None),
             current_watts=latest_watts,
+            current_voltage_volts=(payload.latest.voltage_v if payload.latest else None),
+            current_amps=(payload.latest.current_a if payload.latest else None),
+            current_power_factor=(payload.latest.power_factor if payload.latest else None),
+            current_frequency_hz=(payload.latest.frequency_hz if payload.latest else None),
+            current_energy_wh=(payload.latest.energy_wh if payload.latest else None),
             rssi_dbm=rssi_value,
             pzem_ok=pzem_ok,
+            pzem_status=payload.pzem.status,
+            pzem_details=payload.pzem.details.model_dump(mode="json"),
             sd_ok=sd_ok,
+            sd_status=payload.sd.status,
+            sd_details=payload.sd.details.model_dump(mode="json"),
+            card_generation=payload.sd.details.card_generation,
             time_trusted=payload.time_trusted,
             data_generation=payload.reset_generation,
             newest_sequence=newest_stored,
@@ -607,21 +764,53 @@ async def heartbeat(
     agent.device.last_seen_at = now
     capability = await session.get(DeviceCapability, agent.device.id)
     capability_features = _headless_capability_features(capability, payload)
+    signed_storage = payload.capabilities.storage
+    signed_sd_required = (
+        signed_storage.sd_required
+        if signed_storage is not None
+        else bool(capability.sd_required)
+        if capability is not None
+        else False
+    )
     if capability is None:
         session.add(
             DeviceCapability(
                 device_id=agent.device.id,
                 hardware_target="esp32s3",
                 pzem_model="PZEM-004T-v3",
-                sd_required=False,
+                sd_required=signed_sd_required,
                 features=capability_features,
                 reported_at=now,
             )
         )
     else:
-        capability.sd_required = False
+        capability.sd_required = signed_sd_required
         capability.features = capability_features
         capability.reported_at = now
+    if payload.latest is not None and payload.latest.watts is not None:
+        deprecation_event_id = f"{payload.boot_id}:legacy-heartbeat-watts"
+        deprecation_recorded = await session.scalar(
+            select(DeviceEvent.id).where(
+                DeviceEvent.device_id == agent.device.id,
+                DeviceEvent.event_id == deprecation_event_id,
+            )
+        )
+        if deprecation_recorded is None:
+            session.add(
+                DeviceEvent(
+                    device_id=agent.device.id,
+                    event_id=deprecation_event_id,
+                    event_sequence=None,
+                    occurred_at=now,
+                    received_at=now,
+                    category="protocol_deprecation",
+                    severity="info",
+                    evidence={
+                        "code": "agent_latest_watts_alias_deprecated",
+                        "replacement": "power_w",
+                    },
+                )
+            )
     await _record_headless_ota_heartbeat(session, payload, settings, now)
     command = await _next_command(session, agent.device.id, now, settings)
     await session.commit()

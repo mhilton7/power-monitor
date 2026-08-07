@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from fastapi import APIRouter, Request
@@ -43,6 +43,12 @@ from app.schemas import (
     ManualAccountUsageWrite,
     ReconciliationAdjustmentWrite,
     UtilityUsageImportWrite,
+)
+from app.usage_authority import (
+    AuthorityApplyRequest,
+    SensorAuthorityMode,
+    apply_sensor_usage_authority,
+    authority_reconciliation_plan,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["tiered rates and billing cycles"])
@@ -111,8 +117,10 @@ async def get_usage_authority(
     account_id: str, principal: Viewer, session: DbSession
 ) -> dict[str, Any]:
     _permission(principal, "utility_accounts.view")
-    await _account(session, principal, account_id)
-    return authority_payload(await usage_authority(session, account_id))
+    account = await _account(session, principal, account_id)
+    return await authority_reconciliation_plan(
+        session, account, await usage_authority(session, account_id)
+    )
 
 
 @router.put("/admin/utility-accounts/{account_id}/usage-authority")
@@ -145,6 +153,42 @@ async def put_usage_authority(
                 "Tier progression requires an aggregate explicitly scoped to the full account",
                 "usage_authority_partial_aggregate",
             )
+    if payload.authority_type in {"whole_account_meter", "service_leg_pair"}:
+        canonical_selection = json.dumps(
+            {
+                "account_id": account.id,
+                "authority_type": payload.authority_type,
+                "device_ids": sorted(payload.device_ids),
+                "revision": payload.revision,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        idempotency_key = payload.idempotency_key or (
+            "usage-authority:" + hashlib.sha256(canonical_selection.encode()).hexdigest()
+        )
+        reconciled_authority, plan = await apply_sensor_usage_authority(
+            session,
+            account,
+            AuthorityApplyRequest(
+                mode=cast(SensorAuthorityMode, payload.authority_type),
+                device_ids=tuple(payload.device_ids),
+                expected_revision=payload.revision,
+                actor_id=principal.user.id,
+                reason=payload.reason,
+                idempotency_key=idempotency_key,
+                source_ip=request.client.host if request.client else None,
+            ),
+        )
+        await session.commit()
+        logger.info(
+            "billing.usage_source_reconciled",
+            account_id=account.id,
+            authority_type=reconciled_authority.authority_type,
+            sensor_count=len(reconciled_authority.device_ids),
+            revision=reconciled_authority.revision,
+        )
+        return plan
     if payload.device_ids:
         valid_count = int(
             await session.scalar(

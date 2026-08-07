@@ -109,7 +109,14 @@ export interface SensorSummary {
   previousOutageReason?: string
   invalidMetrics: string[]
   lastSeenAt?: string
+  pzemHealthy?: boolean
+  pzemStatus?: string
+  pzemDetails?: Record<string, unknown>
   storageHealthy?: boolean
+  storageStatus?: string
+  storageDetails?: Record<string, unknown>
+  cardGeneration?: string
+  currentEnergyWh?: string
   wifiDbm?: number
     firmware?: string
     monitoredCircuit: string
@@ -351,6 +358,28 @@ export interface UsageAuthority {
   deviceIds: string[]
   revision: number
   updatedAt?: string
+  validDeviceIds: string[]
+  invalidDevices: Array<{ deviceId: string; name?: string; reason: string }>
+  storedAuthorityHealthy: boolean
+  accountAssignedSensors: UsageAuthoritySensor[]
+  eligibleWholeAccountSensors: UsageAuthoritySensor[]
+  eligibleServiceLegSensors: UsageAuthoritySensor[]
+  recommendedRepair: string
+}
+
+export interface UsageAuthoritySensor {
+  id: string
+  name: string
+  lifecycle: string
+  siteId: string
+  utilityAccountId?: string
+  measurementRole: string
+  circuitId?: string
+  circuitName?: string
+  circuitRole?: string
+  splitPhaseGroup?: string
+  wholeAccountReason: string
+  serviceLegReason: string
 }
 
 export interface AlertSummary {

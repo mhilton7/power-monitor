@@ -1,6 +1,7 @@
 import type { SensorSummary } from '../../types/models'
 import {
   current,
+  energy,
   frequency,
   power,
   powerFactor,
@@ -57,6 +58,14 @@ export function SensorElectricalStrip({ sensor }: { sensor: SensorSummary }) {
       compactLabel: 'PF',
       rawValue: sensor.powerFactor,
       format: powerFactor,
+    },
+    {
+      key: 'energy',
+      invalidKey: 'energy_wh',
+      label: 'Meter energy',
+      compactLabel: 'Energy',
+      rawValue: sensor.currentEnergyWh,
+      format: (value) => energy(value === undefined ? undefined : Number(value) / 1000),
     },
   ]
 

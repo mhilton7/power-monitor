@@ -577,6 +577,8 @@ class AccountUsageAuthorityWrite(ApiModel):
     complete_account: bool = False
     calculation_role: Literal["sensor_measurements", "advanced_external_correction"] | None = None
     confirmation: Literal["ALTER TIER PROGRESSION"] | None = None
+    reason: str = Field(default="Reviewed usage-authority selection", min_length=8, max_length=500)
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
 
     @model_validator(mode="after")
     def required_source(self) -> AccountUsageAuthorityWrite:
@@ -893,6 +895,7 @@ class DeviceListItem(ApiModel):
     circuit_id: str | None
     circuit_name: str | None
     connection_mode: str
+    protocol_version: str
     measurement_role: str
     cost_scope: str
     included_in_default: bool
@@ -938,7 +941,13 @@ class DeviceListItem(ApiModel):
     previous_outage_reason: str | None
     rssi_dbm: int | None
     pzem_ok: bool | None
+    pzem_status: str | None
+    pzem_details: dict[str, Any] | None
     sd_ok: bool | None
+    sd_status: str | None
+    sd_details: dict[str, Any] | None
+    card_generation: str | None
+    current_energy_wh: Decimal | None
     time_trusted: bool | None
     backlog: int
 

@@ -1,0 +1,36 @@
+{
+  "description": "Canonical pm-agent/2.0.0 live measurement and hardware-health serialization vector.",
+  "canonical_json_utf8": "{\"latest\":{\"current_a\":5.125,\"energy_wh\":42183,\"frequency_hz\":60,\"measured_at\":\"2026-08-06T20:00:00Z\",\"power_factor\":0.98,\"power_w\":615.25,\"voltage_v\":120.3},\"pzem\":{\"details\":{\"last_error_code\":0},\"error_count\":0,\"ok\":true,\"status\":\"healthy\"},\"sd\":{\"details\":{\"card_generation\":\"42\",\"format_attempted\":false,\"free_bytes\":30000000000,\"last_error_code\":0,\"mount_attempts\":1,\"spi_hz\":20000000,\"total_bytes\":32000000000},\"error_count\":0,\"ok\":true,\"status\":\"healthy\"}}",
+  "sha256": "ea4f207261901ad92231cafb6d67a550dac91da9cb7e8963f00d9328b161544d",
+  "value": {
+    "latest": {
+      "current_a": 5.125,
+      "energy_wh": 42183,
+      "frequency_hz": 60,
+      "measured_at": "2026-08-06T20:00:00Z",
+      "power_factor": 0.98,
+      "power_w": 615.25,
+      "voltage_v": 120.3
+    },
+    "pzem": {
+      "details": {"last_error_code": 0},
+      "error_count": 0,
+      "ok": true,
+      "status": "healthy"
+    },
+    "sd": {
+      "details": {
+        "card_generation": "42",
+        "format_attempted": false,
+        "free_bytes": 30000000000,
+        "last_error_code": 0,
+        "mount_attempts": 1,
+        "spi_hz": 20000000,
+        "total_bytes": 32000000000
+      },
+      "error_count": 0,
+      "ok": true,
+      "status": "healthy"
+    }
+  }
+}

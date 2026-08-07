@@ -1,0 +1,178 @@
+{
+  "description": "Cross-repository pm-agent/2.0.0 hardware and live-measurement compatibility cases.",
+  "cases": [
+    {
+      "name": "healthy_pzem_healthy_sd_valid_live",
+      "valid": true,
+      "latest": {
+        "measured_at": "2026-08-06T20:00:00Z",
+        "monotonic_ms": 60000,
+        "voltage_v": 120.3,
+        "current_a": 5.125,
+        "power_w": 615.25,
+        "power_factor": 0.98,
+        "frequency_hz": 60,
+        "energy_wh": 42183
+      },
+      "pzem": {
+        "ok": true,
+        "status": "healthy",
+        "error_count": 0,
+        "details": {
+          "initialized": true,
+          "responding": true,
+          "uart_port": 1,
+          "sample_valid": true,
+          "last_valid_sample_at": "2026-08-06T20:00:00Z",
+          "consecutive_failures": 0,
+          "last_error": "none",
+          "last_error_code": 0
+        }
+      },
+      "sd": {
+        "ok": true,
+        "status": "healthy",
+        "error_count": 0,
+        "details": {
+          "mounted": true,
+          "writable": true,
+          "card_present": true,
+          "card_type": "sd",
+          "capacity_bytes": 32000000000,
+          "used_bytes": 2000000000,
+          "free_percent": 93.75,
+          "index_valid": true,
+          "segment_count": 2,
+          "recovery_state": "none",
+          "last_error": "none",
+          "last_error_code": 0,
+          "mount_attempts": 1,
+          "spi_hz": 20000000,
+          "total_bytes": 32000000000,
+          "free_bytes": 30000000000,
+          "card_generation": "42",
+          "format_attempted": false
+        }
+      }
+    },
+    {
+      "name": "healthy_pzem_missing_sd",
+      "valid": true,
+      "latest": null,
+      "pzem": {"ok": true, "status": "healthy", "details": {"sample_valid": true}},
+      "sd": {
+        "ok": false,
+        "status": "not_present",
+        "details": {"mounted": false, "writable": false, "card_present": false}
+      }
+    },
+    {
+      "name": "failed_pzem_healthy_sd",
+      "valid": true,
+      "latest": null,
+      "pzem": {
+        "ok": false,
+        "status": "uart_timeout",
+        "error_count": 3,
+        "details": {"sample_valid": false, "consecutive_failures": 3, "last_error": "uart_timeout"}
+      },
+      "sd": {"ok": true, "status": "healthy", "details": {"mounted": true, "writable": true}}
+    },
+    {
+      "name": "recovering_pzem",
+      "valid": true,
+      "latest": null,
+      "pzem": {
+        "ok": false,
+        "status": "recovering",
+        "details": {"sample_valid": false, "consecutive_failures": 1, "last_error": "no_response"}
+      },
+      "sd": {"ok": true, "status": "healthy", "details": {"mounted": true, "writable": true}}
+    },
+    {
+      "name": "read_only_sd",
+      "valid": true,
+      "latest": null,
+      "pzem": {"ok": true, "status": "healthy", "details": {"sample_valid": true}},
+      "sd": {
+        "ok": false,
+        "status": "read_only",
+        "details": {"mounted": true, "writable": false, "card_present": true, "last_error": "write_protected"}
+      }
+    },
+    {
+      "name": "corrupt_sd_index_rebuilding",
+      "valid": true,
+      "latest": null,
+      "pzem": {"ok": true, "status": "healthy", "details": {"sample_valid": true}},
+      "sd": {
+        "ok": true,
+        "status": "index_rebuilding",
+        "details": {"mounted": true, "writable": true, "index_valid": false, "recovery_state": "index_rebuilding"}
+      }
+    },
+    {
+      "name": "card_full_sd",
+      "valid": true,
+      "latest": null,
+      "pzem": {"ok": true, "status": "healthy", "details": {"sample_valid": true}},
+      "sd": {
+        "ok": false,
+        "status": "card_full",
+        "details": {"mounted": true, "writable": false, "capacity_bytes": 32000000000, "free_bytes": 0, "free_percent": 0}
+      }
+    },
+    {
+      "name": "no_live_measurement",
+      "valid": true,
+      "latest": null,
+      "pzem": {"ok": false, "status": "unavailable"},
+      "sd": {"ok": false, "status": "unavailable"}
+    },
+    {
+      "name": "malformed_pzem_health",
+      "valid": false,
+      "latest": null,
+      "pzem": {"ok": "yes", "status": "healthy"},
+      "sd": {"ok": true, "status": "healthy"}
+    },
+    {
+      "name": "malformed_sd_health",
+      "valid": false,
+      "latest": null,
+      "pzem": {"ok": true, "status": "healthy"},
+      "sd": {"ok": true, "status": "healthy", "details": {"writable": "yes"}}
+    },
+    {
+      "name": "malformed_measurement_keys",
+      "valid": false,
+      "latest": {
+        "measured_at": "2026-08-06T20:00:00Z",
+        "volts": 120.3,
+        "amps": 5.125,
+        "power": 615.25,
+        "power_factor": 0.98,
+        "frequency_hz": 60,
+        "energy_wh": 42183
+      },
+      "pzem": {"ok": true, "status": "healthy"},
+      "sd": {"ok": true, "status": "healthy"}
+    },
+    {
+      "name": "legacy_watts_alias",
+      "valid": true,
+      "legacy_alias": true,
+      "latest": {
+        "measured_at": "2026-08-06T20:00:00Z",
+        "voltage_v": 120.3,
+        "current_a": 5.125,
+        "watts": 615.25,
+        "power_factor": 0.98,
+        "frequency_hz": 60,
+        "energy_wh": 42183
+      },
+      "pzem": {"ok": true, "status": "healthy"},
+      "sd": {"ok": true, "status": "healthy"}
+    }
+  ]
+}

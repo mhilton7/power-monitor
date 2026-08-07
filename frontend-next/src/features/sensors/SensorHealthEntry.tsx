@@ -42,6 +42,32 @@ export function SensorHealthEntry({
         </span>
       </header>
       <SensorElectricalStrip sensor={sensor} />
+      <dl
+        aria-label={`${sensor.name} hardware health`}
+        className="sensor-hardware-strip"
+        role="group"
+      >
+        <div data-state={subsystemState(sensor.pzemHealthy)}>
+          <dt>PZEM meter</dt>
+          <dd>{subsystemLabel(sensor.pzemHealthy, sensor.pzemStatus)}</dd>
+        </div>
+        <div data-state={subsystemState(sensor.storageHealthy)}>
+          <dt>microSD</dt>
+          <dd>{subsystemLabel(sensor.storageHealthy, sensor.storageStatus)}</dd>
+        </div>
+        <div>
+          <dt>Last heartbeat</dt>
+          <dd>
+            {sensor.heartbeatReceivedAt
+              ? <ElapsedTime
+                  timestamp={sensor.heartbeatReceivedAt}
+                  serverNow={serverNow}
+                  serverReceipt
+                />
+              : 'No signed evidence'}
+          </dd>
+        </div>
+      </dl>
       {sensor.online && sensor.previousOutageReason && (
         <p className="sensor-previous-outage">
           <strong>Previous outage:</strong> {sensor.previousOutageReason}
@@ -49,6 +75,26 @@ export function SensorHealthEntry({
       )}
     </article>
   )
+}
+
+function subsystemState(value?: boolean): 'healthy' | 'fault' | 'unknown' {
+  if (value === true) return 'healthy'
+  if (value === false) return 'fault'
+  return 'unknown'
+}
+
+function subsystemLabel(value?: boolean, status?: string): string {
+  if (status) {
+    return status
+      .split('_')
+      .map((part, index) => index === 0
+        ? `${part.charAt(0).toUpperCase()}${part.slice(1)}`
+        : part)
+      .join(' ')
+  }
+  if (value === true) return 'Healthy'
+  if (value === false) return 'Unavailable'
+  return 'No signed evidence'
 }
 
 function sensorDotState(

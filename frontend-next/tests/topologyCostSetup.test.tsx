@@ -187,6 +187,37 @@ describe('sensor topology and tier allocation setup', () => {
             confidence: 'high',
             complete_account: true,
             revision: 1,
+            valid_device_ids: ['sensor-1'],
+            invalid_devices: [],
+            stored_authority_healthy: true,
+            account_assigned_sensors: [{
+              id: 'sensor-1',
+              name: 'Indoor AC',
+              lifecycle: 'active',
+              site_id: home.id,
+              utility_account_id: service.id,
+              measurement_role: 'main',
+              circuit_id: 'main-circuit',
+              circuit_name: 'Main service',
+              circuit_role: 'main',
+              whole_account_reason: 'eligible',
+              service_leg_reason: 'wrong_measurement_role',
+            }],
+            eligible_whole_account_sensors: [{
+              id: 'sensor-1',
+              name: 'Indoor AC',
+              lifecycle: 'active',
+              site_id: home.id,
+              utility_account_id: service.id,
+              measurement_role: 'main',
+              circuit_id: 'main-circuit',
+              circuit_name: 'Main service',
+              circuit_role: 'main',
+              whole_account_reason: 'eligible',
+              service_leg_reason: 'wrong_measurement_role',
+            }],
+            eligible_service_leg_sensors: [],
+            recommended_repair: 'No authority repair is required.',
           }
         } else {
           value = {
@@ -197,6 +228,37 @@ describe('sensor topology and tier allocation setup', () => {
             confidence: 'unknown',
             complete_account: false,
             revision: 0,
+            valid_device_ids: [],
+            invalid_devices: [],
+            stored_authority_healthy: false,
+            account_assigned_sensors: [{
+              id: 'sensor-1',
+              name: 'Indoor AC',
+              lifecycle: 'active',
+              site_id: home.id,
+              utility_account_id: service.id,
+              measurement_role: 'main',
+              circuit_id: 'main-circuit',
+              circuit_name: 'Main service',
+              circuit_role: 'main',
+              whole_account_reason: 'eligible',
+              service_leg_reason: 'wrong_measurement_role',
+            }],
+            eligible_whole_account_sensors: [{
+              id: 'sensor-1',
+              name: 'Indoor AC',
+              lifecycle: 'active',
+              site_id: home.id,
+              utility_account_id: service.id,
+              measurement_role: 'main',
+              circuit_id: 'main-circuit',
+              circuit_name: 'Main service',
+              circuit_role: 'main',
+              whole_account_reason: 'eligible',
+              service_leg_reason: 'wrong_measurement_role',
+            }],
+            eligible_service_leg_sensors: [],
+            recommended_repair: 'Select one verified whole-account meter.',
           }
         }
       } else if (
@@ -226,7 +288,7 @@ describe('sensor topology and tier allocation setup', () => {
     renderWithClient(
       <CostCalculationSetup
         service={service}
-        sensors={[{ ...sensor, utilityAccountId: service.id }]}
+        sensors={[{ ...sensor, utilityAccountId: service.id, measurementRole: 'main' }]}
         cycle={cycle}
         onRefresh={() => Promise.resolve()}
       />,
@@ -247,5 +309,84 @@ describe('sensor topology and tier allocation setup', () => {
     expect(putIndex).toBeGreaterThanOrEqual(0)
     expect(recalculateIndex).toBeGreaterThanOrEqual(0)
     expect(putIndex).toBeLessThan(recalculateIndex)
+  })
+
+  it('does not count a stale hidden authority ID against the service-leg limit', async () => {
+    const authoritySensor = (id: string, name: string) => ({
+      id,
+      name,
+      lifecycle: 'active',
+      site_id: home.id,
+      utility_account_id: service.id,
+      measurement_role: 'service-leg',
+      circuit_id: `circuit-${id}`,
+      circuit_name: `${name} service leg`,
+      circuit_role: 'service-leg',
+      split_phase_group: 'service-main',
+      whole_account_reason: 'wrong_measurement_role',
+      service_leg_reason: 'eligible',
+    })
+    requestMock.mockImplementation((
+      path: string,
+      _options?: unknown,
+      adapter?: (value: unknown) => unknown,
+    ) => {
+      if (path !== '/api/v1/admin/utility-accounts/service-1/usage-authority') {
+        throw new Error(`Unexpected request: ${path}`)
+      }
+      const value = {
+        configured: true,
+        authority_type: 'service_leg_pair',
+        calculation_role: 'sensor_measurements',
+        device_ids: ['leg-1', 'removed-sensor'],
+        valid_device_ids: ['leg-1'],
+        invalid_devices: [{
+          device_id: 'removed-sensor',
+          name: 'Removed leg',
+          reason: 'stale_reference',
+        }],
+        stored_authority_healthy: false,
+        account_assigned_sensors: [
+          authoritySensor('leg-1', 'Leg one'),
+          authoritySensor('leg-2', 'Leg two'),
+        ],
+        eligible_whole_account_sensors: [],
+        eligible_service_leg_sensors: [
+          authoritySensor('leg-1', 'Leg one'),
+          authoritySensor('leg-2', 'Leg two'),
+        ],
+        complete_account: true,
+        confidence: 'high',
+        revision: 4,
+        recommended_repair: 'Choose the current service-leg sensors.',
+      }
+      return Promise.resolve(adapter ? adapter(value) : value)
+    })
+
+    const leg = (id: string, name: string): SensorSummary => ({
+      ...sensor,
+      id,
+      name,
+      utilityAccountId: service.id,
+      measurementRole: 'service-leg',
+      monitoredCircuit: `${name} service leg`,
+    })
+    const user = userEvent.setup()
+    renderWithClient(
+      <CostCalculationSetup
+        service={service}
+        sensors={[leg('leg-1', 'Leg one'), leg('leg-2', 'Leg two')]}
+        cycle={cycle}
+        onRefresh={() => Promise.resolve()}
+      />,
+    )
+
+    expect(await screen.findByText(/saved usage source references a sensor/i)).toBeVisible()
+    const first = screen.getByRole('checkbox', { name: /Leg one/i })
+    const second = screen.getByRole('checkbox', { name: /Leg two/i })
+    expect(first).toBeChecked()
+    expect(second).toBeEnabled()
+    await user.click(second)
+    expect(screen.getByRole('button', { name: 'Save and recalculate' })).toBeEnabled()
   })
 })

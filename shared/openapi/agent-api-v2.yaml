@@ -26,18 +26,133 @@ components:
         build_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
         uptime_ms: {type: integer, minimum: 0, maximum: 9223372036854775807}
         reset_reason: {type: string, minLength: 1, maxLength: 64}
-        wifi: {type: object}
-        latest: {type: [object, 'null']}
-        pzem: {type: object}
-        sd: {type: object}
-        sequences: {type: object}
+        wifi:
+          type: object
+          additionalProperties: false
+          required: [connected]
+          properties:
+            connected: {type: boolean}
+            ip_address: {type: [string, 'null'], format: ipv4}
+            rssi_dbm: {type: [integer, 'null'], minimum: -127, maximum: 0}
+            network_identity: {type: [string, 'null'], maxLength: 64}
+            disconnect_reason: {type: [string, 'null'], maxLength: 64}
+            connection_state: {type: string, pattern: '^[a-z0-9_]+$', maxLength: 32}
+        latest:
+          oneOf:
+            - {type: 'null'}
+            - type: object
+              additionalProperties: false
+              required: [measured_at, voltage_v, current_a, power_w, power_factor, frequency_hz, energy_wh]
+              properties:
+                measured_at: {type: [string, 'null'], format: date-time}
+                monotonic_ms: {type: integer, minimum: 0}
+                voltage_v: {type: number, minimum: 0, maximum: 300}
+                current_a: {type: number, minimum: 0, maximum: 1000}
+                power_w: {type: number, minimum: 0, maximum: 300000}
+                power_factor: {type: number, minimum: 0, maximum: 1}
+                frequency_hz: {type: number, minimum: 40, maximum: 70}
+                energy_wh: {type: number, minimum: 0}
+        pzem:
+          type: object
+          additionalProperties: false
+          required: [ok, status]
+          properties:
+            ok: {type: boolean}
+            status: {type: string, pattern: '^[a-z0-9_]+$', maxLength: 64}
+            error_count: {type: integer, minimum: 0}
+            details:
+              type: object
+              additionalProperties: false
+              properties:
+                initialized: {type: [boolean, 'null']}
+                responding: {type: [boolean, 'null']}
+                uart_port: {type: [integer, 'null'], minimum: 0}
+                sample_valid: {type: [boolean, 'null']}
+                last_valid_sample_at: {type: [string, 'null'], format: date-time}
+                consecutive_failures: {type: integer, minimum: 0}
+                last_error: {type: [string, 'null'], pattern: '^[a-z0-9_]+$', maxLength: 80}
+                last_error_code: {type: [integer, 'null'], minimum: 0}
+        sd:
+          type: object
+          additionalProperties: false
+          required: [ok, status]
+          properties:
+            ok: {type: boolean}
+            status: {type: string, pattern: '^[a-z0-9_]+$', maxLength: 64}
+            error_count: {type: integer, minimum: 0}
+            format_attempted: {type: boolean, deprecated: true}
+            details:
+              type: object
+              additionalProperties: false
+              properties:
+                mounted: {type: [boolean, 'null']}
+                writable: {type: [boolean, 'null']}
+                card_present: {type: [boolean, 'null']}
+                card_type: {type: [string, 'null'], maxLength: 32}
+                capacity_bytes: {type: integer, minimum: 0}
+                used_bytes: {type: integer, minimum: 0}
+                free_percent: {type: [number, 'null'], minimum: 0, maximum: 100}
+                index_valid: {type: [boolean, 'null']}
+                segment_count: {type: integer, minimum: 0}
+                recovery_state: {type: [string, 'null'], pattern: '^[a-z0-9_]+$', maxLength: 64}
+                last_error: {type: [string, 'null'], pattern: '^[a-z0-9_]+$', maxLength: 80}
+                last_error_code: {type: [integer, 'null']}
+                mount_attempts: {type: integer, minimum: 0}
+                spi_hz: {type: integer, minimum: 0}
+                total_bytes: {type: integer, minimum: 0}
+                free_bytes: {type: integer, minimum: 0}
+                card_generation: {type: [string, 'null'], maxLength: 32}
+                format_attempted: {const: false}
+        sequences:
+          type: object
+          additionalProperties: false
+          required: [sequence_floor, maximum_seen_sequence, server_acknowledgement, next_sequence, oldest_stored_sequence, newest_stored_sequence, newest_syncable_sequence, backlog]
+          properties:
+            sequence_floor: {type: integer, minimum: 0}
+            maximum_seen_sequence: {type: integer, minimum: 0}
+            server_acknowledgement: {type: integer, minimum: 0}
+            next_sequence: {type: integer, minimum: 1}
+            oldest_stored_sequence: {type: integer, minimum: 0}
+            newest_stored_sequence: {type: integer, minimum: 0}
+            newest_syncable_sequence: {type: integer, minimum: 0}
+            backlog: {type: integer, minimum: 0}
         reset_projection: {type: object}
-        capabilities: {type: object}
+        capabilities:
+          type: object
+          additionalProperties: false
+          required: [data_reset, ota]
+          properties:
+            data_reset: {type: object}
+            ota: {oneOf: [{type: boolean}, {type: object}]}
+            storage:
+              type: object
+              additionalProperties: false
+              required: [present, required, sd_required, durable_queue, format_on_mount_failure]
+              properties:
+                present: {type: boolean}
+                required: {type: boolean}
+                sd_required: {type: boolean}
+                durable_queue: {type: boolean}
+                format_on_mount_failure: {const: false}
+            outbound_commands: {type: boolean}
         configuration_revision: {type: integer, minimum: 0}
         reset_generation: {type: integer, minimum: 0}
         reset_operation: {type: object}
-        resources: {type: object}
-        task_stack_margins: {type: object}
+        resources:
+          type: object
+          additionalProperties: false
+          required: [free_heap_bytes]
+          properties:
+            free_heap_bytes: {type: integer, minimum: 0}
+            largest_free_block_bytes: {type: integer, minimum: 0}
+        task_stack_margins:
+          type: object
+          additionalProperties: false
+          properties:
+            measurement: {type: integer, minimum: 0}
+            storage: {type: integer, minimum: 0}
+            network: {type: integer, minimum: 0}
+            supervisor: {type: integer, minimum: 0}
         last_command_result: {type: [object, 'null']}
         ota: {type: object}
         time_trusted: {type: boolean}

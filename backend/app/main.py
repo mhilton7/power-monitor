@@ -272,12 +272,35 @@ async def handle_validation(request: Request, exc: RequestValidationError) -> JS
         {"location": list(error["loc"]), "message": error["msg"], "type": error["type"]}
         for error in exc.errors()
     ]
+    code = "validation_error"
+    detail = "One or more fields are invalid"
+    if request.url.path == "/api/v2/agent/heartbeat":
+        top_level_fields = {
+            str(error["loc"][1])
+            for error in exc.errors()
+            if len(error["loc"]) > 1 and error["loc"][0] == "body"
+        }
+        if "latest" in top_level_fields:
+            code = "agent_latest_invalid"
+            detail = "The signed latest-measurement evidence is invalid"
+        elif "pzem" in top_level_fields:
+            code = "agent_pzem_health_invalid"
+            detail = "The signed PZEM health evidence is invalid"
+        elif "sd" in top_level_fields:
+            code = "agent_sd_health_invalid"
+            detail = "The signed SD health evidence is invalid"
+        elif "sequences" in top_level_fields:
+            code = "agent_sequence_evidence_invalid"
+            detail = "The signed sequence evidence is invalid"
+        elif "capabilities" in top_level_fields:
+            code = "agent_capability_evidence_invalid"
+            detail = "The signed capability evidence is invalid"
     return problem_response(
         request,
         status=422,
         title="Request validation failed",
-        detail="One or more fields are invalid",
-        code="validation_error",
+        detail=detail,
+        code=code,
         extra={"errors": errors},
     )
 
