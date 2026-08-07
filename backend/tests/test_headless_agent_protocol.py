@@ -17,6 +17,7 @@ from app.config import Settings
 from app.data_reset.sensor_client import request_sensor_reset
 from app.db.models import (
     Device,
+    DeviceCapability,
     DeviceCommand,
     DeviceCredential,
     FirmwareDeployment,
@@ -352,7 +353,9 @@ def csrf(client: httpx.AsyncClient) -> dict[str, str]:
 
 
 @pytest.mark.asyncio
-async def test_v2_enrollment_signed_heartbeat_and_admin_command(api_client: Any) -> None:
+async def test_v2_enrollment_signed_heartbeat_and_admin_command(
+    api_client: Any, session: AsyncSession
+) -> None:
     client: httpx.AsyncClient = api_client
     bootstrap = await client.post(
         "/api/v1/auth/bootstrap",
@@ -398,6 +401,14 @@ async def test_v2_enrollment_signed_heartbeat_and_admin_command(api_client: Any)
     device_id = claim.json()["device_id"]
     secret = claim.json()["enrollment_secret"].encode()
     boot_id = "83869685-4032-4e2c-8d5f-7aad43f1637e"
+
+    # Reproduce the record left by the old heartbeat overwrite bug. The
+    # authenticated boolean claim from firmware 2.0.0-2.0.3 must make the
+    # already-enrolled device UI-OTA-ready again.
+    capability = await session.get(DeviceCapability, device_id)
+    assert capability is not None
+    capability.features = {key: value for key, value in capability.features.items() if key != "ota"}
+    await session.commit()
 
     async def send_heartbeat(
         counter: int, nonce: str, ota_capability: bool | dict[str, Any] = True

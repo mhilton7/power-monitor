@@ -60,6 +60,13 @@ from app.security.protocol import ProtocolAuthError, SecretCipher
 router = APIRouter(prefix="/api/v2/agent", tags=["headless agent protocol"])
 RANGE_PATTERN = re.compile(r"^bytes=(\d+)-(\d+)$")
 MAX_FIRMWARE_RANGE_BYTES = 64 * 1024
+HEADLESS_OTA_V2_CAPABILITY = {
+    "supported": True,
+    "protocol_version": 2,
+    "authentication_mode": "existing_device_hmac",
+    "rollback_supported": True,
+    "partition_size_bytes": 6 * 1024 * 1024,
+}
 
 
 def _headless_capability_features(
@@ -89,6 +96,12 @@ def _headless_capability_features(
                 "The signed OTA capability claim is invalid",
                 "ota_capability_invalid",
             ) from exc
+    elif ota_claim is True and "ota" not in features:
+        # Firmware 2.0.0-2.0.3 advertised the complete capability at
+        # enrollment but reduced the same signed heartbeat claim to `true`.
+        # Recover the fixed pm-agent/2.0.0 ESP32-S3 OTA contract if an older
+        # server heartbeat refresh already discarded the enrollment record.
+        features["ota"] = dict(HEADLESS_OTA_V2_CAPABILITY)
     elif ota_claim is False:
         features["ota"] = {"supported": False}
     return features
