@@ -39,7 +39,7 @@ from app.db.models import (
 from app.firmware_lifecycle import transition_firmware_deployment
 from app.ingestion.service import ingest_readings
 from app.network_policy import effective_client_ip, evaluate_site_address
-from app.ota import OTA_TRUST_MODE, release_compatibility
+from app.ota import OTA_TRUST_MODE, TERMINAL_DEPLOYMENT_STATES, release_compatibility
 from app.problem import ProblemError
 from app.schemas import (
     SIGNED_BIGINT_MAX,
@@ -418,6 +418,13 @@ async def _record_headless_ota_result(
             "The agent reported invalid OTA progress",
             "ota_result_invalid",
         )
+    if deployment.state in TERMINAL_DEPLOYMENT_STATES:
+        # A signed target heartbeat or the lifecycle reconciler can terminalize
+        # the deployment before the retained command result is delivered.  The
+        # deployment record is immutable at that point, but the command result
+        # still needs to be accepted so the durable device-command queue can
+        # advance to configuration and reset work.
+        return
     deployment.bytes_received = max(deployment.bytes_received, bytes_received)
     deployment.progress = max(deployment.progress, progress)
     deployment.last_report_at = now

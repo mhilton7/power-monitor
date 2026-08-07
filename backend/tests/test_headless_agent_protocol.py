@@ -12,7 +12,12 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.routes.agent_protocol import AgentHeartbeat, _record_headless_ota_result
+from app.api.routes.agent_protocol import (
+    AgentCommandResult,
+    AgentHeartbeat,
+    _record_headless_ota_result,
+    command_result,
+)
 from app.api.routes.firmware import _queue_headless_ota_command
 from app.config import Settings
 from app.data_reset.sensor_client import request_sensor_reset
@@ -31,6 +36,7 @@ from app.ota import release_compatibility
 from app.security.agent_protocol import (
     AGENT_PROTOCOL,
     ProtocolAuthError,
+    VerifiedAgentRequest,
     calculate_agent_request_signature,
     calculate_agent_response_signature,
     derive_agent_key,
@@ -530,6 +536,51 @@ async def test_headless_ota_command_and_progress_are_durable(
     assert deployment.state == "validated"
     assert deployment.progress == 100
     assert deployment.bytes_received == 1024
+
+    # A target heartbeat can complete the deployment before a retained failure
+    # result from the source boot reaches the server.  That late result must not
+    # reopen the immutable deployment or crash command-result handling; the
+    # caller still records the terminal DeviceCommand and unblocks the queue.
+    deployment.state = deployment.status = "completed"
+    deployment.terminal_at = now
+    terminal_revision = deployment.revision
+    command.state = "delivered"
+    credential = await session.scalar(
+        select(DeviceCredential).where(DeviceCredential.device_id == device.id)
+    )
+    assert credential is not None
+    response = await command_result(
+        AgentCommandResult(
+            protocol=AGENT_PROTOCOL,
+            device_id=device.id,
+            command_id=command.id,
+            state="failed",
+            failure_code="ota_source_boot_late",
+            result={
+                "deployment_id": deployment.id,
+                "release_id": release.id,
+                "state": "failed",
+                "bytes_received": 1024,
+                "image_size": 1024,
+                "progress": 100,
+                "target_version": release.version,
+                "target_build_hash": release.build_hash,
+            },
+        ),
+        session,
+        VerifiedAgentRequest(
+            device=device,
+            credential=credential,
+            secret=_secret,
+            boot_id="155a8fe3-257c-4c7d-b247-7f84320dc55d",
+            counter=1,
+            nonce="a" * 32,
+        ),
+    )
+    assert response.status_code == 200
+    assert command.state == "failed"
+    assert deployment.state == "completed"
+    assert deployment.revision == terminal_revision
 
 
 def csrf(client: httpx.AsyncClient) -> dict[str, str]:
