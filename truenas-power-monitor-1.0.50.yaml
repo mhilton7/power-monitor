@@ -1,0 +1,465 @@
+name: power-monitor
+x-security:
+  init: true
+  read_only: true
+  cap_drop: &id001
+  - ALL
+  security_opt: &id002
+  - no-new-privileges:true
+x-app-environment:
+  POWER_MONITOR_VERSION: 1.0.0
+  PROTOCOL_VERSION: pm-protocol/1.0.0
+  FIRMWARE_PROJECT_NAME: power_monitor_sensor_headless
+  DATABASE_URL_FILE: /run/secrets/database_url
+  APP_MASTER_KEY_FILE: /run/secrets/app_master_key
+  PUBLIC_ORIGIN: https://power-monitor.local:8443
+  COOKIE_SECURE: 'true'
+  FIRMWARE_PATH: /data/firmware
+  REPORT_PATH: /data/reports
+  BACKUP_PATH: /data/backups
+  LOG_PATH: /data/logs
+  LOG_RETENTION_DAYS: '90'
+  POLL_PUBLIC_ADDRESSES: 'false'
+  DEFAULT_TIMEZONE: America/Los_Angeles
+  LOG_LEVEL: INFO
+  RATE_SYNC_ENABLED: 'true'
+  RATE_SYNC_CRON: 15 3 * * 0
+  RATE_SYNC_TIMEZONE: America/Los_Angeles
+  RATE_SYNC_JITTER_MINUTES: '20'
+  RATE_SYNC_POLICY: manual_review
+  RATE_SYNC_MAX_SOURCE_BYTES: '10485760'
+  RATE_SYNC_CONNECT_TIMEOUT_SECONDS: '10'
+  RATE_SYNC_READ_TIMEOUT_SECONDS: '30'
+  RATE_SYNC_TOTAL_TIMEOUT_SECONDS: '45'
+  RATE_SYNC_MAX_REDIRECTS: '3'
+  RATE_SYNC_MAX_RETRIES: '3'
+  RATE_SYNC_ALLOWED_HOSTS: www.sce.com,sce.com
+  RATE_SYNC_ARTIFACT_PATH: /app/data/rate-source-artifacts
+  RATE_SYNC_AUTO_MAX_PERCENT_CHANGE: '25'
+  RATE_SYNC_RETROACTIVE_AUTO_DAYS: '0'
+  UTILITY_BILL_ARTIFACT_PATH: /app/data/rate-source-artifacts/utility-bills
+  UTILITY_BILL_MAX_BYTES: '20971520'
+  UTILITY_BILL_MAX_PAGES: '40'
+  UTILITY_BILL_OCR_TIMEOUT_SECONDS: '60'
+  UTILITY_BILL_OCR_DPI: '200'
+  UTILITY_BILL_OCR_MAX_MEMORY_MB: '768'
+services:
+  postgres:
+    init: true
+    read_only: true
+    cap_drop: *id001
+    security_opt: *id002
+    image: docker.io/library/postgres:17.5-bookworm@sha256:fbcea1bd13b6a882cd6caa6b58db3ae5c102efe50ec625b3e2a5cbc50db5bfe4
+    platform: linux/amd64
+    user: 999:999
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: power_monitor
+      POSTGRES_USER: power_monitor
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --data-checksums
+    secrets:
+    - postgres_password
+    volumes:
+    - /mnt/Apps/Power/postgres:/var/lib/postgresql/data
+    tmpfs:
+    - /tmp:size=64m,uid=999,gid=999,mode=1777
+    - /var/run/postgresql:size=16m,uid=999,gid=999,mode=0775
+    shm_size: 256m
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U power_monitor -d power_monitor
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 90s
+    networks:
+    - database
+    deploy:
+      resources:
+        limits:
+          cpus: '2.00'
+          memory: 2G
+          pids: 256
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+  migrate:
+    init: true
+    read_only: true
+    cap_drop: *id001
+    security_opt: *id002
+    image: ghcr.io/mhilton7/power-monitor-api:1.0.50@sha256:3e596703dfc2b91f7ebdad5729845fda36bf86cae5b73881aa649545c86196a6
+    platform: linux/amd64
+    user: 10001:10001
+    restart: 'no'
+    command:
+    - alembic
+    - upgrade
+    - head
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+    secrets:
+    - database_url
+    tmpfs:
+    - /tmp:size=32m,uid=10001,gid=10001,mode=1777
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+    - database
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 512M
+          pids: 256
+    volumes: []
+  api:
+    init: true
+    read_only: true
+    cap_drop: *id001
+    security_opt: *id002
+    image: ghcr.io/mhilton7/power-monitor-api:1.0.50@sha256:3e596703dfc2b91f7ebdad5729845fda36bf86cae5b73881aa649545c86196a6
+    platform: linux/amd64
+    user: 10001:10001
+    restart: unless-stopped
+    environment:
+      POWER_MONITOR_VERSION: 1.0.50
+      PROTOCOL_VERSION: pm-protocol/1.0.0
+      FIRMWARE_PROJECT_NAME: power_monitor_sensor_headless
+      DATABASE_URL_FILE: /run/secrets/database_url
+      APP_MASTER_KEY_FILE: /run/secrets/app_master_key
+      PUBLIC_ORIGIN: https://power-monitor.home.arpa:8443
+      COOKIE_SECURE: 'true'
+      FIRMWARE_PATH: /data/firmware
+      REPORT_PATH: /data/reports
+      BACKUP_PATH: /data/backups
+      LOG_PATH: /data/logs
+      LOG_RETENTION_DAYS: '90'
+      POLL_PUBLIC_ADDRESSES: 'false'
+      DEFAULT_TIMEZONE: America/Los_Angeles
+      LOG_LEVEL: INFO
+      RATE_SYNC_ENABLED: 'true'
+      RATE_SYNC_CRON: 15 3 * * 0
+      RATE_SYNC_TIMEZONE: America/Los_Angeles
+      RATE_SYNC_JITTER_MINUTES: '20'
+      RATE_SYNC_POLICY: manual_review
+      RATE_SYNC_MAX_SOURCE_BYTES: '10485760'
+      RATE_SYNC_CONNECT_TIMEOUT_SECONDS: '10'
+      RATE_SYNC_READ_TIMEOUT_SECONDS: '30'
+      RATE_SYNC_TOTAL_TIMEOUT_SECONDS: '45'
+      RATE_SYNC_MAX_REDIRECTS: '3'
+      RATE_SYNC_MAX_RETRIES: '3'
+      RATE_SYNC_ALLOWED_HOSTS: www.sce.com,sce.com
+      RATE_SYNC_ARTIFACT_PATH: /app/data/rate-source-artifacts
+      RATE_SYNC_AUTO_MAX_PERCENT_CHANGE: '25'
+      RATE_SYNC_RETROACTIVE_AUTO_DAYS: '0'
+      UTILITY_BILL_ARTIFACT_PATH: /app/data/rate-source-artifacts/utility-bills
+      UTILITY_BILL_MAX_BYTES: '20971520'
+      UTILITY_BILL_MAX_PAGES: '40'
+      UTILITY_BILL_OCR_TIMEOUT_SECONDS: '60'
+      UTILITY_BILL_OCR_DPI: '200'
+      UTILITY_BILL_OCR_MAX_MEMORY_MB: '768'
+      SESSION_PEPPER_FILE: /run/secrets/session_pepper
+      BOOTSTRAP_SECRET_FILE: /run/secrets/admin_setup_token
+    secrets:
+    - database_url
+    - app_master_key
+    - session_pepper
+    - admin_setup_token
+    volumes:
+    - /mnt/Apps/Power/power-monitor/firmware:/data/firmware
+    - /mnt/Apps/Power/power-monitor/config:/data/config
+    - /mnt/Apps/Power/power-monitor/config/reports:/data/reports
+    - /mnt/Apps/Power/power-monitor/backups:/data/backups:ro
+    - /mnt/Apps/Power/power-monitor/logs:/data/logs
+    - /mnt/Apps/Power/power-monitor/rate-source-artifacts:/app/data/rate-source-artifacts
+    tmpfs:
+    - /tmp:size=128m,uid=10001,gid=10001,mode=1777
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready',
+        timeout=3).read()
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+    - public
+    - database
+    deploy:
+      resources:
+        limits:
+          cpus: '2.00'
+          memory: 1G
+          pids: 256
+        reservations:
+          cpus: '0.10'
+          memory: 256M
+  worker:
+    init: true
+    read_only: true
+    cap_drop: *id001
+    security_opt: *id002
+    image: ghcr.io/mhilton7/power-monitor-api:1.0.50@sha256:3e596703dfc2b91f7ebdad5729845fda36bf86cae5b73881aa649545c86196a6
+    platform: linux/amd64
+    user: 10001:10001
+    restart: unless-stopped
+    command:
+    - python
+    - -m
+    - worker.app.main
+    environment:
+      POWER_MONITOR_VERSION: 1.0.50
+      PROTOCOL_VERSION: pm-protocol/1.0.0
+      FIRMWARE_PROJECT_NAME: power_monitor_sensor_headless
+      DATABASE_URL_FILE: /run/secrets/database_url
+      APP_MASTER_KEY_FILE: /run/secrets/app_master_key
+      PUBLIC_ORIGIN: https://power-monitor.home.arpa:8443
+      COOKIE_SECURE: 'true'
+      FIRMWARE_PATH: /data/firmware
+      REPORT_PATH: /data/reports
+      BACKUP_PATH: /data/backups
+      LOG_PATH: /data/logs
+      LOG_RETENTION_DAYS: '90'
+      POLL_PUBLIC_ADDRESSES: 'false'
+      DEFAULT_TIMEZONE: America/Los_Angeles
+      LOG_LEVEL: INFO
+      RATE_SYNC_ENABLED: 'true'
+      RATE_SYNC_CRON: 15 3 * * 0
+      RATE_SYNC_TIMEZONE: America/Los_Angeles
+      RATE_SYNC_JITTER_MINUTES: '20'
+      RATE_SYNC_POLICY: manual_review
+      RATE_SYNC_MAX_SOURCE_BYTES: '10485760'
+      RATE_SYNC_CONNECT_TIMEOUT_SECONDS: '10'
+      RATE_SYNC_READ_TIMEOUT_SECONDS: '30'
+      RATE_SYNC_TOTAL_TIMEOUT_SECONDS: '45'
+      RATE_SYNC_MAX_REDIRECTS: '3'
+      RATE_SYNC_MAX_RETRIES: '3'
+      RATE_SYNC_ALLOWED_HOSTS: www.sce.com,sce.com
+      RATE_SYNC_ARTIFACT_PATH: /app/data/rate-source-artifacts
+      RATE_SYNC_AUTO_MAX_PERCENT_CHANGE: '25'
+      RATE_SYNC_RETROACTIVE_AUTO_DAYS: '0'
+      UTILITY_BILL_ARTIFACT_PATH: /app/data/rate-source-artifacts/utility-bills
+      UTILITY_BILL_MAX_BYTES: '20971520'
+      UTILITY_BILL_MAX_PAGES: '40'
+      UTILITY_BILL_OCR_TIMEOUT_SECONDS: '60'
+      UTILITY_BILL_OCR_DPI: '200'
+      UTILITY_BILL_OCR_MAX_MEMORY_MB: '768'
+    secrets:
+    - database_url
+    - app_master_key
+    volumes:
+    - /mnt/Apps/Power/power-monitor/firmware:/data/firmware:ro
+    - /mnt/Apps/Power/power-monitor/config:/data/config
+    - /mnt/Apps/Power/power-monitor/config/reports:/data/reports
+    - /mnt/Apps/Power/power-monitor/backups:/data/backups:ro
+    - /mnt/Apps/Power/power-monitor/logs:/data/logs
+    - /mnt/Apps/Power/power-monitor/rate-source-artifacts:/app/data/rate-source-artifacts
+    tmpfs:
+    - /tmp:size=128m,uid=10001,gid=10001,mode=1777
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - /srv/scripts/worker_health.py
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+    - public
+    - database
+    deploy:
+      resources:
+        limits:
+          cpus: '2.00'
+          memory: 1G
+          pids: 256
+        reservations:
+          cpus: '0.10'
+          memory: 256M
+  frontend:
+    init: true
+    read_only: true
+    cap_drop: *id001
+    security_opt: *id002
+    image: ghcr.io/mhilton7/power-monitor-frontend:1.0.50@sha256:83d8419c975255850e8b6ae5a77abc55abdcc97a14e8479ae5440bfc7b4a7a30
+    platform: linux/amd64
+    user: 101:101
+    restart: unless-stopped
+    tmpfs:
+    - /tmp:size=16m,uid=101,gid=101,mode=1777
+    - /var/cache/nginx:size=32m,uid=101,gid=101,mode=0775
+    - /var/run:size=4m,uid=101,gid=101,mode=0775
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://127.0.0.1:8080/healthz
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    networks:
+    - public
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 256M
+          pids: 256
+        reservations:
+          memory: 64M
+    volumes: []
+  gateway:
+    init: true
+    read_only: true
+    cap_drop: *id001
+    security_opt: *id002
+    image: docker.io/library/caddy:2.10.0-alpine@sha256:ae4458638da8e1a91aafffb231c5f8778e964bca650c8a8cb23a7e8ac557aa3c
+    platform: linux/amd64
+    user: 10002:10002
+    restart: unless-stopped
+    cap_add:
+    - NET_BIND_SERVICE
+    environment:
+      POWER_MONITOR_SITE_ADDRESS: https://power-monitor.home.arpa
+      XDG_CONFIG_HOME: /config
+      XDG_DATA_HOME: /data
+    ports:
+    - 8443:443/tcp
+    secrets:
+    - tls_certificate
+    - tls_private_key
+    volumes:
+    - /mnt/Apps/Power/power-monitor/config/Caddyfile:/etc/caddy/Caddyfile:ro
+    - /mnt/Apps/Power/power-monitor/caddy-data:/data
+    - /mnt/Apps/Power/power-monitor/caddy-config:/config
+    tmpfs:
+    - /tmp:size=32m,uid=10002,gid=10002,mode=1777
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://127.0.0.1:2019/config/
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    networks:
+    - public
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 256M
+          pids: 256
+        reservations:
+          memory: 64M
+  backup:
+    init: true
+    read_only: true
+    cap_drop: *id001
+    security_opt: *id002
+    image: ghcr.io/mhilton7/power-monitor-backup:1.0.50@sha256:32a5b0211796604cce1854d7ff0aad2ffc72984a51cf03fba40c8c5052a42782
+    platform: linux/amd64
+    user: 10003:10003
+    group_add:
+    - '10001'
+    restart: unless-stopped
+    command:
+    - /srv/scripts/backup-scheduler.sh
+    environment:
+      PGHOST: postgres
+      PGPORT: '5432'
+      PGDATABASE: power_monitor
+      PGUSER: power_monitor
+      PGPASSWORD_FILE: /run/secrets/postgres_password
+      BACKUP_ENCRYPTION_KEY_FILE: /run/secrets/backup_encryption_key
+      BACKUP_RETENTION_DAYS: '30'
+      BACKUP_SCHEDULE_UTC: 02:17
+      BACKUP_RUN_ON_STARTUP: 'false'
+      LOG_PATH: /data/logs
+      LOG_RETENTION_DAYS: '90'
+    secrets:
+    - postgres_password
+    - backup_encryption_key
+    volumes:
+    - /mnt/Apps/Power/power-monitor/backups:/data/backups
+    - /mnt/Apps/Power/power-monitor/firmware:/data/firmware:ro
+    - /mnt/Apps/Power/power-monitor/config:/data/config:ro
+    - /mnt/Apps/Power/power-monitor/config/reports:/data/reports:ro
+    - /mnt/Apps/Power/power-monitor/logs:/data/logs
+    - /mnt/Apps/Power/power-monitor/rate-source-artifacts:/app/data/rate-source-artifacts:ro
+    tmpfs:
+    - /tmp:size=1g,uid=10003,gid=10003,mode=1777
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - test -f /tmp/power-monitor-backup-scheduler.ready && pg_isready -h postgres
+        -U power_monitor -d power_monitor
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+    - database
+    deploy:
+      resources:
+        limits:
+          cpus: '1.50'
+          memory: 1536M
+          pids: 256
+        reservations:
+          memory: 256M
+secrets:
+  postgres_password:
+    file: /mnt/Apps/Power/power-monitor/secrets/postgres_password
+  database_url:
+    file: /mnt/Apps/Power/power-monitor/secrets/database_url
+  app_master_key:
+    file: /mnt/Apps/Power/power-monitor/secrets/app_master_key
+  session_pepper:
+    file: /mnt/Apps/Power/power-monitor/secrets/session_pepper
+  admin_setup_token:
+    file: /mnt/Apps/Power/power-monitor/secrets/admin_setup_token
+  backup_encryption_key:
+    file: /mnt/Apps/Power/power-monitor/secrets/backup_encryption_key
+  tls_certificate:
+    file: /mnt/Apps/Power/power-monitor/secrets/tls.crt
+  tls_private_key:
+    file: /mnt/Apps/Power/power-monitor/secrets/tls.key
+networks:
+  public:
+    driver: bridge
+  database:
+    driver: bridge
+    internal: true
